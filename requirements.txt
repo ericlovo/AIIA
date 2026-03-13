@@ -1,0 +1,36 @@
+# AIIA — AI Information Architecture
+# Core dependencies for the Local Brain runtime
+
+# === Core API Framework ===
+fastapi>=0.109.0,<1.0.0
+uvicorn>=0.27.0,<1.0.0
+pydantic>=2.6.0,<3.0.0
+python-dotenv>=1.0.0,<2.0.0
+
+# === HTTP & Async ===
+httpx>=0.27.0,<1.0.0
+aiofiles>=23.0.0,<26.0.0
+
+# === LLM Providers ===
+# Anthropic Claude — primary cloud provider
+anthropic>=0.39.0,<1.0.0
+# Google Gemini — fallback provider
+google-generativeai>=0.8.0,<1.0.0
+# Token counting
+tiktoken>=0.5.0,<1.0.0
+
+# === Vector Store & Knowledge ===
+chromadb>=0.5.0,<1.0.0
+
+# === Cloud Memory (optional — graceful degradation if unavailable) ===
+supermemory>=3.12.0,<4.0.0
+
+# === MCP Integration (optional — for Claude Code tool interface) ===
+mcp>=0.7.0,<2.0.0
+
+# === Utilities ===
+python-dateutil>=2.9.0,<3.0.0
+Jinja2>=3.1.0,<4.0.0
+
+# === Text Processing ===
+langchain-text-splitters>=0.3.0,<1.0.0

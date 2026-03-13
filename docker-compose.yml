@@ -1,0 +1,49 @@
+# AIIA — AI Information Architecture
+# Docker Compose stack: AIIA + Ollama
+#
+# Usage:
+#   cp .env.example .env    # Configure your environment
+#   docker compose up -d    # Start AIIA + Ollama
+#   docker compose logs -f  # Follow logs
+#
+# Ollama models must be pulled after first start:
+#   docker compose exec ollama ollama pull llama3.1:8b-instruct-q8_0
+
+services:
+  aiia:
+    build: .
+    container_name: aiia
+    ports:
+      - "8100:8100"   # Local Brain API
+      - "8200:8200"   # Command Center Dashboard
+    env_file: .env
+    environment:
+      - OLLAMA_URL=http://ollama:11434
+      - EQ_BRAIN_DATA_DIR=/data/eq_data
+    volumes:
+      - aiia-data:/data
+    depends_on:
+      ollama:
+        condition: service_started
+    restart: unless-stopped
+
+  ollama:
+    image: ollama/ollama:latest
+    container_name: ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama-data:/root/.ollama
+    restart: unless-stopped
+    # Uncomment for GPU support (NVIDIA):
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: 1
+    #           capabilities: [gpu]
+
+volumes:
+  aiia-data:
+  ollama-data:

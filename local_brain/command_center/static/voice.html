@@ -1,0 +1,2057 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AIIA Console</title>
+<style>
+/* ═══════════════════════════════════════════════════════════
+   AIIA Console — Voice + Text + Dashboard + Audio Device Mgmt
+   Three-panel: Sidebar | Conversation | Input Bar
+   ═══════════════════════════════════════════════════════════ */
+
+:root {
+  --bg: #06060a;
+  --bg-card: rgba(12, 12, 20, 0.85);
+  --bg-card-hover: rgba(18, 18, 30, 0.9);
+  --bg-input: rgba(18, 18, 28, 0.9);
+  --border: rgba(255, 255, 255, 0.06);
+  --border-hover: rgba(255, 255, 255, 0.12);
+  --border-focus: rgba(168, 85, 247, 0.4);
+  --text: rgba(255, 255, 255, 0.92);
+  --text-dim: rgba(255, 255, 255, 0.5);
+  --text-faint: rgba(255, 255, 255, 0.28);
+  --blue: #3b82f6;
+  --purple: #a855f7;
+  --green: #10b981;
+  --amber: #f59e0b;
+  --red: #ef4444;
+  --cyan: #22d3ee;
+  --radius: 12px;
+  --radius-sm: 8px;
+  --ease: cubic-bezier(0.25, 0.46, 0.45, 0.94);
+  --sidebar-width: 280px;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Inter', sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  height: 100vh;
+  overflow: hidden;
+  -webkit-font-smoothing: antialiased;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ── Background ── */
+.bg-canvas {
+  position: fixed; inset: 0; z-index: 0; overflow: hidden;
+  background: radial-gradient(ellipse at 30% 60%, rgba(168,85,247,0.06) 0%, transparent 60%),
+              radial-gradient(ellipse at 70% 30%, rgba(59,130,246,0.04) 0%, transparent 50%);
+}
+
+/* ── Header ── */
+.header {
+  position: relative; z-index: 10;
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 0 16px;
+  height: 48px; min-height: 48px;
+  border-bottom: 1px solid var(--border);
+  backdrop-filter: blur(30px);
+  background: rgba(6, 6, 10, 0.85);
+}
+.header-left { display: flex; align-items: center; gap: 10px; }
+.logo {
+  width: 28px; height: 28px; border-radius: 7px;
+  background: linear-gradient(135deg, var(--purple), var(--blue));
+  display: flex; align-items: center; justify-content: center;
+  font-size: 12px; font-weight: 700; color: #fff;
+  box-shadow: 0 2px 10px rgba(168,85,247,0.25);
+}
+.header h1 { font-size: 14px; font-weight: 600; letter-spacing: -0.3px; }
+.header h1 a {
+  color: var(--text-dim); font-weight: 400; margin-left: 8px;
+  text-decoration: none; font-size: 11px;
+}
+.header h1 a:hover { color: var(--text); }
+.header-right { display: flex; align-items: center; gap: 10px; }
+
+.status-pill {
+  display: flex; align-items: center; gap: 5px;
+  font-size: 11px; color: var(--text-dim);
+  padding: 3px 10px; border-radius: 20px;
+  border: 1px solid var(--border);
+}
+.dot {
+  width: 6px; height: 6px; border-radius: 50%;
+  background: var(--green); box-shadow: 0 0 6px rgba(16,185,129,0.5);
+  animation: pulse 2s ease-in-out infinite;
+}
+.dot.off { background: var(--red); box-shadow: none; animation: none; }
+.dot.warn { background: var(--amber); box-shadow: 0 0 6px rgba(245,158,11,0.5); }
+@keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.4; } }
+
+.icon-btn {
+  background: none; border: 1px solid var(--border);
+  color: var(--text-dim); width: 30px; height: 30px;
+  border-radius: var(--radius-sm); cursor: pointer; font-size: 13px;
+  display: flex; align-items: center; justify-content: center;
+  transition: all 0.2s; outline: none;
+}
+.icon-btn:hover { border-color: var(--border-hover); color: var(--text); }
+.icon-btn.active { border-color: var(--purple); color: var(--purple); background: rgba(168,85,247,0.08); }
+
+/* ── Main Layout ── */
+.main-layout {
+  position: relative; z-index: 1;
+  flex: 1;
+  display: flex;
+  overflow: hidden;
+}
+
+/* ── Sidebar ── */
+.sidebar {
+  width: var(--sidebar-width);
+  min-width: var(--sidebar-width);
+  border-right: 1px solid var(--border);
+  background: rgba(6, 6, 10, 0.6);
+  backdrop-filter: blur(20px);
+  overflow-y: auto;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  transition: margin-left 0.25s var(--ease), opacity 0.25s;
+}
+.sidebar.collapsed {
+  margin-left: calc(var(--sidebar-width) * -1);
+  opacity: 0;
+  pointer-events: none;
+}
+.sidebar::-webkit-scrollbar { width: 3px; }
+.sidebar::-webkit-scrollbar-track { background: transparent; }
+.sidebar::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.06); border-radius: 2px; }
+
+.sidebar-section { }
+.sidebar-title {
+  font-size: 10px; font-weight: 600; text-transform: uppercase;
+  letter-spacing: 1px; color: var(--text-faint);
+  margin-bottom: 8px;
+}
+
+/* Identity Card */
+.identity-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 12px;
+}
+.identity-header {
+  display: flex; align-items: center; gap: 10px; margin-bottom: 10px;
+}
+.identity-avatar {
+  width: 36px; height: 36px; border-radius: 10px;
+  background: linear-gradient(135deg, var(--purple), var(--blue));
+  display: flex; align-items: center; justify-content: center;
+  font-size: 16px; font-weight: 700; color: #fff;
+}
+.identity-info h3 { font-size: 13px; font-weight: 600; }
+.identity-info .model-tag {
+  font-size: 10px; color: var(--text-dim);
+  background: rgba(168,85,247,0.1); border-radius: 4px;
+  padding: 1px 6px; display: inline-block; margin-top: 2px;
+}
+.identity-stats {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 6px;
+}
+.stat-item {
+  display: flex; flex-direction: column;
+  padding: 6px 8px;
+  background: rgba(255,255,255,0.02);
+  border-radius: 6px;
+}
+.stat-value { font-size: 14px; font-weight: 600; color: var(--text); }
+.stat-label { font-size: 9px; color: var(--text-faint); text-transform: uppercase; letter-spacing: 0.5px; }
+
+/* Service Health */
+.health-grid {
+  display: flex; flex-direction: column; gap: 4px;
+}
+.health-row {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 6px 8px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 12px;
+}
+.health-name { color: var(--text-dim); }
+.health-dot {
+  width: 7px; height: 7px; border-radius: 50%;
+  flex-shrink: 0;
+}
+.health-dot.online { background: var(--green); box-shadow: 0 0 6px rgba(16,185,129,0.4); }
+.health-dot.offline { background: var(--red); }
+.health-dot.degraded { background: var(--amber); }
+.health-dot.unknown { background: rgba(255,255,255,0.15); }
+.health-ms { font-size: 10px; color: var(--text-faint); min-width: 40px; text-align: right; }
+
+/* Activity / Memory items */
+.activity-list {
+  display: flex; flex-direction: column; gap: 3px;
+}
+.activity-item {
+  font-size: 11px; color: var(--text-dim);
+  padding: 5px 8px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  line-height: 1.4;
+  display: flex; justify-content: space-between; align-items: flex-start; gap: 6px;
+  cursor: default;
+}
+.activity-item:hover { border-color: var(--border-hover); }
+.activity-text { flex: 1; overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.activity-cat {
+  font-size: 9px; color: var(--text-faint);
+  background: rgba(255,255,255,0.04); border-radius: 3px;
+  padding: 1px 5px; flex-shrink: 0; white-space: nowrap;
+}
+
+/* Token usage */
+.token-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 10px 12px;
+}
+.token-row {
+  display: flex; justify-content: space-between; align-items: center;
+  font-size: 12px; padding: 3px 0;
+}
+.token-label { color: var(--text-dim); }
+.token-value { color: var(--text); font-weight: 500; }
+.token-value.free { color: var(--green); }
+.token-value.cost { color: var(--amber); }
+
+/* Memory browser */
+.memory-cat-list { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 6px; }
+.memory-cat-btn {
+  font-size: 10px; padding: 3px 8px; border-radius: 12px;
+  border: 1px solid var(--border); background: transparent;
+  color: var(--text-dim); cursor: pointer; transition: all 0.15s;
+  outline: none;
+}
+.memory-cat-btn:hover { border-color: var(--border-hover); color: var(--text); }
+.memory-cat-btn.active { border-color: var(--purple); color: var(--purple); background: rgba(168,85,247,0.08); }
+.memory-items { display: flex; flex-direction: column; gap: 3px; max-height: 200px; overflow-y: auto; }
+.memory-item {
+  font-size: 11px; color: var(--text-dim);
+  padding: 5px 8px;
+  background: rgba(255,255,255,0.02);
+  border-radius: 5px;
+  display: flex; justify-content: space-between; align-items: flex-start; gap: 4px;
+}
+.memory-item .del-btn {
+  background: none; border: none; color: var(--text-faint);
+  cursor: pointer; font-size: 10px; flex-shrink: 0; padding: 0 2px;
+  opacity: 0; transition: opacity 0.15s;
+}
+.memory-item:hover .del-btn { opacity: 1; }
+.memory-item .del-btn:hover { color: var(--red); }
+
+/* ── Conversation Panel ── */
+.conversation-panel {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.conversation {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px 20px 8px;
+  scroll-behavior: smooth;
+}
+.conversation::-webkit-scrollbar { width: 4px; }
+.conversation::-webkit-scrollbar-track { background: transparent; }
+.conversation::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.06); border-radius: 2px; }
+
+.empty-state {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  height: 100%; color: var(--text-faint); text-align: center; gap: 10px;
+}
+.empty-state .icon { font-size: 40px; opacity: 0.3; }
+.empty-state p { font-size: 13px; max-width: 300px; line-height: 1.5; }
+.empty-state kbd {
+  display: inline-block; padding: 1px 5px; border: 1px solid var(--border);
+  border-radius: 4px; font-family: inherit; font-size: 10px;
+  color: var(--text-dim); background: rgba(255,255,255,0.03);
+}
+
+/* Bubbles */
+.bubble-wrap {
+  margin-bottom: 4px;
+  animation: fadeUp 0.2s var(--ease);
+  position: relative;
+}
+.bubble-wrap:hover .bubble-actions { opacity: 1; }
+@keyframes fadeUp {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.bubble-wrap.user-wrap { display: flex; flex-direction: column; align-items: flex-end; }
+.bubble-wrap.aiia-wrap { display: flex; flex-direction: column; align-items: flex-start; }
+
+.bubble {
+  max-width: 80%;
+  padding: 10px 14px;
+  border-radius: 14px;
+  font-size: 13px;
+  line-height: 1.55;
+  word-wrap: break-word;
+  position: relative;
+}
+.bubble.user {
+  background: rgba(59,130,246,0.13);
+  border: 1px solid rgba(59,130,246,0.18);
+  border-bottom-right-radius: 4px;
+}
+.bubble.aiia {
+  background: rgba(168,85,247,0.08);
+  border: 1px solid rgba(168,85,247,0.12);
+  border-bottom-left-radius: 4px;
+}
+.bubble .role {
+  font-size: 9px; font-weight: 600; text-transform: uppercase;
+  letter-spacing: 0.7px; margin-bottom: 3px;
+}
+.bubble.user .role { color: var(--blue); }
+.bubble.aiia .role { color: var(--purple); }
+.bubble-content { white-space: pre-wrap; }
+
+/* AIIA bubble markdown rendering */
+.bubble.aiia .bubble-content code {
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  font-size: 12px;
+  background: rgba(255,255,255,0.06);
+  padding: 1px 4px;
+  border-radius: 3px;
+}
+.bubble.aiia .bubble-content pre {
+  background: rgba(0,0,0,0.3);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 10px 12px;
+  overflow-x: auto;
+  margin: 6px 0;
+}
+.bubble.aiia .bubble-content pre code {
+  background: none; padding: 0;
+}
+
+/* Bubble hover actions */
+.bubble-actions {
+  display: flex; gap: 2px;
+  opacity: 0;
+  transition: opacity 0.15s;
+  margin-top: 2px;
+}
+.bubble-action {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  color: var(--text-faint);
+  font-size: 10px;
+  padding: 2px 7px;
+  border-radius: 5px;
+  cursor: pointer;
+  transition: all 0.15s;
+  outline: none;
+}
+.bubble-action:hover { border-color: var(--border-hover); color: var(--text-dim); }
+.bubble-action.danger:hover { border-color: rgba(239,68,68,0.3); color: var(--red); }
+
+/* Metadata line */
+.bubble-meta {
+  font-size: 10px;
+  color: var(--text-faint);
+  margin: 0 0 8px 0;
+  padding: 0 4px;
+  display: flex; align-items: center; gap: 6px;
+}
+.bubble-meta .sep { color: rgba(255,255,255,0.1); }
+
+/* Thinking dots */
+.bubble.thinking {
+  background: rgba(168,85,247,0.05);
+  border: 1px solid rgba(168,85,247,0.08);
+  border-bottom-left-radius: 4px;
+  max-width: 80%;
+}
+.thinking-dots span {
+  display: inline-block; width: 5px; height: 5px;
+  border-radius: 50%; background: var(--purple);
+  margin: 0 2px; animation: thinking 1.4s infinite;
+}
+.thinking-dots span:nth-child(2) { animation-delay: 0.2s; }
+.thinking-dots span:nth-child(3) { animation-delay: 0.4s; }
+@keyframes thinking {
+  0%, 80%, 100% { opacity: 0.2; transform: scale(0.8); }
+  40% { opacity: 1; transform: scale(1); }
+}
+
+/* Speaking indicator */
+.speaking-icon {
+  display: inline-flex; align-items: center; gap: 2px;
+  margin-left: 6px; vertical-align: middle;
+}
+.speaking-icon .bar {
+  width: 2px; height: 8px; background: var(--purple);
+  border-radius: 1px; animation: speakBar 0.8s ease-in-out infinite;
+}
+.speaking-icon .bar:nth-child(2) { animation-delay: 0.15s; height: 12px; }
+.speaking-icon .bar:nth-child(3) { animation-delay: 0.3s; height: 6px; }
+@keyframes speakBar {
+  0%, 100% { transform: scaleY(0.4); }
+  50% { transform: scaleY(1); }
+}
+
+/* ── Input Bar ── */
+.input-bar {
+  border-top: 1px solid var(--border);
+  background: rgba(6, 6, 10, 0.85);
+  backdrop-filter: blur(30px);
+  padding: 10px 16px 12px;
+}
+
+.live-transcript {
+  width: 100%;
+  min-height: 18px;
+  font-size: 12px;
+  color: var(--cyan);
+  text-align: center;
+  font-style: italic;
+  padding: 0 12px 4px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+.live-transcript.active { opacity: 1; }
+
+.input-row {
+  display: flex; align-items: flex-end; gap: 8px;
+}
+.input-textarea {
+  flex: 1;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text);
+  font-family: inherit;
+  font-size: 13px;
+  padding: 10px 14px;
+  resize: none;
+  outline: none;
+  min-height: 40px;
+  max-height: 140px;
+  line-height: 1.4;
+  transition: border-color 0.2s;
+}
+.input-textarea:focus { border-color: var(--border-focus); }
+.input-textarea::placeholder { color: var(--text-faint); }
+
+.input-btn {
+  width: 38px; height: 38px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-dim);
+  font-size: 16px;
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  transition: all 0.15s;
+  outline: none;
+  flex-shrink: 0;
+}
+.input-btn:hover { border-color: var(--border-hover); color: var(--text); }
+.input-btn.mic-active {
+  border-color: var(--red);
+  background: rgba(239,68,68,0.1);
+  color: var(--red);
+  animation: mic-pulse 1.5s ease-in-out infinite;
+}
+@keyframes mic-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(239,68,68,0.2); }
+  50% { box-shadow: 0 0 0 8px rgba(239,68,68,0); }
+}
+.input-btn.send {
+  background: rgba(168,85,247,0.12);
+  border-color: rgba(168,85,247,0.3);
+  color: var(--purple);
+}
+.input-btn.send:hover {
+  background: rgba(168,85,247,0.2);
+}
+.input-btn.stop {
+  background: rgba(239,68,68,0.1);
+  border-color: rgba(239,68,68,0.3);
+  color: var(--red);
+}
+
+.secondary-row {
+  display: flex; align-items: center; gap: 8px;
+  margin-top: 8px; flex-wrap: wrap;
+}
+
+.toggle-btn {
+  display: flex; align-items: center; gap: 4px;
+  font-size: 11px; color: var(--text-faint);
+  padding: 4px 10px; border-radius: 14px;
+  border: 1px solid var(--border);
+  background: transparent;
+  cursor: pointer; transition: all 0.15s; outline: none;
+}
+.toggle-btn:hover { border-color: var(--border-hover); color: var(--text-dim); }
+.toggle-btn.on {
+  border-color: rgba(16,185,129,0.25);
+  color: var(--green);
+  background: rgba(16,185,129,0.05);
+}
+
+.picker-select {
+  font-size: 11px; color: var(--text-dim);
+  padding: 4px 8px; border-radius: 14px;
+  border: 1px solid var(--border);
+  background: rgba(255,255,255,0.03);
+  cursor: pointer; outline: none;
+  max-width: 140px;
+}
+.picker-select option { background: #1a1a2e; color: var(--text); }
+
+.clear-btn {
+  font-size: 11px; color: var(--text-faint);
+  padding: 4px 10px; border-radius: 14px;
+  border: 1px solid var(--border);
+  background: transparent;
+  cursor: pointer; transition: all 0.15s; outline: none;
+  margin-left: auto;
+}
+.clear-btn:hover { border-color: rgba(239,68,68,0.3); color: var(--red); }
+
+/* ── Settings Overlay ── */
+.settings-overlay {
+  display: none;
+  position: fixed; inset: 0; z-index: 100;
+  background: rgba(0,0,0,0.6);
+  backdrop-filter: blur(4px);
+  align-items: center; justify-content: center;
+}
+.settings-overlay.open { display: flex; }
+
+.settings-panel {
+  background: var(--bg-card);
+  border: 1px solid var(--border-hover);
+  border-radius: var(--radius);
+  padding: 20px;
+  width: 340px;
+  max-width: 90vw;
+}
+.settings-panel h2 { font-size: 14px; font-weight: 600; margin-bottom: 14px; }
+.setting-row {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border);
+}
+.setting-row:last-of-type { border-bottom: none; }
+.setting-label { font-size: 12px; color: var(--text-dim); }
+.setting-value { font-size: 12px; color: var(--text); }
+
+select.setting-select {
+  background: rgba(255,255,255,0.06);
+  border: 1px solid var(--border);
+  color: var(--text);
+  font-size: 11px;
+  padding: 3px 6px;
+  border-radius: 6px;
+  outline: none; cursor: pointer;
+}
+
+.settings-close {
+  margin-top: 14px; width: 100%;
+  padding: 7px; border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-dim);
+  font-size: 12px;
+  cursor: pointer; transition: all 0.2s;
+}
+.settings-close:hover { border-color: var(--border-hover); color: var(--text); }
+
+/* ── Unsupported banner ── */
+.unsupported {
+  display: none;
+  position: fixed; inset: 0; z-index: 200;
+  background: var(--bg);
+  flex-direction: column; align-items: center; justify-content: center;
+  text-align: center; padding: 40px; gap: 14px;
+}
+.unsupported.show { display: flex; }
+.unsupported h2 { font-size: 18px; }
+.unsupported p { font-size: 13px; color: var(--text-dim); max-width: 380px; line-height: 1.5; }
+
+/* ── Mobile ── */
+@media (max-width: 768px) {
+  .sidebar { position: fixed; left: 0; top: 48px; bottom: 0; z-index: 20; background: var(--bg); }
+  .sidebar.collapsed { margin-left: calc(var(--sidebar-width) * -1); }
+  .header h1 a { display: none; }
+  .bubble { max-width: 90%; }
+}
+</style>
+</head>
+<body>
+
+<!-- Unsupported browser banner -->
+<div class="unsupported" id="unsupported">
+  <h2>Speech Recognition Unavailable</h2>
+  <p>Your browser doesn't support the Web Speech API. Please use Chrome, Edge, or Safari on macOS/iOS. Text chat still works.</p>
+  <a href="/" style="color: var(--blue); font-size: 13px;">Back to Console</a>
+</div>
+
+<div class="bg-canvas"></div>
+
+<!-- Header -->
+<div class="header">
+  <div class="header-left">
+    <div class="logo">A</div>
+    <h1>AIIA Console <a href="/">Platform</a></h1>
+  </div>
+  <div class="header-right">
+    <div class="status-pill" title="AIIA / Ollama health">
+      <div class="dot" id="headerHealthAiia" title="AIIA"></div>
+      <span style="font-size:9px;color:var(--text-faint)">AIIA</span>
+      <div class="dot" id="headerHealthOllama" title="Ollama"></div>
+      <span style="font-size:9px;color:var(--text-faint)">LLM</span>
+    </div>
+    <div class="status-pill">
+      <div class="dot" id="statusDot"></div>
+      <span id="statusText">Ready</span>
+    </div>
+    <button class="icon-btn" id="sidebarToggle" title="Toggle sidebar">&#9776;</button>
+    <button class="icon-btn" id="settingsBtn" title="Settings">&#9881;</button>
+  </div>
+</div>
+
+<!-- Main layout -->
+<div class="main-layout">
+  <!-- Sidebar -->
+  <aside class="sidebar" id="sidebar">
+    <!-- AIIA Identity -->
+    <div class="sidebar-section">
+      <div class="identity-card" id="identityCard">
+        <div class="identity-header">
+          <div class="identity-avatar">A</div>
+          <div class="identity-info">
+            <h3>AIIA</h3>
+            <span class="model-tag" id="modelTag">loading...</span>
+          </div>
+        </div>
+        <div class="identity-stats">
+          <div class="stat-item">
+            <span class="stat-value" id="statDocs">--</span>
+            <span class="stat-label">Knowledge</span>
+          </div>
+          <div class="stat-item">
+            <span class="stat-value" id="statMemories">--</span>
+            <span class="stat-label">Memories</span>
+          </div>
+          <div class="stat-item">
+            <span class="stat-value" id="statSupermemory">--</span>
+            <span class="stat-label">Supermemory</span>
+          </div>
+          <div class="stat-item">
+            <span class="stat-value" id="statCtx">--</span>
+            <span class="stat-label">Context</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Services -->
+    <div class="sidebar-section">
+      <div class="sidebar-title">Services</div>
+      <div class="health-grid" id="healthGrid">
+        <div class="health-row"><span class="health-name">AIIA</span><span class="health-ms" id="healthAiiaMs">--</span><span class="health-dot unknown" id="healthAiia"></span></div>
+        <div class="health-row"><span class="health-name">Ollama</span><span class="health-ms" id="healthOllamaMs">--</span><span class="health-dot unknown" id="healthOllama"></span></div>
+        <div class="health-row"><span class="health-name">Backend</span><span class="health-ms" id="healthBackendMs">--</span><span class="health-dot unknown" id="healthBackend"></span></div>
+        <div class="health-row"><span class="health-name">Platform</span><span class="health-ms" id="healthPlatformMs">--</span><span class="health-dot unknown" id="healthPlatform"></span></div>
+      </div>
+    </div>
+
+    <!-- Recent Activity -->
+    <div class="sidebar-section">
+      <div class="sidebar-title">Recent Activity</div>
+      <div class="activity-list" id="activityList">
+        <div class="activity-item"><span class="activity-text" style="color:var(--text-faint)">Loading...</span></div>
+      </div>
+    </div>
+
+    <!-- Tokens Today -->
+    <div class="sidebar-section">
+      <div class="sidebar-title">Tokens Today</div>
+      <div class="token-card" id="tokenCard">
+        <div class="token-row">
+          <span class="token-label">Local</span>
+          <span class="token-value free" id="tokenLocal">0 FREE</span>
+        </div>
+        <div class="token-row">
+          <span class="token-label">Claude</span>
+          <span class="token-value cost" id="tokenClaude">$0.00</span>
+        </div>
+        <div class="token-row">
+          <span class="token-label">Total Requests</span>
+          <span class="token-value" id="tokenRequests">0</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Memory Browser -->
+    <div class="sidebar-section">
+      <div class="sidebar-title">Memory Browser</div>
+      <div class="memory-cat-list" id="memoryCats"></div>
+      <div class="memory-items" id="memoryItems">
+        <div class="activity-item"><span class="activity-text" style="color:var(--text-faint)">Select a category</span></div>
+      </div>
+    </div>
+  </aside>
+
+  <!-- Conversation Panel -->
+  <div class="conversation-panel">
+    <div class="conversation" id="conversation">
+      <div class="empty-state" id="emptyState">
+        <div class="icon">&#128172;</div>
+        <p>Just start talking — AIIA is listening.<br>She'll speak back, then listen again.<br><kbd>Space</kbd> mic toggle &middot; <kbd>Esc</kbd> stop</p>
+      </div>
+    </div>
+
+    <!-- Input Bar -->
+    <div class="input-bar">
+      <div class="live-transcript" id="liveTranscript">&nbsp;</div>
+      <div class="input-row">
+        <textarea class="input-textarea" id="inputTextarea" placeholder="Message AIIA..." rows="1"></textarea>
+        <button class="input-btn" id="micBtn" title="Toggle mic (Space)">&#127908;</button>
+        <button class="input-btn send" id="sendBtn" title="Send (Enter)">&#9654;</button>
+      </div>
+      <div class="secondary-row">
+        <button class="toggle-btn on" id="autoSpeakBtn">&#128264; Auto-speak</button>
+        <button class="toggle-btn on" id="googleTTSBtn">&#9729; Google TTS</button>
+        <select class="picker-select" id="voiceSelect" title="TTS Voice">
+          <option value="Samantha">Samantha</option>
+          <option value="Alex">Alex</option>
+          <option value="Daniel">Daniel</option>
+          <option value="Karen">Karen</option>
+          <option value="Moira">Moira</option>
+          <option value="Tessa">Tessa</option>
+        </select>
+        <select class="picker-select" id="deviceSelect" title="Audio Input Device">
+          <option value="">Default Mic</option>
+        </select>
+        <button class="clear-btn" id="clearBtn">Clear</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Settings overlay -->
+<div class="settings-overlay" id="settingsOverlay">
+  <div class="settings-panel">
+    <h2>Settings</h2>
+    <div class="setting-row">
+      <span class="setting-label">Speech Language</span>
+      <select class="setting-select" id="langSelect">
+        <option value="en-US">English (US)</option>
+        <option value="en-GB">English (UK)</option>
+        <option value="en-AU">English (AU)</option>
+      </select>
+    </div>
+    <div class="setting-row">
+      <span class="setting-label">Browser Speech</span>
+      <span class="setting-value" id="browserSupport">Checking...</span>
+    </div>
+    <div class="setting-row">
+      <span class="setting-label">Audio Devices</span>
+      <span class="setting-value" id="deviceCount">--</span>
+    </div>
+    <button class="settings-close" id="settingsClose">Done</button>
+  </div>
+</div>
+
+<script>
+/* ═══════════════════════════════════════════════════════════
+   AIIA Console — Modular JS (React-Portable)
+   Modules: AppState, API, AudioManager, ChatManager,
+            SidebarManager, WSManager
+   ═══════════════════════════════════════════════════════════ */
+
+// ═══ AppState ═══════════════════════════════════════════
+const AppState = {
+  listening: false,
+  autoSpeak: true,
+  processing: false,
+  streaming: false,
+  isSpeaking: false,
+  sidebarOpen: false,   // collapsed by default — conversation gets full width
+  activeReader: null,   // ReadableStreamDefaultReader for cancel
+  editIndex: null,      // index of message being edited
+  speakTimer: null,     // timeout for speaking indicator cleanup
+  googleTTS: true,      // prefer Google Cloud TTS over macOS say
+  currentAudio: null,   // HTMLAudioElement ref for Google TTS playback
+  audioUnlocked: false, // Chrome autoplay policy — unlocked on first interaction
+};
+
+// Persistent Audio element — reused across all TTS plays to avoid autoplay blocks
+const _ttsAudio = new Audio();
+_ttsAudio.preload = 'auto';
+
+// Unlock audio on ANY user interaction (click, key, tap)
+function _unlockAudio() {
+  if (AppState.audioUnlocked) return;
+  _ttsAudio.play().then(() => {
+    _ttsAudio.pause();
+    _ttsAudio.currentTime = 0;
+    AppState.audioUnlocked = true;
+    console.log('[TTS] Audio element unlocked');
+  }).catch(() => {});
+}
+document.addEventListener('click', _unlockAudio, { once: false });
+document.addEventListener('keydown', _unlockAudio, { once: false });
+
+// ═══ API Module ═════════════════════════════════════════
+const API = {
+  async sendStream(message, mode = 'text') {
+    return fetch('/api/chat/stream', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message, mode }),
+    });
+  },
+  async stopStream() {
+    return fetch('/api/chat/stop', { method: 'POST' });
+  },
+  async getHistory() {
+    const r = await fetch('/api/chat/history');
+    return r.json();
+  },
+  async clearHistory() {
+    return fetch('/api/chat/history', { method: 'DELETE' });
+  },
+  async editMessage(index, message) {
+    return fetch(`/api/chat/history/${index}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message }),
+    });
+  },
+  async deleteMessage(index) {
+    return fetch(`/api/chat/history/${index}`, { method: 'DELETE' });
+  },
+  async ttsAudio(text, voice = 'aiia') {
+    const resp = await fetch('/api/tts', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text, voice }),
+    });
+    if (!resp.ok) return null;
+    const ct = resp.headers.get('content-type') || '';
+    if (ct.includes('audio')) return resp.blob();
+    return null; // fallback response (macOS say was used)
+  },
+  async speak(text, voice) {
+    return fetch('/api/speak', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text, voice }),
+    });
+  },
+  async stopSpeak() {
+    return fetch('/api/speak/stop', { method: 'POST' });
+  },
+  async getAiiaStatus() {
+    const r = await fetch('/api/aiia');
+    return r.json();
+  },
+  async getMonitor() {
+    const r = await fetch('/api/monitor');
+    return r.json();
+  },
+  async getTokens() {
+    const r = await fetch('/api/tokens/today');
+    return r.json();
+  },
+  async getMemories(category, limit = 20) {
+    const params = category ? `?category=${category}&limit=${limit}` : `?limit=${limit}`;
+    const r = await fetch(`/api/memories${params}`);
+    return r.json();
+  },
+  async deleteMemory(id) {
+    return fetch(`/api/memories/${id}`, { method: 'DELETE' });
+  },
+};
+
+// ═══ DOM References ═════════════════════════════════════
+const $ = id => document.getElementById(id);
+const conversationEl = $('conversation');
+const emptyState = $('emptyState');
+const inputTextarea = $('inputTextarea');
+const micBtn = $('micBtn');
+const sendBtn = $('sendBtn');
+const liveTranscript = $('liveTranscript');
+const statusDot = $('statusDot');
+const statusText = $('statusText');
+const autoSpeakBtn = $('autoSpeakBtn');
+const clearBtn = $('clearBtn');
+const voiceSelect = $('voiceSelect');
+const deviceSelect = $('deviceSelect');
+const langSelect = $('langSelect');
+const settingsBtn = $('settingsBtn');
+const settingsOverlay = $('settingsOverlay');
+const settingsClose = $('settingsClose');
+const sidebarToggle = $('sidebarToggle');
+const sidebar = $('sidebar');
+const browserSupport = $('browserSupport');
+
+// ═══ AudioManager ═══════════════════════════════════════
+const AudioManager = {
+  recognition: null,
+  SpeechRecognition: window.SpeechRecognition || window.webkitSpeechRecognition,
+  currentStream: null,
+
+  async init() {
+    if (!this.SpeechRecognition) {
+      browserSupport.textContent = 'Not supported';
+      browserSupport.style.color = 'var(--red)';
+      return;
+    }
+    browserSupport.textContent = 'Supported';
+    browserSupport.style.color = 'var(--green)';
+
+    // Request blanket mic permission on load
+    try {
+      const savedDevice = localStorage.getItem('aiia-audio-device');
+      const constraints = savedDevice
+        ? { audio: { deviceId: { exact: savedDevice } } }
+        : { audio: true };
+      this.currentStream = await navigator.mediaDevices.getUserMedia(constraints);
+    } catch (e) {
+      // Fallback to any mic
+      try {
+        this.currentStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      } catch (e2) {
+        console.warn('Mic permission denied:', e2);
+      }
+    }
+
+    await this.enumerateDevices();
+    this.initRecognition();
+    this.listenForDeviceChanges();
+  },
+
+  async enumerateDevices() {
+    try {
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      const audioInputs = devices.filter(d => d.kind === 'audioinput');
+      const saved = localStorage.getItem('aiia-audio-device');
+
+      deviceSelect.innerHTML = '<option value="">Default Mic</option>';
+      audioInputs.forEach(d => {
+        const opt = document.createElement('option');
+        opt.value = d.deviceId;
+        opt.textContent = d.label || `Mic ${d.deviceId.slice(0, 8)}`;
+        if (d.deviceId === saved) opt.selected = true;
+        deviceSelect.appendChild(opt);
+      });
+
+      $('deviceCount').textContent = `${audioInputs.length} found`;
+    } catch (e) {
+      console.warn('Cannot enumerate devices:', e);
+    }
+  },
+
+  initRecognition() {
+    if (!this.SpeechRecognition) return;
+
+    this.recognition = new this.SpeechRecognition();
+    this.recognition.continuous = true;
+    this.recognition.interimResults = true;
+    this.recognition.lang = langSelect.value;
+    this.recognition.maxAlternatives = 1;
+
+    this.recognition.onstart = () => {
+      AppState.listening = true;
+      micBtn.classList.add('mic-active');
+      setStatus('Listening...', 'on');
+    };
+
+    this.recognition.onend = () => {
+      if (AppState.listening) {
+        try { this.recognition.start(); } catch (e) {}
+      } else {
+        micBtn.classList.remove('mic-active');
+        setStatus('Ready', 'on');
+      }
+    };
+
+    this.recognition.onerror = (e) => {
+      if (e.error === 'no-speech' || e.error === 'aborted') return;
+      console.warn('Speech error:', e.error);
+      if (e.error === 'not-allowed') {
+        setStatus('Mic denied', 'off');
+        AppState.listening = false;
+        micBtn.classList.remove('mic-active');
+      }
+    };
+
+    this.recognition.onresult = (event) => {
+      let interim = '';
+      let final = '';
+      for (let i = event.resultIndex; i < event.results.length; i++) {
+        const transcript = event.results[i][0].transcript;
+        if (event.results[i].isFinal) {
+          final += transcript;
+        } else {
+          interim += transcript;
+        }
+      }
+      if (interim) {
+        liveTranscript.textContent = interim;
+        liveTranscript.classList.add('active');
+      }
+      if (final && final.trim()) {
+        liveTranscript.textContent = '\u00A0';
+        liveTranscript.classList.remove('active');
+        ChatManager.send(final.trim(), 'voice');
+      }
+    };
+  },
+
+  toggleMic() {
+    if (!this.recognition) return;
+    if (AppState.listening) {
+      AppState.listening = false;
+      this.recognition.stop();
+      micBtn.classList.remove('mic-active');
+      setStatus('Ready', 'on');
+      liveTranscript.textContent = '\u00A0';
+      liveTranscript.classList.remove('active');
+    } else {
+      AppState.listening = true;
+      this.recognition.lang = langSelect.value;
+      try {
+        this.recognition.start();
+      } catch (e) {
+        this.recognition.stop();
+        setTimeout(() => { try { this.recognition.start(); } catch (e2) {} }, 150);
+      }
+    }
+  },
+
+  async switchDevice(deviceId) {
+    // Stop current stream
+    if (this.currentStream) {
+      this.currentStream.getTracks().forEach(t => t.stop());
+    }
+
+    try {
+      const constraints = deviceId
+        ? { audio: { deviceId: { exact: deviceId } } }
+        : { audio: true };
+      this.currentStream = await navigator.mediaDevices.getUserMedia(constraints);
+      if (deviceId) {
+        localStorage.setItem('aiia-audio-device', deviceId);
+      } else {
+        localStorage.removeItem('aiia-audio-device');
+      }
+
+      // Restart recognition if active
+      if (AppState.listening && this.recognition) {
+        this.recognition.stop();
+        setTimeout(() => {
+          try { this.recognition.start(); } catch (e) {}
+        }, 300);
+      }
+    } catch (e) {
+      console.warn('Failed to switch audio device:', e);
+      // Fallback
+      try {
+        this.currentStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      } catch (e2) {}
+    }
+  },
+
+  listenForDeviceChanges() {
+    navigator.mediaDevices.addEventListener('devicechange', async () => {
+      await this.enumerateDevices();
+      const saved = localStorage.getItem('aiia-audio-device');
+      if (saved) {
+        const stillExists = Array.from(deviceSelect.options).some(o => o.value === saved);
+        if (!stillExists) {
+          // Saved device disappeared, fall back
+          localStorage.removeItem('aiia-audio-device');
+          deviceSelect.value = '';
+          await this.switchDevice('');
+        }
+      }
+      // Restart recognition gracefully
+      if (AppState.listening && this.recognition) {
+        this.recognition.stop();
+        setTimeout(() => {
+          try { this.recognition.start(); } catch (e) {}
+        }, 300);
+      }
+    });
+  },
+};
+
+// ═══ ChatManager ════════════════════════════════════════
+const ChatManager = {
+  messageIndex: 0, // tracks server-side indices
+
+  async send(text, mode = 'text') {
+    if (AppState.processing || !text.trim()) return;
+    AppState.processing = true;
+    AppState.streaming = true;
+    updateSendButton();
+
+    // Pause mic while processing + speaking to prevent feedback
+    if (AppState.listening && AudioManager.recognition) {
+      AppState._wasListening = true;
+      AudioManager.recognition.stop();
+      AppState.listening = false;
+      micBtn.classList.remove('mic-active');
+    }
+
+    const userIdx = this.messageIndex++;
+    this.addBubble('user', text, userIdx);
+    setStatus('Thinking...', 'warn');
+    this.addThinking();
+
+    let streamMeta = null;
+    let fullAnswer = '';
+    let streamBubble = null;
+    let streamContent = null;
+
+    try {
+      const resp = await API.sendStream(text, mode);
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+
+      const reader = resp.body.getReader();
+      AppState.activeReader = reader;
+      const decoder = new TextDecoder();
+      let buffer = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop();
+
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue;
+          let data;
+          try { data = JSON.parse(line.slice(6)); } catch (e) { continue; }
+
+          if (data.type === 'meta') {
+            this.removeThinking();
+            streamBubble = this.addStreamBubble();
+            streamContent = streamBubble.querySelector('.bubble-content');
+            streamMeta = data;
+            setStatus('Streaming...', 'on');
+            this.addMetaLine(data, null);
+          } else if (data.type === 'chunk') {
+            if (!streamBubble) {
+              this.removeThinking();
+              streamBubble = this.addStreamBubble();
+              streamContent = streamBubble.querySelector('.bubble-content');
+            }
+            fullAnswer += data.content;
+            streamContent.textContent = fullAnswer;
+            conversationEl.scrollTop = conversationEl.scrollHeight;
+          } else if (data.type === 'done') {
+            if (data.answer) fullAnswer = data.answer;
+            if (data.latency_ms) this.updateMetaLatency(data.latency_ms);
+          } else if (data.type === 'cancelled') {
+            // Stream was cancelled
+          } else if (data.type === 'error') {
+            this.removeThinking();
+            this.addBubble('aiia', data.message || 'Stream error.');
+          }
+        }
+      }
+
+      // Flush remaining buffer (catches done event if it was the last thing)
+      if (buffer.trim().startsWith('data: ')) {
+        try {
+          const data = JSON.parse(buffer.trim().slice(6));
+          if (data.type === 'done') {
+            if (data.answer) fullAnswer = data.answer;
+            if (data.latency_ms) this.updateMetaLatency(data.latency_ms);
+          } else if (data.type === 'chunk' && data.content) {
+            if (!streamBubble) {
+              this.removeThinking();
+              streamBubble = this.addStreamBubble();
+              streamContent = streamBubble.querySelector('.bubble-content');
+            }
+            fullAnswer += data.content;
+            streamContent.textContent = fullAnswer;
+          }
+        } catch (e) { /* ignore parse errors in trailing buffer */ }
+      }
+
+      // Clean up IDs
+      if (streamBubble) {
+        streamBubble.removeAttribute('id');
+        const sc = streamBubble.querySelector('#streamContent');
+        if (sc) sc.removeAttribute('id');
+      }
+      const metaEl = document.getElementById('streamMeta');
+      if (metaEl) metaEl.removeAttribute('id');
+
+      if (!fullAnswer && !streamBubble) {
+        this.removeThinking();
+        this.addBubble('aiia', 'No response from AIIA.');
+      }
+
+      this.messageIndex++; // AIIA response
+
+      setStatus(AppState.listening ? 'Listening...' : 'Ready', 'on');
+
+      // Auto-speak
+      console.log('[AIIA] Stream done. autoSpeak:', AppState.autoSpeak, 'answerLen:', fullAnswer.length);
+      if (AppState.autoSpeak && fullAnswer) {
+        console.log('[AIIA] Auto-speaking', fullAnswer.length, 'chars');
+        await this.speak(fullAnswer, streamBubble);
+      }
+    } catch (e) {
+      console.error('[AIIA] Stream error:', e);
+      this.removeThinking();
+      this.addBubble('aiia', 'Could not reach AIIA.');
+      setStatus('Error', 'off');
+      setTimeout(() => setStatus(AppState.listening ? 'Listening...' : 'Ready', 'on'), 3000);
+    }
+
+    AppState.processing = false;
+    AppState.streaming = false;
+    AppState.activeReader = null;
+    updateSendButton();
+
+    // If auto-speak is off but we paused the mic, resume it now
+    if (AppState._wasListening && !AppState.isSpeaking) {
+      AppState._wasListening = false;
+      setTimeout(() => {
+        if (!AppState.listening && !AppState.processing) {
+          AudioManager.toggleMic();
+        }
+      }, 300);
+    }
+  },
+
+  async stopStream() {
+    if (AppState.activeReader) {
+      try { await AppState.activeReader.cancel(); } catch (e) {}
+    }
+    await API.stopStream();
+    AppState.streaming = false;
+    AppState.processing = false;
+    AppState.activeReader = null;
+    updateSendButton();
+    setStatus(AppState.listening ? 'Listening...' : 'Ready', 'on');
+  },
+
+  addBubble(role, text, index) {
+    emptyState.style.display = 'none';
+    const wrap = document.createElement('div');
+    wrap.className = `bubble-wrap ${role}-wrap`;
+    if (index !== undefined) wrap.dataset.index = index;
+
+    const bubble = document.createElement('div');
+    bubble.className = `bubble ${role}`;
+
+    const roleLabel = document.createElement('div');
+    roleLabel.className = 'role';
+    roleLabel.textContent = role === 'user' ? 'You' : 'AIIA';
+    bubble.appendChild(roleLabel);
+
+    const content = document.createElement('div');
+    content.className = 'bubble-content';
+    content.textContent = text;
+    bubble.appendChild(content);
+    wrap.appendChild(bubble);
+
+    // Action buttons
+    const actions = document.createElement('div');
+    actions.className = 'bubble-actions';
+    if (role === 'user') {
+      actions.innerHTML = `
+        <button class="bubble-action" onclick="ChatManager.editBubble(${index})">edit</button>
+        <button class="bubble-action danger" onclick="ChatManager.deleteBubble(${index})">delete</button>
+      `;
+    } else {
+      actions.innerHTML = `
+        <button class="bubble-action" onclick="ChatManager.copyBubble(this)">copy</button>
+        <button class="bubble-action" onclick="ChatManager.speakBubble(this)">speak</button>
+      `;
+    }
+    wrap.appendChild(actions);
+
+    conversationEl.appendChild(wrap);
+    conversationEl.scrollTop = conversationEl.scrollHeight;
+    return bubble;
+  },
+
+  addStreamBubble() {
+    emptyState.style.display = 'none';
+    const wrap = document.createElement('div');
+    wrap.className = 'bubble-wrap aiia-wrap';
+
+    const bubble = document.createElement('div');
+    bubble.className = 'bubble aiia';
+    bubble.id = 'streamBubble';
+
+    const roleLabel = document.createElement('div');
+    roleLabel.className = 'role';
+    roleLabel.textContent = 'AIIA';
+    bubble.appendChild(roleLabel);
+
+    const content = document.createElement('div');
+    content.className = 'bubble-content';
+    content.id = 'streamContent';
+    bubble.appendChild(content);
+    wrap.appendChild(bubble);
+
+    // Actions (copy + speak) added after stream completes
+    const actions = document.createElement('div');
+    actions.className = 'bubble-actions';
+    actions.innerHTML = `
+      <button class="bubble-action" onclick="ChatManager.copyBubble(this)">copy</button>
+      <button class="bubble-action" onclick="ChatManager.speakBubble(this)">speak</button>
+    `;
+    wrap.appendChild(actions);
+
+    conversationEl.appendChild(wrap);
+    conversationEl.scrollTop = conversationEl.scrollHeight;
+    return bubble;
+  },
+
+  addThinking() {
+    emptyState.style.display = 'none';
+    const wrap = document.createElement('div');
+    wrap.className = 'bubble-wrap aiia-wrap';
+    wrap.id = 'thinkingWrap';
+
+    const bubble = document.createElement('div');
+    bubble.className = 'bubble thinking';
+
+    const roleLabel = document.createElement('div');
+    roleLabel.className = 'role';
+    roleLabel.textContent = 'AIIA';
+    bubble.appendChild(roleLabel);
+
+    const dots = document.createElement('div');
+    dots.className = 'thinking-dots';
+    dots.innerHTML = '<span></span><span></span><span></span>';
+    bubble.appendChild(dots);
+    wrap.appendChild(bubble);
+
+    conversationEl.appendChild(wrap);
+    conversationEl.scrollTop = conversationEl.scrollHeight;
+  },
+
+  removeThinking() {
+    const el = document.getElementById('thinkingWrap');
+    if (el) el.remove();
+  },
+
+  addMetaLine(meta, latencyMs) {
+    const el = document.createElement('div');
+    el.className = 'bubble-meta';
+    el.id = 'streamMeta';
+
+    const parts = [];
+    if (meta.knowledge_hits > 0) parts.push(`${meta.knowledge_hits} docs`);
+    if (meta.memory_hits > 0) parts.push(`${meta.memory_hits} mem`);
+    if (meta.session_hits > 0) parts.push(`${meta.session_hits} sess`);
+    if (latencyMs) parts.push(`${(latencyMs / 1000).toFixed(1)}s`);
+    if (meta.model) parts.push(meta.model);
+
+    el.innerHTML = parts.join(' <span class="sep">&middot;</span> ');
+    conversationEl.appendChild(el);
+    conversationEl.scrollTop = conversationEl.scrollHeight;
+  },
+
+  updateMetaLatency(latencyMs) {
+    const el = document.getElementById('streamMeta');
+    if (!el) return;
+    const text = `${(latencyMs / 1000).toFixed(1)}s`;
+    // Append latency if not already present
+    if (!el.innerHTML.match(/[\d.]+s/)) {
+      el.innerHTML += ` <span class="sep">&middot;</span> ${text}`;
+    } else {
+      el.innerHTML = el.innerHTML.replace(/[\d.]+s/, text);
+    }
+  },
+
+  async editBubble(index) {
+    // Find the bubble content
+    const wraps = conversationEl.querySelectorAll('.bubble-wrap[data-index="' + index + '"]');
+    if (!wraps.length) return;
+    const content = wraps[0].querySelector('.bubble-content');
+    if (!content) return;
+
+    // Put text into input for editing
+    inputTextarea.value = content.textContent;
+    inputTextarea.focus();
+    AppState.editIndex = index;
+    // Visual hint
+    inputTextarea.style.borderColor = 'var(--amber)';
+  },
+
+  async deleteBubble(index) {
+    try {
+      await API.deleteMessage(index);
+      // Reload full history to re-sync indices
+      await this.loadHistory();
+    } catch (e) {
+      console.warn('Delete failed:', e);
+    }
+  },
+
+  copyBubble(btn) {
+    const wrap = btn.closest('.bubble-wrap');
+    const content = wrap?.querySelector('.bubble-content');
+    if (content) {
+      navigator.clipboard.writeText(content.textContent).then(() => {
+        btn.textContent = 'copied';
+        setTimeout(() => btn.textContent = 'copy', 1500);
+      });
+    }
+  },
+
+  speakBubble(btn) {
+    const wrap = btn.closest('.bubble-wrap');
+    const content = wrap?.querySelector('.bubble-content');
+    const bubble = wrap?.querySelector('.bubble');
+    if (content) {
+      this.speak(content.textContent, bubble);
+    }
+  },
+
+  clearSpeakingState() {
+    AppState.isSpeaking = false;
+    if (AppState.speakTimer) { clearTimeout(AppState.speakTimer); AppState.speakTimer = null; }
+    document.querySelectorAll('.speaking-icon').forEach(el => el.remove());
+
+    // Auto-resume mic after AIIA finishes speaking (conversation loop)
+    if (AppState._wasListening) {
+      AppState._wasListening = false;
+      setTimeout(() => {
+        if (!AppState.listening && !AppState.processing) {
+          AudioManager.toggleMic();
+        }
+      }, 300); // Brief pause so mic doesn't catch tail-end of audio
+    }
+    setStatus(AppState.listening ? 'Listening...' : 'Ready', 'on');
+  },
+
+  async stopSpeaking() {
+    if (!AppState.isSpeaking) return;
+    // Stop Google TTS audio if playing
+    if (AppState.currentAudio) {
+      AppState.currentAudio.pause();
+      AppState.currentAudio.currentTime = 0;
+      AppState.currentAudio = null;
+    }
+    // Stop macOS say
+    try { await API.stopSpeak(); } catch (e) {}
+    this.clearSpeakingState();
+  },
+
+  async speak(text, bubbleEl) {
+    // Strip markdown so TTS doesn't read "asterisk", "plus", etc.
+    text = text
+      .replace(/\*\*(.+?)\*\*/g, '$1')   // **bold**
+      .replace(/\*(.+?)\*/g, '$1')        // *italic*
+      .replace(/__(.+?)__/g, '$1')        // __bold__
+      .replace(/_(.+?)_/g, '$1')          // _italic_
+      .replace(/~~(.+?)~~/g, '$1')        // ~~strikethrough~~
+      .replace(/^#{1,6}\s+/gm, '')        // # headings
+      .replace(/^\s*[\*\-\+]\s+/gm, '')   // * - + bullet lists
+      .replace(/^\s*\d+\.\s+/gm, '')      // 1. numbered lists
+      .replace(/`{1,3}[^`]*`{1,3}/g, '')  // `code` and ```blocks```
+      .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1') // [links](url)
+      .replace(/\n{2,}/g, '. ')           // paragraph breaks → pause
+      .replace(/\n/g, ' ')                // remaining newlines
+      .trim();
+
+    // Clean up any previous speaking indicators
+    this.clearSpeakingState();
+
+    AppState.isSpeaking = true;
+    setStatus('Speaking...', 'on');
+
+    if (bubbleEl) {
+      const icon = document.createElement('span');
+      icon.className = 'speaking-icon';
+      icon.title = 'Click to stop';
+      icon.style.cursor = 'pointer';
+      icon.innerHTML = '<span class="bar"></span><span class="bar"></span><span class="bar"></span>';
+      icon.addEventListener('click', (e) => {
+        e.stopPropagation();
+        ChatManager.stopSpeaking();
+      });
+      const roleEl = bubbleEl.querySelector('.role');
+      if (roleEl) roleEl.appendChild(icon);
+    }
+
+    try {
+      // Try Google Cloud TTS first (higher quality, faster)
+      if (AppState.googleTTS) {
+        console.log('[TTS] Requesting Google TTS audio...');
+        const blob = await API.ttsAudio(text, 'aiia');
+        console.log('[TTS] Got blob:', blob ? `${blob.size} bytes, type=${blob.type}` : 'null');
+        if (blob && blob.size > 0) {
+          // Revoke previous object URL if any
+          if (_ttsAudio._objectUrl) {
+            URL.revokeObjectURL(_ttsAudio._objectUrl);
+          }
+          const url = URL.createObjectURL(blob);
+          _ttsAudio._objectUrl = url;
+          _ttsAudio.src = url;
+          AppState.currentAudio = _ttsAudio;
+
+          _ttsAudio.onended = () => {
+            console.log('[TTS] Audio playback ended');
+            URL.revokeObjectURL(url);
+            _ttsAudio._objectUrl = null;
+            AppState.currentAudio = null;
+            this.clearSpeakingState();
+          };
+          _ttsAudio.onerror = (e) => {
+            console.error('[TTS] Audio playback error:', e);
+            URL.revokeObjectURL(url);
+            _ttsAudio._objectUrl = null;
+            AppState.currentAudio = null;
+            this.clearSpeakingState();
+          };
+          try {
+            await _ttsAudio.play();
+            console.log('[TTS] Audio playing');
+          } catch (playErr) {
+            console.error('[TTS] play() failed:', playErr);
+            URL.revokeObjectURL(url);
+            _ttsAudio._objectUrl = null;
+            AppState.currentAudio = null;
+            this.clearSpeakingState();
+          }
+          return;
+        }
+        console.log('[TTS] No blob — falling through to macOS say');
+      }
+
+      // Fallback: macOS say
+      await API.speak(text, voiceSelect.value);
+      // Fallback timeout — cleared early if speech_done WS arrives
+      const words = text.split(/\s+/).length;
+      const estimatedMs = Math.max(1500, (words / 2.5) * 1000);
+      AppState.speakTimer = setTimeout(() => {
+        this.clearSpeakingState();
+      }, estimatedMs);
+    } catch (e) {
+      this.clearSpeakingState();
+    }
+  },
+
+  async loadHistory() {
+    try {
+      const data = await API.getHistory();
+      const history = data.history || [];
+
+      // Clear conversation
+      conversationEl.innerHTML = '';
+      conversationEl.appendChild(emptyState);
+
+      if (history.length === 0) {
+        emptyState.style.display = 'flex';
+        this.messageIndex = 0;
+        return;
+      }
+
+      emptyState.style.display = 'none';
+      this.messageIndex = 0;
+      for (const msg of history) {
+        const role = msg.role === 'user' ? 'user' : 'aiia';
+        this.addBubble(role, msg.content, this.messageIndex);
+        this.messageIndex++;
+      }
+    } catch (e) {
+      console.warn('Could not load history:', e);
+    }
+  },
+
+  async clear() {
+    try {
+      await API.clearHistory();
+    } catch (e) {}
+    conversationEl.innerHTML = '';
+    conversationEl.appendChild(emptyState);
+    emptyState.style.display = 'flex';
+    this.messageIndex = 0;
+  },
+};
+
+// ═══ SidebarManager ═════════════════════════════════════
+const SidebarManager = {
+  activeMemoryCat: null,
+
+  async loadAll() {
+    await Promise.all([
+      this.loadAiiaStatus(),
+      this.loadMonitor(),
+      this.loadTokens(),
+      this.loadActivity(),
+    ]);
+  },
+
+  async loadAiiaStatus() {
+    try {
+      const data = await API.getAiiaStatus();
+      if (data.status === 'unreachable') {
+        $('modelTag').textContent = 'offline';
+        return;
+      }
+      $('modelTag').textContent = data.model || 'unknown';
+
+      const knowledge = data.knowledge || {};
+      const memory = data.memory || {};
+      $('statDocs').textContent = (knowledge.knowledge_docs || 0).toLocaleString();
+      $('statMemories').textContent = memory.total_memories || 0;
+
+      // Supermemory status
+      const sm = data.supermemory || {};
+      $('statSupermemory').textContent = sm.status === 'connected' ? 'OK' : (sm.status || '--');
+
+      // Context
+      const ctx = data.config || {};
+      $('statCtx').textContent = ctx.num_ctx ? `${Math.round(ctx.num_ctx / 1024)}K` : '--';
+
+      // Memory categories for browser
+      const cats = memory.by_category || {};
+      this.renderMemoryCategories(cats);
+    } catch (e) {
+      $('modelTag').textContent = 'error';
+    }
+  },
+
+  async loadMonitor() {
+    try {
+      const data = await API.getMonitor();
+      const services = data.services || {};
+      this.updateHealth(services);
+    } catch (e) {}
+  },
+
+  updateHealth(services) {
+    const map = {
+      aiia: { dot: $('healthAiia'), ms: $('healthAiiaMs') },
+      ollama: { dot: $('healthOllama'), ms: $('healthOllamaMs') },
+      backend: { dot: $('healthBackend'), ms: $('healthBackendMs') },
+      platform: { dot: $('healthPlatform'), ms: $('healthPlatformMs') },
+    };
+    for (const [id, els] of Object.entries(map)) {
+      const svc = services[id];
+      if (!svc) continue;
+      els.dot.className = `health-dot ${svc.status || 'unknown'}`;
+      els.ms.textContent = svc.response_time_ms != null ? `${Math.round(svc.response_time_ms)}ms` : '--';
+    }
+  },
+
+  async loadTokens() {
+    try {
+      const data = await API.getTokens();
+      this.updateTokens(data);
+    } catch (e) {}
+  },
+
+  updateTokens(data) {
+    const bp = data.by_provider || {};
+    const local = bp.local || bp.LOCAL || {};
+    const claude = {};
+    let claudeCost = 0;
+    for (const [k, v] of Object.entries(bp)) {
+      if (k.toLowerCase().startsWith('anthropic') || k.toLowerCase().startsWith('claude') || k === 'local_routed') {
+        claudeCost += v.cost || 0;
+      }
+    }
+
+    $('tokenLocal').textContent = `${((local.tokens || 0) / 1000).toFixed(0)}K FREE`;
+    $('tokenClaude').textContent = `$${(claudeCost || data.total_cost || 0).toFixed(4)}`;
+    $('tokenRequests').textContent = data.total_requests || 0;
+  },
+
+  async loadActivity() {
+    try {
+      // Load decisions + WIP + lessons
+      const [decisions, wip, lessons] = await Promise.all([
+        API.getMemories('decisions', 5),
+        API.getMemories('wip', 3),
+        API.getMemories('lessons', 3),
+      ]);
+
+      const items = [];
+      for (const m of (decisions.memories || [])) {
+        items.push({ text: m.content || m.text || '', cat: 'decision' });
+      }
+      for (const m of (wip.memories || [])) {
+        items.push({ text: m.content || m.text || '', cat: 'wip' });
+      }
+      for (const m of (lessons.memories || [])) {
+        items.push({ text: m.content || m.text || '', cat: 'lesson' });
+      }
+
+      const list = $('activityList');
+      if (items.length === 0) {
+        list.innerHTML = '<div class="activity-item"><span class="activity-text" style="color:var(--text-faint)">No recent activity</span></div>';
+        return;
+      }
+
+      list.innerHTML = items.slice(0, 8).map(item =>
+        `<div class="activity-item">
+          <span class="activity-text">${escapeHtml(item.text)}</span>
+          <span class="activity-cat">${item.cat}</span>
+        </div>`
+      ).join('');
+    } catch (e) {
+      $('activityList').innerHTML = '<div class="activity-item"><span class="activity-text" style="color:var(--text-faint)">Could not load</span></div>';
+    }
+  },
+
+  renderMemoryCategories(cats) {
+    const container = $('memoryCats');
+    container.innerHTML = '';
+    for (const [cat, count] of Object.entries(cats)) {
+      const btn = document.createElement('button');
+      btn.className = 'memory-cat-btn';
+      btn.textContent = `${cat} (${count})`;
+      btn.onclick = () => this.loadMemoryCategory(cat, btn);
+      container.appendChild(btn);
+    }
+  },
+
+  async loadMemoryCategory(category, btn) {
+    // Toggle active
+    document.querySelectorAll('.memory-cat-btn').forEach(b => b.classList.remove('active'));
+    if (this.activeMemoryCat === category) {
+      this.activeMemoryCat = null;
+      $('memoryItems').innerHTML = '<div class="activity-item"><span class="activity-text" style="color:var(--text-faint)">Select a category</span></div>';
+      return;
+    }
+    btn.classList.add('active');
+    this.activeMemoryCat = category;
+
+    try {
+      const data = await API.getMemories(category, 20);
+      const items = data.memories || [];
+      const container = $('memoryItems');
+      if (items.length === 0) {
+        container.innerHTML = '<div class="activity-item"><span class="activity-text" style="color:var(--text-faint)">No memories in this category</span></div>';
+        return;
+      }
+      container.innerHTML = items.map(m => {
+        const text = m.content || m.text || '';
+        const id = m.id || '';
+        return `<div class="memory-item">
+          <span style="flex:1">${escapeHtml(text)}</span>
+          ${id ? `<button class="del-btn" onclick="SidebarManager.deleteMemory('${id}', '${category}')" title="Delete">&#10005;</button>` : ''}
+        </div>`;
+      }).join('');
+    } catch (e) {
+      $('memoryItems').innerHTML = '<div class="activity-item"><span class="activity-text" style="color:var(--text-faint)">Error loading</span></div>';
+    }
+  },
+
+  async deleteMemory(id, category) {
+    try {
+      await API.deleteMemory(id);
+      // Reload
+      const btn = document.querySelector('.memory-cat-btn.active');
+      if (btn) this.loadMemoryCategory(category, btn);
+    } catch (e) {
+      console.warn('Failed to delete memory:', e);
+    }
+  },
+};
+
+// ═══ WSManager ══════════════════════════════════════════
+const WSManager = {
+  ws: null,
+  reconnectDelay: 2000,
+
+  connect() {
+    const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+    this.ws = new WebSocket(`${protocol}//${location.host}/ws`);
+
+    this.ws.onopen = () => {
+      console.log('[WS] Connected');
+    };
+
+    this.ws.onmessage = (event) => {
+      try {
+        const msg = JSON.parse(event.data);
+        this.handleMessage(msg);
+      } catch (e) {}
+    };
+
+    this.ws.onclose = () => {
+      console.log('[WS] Disconnected, reconnecting...');
+      setTimeout(() => this.connect(), this.reconnectDelay);
+    };
+
+    this.ws.onerror = () => {};
+  },
+
+  handleMessage(msg) {
+    if (msg.type === 'init') {
+      // Initial data
+      if (msg.data?.monitor) {
+        SidebarManager.updateHealth(msg.data.monitor.services || {});
+        this.updateHeaderHealth(msg.data.monitor.services || {});
+      }
+      if (msg.data?.tokens) {
+        SidebarManager.updateTokens(msg.data.tokens);
+      }
+    } else if (msg.type === 'monitor_update') {
+      SidebarManager.updateHealth(msg.data?.services || {});
+      // Update header health dots from monitor data
+      this.updateHeaderHealth(msg.data?.services || {});
+    } else if (msg.type === 'token_update') {
+      SidebarManager.updateTokens(msg.data || {});
+    } else if (msg.type === 'speech_done') {
+      // TTS actually finished — clear speaking state immediately
+      ChatManager.clearSpeakingState();
+    }
+  },
+
+  updateHeaderHealth(services) {
+    const aiia = services.aiia;
+    const ollama = services.ollama;
+    const hAiia = document.getElementById('headerHealthAiia');
+    const hOllama = document.getElementById('headerHealthOllama');
+    if (hAiia && aiia) hAiia.className = `dot ${aiia.status === 'online' ? '' : 'off'}`;
+    if (hOllama && ollama) hOllama.className = `dot ${ollama.status === 'online' ? '' : 'off'}`;
+  },
+};
+
+// ═══ Utility Functions ══════════════════════════════════
+
+function setStatus(text, state) {
+  statusText.textContent = text;
+  statusDot.className = 'dot';
+  if (state === 'off') statusDot.classList.add('off');
+  else if (state === 'warn') statusDot.classList.add('warn');
+}
+
+function updateSendButton() {
+  if (AppState.streaming) {
+    sendBtn.innerHTML = '&#9632;'; // Stop square
+    sendBtn.className = 'input-btn stop';
+    sendBtn.title = 'Stop (Esc)';
+  } else {
+    sendBtn.innerHTML = '&#9654;'; // Play/send triangle
+    sendBtn.className = 'input-btn send';
+    sendBtn.title = 'Send (Enter)';
+  }
+}
+
+function escapeHtml(str) {
+  const div = document.createElement('div');
+  div.textContent = str;
+  return div.innerHTML;
+}
+
+// Auto-resize textarea
+function autoResize() {
+  inputTextarea.style.height = 'auto';
+  inputTextarea.style.height = Math.min(inputTextarea.scrollHeight, 140) + 'px';
+}
+
+// ═══ Event Listeners ════════════════════════════════════
+
+// Send/Stop button
+sendBtn.addEventListener('click', () => {
+  if (AppState.streaming) {
+    ChatManager.stopStream();
+  } else {
+    submitInput();
+  }
+});
+
+// Mic
+micBtn.addEventListener('click', () => AudioManager.toggleMic());
+
+// Textarea
+inputTextarea.addEventListener('input', autoResize);
+inputTextarea.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && !e.shiftKey) {
+    e.preventDefault();
+    submitInput();
+  }
+  if (e.key === 'Escape') {
+    if (AppState.streaming) ChatManager.stopStream();
+    else if (AppState.isSpeaking) ChatManager.stopSpeaking();
+  }
+});
+
+function submitInput() {
+  const text = inputTextarea.value.trim();
+  if (!text) return;
+
+  if (AppState.editIndex !== null) {
+    // Edit mode: PUT the edited message, then re-send
+    const idx = AppState.editIndex;
+    AppState.editIndex = null;
+    inputTextarea.style.borderColor = '';
+    API.editMessage(idx, text).then(() => {
+      ChatManager.loadHistory().then(() => {
+        inputTextarea.value = '';
+        autoResize();
+        ChatManager.send(text, 'text');
+      });
+    });
+    return;
+  }
+
+  inputTextarea.value = '';
+  autoResize();
+  ChatManager.send(text, 'text');
+}
+
+// Spacebar for mic (only when not focused on input)
+document.addEventListener('keydown', (e) => {
+  if (e.code !== 'Space') return;
+  const tag = document.activeElement.tagName.toLowerCase();
+  if (tag === 'input' || tag === 'textarea' || tag === 'select') return;
+  e.preventDefault();
+  AudioManager.toggleMic();
+});
+
+// Escape: stop stream OR stop speech
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') {
+    if (AppState.streaming) {
+      ChatManager.stopStream();
+    } else if (AppState.isSpeaking) {
+      ChatManager.stopSpeaking();
+    }
+  }
+});
+
+// Auto-speak toggle
+autoSpeakBtn.addEventListener('click', () => {
+  AppState.autoSpeak = !AppState.autoSpeak;
+  autoSpeakBtn.classList.toggle('on', AppState.autoSpeak);
+  localStorage.setItem('aiia-voice-autospeak', AppState.autoSpeak);
+});
+
+// Google TTS toggle
+const googleTTSBtn = $('googleTTSBtn');
+AppState.googleTTS = localStorage.getItem('aiia-voice-google-tts') !== 'false';
+googleTTSBtn.classList.toggle('on', AppState.googleTTS);
+googleTTSBtn.addEventListener('click', () => {
+  AppState.googleTTS = !AppState.googleTTS;
+  googleTTSBtn.classList.toggle('on', AppState.googleTTS);
+  localStorage.setItem('aiia-voice-google-tts', AppState.googleTTS);
+});
+
+// Clear
+clearBtn.addEventListener('click', () => ChatManager.clear());
+
+// Device picker
+deviceSelect.addEventListener('change', () => {
+  AudioManager.switchDevice(deviceSelect.value);
+});
+
+// Voice picker
+voiceSelect.addEventListener('change', () => {
+  localStorage.setItem('aiia-voice-tts', voiceSelect.value);
+});
+
+// Language
+langSelect.addEventListener('change', () => {
+  localStorage.setItem('aiia-voice-lang', langSelect.value);
+  if (AudioManager.recognition) AudioManager.recognition.lang = langSelect.value;
+});
+
+// Settings
+settingsBtn.addEventListener('click', () => settingsOverlay.classList.add('open'));
+settingsClose.addEventListener('click', () => settingsOverlay.classList.remove('open'));
+settingsOverlay.addEventListener('click', (e) => {
+  if (e.target === settingsOverlay) settingsOverlay.classList.remove('open');
+});
+
+// Sidebar toggle
+sidebarToggle.addEventListener('click', () => {
+  AppState.sidebarOpen = !AppState.sidebarOpen;
+  sidebar.classList.toggle('collapsed', !AppState.sidebarOpen);
+  sidebarToggle.classList.toggle('active', AppState.sidebarOpen);
+  localStorage.setItem('aiia-sidebar-open', AppState.sidebarOpen);
+});
+
+// ═══ Initialization ═════════════════════════════════════
+
+(async function init() {
+  // Restore saved settings
+  const savedVoice = localStorage.getItem('aiia-voice-tts');
+  if (savedVoice) voiceSelect.value = savedVoice;
+  const savedLang = localStorage.getItem('aiia-voice-lang');
+  if (savedLang) langSelect.value = savedLang;
+  const savedAutoSpeak = localStorage.getItem('aiia-voice-autospeak');
+  if (savedAutoSpeak !== null) {
+    AppState.autoSpeak = savedAutoSpeak === 'true';
+    autoSpeakBtn.classList.toggle('on', AppState.autoSpeak);
+  }
+  const savedSidebar = localStorage.getItem('aiia-sidebar-open');
+  if (savedSidebar !== null) {
+    AppState.sidebarOpen = savedSidebar === 'true';
+  }
+  // Apply sidebar state (collapsed by default on first visit)
+  sidebar.classList.toggle('collapsed', !AppState.sidebarOpen);
+  sidebarToggle.classList.toggle('active', AppState.sidebarOpen);
+
+  // Init audio (mic permission + device enumeration)
+  await AudioManager.init();
+
+  // Load chat history
+  await ChatManager.loadHistory();
+
+  // Load sidebar data
+  SidebarManager.loadAll();
+
+  // Connect WebSocket for live updates
+  WSManager.connect();
+
+  // Auto-start mic for hands-free conversation
+  if (AudioManager.recognition && AppState.autoSpeak) {
+    setTimeout(() => AudioManager.toggleMic(), 500);
+  } else {
+    inputTextarea.focus();
+  }
+})();
+</script>
+</body>
+</html>

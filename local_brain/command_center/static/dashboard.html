@@ -1,0 +1,2732 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AIIA Command Center</title>
+<style>
+/* ═══════════════════════════════════════════════════════════
+   AIIA COMMAND CENTER — Apple Liquid Design
+   Glassmorphism + fluid gradients + translucent layers
+   ═══════════════════════════════════════════════════════════ */
+
+:root {
+  --bg-primary: #0a0a0f;
+  --bg-secondary: #12121a;
+  --glass-bg: rgba(255, 255, 255, 0.04);
+  --glass-border: rgba(255, 255, 255, 0.08);
+  --glass-hover: rgba(255, 255, 255, 0.07);
+  --text-primary: rgba(255, 255, 255, 0.92);
+  --text-secondary: rgba(255, 255, 255, 0.55);
+  --text-tertiary: rgba(255, 255, 255, 0.35);
+  --accent-blue: #0a84ff;
+  --accent-green: #30d158;
+  --accent-orange: #ff9f0a;
+  --accent-red: #ff453a;
+  --accent-purple: #bf5af2;
+  --accent-teal: #64d2ff;
+  --radius: 16px;
+  --radius-sm: 10px;
+  --transition: 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'SF Pro Text',
+               'Helvetica Neue', Arial, sans-serif;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  min-height: 100vh;
+  overflow-x: hidden;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ── Animated background gradient ── */
+.bg-gradient {
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  z-index: 0;
+  overflow: hidden;
+}
+
+.bg-gradient .orb {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(120px);
+  opacity: 0.15;
+  animation: float 20s ease-in-out infinite;
+}
+
+.bg-gradient .orb-1 {
+  width: 600px; height: 600px;
+  background: var(--accent-blue);
+  top: -200px; left: -100px;
+  animation-delay: 0s;
+}
+
+.bg-gradient .orb-2 {
+  width: 500px; height: 500px;
+  background: var(--accent-purple);
+  bottom: -150px; right: -100px;
+  animation-delay: -7s;
+  animation-duration: 25s;
+}
+
+.bg-gradient .orb-3 {
+  width: 400px; height: 400px;
+  background: var(--accent-teal);
+  top: 50%; left: 50%;
+  transform: translate(-50%, -50%);
+  animation-delay: -14s;
+  animation-duration: 30s;
+}
+
+@keyframes float {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  25% { transform: translate(50px, -30px) scale(1.05); }
+  50% { transform: translate(-20px, 40px) scale(0.95); }
+  75% { transform: translate(-40px, -20px) scale(1.02); }
+}
+
+/* ── Main layout ── */
+.app {
+  position: relative;
+  z-index: 1;
+  max-width: 1400px;
+  margin: 0 auto;
+  padding: 32px 24px;
+}
+
+/* ── Header ── */
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 32px;
+  padding-bottom: 24px;
+  border-bottom: 1px solid var(--glass-border);
+}
+
+.header-left {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.logo {
+  width: 44px; height: 44px;
+  background: linear-gradient(135deg, var(--accent-blue), var(--accent-purple));
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: -0.5px;
+  box-shadow: 0 4px 16px rgba(10, 132, 255, 0.3);
+}
+
+.header h1 {
+  font-size: 22px;
+  font-weight: 600;
+  letter-spacing: -0.3px;
+}
+
+.header h1 span {
+  color: var(--text-secondary);
+  font-weight: 400;
+}
+
+.connection-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.status-dot {
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  background: var(--accent-green);
+  box-shadow: 0 0 8px rgba(48, 209, 88, 0.5);
+  animation: pulse 2s ease-in-out infinite;
+}
+
+.status-dot.offline {
+  background: var(--accent-red);
+  box-shadow: 0 0 8px rgba(255, 69, 58, 0.5);
+  animation: none;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+/* ── Glass card ── */
+.card {
+  background: var(--glass-bg);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius);
+  padding: 24px;
+  backdrop-filter: blur(40px);
+  -webkit-backdrop-filter: blur(40px);
+  transition: all var(--transition);
+}
+
+.card:hover {
+  background: var(--glass-hover);
+  border-color: rgba(255, 255, 255, 0.12);
+}
+
+.card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 20px;
+}
+
+.card-title {
+  font-size: 13px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  color: var(--text-secondary);
+}
+
+.card-badge {
+  font-size: 11px;
+  padding: 3px 10px;
+  border-radius: 20px;
+  font-weight: 500;
+}
+
+.badge-online {
+  background: rgba(48, 209, 88, 0.15);
+  color: var(--accent-green);
+  border: 1px solid rgba(48, 209, 88, 0.2);
+}
+
+.badge-offline {
+  background: rgba(255, 69, 58, 0.15);
+  color: var(--accent-red);
+  border: 1px solid rgba(255, 69, 58, 0.2);
+}
+
+/* ── Grid layout ── */
+.grid {
+  display: grid;
+  gap: 16px;
+}
+
+.grid-4 { grid-template-columns: repeat(4, 1fr); }
+.grid-3 { grid-template-columns: repeat(3, 1fr); }
+.grid-2 { grid-template-columns: repeat(2, 1fr); }
+
+@media (max-width: 1024px) {
+  .grid-4 { grid-template-columns: repeat(2, 1fr); }
+  .grid-3 { grid-template-columns: repeat(2, 1fr); }
+}
+
+@media (max-width: 640px) {
+  .grid-4, .grid-3, .grid-2 { grid-template-columns: 1fr; }
+}
+
+/* ── Stat cards (top row) ── */
+.stat-value {
+  font-size: 36px;
+  font-weight: 700;
+  letter-spacing: -1.5px;
+  line-height: 1;
+  margin-bottom: 4px;
+  background: linear-gradient(135deg, var(--text-primary), var(--text-secondary));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.stat-value.accent-blue { background: linear-gradient(135deg, var(--accent-blue), var(--accent-teal)); -webkit-background-clip: text; }
+.stat-value.accent-green { background: linear-gradient(135deg, var(--accent-green), #a8f0c0); -webkit-background-clip: text; }
+.stat-value.accent-orange { background: linear-gradient(135deg, var(--accent-orange), #ffd60a); -webkit-background-clip: text; }
+.stat-value.accent-purple { background: linear-gradient(135deg, var(--accent-purple), var(--accent-teal)); -webkit-background-clip: text; }
+
+.stat-label {
+  font-size: 13px;
+  color: var(--text-tertiary);
+  font-weight: 400;
+}
+
+/* ── Status ring ── */
+.status-ring-container {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+}
+
+.status-ring {
+  position: relative;
+  width: 80px;
+  height: 80px;
+}
+
+.status-ring svg {
+  transform: rotate(-90deg);
+}
+
+.status-ring-bg {
+  fill: none;
+  stroke: rgba(255, 255, 255, 0.06);
+  stroke-width: 6;
+}
+
+.status-ring-fill {
+  fill: none;
+  stroke-width: 6;
+  stroke-linecap: round;
+  transition: stroke-dashoffset 1s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+}
+
+.status-ring-label {
+  position: absolute;
+  top: 50%; left: 50%;
+  transform: translate(-50%, -50%);
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: -0.5px;
+}
+
+.status-ring-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.status-ring-meta .label {
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.status-ring-meta .sublabel {
+  font-size: 11px;
+  color: var(--text-tertiary);
+}
+
+/* ── Services grid ── */
+.service-item {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 14px 0;
+  border-bottom: 1px solid var(--glass-border);
+}
+
+.service-item:last-child { border-bottom: none; }
+
+.service-icon {
+  width: 36px; height: 36px;
+  border-radius: var(--radius-sm);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  flex-shrink: 0;
+}
+
+.service-icon.ollama { background: rgba(10, 132, 255, 0.15); }
+.service-icon.brain { background: rgba(191, 90, 242, 0.15); }
+.service-icon.cmd { background: rgba(100, 210, 255, 0.15); }
+
+.service-info { flex: 1; }
+.service-name { font-size: 14px; font-weight: 500; }
+.service-detail { font-size: 12px; color: var(--text-tertiary); margin-top: 2px; }
+
+.service-status {
+  font-size: 11px;
+  padding: 3px 10px;
+  border-radius: 20px;
+  font-weight: 500;
+}
+
+/* ── Routing log table ── */
+.log-table {
+  width: 100%;
+  font-size: 13px;
+}
+
+.log-table th {
+  text-align: left;
+  font-weight: 500;
+  color: var(--text-tertiary);
+  padding: 8px 12px;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  border-bottom: 1px solid var(--glass-border);
+}
+
+.log-table td {
+  padding: 10px 12px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.03);
+  color: var(--text-secondary);
+}
+
+.log-table tr {
+  transition: background var(--transition);
+}
+
+.log-table tr:hover td {
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.tag {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.tag-local { background: rgba(48, 209, 88, 0.12); color: var(--accent-green); }
+.tag-eos { background: rgba(10, 132, 255, 0.12); color: var(--accent-blue); }
+.tag-rlm { background: rgba(191, 90, 242, 0.12); color: var(--accent-purple); }
+.tag-finance { background: rgba(255, 159, 10, 0.12); color: var(--accent-orange); }
+.tag-legal { background: rgba(100, 210, 255, 0.12); color: var(--accent-teal); }
+.tag-crisis { background: rgba(255, 69, 58, 0.12); color: var(--accent-red); }
+.tag-general { background: rgba(255, 255, 255, 0.06); color: var(--text-secondary); }
+
+/* ── Alerts ── */
+.alert-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--glass-border);
+}
+
+.alert-item:last-child { border-bottom: none; }
+
+.alert-dot {
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  margin-top: 5px;
+  flex-shrink: 0;
+}
+
+.alert-dot.error { background: var(--accent-red); }
+.alert-dot.warning { background: var(--accent-orange); }
+.alert-dot.info { background: var(--accent-blue); }
+
+.alert-msg { font-size: 13px; color: var(--text-secondary); }
+.alert-time { font-size: 11px; color: var(--text-tertiary); margin-top: 2px; }
+
+/* ── Empty state ── */
+.empty-state {
+  text-align: center;
+  padding: 40px 20px;
+  color: var(--text-tertiary);
+  font-size: 14px;
+}
+
+.empty-state .icon {
+  font-size: 32px;
+  margin-bottom: 12px;
+  opacity: 0.5;
+}
+
+/* ── Latency bar chart ── */
+.bar-chart {
+  display: flex;
+  align-items: flex-end;
+  gap: 3px;
+  height: 80px;
+  padding-top: 8px;
+}
+
+.bar {
+  flex: 1;
+  min-width: 4px;
+  max-width: 12px;
+  border-radius: 3px 3px 0 0;
+  transition: height 0.5s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+  cursor: pointer;
+}
+
+.bar:hover { opacity: 0.8; }
+.bar.local { background: linear-gradient(to top, rgba(48, 209, 88, 0.3), var(--accent-green)); }
+.bar.cloud { background: linear-gradient(to top, rgba(10, 132, 255, 0.3), var(--accent-blue)); }
+
+/* ── Section spacing ── */
+.section { margin-bottom: 24px; }
+
+/* ── Scrollbar ── */
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.2); }
+
+/* ── Loading shimmer ── */
+.shimmer {
+  background: linear-gradient(90deg,
+    var(--glass-bg) 25%,
+    rgba(255,255,255,0.08) 50%,
+    var(--glass-bg) 75%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.5s ease-in-out infinite;
+}
+
+@keyframes shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+/* ── AIIA Section ── */
+.aiia-section {
+  margin-top: 8px;
+  margin-bottom: 24px;
+  padding-top: 24px;
+  border-top: 1px solid var(--glass-border);
+}
+
+.aiia-section-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.aiia-section-header .aiia-logo {
+  width: 32px; height: 32px;
+  background: linear-gradient(135deg, var(--accent-purple), var(--accent-teal));
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.5px;
+  box-shadow: 0 2px 12px rgba(191, 90, 242, 0.3);
+}
+
+.aiia-section-header h2 {
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: -0.2px;
+}
+
+.aiia-section-header h2 span {
+  color: var(--text-tertiary);
+  font-weight: 400;
+  font-size: 13px;
+  margin-left: 8px;
+}
+
+/* AIIA Status mini-stats */
+.aiia-mini-stats {
+  display: flex;
+  gap: 24px;
+  margin-top: 12px;
+}
+
+.aiia-mini-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.aiia-mini-stat .val {
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: -0.5px;
+  color: var(--text-primary);
+}
+
+.aiia-mini-stat .lbl {
+  font-size: 11px;
+  color: var(--text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+/* Memory category pills */
+.mem-pills {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-top: 8px;
+}
+
+.mem-pill {
+  font-size: 11px;
+  padding: 4px 10px;
+  border-radius: 12px;
+  border: 1px solid var(--glass-border);
+  background: var(--glass-bg);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all var(--transition);
+}
+
+.mem-pill:hover, .mem-pill.active {
+  background: rgba(191, 90, 242, 0.15);
+  border-color: rgba(191, 90, 242, 0.3);
+  color: var(--accent-purple);
+}
+
+.mem-pill .count {
+  color: var(--text-tertiary);
+  margin-left: 4px;
+}
+
+/* Memory list */
+.mem-list {
+  max-height: 240px;
+  overflow-y: auto;
+  margin-top: 12px;
+}
+
+.mem-item {
+  padding: 10px 0;
+  border-bottom: 1px solid rgba(255,255,255,0.03);
+  font-size: 13px;
+  color: var(--text-secondary);
+  line-height: 1.4;
+}
+
+.mem-item:last-child { border-bottom: none; }
+
+.mem-item .mem-source {
+  font-size: 10px;
+  color: var(--text-tertiary);
+  margin-top: 3px;
+}
+
+/* Ask AIIA widget */
+.aiia-ask-form {
+  display: flex;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.aiia-ask-input {
+  flex: 1;
+  background: rgba(255,255,255,0.05);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-sm);
+  padding: 12px 16px;
+  color: var(--text-primary);
+  font-size: 14px;
+  font-family: inherit;
+  outline: none;
+  transition: border-color var(--transition);
+}
+
+.aiia-ask-input:focus {
+  border-color: rgba(191, 90, 242, 0.4);
+}
+
+.aiia-ask-input::placeholder {
+  color: var(--text-tertiary);
+}
+
+.aiia-ask-btn {
+  padding: 12px 20px;
+  background: linear-gradient(135deg, var(--accent-purple), var(--accent-teal));
+  border: none;
+  border-radius: var(--radius-sm);
+  color: white;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all var(--transition);
+  white-space: nowrap;
+}
+
+.aiia-ask-btn:hover {
+  opacity: 0.85;
+  transform: translateY(-1px);
+}
+
+.aiia-ask-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.aiia-response {
+  margin-top: 16px;
+  display: none;
+}
+
+.aiia-response.visible {
+  display: block;
+}
+
+.aiia-response-content {
+  background: rgba(191, 90, 242, 0.06);
+  border: 1px solid rgba(191, 90, 242, 0.12);
+  border-radius: var(--radius-sm);
+  padding: 16px;
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--text-primary);
+  white-space: pre-wrap;
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.aiia-response-meta {
+  display: flex;
+  gap: 16px;
+  margin-top: 8px;
+  font-size: 11px;
+  color: var(--text-tertiary);
+}
+
+.aiia-thinking {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--accent-purple);
+  font-size: 13px;
+  margin-top: 12px;
+}
+
+.aiia-thinking .dots {
+  display: inline-flex;
+  gap: 3px;
+}
+
+.aiia-thinking .dot {
+  width: 4px; height: 4px;
+  border-radius: 50%;
+  background: var(--accent-purple);
+  animation: thinkDot 1.2s ease-in-out infinite;
+}
+
+.aiia-thinking .dot:nth-child(2) { animation-delay: 0.2s; }
+.aiia-thinking .dot:nth-child(3) { animation-delay: 0.4s; }
+
+@keyframes thinkDot {
+  0%, 100% { opacity: 0.3; }
+  50% { opacity: 1; }
+}
+
+/* ── Token Breakdown ── */
+.token-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--glass-border);
+  font-size: 13px;
+}
+.token-row:last-child { border-bottom: none; }
+.token-row .provider-label {
+  display: flex; align-items: center; gap: 8px;
+}
+.token-row .provider-dot {
+  width: 8px; height: 8px; border-radius: 50%;
+}
+.token-row .provider-dot.local { background: var(--accent-green); }
+.token-row .provider-dot.claude { background: var(--accent-blue); }
+.token-row .provider-dot.gemini { background: var(--accent-orange); }
+.token-row .token-val { font-weight: 600; color: var(--text-primary); }
+.token-row .token-cost { color: var(--text-tertiary); font-size: 11px; margin-left: 8px; }
+
+.token-bar-container { margin-top: 12px; }
+.token-bar-track {
+  height: 8px; border-radius: 4px; overflow: hidden;
+  background: rgba(255,255,255,0.04);
+  display: flex;
+}
+.token-bar-fill {
+  height: 100%;
+  transition: width 0.6s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+}
+.token-bar-fill.local { background: var(--accent-green); }
+.token-bar-fill.claude { background: var(--accent-blue); }
+.token-bar-fill.gemini { background: var(--accent-orange); }
+
+.token-bar-legend {
+  display: flex; gap: 16px; margin-top: 8px; font-size: 11px; color: var(--text-tertiary);
+}
+.token-bar-legend span { display: flex; align-items: center; gap: 4px; }
+
+/* ── Products section ── */
+.products-section {
+  margin-top: 8px;
+  margin-bottom: 24px;
+  padding-top: 24px;
+  border-top: 1px solid var(--glass-border);
+}
+.products-section-header {
+  display: flex; align-items: center; gap: 12px; margin-bottom: 16px;
+}
+.products-section-header .prod-logo {
+  width: 32px; height: 32px;
+  background: linear-gradient(135deg, var(--accent-blue), var(--accent-green));
+  border-radius: 8px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 14px; font-weight: 700;
+  box-shadow: 0 2px 12px rgba(10, 132, 255, 0.3);
+}
+.products-section-header h2 {
+  font-size: 16px; font-weight: 600; letter-spacing: -0.2px;
+}
+.products-section-header h2 span {
+  color: var(--text-tertiary); font-weight: 400; font-size: 13px; margin-left: 8px;
+}
+
+/* Product cards */
+.product-card {
+  display: flex; align-items: center; gap: 14px;
+  padding: 14px;
+  border-radius: var(--radius-sm);
+  background: rgba(255,255,255,0.02);
+  border: 1px solid var(--glass-border);
+  transition: all var(--transition);
+  cursor: default;
+}
+.product-card:hover { background: rgba(255,255,255,0.04); border-color: rgba(255,255,255,0.12); }
+
+.product-icon {
+  width: 40px; height: 40px;
+  border-radius: var(--radius-sm);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 18px; flex-shrink: 0;
+}
+
+.product-info { flex: 1; min-width: 0; }
+.product-name { font-size: 14px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.product-desc { font-size: 11px; color: var(--text-tertiary); margin-top: 2px; }
+
+.product-status {
+  font-size: 10px; padding: 3px 10px; border-radius: 20px; font-weight: 600;
+  text-transform: uppercase; letter-spacing: 0.3px; flex-shrink: 0;
+}
+.status-production { background: rgba(48, 209, 88, 0.12); color: var(--accent-green); border: 1px solid rgba(48, 209, 88, 0.2); }
+.status-active { background: rgba(10, 132, 255, 0.12); color: var(--accent-blue); border: 1px solid rgba(10, 132, 255, 0.2); }
+.status-building { background: rgba(191, 90, 242, 0.12); color: var(--accent-purple); border: 1px solid rgba(191, 90, 242, 0.2); }
+.status-mvp { background: rgba(255, 159, 10, 0.12); color: var(--accent-orange); border: 1px solid rgba(255, 159, 10, 0.2); }
+.status-planned { background: rgba(255, 255, 255, 0.06); color: var(--text-tertiary); border: 1px solid var(--glass-border); }
+
+.products-grid {
+  display: flex; flex-direction: column; gap: 8px;
+  max-height: 420px; overflow-y: auto;
+}
+
+/* Microproduct items */
+.micro-item {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 0;
+  border-bottom: 1px solid rgba(255,255,255,0.03);
+  font-size: 13px;
+}
+.micro-item:last-child { border-bottom: none; }
+
+.micro-dot {
+  width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0;
+}
+.micro-dot.shipped { background: var(--accent-green); }
+.micro-dot.building { background: var(--accent-purple); animation: pulse 2s ease-in-out infinite; }
+.micro-dot.planned { background: var(--text-tertiary); }
+
+.micro-name { flex: 1; color: var(--text-secondary); }
+.micro-tag {
+  font-size: 10px; padding: 2px 8px; border-radius: 10px; font-weight: 500;
+}
+.micro-tag.shipped { background: rgba(48, 209, 88, 0.1); color: var(--accent-green); }
+.micro-tag.building { background: rgba(191, 90, 242, 0.1); color: var(--accent-purple); }
+.micro-tag.planned { background: rgba(255,255,255,0.04); color: var(--text-tertiary); }
+
+/* Request detail table */
+.req-breakdown {
+  margin-top: 12px;
+}
+.req-row {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 6px 0;
+  font-size: 12px; color: var(--text-secondary);
+}
+.req-row .req-label { display: flex; align-items: center; gap: 6px; }
+.req-row .req-count { font-weight: 600; color: var(--text-primary); }
+
+/* ═══════════════════════════════════════════════════════════
+   CONSTELLATION — Radial platform visualization
+   ═══════════════════════════════════════════════════════════ */
+
+.constellation-card {
+  position: relative;
+  overflow: hidden;
+  min-height: 520px;
+}
+
+.constellation-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.constellation-header .left {
+  display: flex; align-items: center; gap: 10px;
+}
+
+.constellation-header .brain-icon {
+  width: 28px; height: 28px;
+  background: linear-gradient(135deg, var(--accent-purple), var(--accent-teal));
+  border-radius: 8px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 10px; font-weight: 800;
+}
+
+.stat-chip {
+  font-size: 11px;
+  padding: 3px 10px;
+  border-radius: 12px;
+  background: rgba(191, 90, 242, 0.1);
+  border: 1px solid rgba(191, 90, 242, 0.2);
+  color: var(--accent-purple);
+  font-weight: 500;
+}
+
+#constellation-svg {
+  width: 100%;
+  height: 460px;
+  display: block;
+}
+
+/* Concentric ring guides */
+.ring-guide {
+  fill: none;
+  stroke: rgba(255, 255, 255, 0.03);
+  stroke-width: 1;
+}
+
+/* Edge lines */
+.constellation-edge {
+  fill: none;
+  stroke: rgba(255, 255, 255, 0.08);
+  stroke-width: 1;
+  stroke-dasharray: 3 12;
+  animation: edgeDrift 8s linear infinite;
+}
+
+.constellation-edge.active {
+  stroke: rgba(255, 255, 255, 0.25);
+  stroke-width: 1.5;
+  filter: url(#edgeGlow);
+  transition: stroke 0.3s, stroke-width 0.3s;
+}
+
+@keyframes edgeDrift {
+  to { stroke-dashoffset: -15; }
+}
+
+/* AIIA Brain — central node */
+.aiia-halo {
+  fill: rgba(191, 90, 242, 0.06);
+  animation: breathe 3s ease-in-out infinite;
+  transform-origin: center;
+}
+
+@keyframes breathe {
+  0%, 100% { transform: scale(0.95); opacity: 0.8; }
+  50% { transform: scale(1.05); opacity: 1; }
+}
+
+.aiia-core {
+  cursor: pointer;
+  transition: filter 0.3s;
+}
+
+.aiia-core:hover {
+  filter: url(#nodeGlow) brightness(1.2);
+}
+
+/* Node breath — subtle border pulse on all nodes */
+.constellation-node {
+  transition: filter 0.3s, opacity 0.3s;
+}
+
+.constellation-node .node-border {
+  animation: nodeBreathe 4s ease-in-out infinite;
+  animation-delay: var(--breath-delay, 0s);
+}
+
+@keyframes nodeBreathe {
+  0%, 100% { opacity: 0.6; }
+  50% { opacity: 1; }
+}
+
+.constellation-node.active {
+  filter: url(#nodeGlow);
+}
+
+.constellation-node.active .node-border {
+  opacity: 1;
+  animation: none;
+}
+
+/* Node type shapes — clip-paths */
+.node-shape-hex {
+  clip-path: polygon(50% 0%, 93% 25%, 93% 75%, 50% 100%, 7% 75%, 7% 25%);
+}
+
+/* Particle pool (hidden until active) */
+.particle {
+  opacity: 0;
+  transition: none;
+}
+
+.particle-trail {
+  opacity: 0;
+  stroke-linecap: round;
+}
+
+/* Token ring on AIIA */
+.token-ring-bg {
+  fill: none;
+  stroke: rgba(255, 255, 255, 0.06);
+  stroke-width: 2;
+}
+
+.token-ring-fill {
+  fill: none;
+  stroke: url(#tokenGradient);
+  stroke-width: 2;
+  stroke-linecap: round;
+  transition: stroke-dashoffset 1s ease;
+}
+
+/* Grid pulse — concentric rings ambient */
+.ring-guide {
+  animation: gridPulse 20s ease-in-out infinite;
+  animation-delay: var(--ring-delay, 0s);
+}
+
+@keyframes gridPulse {
+  0%, 100% { stroke-opacity: 0.03; }
+  50% { stroke-opacity: 0.06; }
+}
+
+/* Status colors for AIIA core */
+.aiia-status-online .aiia-core-fill { fill: url(#aiiaCoreGradient); }
+.aiia-status-degraded .aiia-core-fill { fill: url(#aiiaDegradedGradient); }
+.aiia-status-offline .aiia-core-fill { fill: url(#aiiaOfflineGradient); }
+</style>
+</head>
+<body>
+
+<!-- Animated background -->
+<div class="bg-gradient">
+  <div class="orb orb-1"></div>
+  <div class="orb orb-2"></div>
+  <div class="orb orb-3"></div>
+</div>
+
+<div class="app">
+
+  <!-- Header -->
+  <header class="header">
+    <div class="header-left">
+      <div class="logo">AI</div>
+      <h1>AIIA <span>Command Center</span></h1>
+    </div>
+    <div class="connection-status">
+      <div class="status-dot" id="ws-status"></div>
+      <span id="ws-label">Connecting...</span>
+    </div>
+  </header>
+
+  <!-- Stat cards -->
+  <section class="section">
+    <div class="grid grid-4">
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">Requests Handled</span>
+        </div>
+        <div class="stat-value accent-blue" id="stat-total">0</div>
+        <div class="stat-label"><span id="stat-local-pct">0</span>% handled locally</div>
+      </div>
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">Tokens Saved</span>
+        </div>
+        <div class="stat-value accent-green" id="stat-tokens-saved">0</div>
+        <div class="stat-label">vs all-cloud baseline</div>
+      </div>
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">Avg Local Latency</span>
+        </div>
+        <div class="stat-value accent-orange" id="stat-latency-local">--</div>
+        <div class="stat-label">ms <span id="stat-latency-cloud">--</span> ms cloud</div>
+      </div>
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">Uptime</span>
+        </div>
+        <div class="stat-value accent-purple" id="stat-uptime">--</div>
+        <div class="stat-label" id="stat-uptime-label">since start</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Platform Constellation — radial neural visualization -->
+  <section class="section">
+    <div class="card constellation-card">
+      <div class="constellation-header">
+        <div class="left">
+          <div class="brain-icon">AI</div>
+          <span class="card-title">Platform Constellation</span>
+        </div>
+        <span class="stat-chip" id="token-chip">~0 tokens today</span>
+      </div>
+      <svg id="constellation-svg" viewBox="0 0 800 460" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <!-- Glow filters -->
+          <filter id="nodeGlow" x="-50%" y="-50%" width="200%" height="200%">
+            <feGaussianBlur stdDeviation="4" result="blur"/>
+            <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+          </filter>
+          <filter id="edgeGlow" x="-50%" y="-50%" width="200%" height="200%">
+            <feGaussianBlur stdDeviation="2" result="blur"/>
+            <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+          </filter>
+          <filter id="brainGlow" x="-50%" y="-50%" width="200%" height="200%">
+            <feGaussianBlur stdDeviation="8" result="blur"/>
+            <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+          </filter>
+          <!-- AIIA core gradient -->
+          <radialGradient id="aiiaCoreGradient" cx="50%" cy="50%" r="50%">
+            <stop offset="0%" stop-color="#d4a0ff"/>
+            <stop offset="60%" stop-color="#bf5af2"/>
+            <stop offset="100%" stop-color="#7c3aed"/>
+          </radialGradient>
+          <radialGradient id="aiiaDegradedGradient" cx="50%" cy="50%" r="50%">
+            <stop offset="0%" stop-color="#ffd580"/>
+            <stop offset="100%" stop-color="#ff9f0a"/>
+          </radialGradient>
+          <radialGradient id="aiiaOfflineGradient" cx="50%" cy="50%" r="50%">
+            <stop offset="0%" stop-color="#ff8a80"/>
+            <stop offset="100%" stop-color="#ff453a"/>
+          </radialGradient>
+          <!-- Token ring gradient -->
+          <linearGradient id="tokenGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stop-color="var(--accent-purple)"/>
+            <stop offset="100%" stop-color="var(--accent-teal)"/>
+          </linearGradient>
+        </defs>
+
+        <!-- Concentric ring guides (drawn by JS) -->
+        <g id="ring-guides"></g>
+
+        <!-- Edges (drawn by JS) -->
+        <g id="constellation-edges"></g>
+
+        <!-- Particle pool -->
+        <g id="particle-pool"></g>
+
+        <!-- Nodes (drawn by JS) -->
+        <g id="constellation-nodes"></g>
+      </svg>
+    </div>
+  </section>
+
+  <!-- Middle row: Services + Local ratio ring + Latency chart -->
+  <section class="section">
+    <div class="grid grid-3">
+
+      <!-- Services -->
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">Services</span>
+        </div>
+        <div id="services-list">
+          <div class="service-item">
+            <div class="service-icon ollama">O</div>
+            <div class="service-info">
+              <div class="service-name">Ollama</div>
+              <div class="service-detail" id="svc-ollama-detail">Checking...</div>
+            </div>
+            <span class="service-status badge-offline" id="svc-ollama-status">--</span>
+          </div>
+          <div class="service-item">
+            <div class="service-icon brain">B</div>
+            <div class="service-info">
+              <div class="service-name">Local Brain API</div>
+              <div class="service-detail" id="svc-brain-detail">:8100</div>
+            </div>
+            <span class="service-status badge-offline" id="svc-brain-status">--</span>
+          </div>
+          <div class="service-item">
+            <div class="service-icon cmd">C</div>
+            <div class="service-info">
+              <div class="service-name">Command Center</div>
+              <div class="service-detail">:8200</div>
+            </div>
+            <span class="service-status badge-online">online</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Local ratio ring -->
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">Local vs Cloud</span>
+        </div>
+        <div class="status-ring-container">
+          <div class="status-ring">
+            <svg width="80" height="80" viewBox="0 0 80 80">
+              <circle class="status-ring-bg" cx="40" cy="40" r="34" />
+              <circle class="status-ring-fill" id="ring-fill" cx="40" cy="40" r="34"
+                stroke="url(#ring-gradient)"
+                stroke-dasharray="213.6"
+                stroke-dashoffset="213.6" />
+              <defs>
+                <linearGradient id="ring-gradient" x1="0%" y1="0%" x2="100%" y2="100%">
+                  <stop offset="0%" stop-color="var(--accent-green)" />
+                  <stop offset="100%" stop-color="var(--accent-teal)" />
+                </linearGradient>
+              </defs>
+            </svg>
+            <div class="status-ring-label" id="ring-label">0%</div>
+          </div>
+          <div class="status-ring-meta">
+            <div><span class="label" id="ring-local-count">0</span> <span class="sublabel">local</span></div>
+            <div><span class="label" id="ring-cloud-count">0</span> <span class="sublabel">cloud</span></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Latency chart -->
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">Latency (recent)</span>
+        </div>
+        <div class="bar-chart" id="latency-chart">
+          <div class="empty-state" style="width:100%">
+            <div class="icon">~</div>
+            Awaiting data
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- AIIA — AI Information Architecture -->
+  <section class="section aiia-section">
+    <div class="aiia-section-header">
+      <div class="aiia-logo">AIIA</div>
+      <h2>AIIA <span>AI Information Architecture</span></h2>
+    </div>
+
+    <div class="grid grid-3">
+
+      <!-- AIIA Status -->
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">AIIA Status</span>
+          <span class="card-badge badge-offline" id="aiia-badge">offline</span>
+        </div>
+        <div id="aiia-status-content">
+          <div class="empty-state">
+            <div class="icon">~</div>
+            Connecting to AIIA...
+          </div>
+        </div>
+      </div>
+
+      <!-- Ask AIIA -->
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">Ask AIIA</span>
+        </div>
+        <div class="aiia-ask-form">
+          <input class="aiia-ask-input" id="aiia-input" type="text"
+                 placeholder="Ask AIIA anything about the codebase..."
+                 onkeydown="if(event.key==='Enter')askAIIA()" />
+          <button class="aiia-ask-btn" id="aiia-ask-btn" onclick="askAIIA()">Ask</button>
+        </div>
+        <div class="aiia-thinking" id="aiia-thinking" style="display:none">
+          AIIA is thinking
+          <span class="dots"><span class="dot"></span><span class="dot"></span><span class="dot"></span></span>
+        </div>
+        <div class="aiia-response" id="aiia-response">
+          <div class="aiia-response-content" id="aiia-response-text"></div>
+          <div class="aiia-response-meta">
+            <span id="aiia-response-model"></span>
+            <span id="aiia-response-sources"></span>
+            <span id="aiia-response-time"></span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Memory Browser -->
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">Memory Browser</span>
+          <span class="card-badge" id="mem-total" style="color:var(--text-tertiary)">0</span>
+        </div>
+        <div class="mem-pills" id="mem-pills"></div>
+        <div class="mem-list" id="mem-list">
+          <div class="empty-state">
+            <div class="icon">~</div>
+            Loading memories...
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- Token & Request Tracking -->
+  <section class="section">
+    <div class="grid grid-2">
+
+      <!-- Token Breakdown -->
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">Token Spend Breakdown</span>
+          <span class="card-badge" id="token-total-badge" style="color:var(--text-tertiary)">0</span>
+        </div>
+        <div id="token-breakdown">
+          <div class="token-row">
+            <div class="provider-label"><div class="provider-dot local"></div> Local (Ollama)</div>
+            <div><span class="token-val" id="tok-local">0</span><span class="token-cost">$0.00</span></div>
+          </div>
+          <div class="token-row">
+            <div class="provider-label"><div class="provider-dot claude"></div> Claude (Anthropic)</div>
+            <div><span class="token-val" id="tok-claude">0</span><span class="token-cost" id="tok-claude-cost">$0.00</span></div>
+          </div>
+          <div class="token-row">
+            <div class="provider-label"><div class="provider-dot gemini"></div> Gemini (Google)</div>
+            <div><span class="token-val" id="tok-gemini">0</span><span class="token-cost" id="tok-gemini-cost">$0.00</span></div>
+          </div>
+        </div>
+        <div class="token-bar-container">
+          <div class="token-bar-track">
+            <div class="token-bar-fill local" id="tok-bar-local" style="width:0%"></div>
+            <div class="token-bar-fill claude" id="tok-bar-claude" style="width:0%"></div>
+            <div class="token-bar-fill gemini" id="tok-bar-gemini" style="width:0%"></div>
+          </div>
+          <div class="token-bar-legend">
+            <span><div class="provider-dot local" style="width:6px;height:6px;border-radius:50%;display:inline-block"></div> Local</span>
+            <span><div class="provider-dot claude" style="width:6px;height:6px;border-radius:50%;display:inline-block"></div> Claude</span>
+            <span><div class="provider-dot gemini" style="width:6px;height:6px;border-radius:50%;display:inline-block"></div> Gemini</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Request Breakdown -->
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">Request Breakdown</span>
+          <span class="card-badge" id="req-total-badge" style="color:var(--text-tertiary)">0</span>
+        </div>
+        <div id="req-breakdown">
+          <div class="req-breakdown">
+            <div class="req-row">
+              <div class="req-label"><div class="provider-dot local" style="width:6px;height:6px;border-radius:50%"></div> Local (free)</div>
+              <span class="req-count" id="req-local">0</span>
+            </div>
+            <div class="req-row">
+              <div class="req-label"><div class="provider-dot claude" style="width:6px;height:6px;border-radius:50%"></div> Claude</div>
+              <span class="req-count" id="req-claude">0</span>
+            </div>
+            <div class="req-row">
+              <div class="req-label"><div class="provider-dot gemini" style="width:6px;height:6px;border-radius:50%"></div> Gemini</div>
+              <span class="req-count" id="req-gemini">0</span>
+            </div>
+          </div>
+          <div style="margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--glass-border);">
+            <div class="req-row">
+              <div class="req-label" style="font-weight:600">Cost Saved (Local vs Claude)</div>
+              <span class="req-count" style="color:var(--accent-green)" id="req-cost-saved">$0.00</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- Products & Microproducts -->
+  <section class="section products-section">
+    <div class="products-section-header">
+      <div class="prod-logo">A</div>
+      <h2>Products <span>Ecosystem</span></h2>
+    </div>
+
+    <div class="grid grid-2">
+
+      <!-- Product Ecosystem -->
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">Product Ecosystem</span>
+          <span class="card-badge" style="color:var(--text-tertiary)">6 products</span>
+        </div>
+        <div class="products-grid" id="products-list">
+          <div class="product-card">
+            <div class="product-icon" style="background:rgba(10,132,255,0.12)">A</div>
+            <div class="product-info">
+              <div class="product-name">AI Analyst</div>
+              <div class="product-desc">Law firm financial analysis + EOS/Traction</div>
+            </div>
+            <span class="product-status status-production">production</span>
+          </div>
+          <div class="product-card">
+            <div class="product-icon" style="background:rgba(191,90,242,0.12)">AI</div>
+            <div class="product-info">
+              <div class="product-name">AIIA Local Brain</div>
+              <div class="product-desc">Mac Mini M4 — persistent AI memory + routing</div>
+            </div>
+            <span class="product-status status-building">building</span>
+          </div>
+          <div class="product-card">
+            <div class="product-icon" style="background:rgba(48,209,88,0.12)">M</div>
+            <div class="product-info">
+              <div class="product-name">Marketing Backend</div>
+              <div class="product-desc">Brands, calendar, content gen, LNS</div>
+            </div>
+            <span class="product-status status-production">production</span>
+          </div>
+          <div class="product-card">
+            <div class="product-icon" style="background:rgba(255,159,10,0.12)">E</div>
+            <div class="product-info">
+              <div class="product-name">Estate Planner</div>
+              <div class="product-desc">Estate planning AI for attorneys</div>
+            </div>
+            <span class="product-status status-active">active</span>
+          </div>
+          <div class="product-card">
+            <div class="product-icon" style="background:rgba(100,210,255,0.12)">AC</div>
+            <div class="product-info">
+              <div class="product-name">AC Ping Ethics AI</div>
+              <div class="product-desc">MIA + GURU agents — ethics compliance</div>
+            </div>
+            <span class="product-status status-active">active</span>
+          </div>
+          <div class="product-card">
+            <div class="product-icon" style="background:rgba(255,69,58,0.12)">C</div>
+            <div class="product-info">
+              <div class="product-name">Codeword</div>
+              <div class="product-desc">Crisis alerts bypassing DND/silent mode</div>
+            </div>
+            <span class="product-status status-mvp">mvp</span>
+          </div>
+          <div class="product-card">
+            <div class="product-icon" style="background:rgba(48,209,88,0.12)">R</div>
+            <div class="product-info">
+              <div class="product-name">ReaLIZ Health</div>
+              <div class="product-desc">Health coaching with Liz Josefsberg</div>
+            </div>
+            <span class="product-status status-active">active</span>
+          </div>
+          <div class="product-card">
+            <div class="product-icon" style="background:rgba(10,132,255,0.12)">S</div>
+            <div class="product-info">
+              <div class="product-name">Sales Backend</div>
+              <div class="product-desc">Prospects, pipeline, AI research</div>
+            </div>
+            <span class="product-status status-active">active</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Microproducts Build Tracker -->
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">Microproducts — Build Tracker</span>
+          <span class="card-badge" style="color:var(--text-tertiary)" id="micro-count">0</span>
+        </div>
+        <div class="products-grid" id="microproducts-list">
+          <!-- Shipped -->
+          <div class="micro-item"><div class="micro-dot shipped"></div><span class="micro-name">RLM Engine (agentic reasoning)</span><span class="micro-tag shipped">shipped</span></div>
+          <div class="micro-item"><div class="micro-dot shipped"></div><span class="micro-name">Case Analysis Workspace</span><span class="micro-tag shipped">shipped</span></div>
+          <div class="micro-item"><div class="micro-dot shipped"></div><span class="micro-name">AI Case Grader</span><span class="micro-tag shipped">shipped</span></div>
+          <div class="micro-item"><div class="micro-dot shipped"></div><span class="micro-name">Profit Finder</span><span class="micro-tag shipped">shipped</span></div>
+          <div class="micro-item"><div class="micro-dot shipped"></div><span class="micro-name">V/TO Builder</span><span class="micro-tag shipped">shipped</span></div>
+          <div class="micro-item"><div class="micro-dot shipped"></div><span class="micro-name">L10 Agenda</span><span class="micro-tag shipped">shipped</span></div>
+          <div class="micro-item"><div class="micro-dot shipped"></div><span class="micro-name">Scorecard + Rocks</span><span class="micro-tag shipped">shipped</span></div>
+          <div class="micro-item"><div class="micro-dot shipped"></div><span class="micro-name">Cash Flow Forecast</span><span class="micro-tag shipped">shipped</span></div>
+          <div class="micro-item"><div class="micro-dot shipped"></div><span class="micro-name">Document Export (Excel/PPT)</span><span class="micro-tag shipped">shipped</span></div>
+          <div class="micro-item"><div class="micro-dot shipped"></div><span class="micro-name">AI Memory System</span><span class="micro-tag shipped">shipped</span></div>
+          <div class="micro-item"><div class="micro-dot shipped"></div><span class="micro-name">AIIA MCP Server (Claude + AIIA)</span><span class="micro-tag shipped">shipped</span></div>
+          <div class="micro-item"><div class="micro-dot shipped"></div><span class="micro-name">Command Center Dashboard</span><span class="micro-tag shipped">shipped</span></div>
+          <!-- Building -->
+          <div class="micro-item"><div class="micro-dot building"></div><span class="micro-name">Practice Area Classifier</span><span class="micro-tag building">building</span></div>
+          <div class="micro-item"><div class="micro-dot building"></div><span class="micro-name">Smart Conductor (LLM routing)</span><span class="micro-tag building">building</span></div>
+          <div class="micro-item"><div class="micro-dot building"></div><span class="micro-name">AIIA Voice (Whisper)</span><span class="micro-tag building">building</span></div>
+          <!-- Planned -->
+          <div class="micro-item"><div class="micro-dot planned"></div><span class="micro-name">Hybrid RLM (local orchestration)</span><span class="micro-tag planned">planned</span></div>
+          <div class="micro-item"><div class="micro-dot planned"></div><span class="micro-name">Fine-tuning Pipeline</span><span class="micro-tag planned">planned</span></div>
+          <div class="micro-item"><div class="micro-dot planned"></div><span class="micro-name">Cloud Command Center (remote)</span><span class="micro-tag planned">planned</span></div>
+        </div>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- Bottom: Routing log + Alerts -->
+  <section class="section">
+    <div class="grid grid-2">
+
+      <!-- Routing log -->
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">Routing Decisions</span>
+          <span class="card-badge" id="routing-count" style="color:var(--text-tertiary)">0</span>
+        </div>
+        <div id="routing-log" style="max-height: 320px; overflow-y: auto;">
+          <div class="empty-state">
+            <div class="icon">~</div>
+            No routing decisions yet
+          </div>
+        </div>
+      </div>
+
+      <!-- Alerts -->
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">Alerts</span>
+          <span class="card-badge" id="alerts-count" style="color:var(--text-tertiary)">0</span>
+        </div>
+        <div id="alerts-list" style="max-height: 320px; overflow-y: auto;">
+          <div class="empty-state">
+            <div class="icon">~</div>
+            No alerts. All clear.
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </section>
+
+</div>
+
+<script>
+// ═══════════════════════════════════════════════════════════
+// AIIA COMMAND CENTER — Real-time Dashboard
+// Auto-detects backend. Falls back to live demo simulation.
+// ═══════════════════════════════════════════════════════════
+
+let ws = null;
+let reconnectTimer = null;
+let demoMode = false;
+let demoInterval = null;
+let demoUptime = 0;
+
+// Demo state — simulates a live system
+const demo = {
+  totalLocal: 0,
+  totalCloud: 0,
+  tokensSaved: 0,
+  tokensLocal: 0,
+  tokensCloud: 0,
+  uptimeStart: Date.now(),
+  routingLog: [],
+  alerts: [],
+  latencySamples: [],
+};
+
+// ── Connection ──
+
+function connect() {
+  try {
+    const WS_URL = `ws://${location.host}/ws`;
+    ws = new WebSocket(WS_URL);
+
+    ws.onopen = () => {
+      demoMode = false;
+      if (demoInterval) { clearInterval(demoInterval); demoInterval = null; }
+      el('ws-status').className = 'status-dot';
+      el('ws-label').textContent = 'Live';
+      if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
+    };
+
+    ws.onclose = () => {
+      el('ws-status').className = 'status-dot offline';
+      el('ws-label').textContent = 'Reconnecting...';
+      reconnectTimer = setTimeout(() => {
+        // After 2 failed attempts, switch to demo mode
+        if (!demoMode) startDemoMode();
+      }, 3000);
+    };
+
+    ws.onerror = () => {
+      ws.close();
+    };
+
+    ws.onmessage = (event) => {
+      const msg = JSON.parse(event.data);
+      if (msg.type === 'metrics_update') {
+        updateDashboard(msg.data);
+      } else if (msg.type === 'task_started' && taskAnimator) {
+        taskAnimator.onTaskStarted(msg);
+      } else if (msg.type === 'task_complete' && taskAnimator) {
+        taskAnimator.onTaskComplete(msg);
+      } else if (msg.type === 'task_failed' && taskAnimator) {
+        taskAnimator.onTaskFailed(msg);
+      } else if (msg.type === 'activity_pulse' && taskAnimator) {
+        taskAnimator.onActivityPulse();
+      }
+    };
+  } catch (e) {
+    startDemoMode();
+  }
+}
+
+// ── Demo Mode — simulates live data ──
+
+function startDemoMode() {
+  demoMode = true;
+  el('ws-status').className = 'status-dot';
+  el('ws-label').textContent = 'Demo';
+  el('ws-label').style.color = 'var(--accent-orange)';
+
+  // Seed some initial data
+  seedDemoData();
+  renderDemoState();
+
+  // Simulate new events every 2-4 seconds
+  demoInterval = setInterval(() => {
+    simulateDemoEvent();
+    renderDemoState();
+  }, 2000 + Math.random() * 2000);
+}
+
+function seedDemoData() {
+  const domains = ['finance', 'legal', 'estate', 'marketing', 'general', 'compliance', 'social'];
+  const paths = ['local', 'eos', 'rlm'];
+  const pathWeights = [0.45, 0.40, 0.15]; // 45% local, 40% eos, 15% rlm
+  const eqLevels = [1, 1, 2, 2, 2, 3, 5, 5, 8];
+
+  // Generate 30 historical entries
+  for (let i = 0; i < 30; i++) {
+    const r = Math.random();
+    const path = r < pathWeights[0] ? 'local' : r < pathWeights[0] + pathWeights[1] ? 'eos' : 'rlm';
+    const domain = domains[Math.floor(Math.random() * domains.length)];
+    const eq = eqLevels[Math.floor(Math.random() * eqLevels.length)];
+    const isLocal = path === 'local';
+    const latency = isLocal ? 80 + Math.random() * 400 : 800 + Math.random() * 2000;
+
+    const entry = {
+      timestamp: new Date(Date.now() - (30 - i) * 60000).toISOString(),
+      domain, eq_level: eq, recommended_path: path,
+      latency_ms: Math.round(latency),
+    };
+    demo.routingLog.push(entry);
+
+    if (isLocal) {
+      demo.totalLocal++;
+      const localTok = 200 + Math.floor(Math.random() * 300);
+      demo.tokensLocal += localTok;
+      demo.tokensSaved += 300 + Math.floor(Math.random() * 400);
+    } else {
+      demo.totalCloud++;
+      demo.tokensCloud += 400 + Math.floor(Math.random() * 800);
+    }
+
+    demo.latencySamples.push({
+      provider: isLocal ? 'local' : 'anthropic',
+      latency_ms: latency,
+      model: isLocal ? 'llama3.1:8b' : 'claude-sonnet-4',
+      timestamp: entry.timestamp,
+    });
+  }
+
+  // Seed alerts
+  demo.alerts.push({
+    level: 'info', message: 'Command Center started',
+    timestamp: new Date(Date.now() - 3600000).toISOString(),
+  });
+  demo.alerts.push({
+    level: 'warning', message: 'Ollama model cold start detected (12.4s latency)',
+    timestamp: new Date(Date.now() - 1800000).toISOString(),
+  });
+}
+
+function simulateDemoEvent() {
+  const domains = ['finance', 'legal', 'estate', 'marketing', 'general', 'compliance', 'social', 'document'];
+  const r = Math.random();
+  const path = r < 0.45 ? 'local' : r < 0.85 ? 'eos' : 'rlm';
+  const domain = domains[Math.floor(Math.random() * domains.length)];
+  const eqLevels = [1, 1, 2, 2, 3, 5];
+  const eq = eqLevels[Math.floor(Math.random() * eqLevels.length)];
+  const isLocal = path === 'local';
+  const latency = isLocal ? 60 + Math.random() * 350 : 700 + Math.random() * 2200;
+
+  demo.routingLog.push({
+    timestamp: new Date().toISOString(),
+    domain, eq_level: eq, recommended_path: path,
+    latency_ms: Math.round(latency),
+  });
+  if (demo.routingLog.length > 100) demo.routingLog.shift();
+
+  if (isLocal) {
+    demo.totalLocal++;
+    const localTok = 150 + Math.floor(Math.random() * 350);
+    demo.tokensLocal += localTok;
+    demo.tokensSaved += 200 + Math.floor(Math.random() * 500);
+  } else {
+    demo.totalCloud++;
+    demo.tokensCloud += 300 + Math.floor(Math.random() * 900);
+  }
+
+  demo.latencySamples.push({
+    provider: isLocal ? 'local' : 'anthropic',
+    latency_ms: latency,
+    model: isLocal ? 'llama3.1:8b' : 'claude-sonnet-4',
+    timestamp: new Date().toISOString(),
+  });
+  if (demo.latencySamples.length > 40) demo.latencySamples.shift();
+
+  // Occasional alert
+  if (Math.random() < 0.05) {
+    const alertMsgs = [
+      { level: 'info', message: 'Routing model cache refreshed' },
+      { level: 'warning', message: 'Local latency spike: 890ms on llama3:8b' },
+      { level: 'info', message: 'PII scan completed — 0 findings' },
+      { level: 'info', message: 'Memory extraction: 3 new facts stored' },
+    ];
+    const a = alertMsgs[Math.floor(Math.random() * alertMsgs.length)];
+    demo.alerts.push({ ...a, timestamp: new Date().toISOString() });
+    if (demo.alerts.length > 20) demo.alerts.shift();
+  }
+}
+
+function renderDemoState() {
+  const total = demo.totalLocal + demo.totalCloud;
+  const localPct = total > 0 ? Math.round(demo.totalLocal / total * 100) : 0;
+  const uptimeSecs = Math.floor((Date.now() - demo.uptimeStart) / 1000) + 14400; // +4h base
+
+  // Local avg latency
+  const localLats = demo.latencySamples.filter(s => s.provider === 'local').map(s => s.latency_ms);
+  const cloudLats = demo.latencySamples.filter(s => s.provider !== 'local').map(s => s.latency_ms);
+  const avgLocal = localLats.length > 0 ? Math.round(localLats.reduce((a,b) => a+b, 0) / localLats.length) : 0;
+  const avgCloud = cloudLats.length > 0 ? Math.round(cloudLats.reduce((a,b) => a+b, 0) / cloudLats.length) : 0;
+
+  updateDashboard({
+    uptime_seconds: uptimeSecs,
+    ollama_status: 'online',
+    brain_api_status: 'online',
+    requests: { total, local: demo.totalLocal, cloud: demo.totalCloud, local_pct: localPct },
+    tokens: { saved: demo.tokensSaved, spent_local: demo.tokensLocal, spent_cloud: demo.tokensCloud },
+    latency: { avg_local_ms: avgLocal, avg_cloud_ms: avgCloud },
+    routing: { domains: {}, paths: {} },
+    alerts: { total: demo.alerts.length, unacknowledged: demo.alerts.filter(a => !a.acknowledged).length },
+  });
+
+  // Render details
+  renderRoutingLog(demo.routingLog.slice(-20).reverse());
+  renderAlerts(demo.alerts);
+  renderLatencyChart(demo.latencySamples);
+}
+
+// ── Dashboard Update (works for both live + demo) ──
+
+function updateDashboard(d) {
+  el('stat-total').textContent = formatNum(d.requests?.total || 0);
+  el('stat-local-pct').textContent = d.requests?.local_pct || 0;
+  el('stat-tokens-saved').textContent = formatNum(d.tokens?.saved || 0);
+  el('stat-latency-local').textContent = d.latency?.avg_local_ms || '--';
+  el('stat-latency-cloud').textContent = (d.latency?.avg_cloud_ms || '--') + '';
+  el('stat-uptime').textContent = formatUptime(d.uptime_seconds || 0);
+
+  updateService('ollama', d.ollama_status);
+  updateService('brain', d.brain_api_status);
+
+  const pct = d.requests?.local_pct || 0;
+  const circumference = 213.6;
+  const offset = circumference - (pct / 100) * circumference;
+  el('ring-fill').setAttribute('stroke-dashoffset', offset);
+  el('ring-label').textContent = pct + '%';
+  el('ring-local-count').textContent = formatNum(d.requests?.local || 0);
+  el('ring-cloud-count').textContent = formatNum(d.requests?.cloud || 0);
+
+  const totalRouting = Object.values(d.routing?.paths || {}).reduce((a, b) => a + b, 0);
+  el('routing-count').textContent = d.requests?.total || totalRouting;
+  el('alerts-count').textContent = d.alerts?.unacknowledged || 0;
+
+  // Token & request breakdown
+  updateTokenBreakdown(d);
+  updateRequestBreakdown(d);
+}
+
+function updateTokenBreakdown(d) {
+  const tokLocal = d.tokens?.spent_local || 0;
+  const tokCloud = d.tokens?.spent_cloud || 0;
+  // Estimate: 60% Claude, 40% Gemini of cloud tokens (or use actual if available)
+  const tokClaude = d.tokens?.spent_claude || Math.round(tokCloud * 0.75);
+  const tokGemini = d.tokens?.spent_gemini || Math.round(tokCloud * 0.25);
+  const tokTotal = tokLocal + tokClaude + tokGemini;
+
+  el('tok-local').textContent = formatNum(tokLocal);
+  el('tok-claude').textContent = formatNum(tokClaude);
+  el('tok-gemini').textContent = formatNum(tokGemini);
+  el('token-total-badge').textContent = formatNum(tokTotal);
+
+  // Cost estimates: Claude ~$3/1M input, Gemini ~$1.25/1M input, Local = $0
+  const claudeCost = (tokClaude / 1000000) * 3;
+  const geminiCost = (tokGemini / 1000000) * 1.25;
+  el('tok-claude-cost').textContent = '$' + claudeCost.toFixed(2);
+  el('tok-gemini-cost').textContent = '$' + geminiCost.toFixed(2);
+
+  // Proportional bar
+  if (tokTotal > 0) {
+    el('tok-bar-local').style.width = (tokLocal / tokTotal * 100) + '%';
+    el('tok-bar-claude').style.width = (tokClaude / tokTotal * 100) + '%';
+    el('tok-bar-gemini').style.width = (tokGemini / tokTotal * 100) + '%';
+  }
+}
+
+function updateRequestBreakdown(d) {
+  const reqLocal = d.requests?.local || 0;
+  const reqCloud = d.requests?.cloud || 0;
+  const reqTotal = reqLocal + reqCloud;
+  // Estimate Claude vs Gemini split
+  const reqClaude = d.requests?.cloud_claude || Math.round(reqCloud * 0.85);
+  const reqGemini = d.requests?.cloud_gemini || Math.round(reqCloud * 0.15);
+
+  el('req-local').textContent = formatNum(reqLocal);
+  el('req-claude').textContent = formatNum(reqClaude);
+  el('req-gemini').textContent = formatNum(reqGemini);
+  el('req-total-badge').textContent = formatNum(reqTotal);
+
+  // Cost saved: each local request saves ~$0.003 (avg 500 tokens at $3/1M)
+  const costSaved = reqLocal * 0.003;
+  el('req-cost-saved').textContent = '$' + costSaved.toFixed(2);
+}
+
+
+function updateService(name, status) {
+  const statusEl = el(`svc-${name}-status`);
+  if (status === 'online') {
+    statusEl.textContent = 'online';
+    statusEl.className = 'service-status badge-online';
+  } else {
+    statusEl.textContent = status || 'offline';
+    statusEl.className = 'service-status badge-offline';
+  }
+}
+
+// ── Renderers ──
+
+function renderRoutingLog(entries) {
+  const container = el('routing-log');
+  if (entries.length === 0) return;
+
+  let html = '<table class="log-table"><thead><tr><th>Time</th><th>Domain</th><th>EQ</th><th>Path</th><th>Latency</th></tr></thead><tbody>';
+  entries.forEach(e => {
+    const time = e.timestamp ? new Date(e.timestamp).toLocaleTimeString() : '--';
+    const domain = e.domain || 'general';
+    const path = e.recommended_path || 'eos';
+    const eq = e.eq_level || 1;
+    const latency = e.latency_ms ? Math.round(e.latency_ms) + 'ms' : '--';
+    html += `<tr>
+      <td>${time}</td>
+      <td><span class="tag tag-${domain}">${domain}</span></td>
+      <td>${eq}</td>
+      <td><span class="tag tag-${path}">${path}</span></td>
+      <td>${latency}</td>
+    </tr>`;
+  });
+  html += '</tbody></table>';
+  container.innerHTML = html;
+}
+
+function renderAlerts(alerts) {
+  const container = el('alerts-list');
+  if (alerts.length === 0) return;
+
+  let html = '';
+  alerts.slice(-10).reverse().forEach(a => {
+    const time = a.timestamp ? new Date(a.timestamp).toLocaleTimeString() : '';
+    html += `<div class="alert-item">
+      <div class="alert-dot ${a.level}"></div>
+      <div>
+        <div class="alert-msg">${a.message}</div>
+        <div class="alert-time">${time}</div>
+      </div>
+    </div>`;
+  });
+  container.innerHTML = html;
+}
+
+function renderLatencyChart(samples) {
+  const container = el('latency-chart');
+  if (samples.length === 0) return;
+
+  const maxLatency = Math.max(...samples.map(s => s.latency_ms || 0), 100);
+  let html = '';
+  samples.forEach(s => {
+    const height = Math.max(4, (s.latency_ms / maxLatency) * 72);
+    const cls = s.provider === 'local' ? 'local' : 'cloud';
+    const title = `${s.provider}: ${Math.round(s.latency_ms)}ms (${s.model})`;
+    html += `<div class="bar ${cls}" style="height:${height}px" title="${title}"></div>`;
+  });
+  container.innerHTML = html;
+}
+
+// ── Utilities ──
+
+function formatNum(n) {
+  if (n >= 1000000) return (n / 1000000).toFixed(1) + 'M';
+  if (n >= 1000) return (n / 1000).toFixed(1) + 'K';
+  return n.toString();
+}
+
+function formatUptime(secs) {
+  if (secs < 60) return secs + 's';
+  if (secs < 3600) return Math.floor(secs / 60) + 'm';
+  if (secs < 86400) return Math.floor(secs / 3600) + 'h';
+  return Math.floor(secs / 86400) + 'd';
+}
+
+function el(id) { return document.getElementById(id); }
+
+// ═══════════════════════════════════════════════════════════
+// CONSTELLATION — Radial platform visualization
+// ═══════════════════════════════════════════════════════════
+
+const CX = 400, CY = 230; // SVG center
+
+// Node definitions: id, label, icon, ring (0=center, 1-3), angle, type, color
+const CONSTELLATION_NODES = [
+  // Center
+  { id: 'aiia', label: 'AIIA', icon: 'AI', ring: 0, angle: 0, type: 'brain', color: '#bf5af2' },
+  // Ring 1 — Routers
+  { id: 'conductor', label: 'Conductor', icon: 'C', ring: 1, angle: 210, type: 'router', color: '#0a84ff' },
+  { id: 'ping-orch', label: 'PingOrch', icon: 'P', ring: 1, angle: 330, type: 'router', color: '#64d2ff' },
+  // Ring 2 — Agents & Tools
+  { id: 'eos', label: 'EOS', icon: 'E', ring: 2, angle: 150, type: 'agent', color: '#0a84ff' },
+  { id: 'rlm', label: 'RLM', icon: 'R', ring: 2, angle: 195, type: 'agent', color: '#bf5af2' },
+  { id: 'mia-agent', label: 'MIA', icon: 'M', ring: 2, angle: 240, type: 'agent', color: '#64d2ff' },
+  { id: 'guru', label: 'GURU', icon: 'G', ring: 2, angle: 285, type: 'agent', color: '#ff9f0a' },
+  { id: 'finance', label: 'Finance', icon: '$', ring: 2, angle: 330, type: 'tool', color: '#30d158' },
+  { id: 'legal', label: 'Legal', icon: 'L', ring: 2, angle: 15, type: 'tool', color: '#64d2ff' },
+  { id: 'memory', label: 'Memory', icon: 'M', ring: 2, angle: 60, type: 'tool', color: '#bf5af2' },
+  { id: 'docs', label: 'Docs', icon: 'D', ring: 2, angle: 105, type: 'tool', color: '#ff9f0a' },
+  // Ring 3 — Products (left arc) & Infrastructure (right arc)
+  { id: 'analyst', label: 'Analyst', icon: 'A', ring: 3, angle: 135, type: 'product', color: '#0a84ff' },
+  { id: 'codeword', label: 'Codeword', icon: 'CW', ring: 3, angle: 165, type: 'product', color: '#ff453a' },
+  { id: 'mia-prod', label: 'MIA', icon: 'MI', ring: 3, angle: 195, type: 'product', color: '#64d2ff' },
+  { id: 'realiz', label: 'ReaLIZ', icon: 'Lz', ring: 3, angle: 225, type: 'product', color: '#30d158' },
+  { id: 'estate', label: 'Estate', icon: 'EP', ring: 3, angle: 255, type: 'product', color: '#ff9f0a' },
+  { id: 'claude', label: 'Claude', icon: 'Cl', ring: 3, angle: 315, type: 'infra', color: '#0a84ff' },
+  { id: 'gemini', label: 'Gemini', icon: 'Ge', ring: 3, angle: 345, type: 'infra', color: '#ff9f0a' },
+  { id: 'chromadb', label: 'Chroma', icon: 'Ch', ring: 3, angle: 15, type: 'infra', color: '#30d158' },
+  { id: 'postgresql', label: 'Postgres', icon: 'Pg', ring: 3, angle: 45, type: 'infra', color: '#64d2ff' },
+  { id: 'render', label: 'Render', icon: 'Rn', ring: 3, angle: 75, type: 'infra', color: '#bf5af2' },
+  { id: 'ollama', label: 'Ollama', icon: 'Ol', ring: 3, angle: 105, type: 'infra', color: '#30d158' },
+];
+
+const RING_RADII = [0, 100, 180, 280];
+
+// Edge definitions: [sourceId, targetId]
+const CONSTELLATION_EDGES = [
+  ['conductor', 'aiia'], ['ping-orch', 'aiia'],
+  ['aiia', 'eos'], ['aiia', 'rlm'], ['aiia', 'mia-agent'], ['aiia', 'guru'],
+  ['aiia', 'finance'], ['aiia', 'legal'], ['aiia', 'memory'], ['aiia', 'docs'],
+  ['conductor', 'eos'], ['conductor', 'rlm'],
+  ['rlm', 'claude'], ['eos', 'claude'],
+  ['aiia', 'chromadb'], ['aiia', 'postgresql'],
+  ['aiia', 'claude'], ['aiia', 'gemini'], ['aiia', 'ollama'],
+  ['analyst', 'conductor'], ['codeword', 'conductor'],
+  ['mia-prod', 'ping-orch'], ['realiz', 'conductor'], ['estate', 'conductor'],
+  ['chromadb', 'postgresql'],
+  ['claude', 'render'], ['gemini', 'render'],
+];
+
+function nodePos(node) {
+  if (node.ring === 0) return { x: CX, y: CY };
+  const rad = (node.angle - 90) * Math.PI / 180;
+  return {
+    x: CX + RING_RADII[node.ring] * Math.cos(rad),
+    y: CY + RING_RADII[node.ring] * Math.sin(rad),
+  };
+}
+
+const nodeMap = {};
+CONSTELLATION_NODES.forEach(n => { nodeMap[n.id] = n; });
+
+// Edge ID helper: always alphabetically sorted for consistent lookup
+function edgeId(a, b) {
+  return [a, b].sort().join('-');
+}
+
+// Build a lookup for quick edge-id → [sourceId, targetId]
+const edgeLookup = {};
+CONSTELLATION_EDGES.forEach(([a, b]) => {
+  edgeLookup[edgeId(a, b)] = [a, b];
+  // Also index by the dash-joined form from TASK_EDGE_HINTS
+  edgeLookup[a + '-' + b] = [a, b];
+  edgeLookup[b + '-' + a] = [a, b];
+});
+
+function drawConstellation() {
+  const svg = el('constellation-svg');
+  const guidesG = el('ring-guides');
+  const edgesG = el('constellation-edges');
+  const nodesG = el('constellation-nodes');
+
+  // Draw concentric ring guides
+  RING_RADII.forEach((r, i) => {
+    if (r === 0) return;
+    const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+    circle.setAttribute('cx', CX);
+    circle.setAttribute('cy', CY);
+    circle.setAttribute('r', r);
+    circle.setAttribute('class', 'ring-guide');
+    circle.style.setProperty('--ring-delay', (i * 5) + 's');
+    guidesG.appendChild(circle);
+  });
+
+  // Draw edges as paths
+  CONSTELLATION_EDGES.forEach(([srcId, tgtId]) => {
+    const src = nodePos(nodeMap[srcId]);
+    const tgt = nodePos(nodeMap[tgtId]);
+    const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    // Slight curve for visual interest
+    const mx = (src.x + tgt.x) / 2;
+    const my = (src.y + tgt.y) / 2;
+    const dx = tgt.x - src.x;
+    const dy = tgt.y - src.y;
+    const cx1 = mx + dy * 0.08;
+    const cy1 = my - dx * 0.08;
+    path.setAttribute('d', `M${src.x},${src.y} Q${cx1},${cy1} ${tgt.x},${tgt.y}`);
+    path.setAttribute('class', 'constellation-edge');
+    path.setAttribute('data-edge', edgeId(srcId, tgtId));
+    path.setAttribute('data-src', srcId);
+    path.setAttribute('data-tgt', tgtId);
+    path.id = 'edge-' + edgeId(srcId, tgtId);
+    edgesG.appendChild(path);
+  });
+
+  // Draw nodes
+  CONSTELLATION_NODES.forEach((node, i) => {
+    const pos = nodePos(node);
+    const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+    g.setAttribute('class', 'constellation-node');
+    g.setAttribute('data-id', node.id);
+    g.id = 'node-' + node.id;
+    g.style.setProperty('--breath-delay', (i * 0.3) + 's');
+
+    if (node.type === 'brain') {
+      // AIIA Central Brain
+      // Halo
+      const halo = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+      halo.setAttribute('cx', pos.x);
+      halo.setAttribute('cy', pos.y);
+      halo.setAttribute('r', 52);
+      halo.setAttribute('class', 'aiia-halo');
+      g.appendChild(halo);
+
+      // Token ring background
+      const tokenBg = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+      tokenBg.setAttribute('cx', pos.x);
+      tokenBg.setAttribute('cy', pos.y);
+      tokenBg.setAttribute('r', 48);
+      tokenBg.setAttribute('class', 'token-ring-bg');
+      g.appendChild(tokenBg);
+
+      // Token ring fill
+      const tokenFill = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+      tokenFill.setAttribute('cx', pos.x);
+      tokenFill.setAttribute('cy', pos.y);
+      tokenFill.setAttribute('r', 48);
+      tokenFill.setAttribute('class', 'token-ring-fill');
+      const circ = 2 * Math.PI * 48;
+      tokenFill.setAttribute('stroke-dasharray', circ.toFixed(1));
+      tokenFill.setAttribute('stroke-dashoffset', circ.toFixed(1));
+      tokenFill.setAttribute('transform', `rotate(-90 ${pos.x} ${pos.y})`);
+      tokenFill.id = 'aiia-token-ring';
+      g.appendChild(tokenFill);
+
+      // Core circle
+      const core = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+      core.setAttribute('cx', pos.x);
+      core.setAttribute('cy', pos.y);
+      core.setAttribute('r', 40);
+      core.setAttribute('fill', 'url(#aiiaCoreGradient)');
+      core.setAttribute('class', 'aiia-core aiia-core-fill');
+      core.setAttribute('filter', 'url(#brainGlow)');
+      g.appendChild(core);
+
+      // Label
+      const txt = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+      txt.setAttribute('x', pos.x);
+      txt.setAttribute('y', pos.y + 1);
+      txt.setAttribute('text-anchor', 'middle');
+      txt.setAttribute('dominant-baseline', 'central');
+      txt.setAttribute('fill', 'white');
+      txt.setAttribute('font-size', '14');
+      txt.setAttribute('font-weight', '800');
+      txt.setAttribute('letter-spacing', '1');
+      txt.textContent = 'AIIA';
+      g.appendChild(txt);
+
+      // Orbital data points
+      for (let oi = 0; oi < 2; oi++) {
+        const orbit = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+        orbit.setAttribute('r', '2');
+        orbit.setAttribute('fill', oi === 0 ? '#64d2ff' : '#bf5af2');
+        orbit.setAttribute('opacity', '0.8');
+        const anim = document.createElementNS('http://www.w3.org/2000/svg', 'animateMotion');
+        anim.setAttribute('dur', oi === 0 ? '6s' : '9s');
+        anim.setAttribute('repeatCount', 'indefinite');
+        const rx = 55 + oi * 8;
+        const ry = 30 + oi * 5;
+        anim.setAttribute('path', `M${pos.x - rx},${pos.y} A${rx},${ry} 0 1,1 ${pos.x + rx},${pos.y} A${rx},${ry} 0 1,1 ${pos.x - rx},${pos.y}`);
+        orbit.appendChild(anim);
+        g.appendChild(orbit);
+      }
+
+    } else if (node.type === 'router') {
+      // Diamond shape
+      const sz = 18;
+      const diamond = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
+      diamond.setAttribute('points', `${pos.x},${pos.y-sz} ${pos.x+sz},${pos.y} ${pos.x},${pos.y+sz} ${pos.x-sz},${pos.y}`);
+      diamond.setAttribute('fill', 'rgba(255,255,255,0.04)');
+      diamond.setAttribute('stroke', node.color);
+      diamond.setAttribute('stroke-width', '1.5');
+      diamond.setAttribute('class', 'node-border');
+      g.appendChild(diamond);
+      addNodeLabel(g, pos, node);
+
+    } else if (node.type === 'agent') {
+      // Hexagon
+      const sz = 18;
+      const pts = [];
+      for (let hi = 0; hi < 6; hi++) {
+        const a = (hi * 60 - 30) * Math.PI / 180;
+        pts.push(`${pos.x + sz * Math.cos(a)},${pos.y + sz * Math.sin(a)}`);
+      }
+      const hex = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
+      hex.setAttribute('points', pts.join(' '));
+      hex.setAttribute('fill', 'rgba(255,255,255,0.04)');
+      hex.setAttribute('stroke', node.color);
+      hex.setAttribute('stroke-width', '1.5');
+      hex.setAttribute('class', 'node-border');
+      g.appendChild(hex);
+      addNodeLabel(g, pos, node);
+
+    } else if (node.type === 'tool') {
+      // Small circle
+      const c = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+      c.setAttribute('cx', pos.x);
+      c.setAttribute('cy', pos.y);
+      c.setAttribute('r', 12);
+      c.setAttribute('fill', 'rgba(255,255,255,0.03)');
+      c.setAttribute('stroke', node.color);
+      c.setAttribute('stroke-width', '1');
+      c.setAttribute('class', 'node-border');
+      g.appendChild(c);
+      addNodeLabel(g, pos, node, 10);
+
+    } else if (node.type === 'product') {
+      // Rounded rectangle (pill)
+      const w = 46, h = 22;
+      const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+      rect.setAttribute('x', pos.x - w/2);
+      rect.setAttribute('y', pos.y - h/2);
+      rect.setAttribute('width', w);
+      rect.setAttribute('height', h);
+      rect.setAttribute('rx', 11);
+      rect.setAttribute('fill', 'rgba(255,255,255,0.03)');
+      rect.setAttribute('stroke', node.color);
+      rect.setAttribute('stroke-width', '1');
+      rect.setAttribute('class', 'node-border');
+      g.appendChild(rect);
+      addNodeLabel(g, pos, node, 10);
+
+    } else if (node.type === 'infra') {
+      // Circle + orbital ring
+      const c = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+      c.setAttribute('cx', pos.x);
+      c.setAttribute('cy', pos.y);
+      c.setAttribute('r', 14);
+      c.setAttribute('fill', 'rgba(255,255,255,0.03)');
+      c.setAttribute('stroke', node.color);
+      c.setAttribute('stroke-width', '1');
+      c.setAttribute('class', 'node-border');
+      g.appendChild(c);
+      // Orbital ring
+      const orb = document.createElementNS('http://www.w3.org/2000/svg', 'ellipse');
+      orb.setAttribute('cx', pos.x);
+      orb.setAttribute('cy', pos.y);
+      orb.setAttribute('rx', 20);
+      orb.setAttribute('ry', 8);
+      orb.setAttribute('fill', 'none');
+      orb.setAttribute('stroke', node.color);
+      orb.setAttribute('stroke-width', '0.5');
+      orb.setAttribute('opacity', '0.3');
+      g.appendChild(orb);
+      addNodeLabel(g, pos, node, 10);
+    }
+
+    nodesG.appendChild(g);
+  });
+}
+
+function addNodeLabel(g, pos, node, fontSize) {
+  // Icon text
+  const icon = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+  icon.setAttribute('x', pos.x);
+  icon.setAttribute('y', pos.y + 1);
+  icon.setAttribute('text-anchor', 'middle');
+  icon.setAttribute('dominant-baseline', 'central');
+  icon.setAttribute('fill', node.color);
+  icon.setAttribute('font-size', fontSize || 11);
+  icon.setAttribute('font-weight', '700');
+  icon.textContent = node.icon;
+  g.appendChild(icon);
+
+  // Name label below
+  const lbl = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+  lbl.setAttribute('x', pos.x);
+  lbl.setAttribute('y', pos.y + (node.type === 'tool' ? 22 : node.type === 'brain' ? 58 : 28));
+  lbl.setAttribute('text-anchor', 'middle');
+  lbl.setAttribute('fill', 'rgba(255,255,255,0.4)');
+  lbl.setAttribute('font-size', '9');
+  lbl.textContent = node.label;
+  g.appendChild(lbl);
+}
+
+// ═══════════════════════════════════════════════════════════
+// PARTICLE SYSTEM
+// ═══════════════════════════════════════════════════════════
+
+class ParticleSystem {
+  constructor(poolSize = 60) {
+    this.pool = [];
+    this.active = [];
+    this.animating = false;
+    this.poolG = el('particle-pool');
+
+    // Pre-create particle elements
+    for (let i = 0; i < poolSize; i++) {
+      const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+      circle.setAttribute('r', '3');
+      circle.setAttribute('class', 'particle');
+      circle.setAttribute('fill', '#ffffff');
+      this.poolG.appendChild(circle);
+
+      const trail = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+      trail.setAttribute('class', 'particle-trail');
+      trail.setAttribute('stroke', '#ffffff');
+      trail.setAttribute('stroke-width', '2');
+      this.poolG.insertBefore(trail, circle);
+
+      this.pool.push({
+        el: circle, trail,
+        path: null, progress: 0, speed: 0,
+        color: '#fff', isSquare: false, active: false,
+      });
+    }
+  }
+
+  spawn(edgeKey, color = '#ffffff', isSquare = false, speed = 0.012) {
+    // Find matching SVG path
+    const pathEl = document.querySelector(`[data-edge="${edgeKey}"]`)
+      || document.getElementById('edge-' + edgeKey);
+    if (!pathEl) {
+      // Try reversed edge lookup
+      const parts = edgeKey.split('-');
+      if (parts.length >= 2) {
+        // Try all possible sortings
+        const sorted = edgeId(parts[0], parts.slice(1).join('-'));
+        const altPath = document.getElementById('edge-' + sorted);
+        if (!altPath) return null;
+        return this._spawnOnPath(altPath, color, isSquare, speed);
+      }
+      return null;
+    }
+    return this._spawnOnPath(pathEl, color, isSquare, speed);
+  }
+
+  _spawnOnPath(pathEl, color, isSquare, speed) {
+    const p = this.pool.find(p => !p.active);
+    if (!p) return null;
+
+    p.active = true;
+    p.path = pathEl;
+    p.progress = 0;
+    p.speed = speed;
+    p.color = color;
+    p.isSquare = isSquare;
+
+    p.el.setAttribute('fill', color);
+    p.el.setAttribute('r', isSquare ? '4' : '3');
+    if (isSquare) {
+      p.el.setAttribute('rx', '1');
+    }
+    p.trail.setAttribute('stroke', color);
+
+    this.active.push(p);
+    if (!this.animating) this._startLoop();
+    return p;
+  }
+
+  burst(x, y, color, count = 15) {
+    for (let i = 0; i < count; i++) {
+      const p = this.pool.find(p => !p.active);
+      if (!p) break;
+
+      p.active = true;
+      p.path = null; // Burst = radial, no path
+      p.progress = 0;
+      p.speed = 0.02 + Math.random() * 0.02;
+      p.color = color;
+      p.burstAngle = (i / count) * Math.PI * 2;
+      p.burstX = x;
+      p.burstY = y;
+      p.burstRadius = 60 + Math.random() * 40;
+
+      p.el.setAttribute('fill', color);
+      p.el.setAttribute('r', '2');
+      p.trail.setAttribute('stroke', color);
+
+      this.active.push(p);
+    }
+    if (!this.animating) this._startLoop();
+  }
+
+  _startLoop() {
+    this.animating = true;
+    this._lastStop = 0;
+    const tick = () => {
+      if (this.active.length === 0) {
+        this._lastStop++;
+        if (this._lastStop > 120) { // ~2s at 60fps
+          this.animating = false;
+          return;
+        }
+      } else {
+        this._lastStop = 0;
+      }
+
+      for (let i = this.active.length - 1; i >= 0; i--) {
+        const p = this.active[i];
+        p.progress += p.speed;
+
+        if (p.progress >= 1) {
+          // Kill particle
+          p.active = false;
+          p.el.setAttribute('opacity', '0');
+          p.trail.setAttribute('opacity', '0');
+          this.active.splice(i, 1);
+          continue;
+        }
+
+        // Fade: in first 10%, out last 10%
+        let opacity = 1;
+        if (p.progress < 0.1) opacity = p.progress / 0.1;
+        else if (p.progress > 0.9) opacity = (1 - p.progress) / 0.1;
+
+        if (p.path) {
+          // Path-following particle
+          const len = p.path.getTotalLength();
+          const pt = p.path.getPointAtLength(p.progress * len);
+          const ptPrev = p.path.getPointAtLength(Math.max(0, p.progress - 0.03) * len);
+
+          p.el.setAttribute('cx', pt.x);
+          p.el.setAttribute('cy', pt.y);
+          p.el.setAttribute('opacity', opacity);
+
+          p.trail.setAttribute('x1', ptPrev.x);
+          p.trail.setAttribute('y1', ptPrev.y);
+          p.trail.setAttribute('x2', pt.x);
+          p.trail.setAttribute('y2', pt.y);
+          p.trail.setAttribute('opacity', opacity * 0.3);
+        } else if (p.burstX !== undefined) {
+          // Burst particle
+          const r = p.burstRadius * p.progress;
+          const x = p.burstX + Math.cos(p.burstAngle) * r;
+          const y = p.burstY + Math.sin(p.burstAngle) * r;
+
+          p.el.setAttribute('cx', x);
+          p.el.setAttribute('cy', y);
+          p.el.setAttribute('opacity', opacity * 0.8);
+
+          const prevR = p.burstRadius * Math.max(0, p.progress - 0.05);
+          const px = p.burstX + Math.cos(p.burstAngle) * prevR;
+          const py = p.burstY + Math.sin(p.burstAngle) * prevR;
+          p.trail.setAttribute('x1', px);
+          p.trail.setAttribute('y1', py);
+          p.trail.setAttribute('x2', x);
+          p.trail.setAttribute('y2', y);
+          p.trail.setAttribute('opacity', opacity * 0.2);
+        }
+      }
+
+      requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+  }
+}
+
+// ═══════════════════════════════════════════════════════════
+// TASK ANIMATOR — orchestrates visual sequences for task events
+// ═══════════════════════════════════════════════════════════
+
+class TaskAnimator {
+  constructor(particles) {
+    this.particles = particles;
+    this.activeEdges = new Set();
+    this.tokenCount = 0;
+    this.tokenCountToday = 0;
+  }
+
+  onTaskStarted(data) {
+    const edges = data.edges || [];
+    const usesLlm = data.uses_llm || false;
+
+    // Flash AIIA
+    const aiiaNode = el('node-aiia');
+    if (aiiaNode) {
+      aiiaNode.classList.add('active');
+      setTimeout(() => aiiaNode.classList.remove('active'), 800);
+    }
+
+    // Activate edges and spawn particles
+    edges.forEach((edgeKey, idx) => {
+      setTimeout(() => {
+        // Activate edge visually
+        const edgeEl = this._findEdge(edgeKey);
+        if (edgeEl) {
+          edgeEl.classList.add('active');
+          this.activeEdges.add(edgeKey);
+        }
+
+        // Determine color
+        let color = '#30d158'; // green default
+        if (edgeKey.includes('claude') || edgeKey.includes('rlm')) color = '#bf5af2';
+        if (edgeKey.includes('chromadb')) color = '#64d2ff';
+
+        // Spawn particles
+        const count = usesLlm ? 4 : 2;
+        for (let p = 0; p < count; p++) {
+          setTimeout(() => {
+            this.particles.spawn(edgeKey, color, usesLlm && edgeKey.includes('claude'), 0.008 + Math.random() * 0.006);
+          }, p * 200);
+        }
+
+        // Glow destination node
+        const parts = edgeKey.split('-');
+        parts.forEach(nid => {
+          const nodeEl = el('node-' + nid);
+          if (nodeEl) {
+            nodeEl.classList.add('active');
+            setTimeout(() => nodeEl.classList.remove('active'), 2000);
+          }
+        });
+      }, idx * 300);
+    });
+  }
+
+  onTaskComplete(data) {
+    const edges = data.edges || [];
+
+    // Green burst at AIIA center
+    this.particles.burst(CX, CY, '#30d158', 15);
+
+    // Flash all active edges white briefly
+    this.activeEdges.forEach(edgeKey => {
+      const edgeEl = this._findEdge(edgeKey);
+      if (edgeEl) {
+        edgeEl.style.stroke = 'rgba(255,255,255,0.5)';
+        setTimeout(() => {
+          edgeEl.style.stroke = '';
+          edgeEl.classList.remove('active');
+        }, 600);
+      }
+    });
+    this.activeEdges.clear();
+
+    // Token tracking
+    if (data.estimated_tokens) {
+      this.tokenCountToday += data.estimated_tokens;
+      this._updateTokenDisplay();
+    }
+  }
+
+  onTaskFailed(data) {
+    // Red flash + burst
+    const aiiaNode = el('node-aiia');
+    if (aiiaNode) {
+      aiiaNode.classList.add('active');
+      setTimeout(() => aiiaNode.classList.remove('active'), 1000);
+    }
+    this.particles.burst(CX, CY, '#ff453a', 10);
+
+    // Clear active edges
+    this.activeEdges.forEach(edgeKey => {
+      const edgeEl = this._findEdge(edgeKey);
+      if (edgeEl) edgeEl.classList.remove('active');
+    });
+    this.activeEdges.clear();
+  }
+
+  onActivityPulse() {
+    // Brief low-opacity pulse on all edges
+    const allEdges = document.querySelectorAll('.constellation-edge');
+    allEdges.forEach(edge => {
+      edge.style.stroke = 'rgba(255,255,255,0.12)';
+      setTimeout(() => { edge.style.stroke = ''; }, 800);
+    });
+  }
+
+  ghostParticle() {
+    // Spawn a single low-opacity particle on a random edge
+    const allEdges = document.querySelectorAll('.constellation-edge');
+    if (allEdges.length === 0) return;
+    const edge = allEdges[Math.floor(Math.random() * allEdges.length)];
+    const eid = edge.getAttribute('data-edge');
+    if (eid) {
+      const p = this.particles.spawn(eid, 'rgba(255,255,255,0.3)', false, 0.005);
+    }
+  }
+
+  _findEdge(edgeKey) {
+    // Try direct lookup, then sorted
+    let el_edge = document.querySelector(`[data-edge="${edgeKey}"]`);
+    if (!el_edge) {
+      const parts = edgeKey.split('-');
+      if (parts.length >= 2) {
+        const sorted = edgeId(parts[0], parts.slice(1).join('-'));
+        el_edge = document.getElementById('edge-' + sorted);
+      }
+    }
+    return el_edge;
+  }
+
+  _updateTokenDisplay() {
+    const chip = el('token-chip');
+    if (chip) {
+      if (this.tokenCountToday >= 1000) {
+        chip.textContent = '~' + (this.tokenCountToday / 1000).toFixed(1) + 'K tokens today';
+      } else {
+        chip.textContent = '~' + this.tokenCountToday + ' tokens today';
+      }
+    }
+
+    // Update token ring on AIIA
+    const ring = el('aiia-token-ring');
+    if (ring) {
+      // Assume a daily budget of ~100K tokens; fill proportionally
+      const pct = Math.min(this.tokenCountToday / 100000, 1);
+      const circ = 2 * Math.PI * 48;
+      ring.setAttribute('stroke-dashoffset', (circ * (1 - pct)).toFixed(1));
+    }
+  }
+}
+
+// Globals
+let particles, taskAnimator, ghostInterval;
+
+function initConstellation() {
+  drawConstellation();
+  particles = new ParticleSystem(60);
+  taskAnimator = new TaskAnimator(particles);
+
+  // Ghost particle every 15s
+  ghostInterval = setInterval(() => taskAnimator.ghostParticle(), 15000);
+  // First ghost after 5s
+  setTimeout(() => taskAnimator.ghostParticle(), 5000);
+}
+
+// ── Live mode polling (only when connected to real backend) ──
+
+async function pollDetails() {
+  if (demoMode) return; // Demo handles its own rendering
+  try {
+    const routeResp = await fetch('/ops/routing-log?limit=20');
+    const routeData = await routeResp.json();
+    renderRoutingLog(routeData.entries || []);
+
+    const alertResp = await fetch('/ops/alerts');
+    const alertData = await alertResp.json();
+    renderAlerts(alertData.alerts || []);
+
+    const latResp = await fetch('/ops/latency?limit=40');
+    const latData = await latResp.json();
+    renderLatencyChart(latData.samples || []);
+  } catch (e) {
+    // Will retry next interval
+  }
+}
+
+// ═══════════════════════════════════════════════════════════
+// AIIA — AI Information Architecture
+// Status, Ask, Memory Browser
+// ═══════════════════════════════════════════════════════════
+
+async function fetchAIIAStatus() {
+  try {
+    const resp = await fetch('/api/aiia');
+    const data = await resp.json();
+
+    if (data.error) {
+      el('aiia-badge').textContent = 'offline';
+      el('aiia-badge').className = 'card-badge badge-offline';
+      el('aiia-status-content').innerHTML = `
+        <div class="empty-state">
+          <div class="icon">~</div>
+          AIIA unreachable on :8100
+        </div>`;
+      return;
+    }
+
+    el('aiia-badge').textContent = 'online';
+    el('aiia-badge').className = 'card-badge badge-online';
+
+    const knowledge = data.knowledge || {};
+    const memory = data.memory || {};
+    const memCats = memory.by_category || memory.categories || {};
+    const totalMem = Object.values(memCats).reduce((a, b) => a + b, 0);
+
+    el('aiia-status-content').innerHTML = `
+      <div class="aiia-mini-stats">
+        <div class="aiia-mini-stat">
+          <span class="val">${formatNum(knowledge.knowledge_docs || knowledge.total_documents || 0)}</span>
+          <span class="lbl">Knowledge</span>
+        </div>
+        <div class="aiia-mini-stat">
+          <span class="val">${totalMem}</span>
+          <span class="lbl">Memories</span>
+        </div>
+        <div class="aiia-mini-stat">
+          <span class="val">${data.model || 'unknown'}</span>
+          <span class="lbl">Model</span>
+        </div>
+      </div>
+      <div class="mem-pills" style="margin-top:14px">
+        ${Object.entries(memCats).map(([cat, count]) =>
+          `<span class="mem-pill">${cat} <span class="count">${count}</span></span>`
+        ).join('')}
+      </div>`;
+  } catch (e) {
+    el('aiia-badge').textContent = 'offline';
+    el('aiia-badge').className = 'card-badge badge-offline';
+  }
+}
+
+async function askAIIA() {
+  const input = el('aiia-input');
+  const question = input.value.trim();
+  if (!question) return;
+
+  const btn = el('aiia-ask-btn');
+  const thinking = el('aiia-thinking');
+  const response = el('aiia-response');
+
+  // Show thinking state
+  btn.disabled = true;
+  thinking.style.display = 'flex';
+  response.classList.remove('visible');
+  input.disabled = true;
+
+  const startTime = Date.now();
+
+  try {
+    const resp = await fetch('/aiia/ask', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ question }),
+    });
+    const data = await resp.json();
+    const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+
+    el('aiia-response-text').textContent = data.answer || data.error || 'No response';
+    el('aiia-response-model').textContent = data.model ? `Model: ${data.model}` : '';
+    el('aiia-response-sources').textContent = data.sources_used
+      ? `Sources: ${data.sources_used}` : '';
+    el('aiia-response-time').textContent = `${elapsed}s`;
+
+    response.classList.add('visible');
+  } catch (e) {
+    el('aiia-response-text').textContent = 'Failed to reach AIIA. Is the Local Brain API running on :8100?';
+    response.classList.add('visible');
+  } finally {
+    btn.disabled = false;
+    input.disabled = false;
+    thinking.style.display = 'none';
+    input.value = '';
+    input.focus();
+  }
+}
+
+let currentMemCategory = null;
+
+async function fetchAIIAMemory(category) {
+  currentMemCategory = category;
+  try {
+    let url = '/aiia/memory?limit=50';
+    if (category) url += `&category=${category}`;
+    const resp = await fetch(url);
+    const data = await resp.json();
+
+    if (data.error) {
+      el('mem-list').innerHTML = `<div class="empty-state"><div class="icon">~</div>AIIA unreachable</div>`;
+      return;
+    }
+
+    const memories = data.memories || [];
+    const categories = data.categories || {};
+    const total = Object.values(categories).reduce((a, b) => a + b, 0);
+    el('mem-total').textContent = total;
+
+    // Render category pills
+    let pillsHtml = `<span class="mem-pill ${!category ? 'active' : ''}"
+      onclick="fetchAIIAMemory(null)">all <span class="count">${total}</span></span>`;
+    Object.entries(categories).forEach(([cat, count]) => {
+      pillsHtml += `<span class="mem-pill ${category === cat ? 'active' : ''}"
+        onclick="fetchAIIAMemory('${cat}')">${cat} <span class="count">${count}</span></span>`;
+    });
+    el('mem-pills').innerHTML = pillsHtml;
+
+    // Render memory list
+    if (memories.length === 0) {
+      el('mem-list').innerHTML = `<div class="empty-state"><div class="icon">~</div>No memories${category ? ' in ' + category : ''}</div>`;
+      return;
+    }
+
+    let listHtml = '';
+    memories.forEach(m => {
+      const content = typeof m === 'string' ? m : (m.content || m.fact || JSON.stringify(m));
+      const source = typeof m === 'object' ? (m.category || m.source || '') : '';
+      listHtml += `<div class="mem-item">
+        ${content}
+        ${source ? `<div class="mem-source">${source}</div>` : ''}
+      </div>`;
+    });
+    el('mem-list').innerHTML = listHtml;
+  } catch (e) {
+    el('mem-list').innerHTML = `<div class="empty-state"><div class="icon">~</div>Could not load memories</div>`;
+  }
+}
+
+// ── Initialize ──
+initConstellation();
+connect();
+setInterval(pollDetails, 5000);
+setTimeout(pollDetails, 1000);
+
+// AIIA polling
+fetchAIIAStatus();
+fetchAIIAMemory(null);
+setInterval(fetchAIIAStatus, 30000);  // Refresh AIIA status every 30s
+
+// Microproducts count
+const microItems = document.querySelectorAll('.micro-item');
+if (el('micro-count')) el('micro-count').textContent = microItems.length;
+</script>
+
+</body>
+</html>

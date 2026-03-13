@@ -1,0 +1,1870 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AIIA Mission Control</title>
+<style>
+/* ═══════════════════════════════════════════════════════════
+   AIIA MISSION CONTROL — Single-Scroll Platform Dashboard
+   Everything at a glance. No tabs. No hunting.
+   ═══════════════════════════════════════════════════════════ */
+
+:root {
+  --bg: #f5f6f8;
+  --bg-card: #ffffff;
+  --bg-card-hover: #f0f1f3;
+  --border: rgba(0, 0, 0, 0.08);
+  --border-hover: rgba(0, 0, 0, 0.16);
+  --text: #1a1a2e;
+  --text-dim: #555e6e;
+  --text-faint: #8e95a2;
+  --blue: #2563eb;
+  --purple: #7c3aed;
+  --green: #059669;
+  --amber: #d97706;
+  --red: #dc2626;
+  --cyan: #0891b2;
+  --pink: #db2777;
+  --radius: 14px;
+  --ease: cubic-bezier(0.25, 0.46, 0.45, 0.94);
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Inter', sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  min-height: 100vh;
+  overflow: hidden;
+  -webkit-font-smoothing: antialiased;
+}
+
+.bg-canvas { display: none; }
+
+/* ── Header ── */
+.header {
+  position: sticky; top: 0; z-index: 50;
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 0 24px; height: 52px;
+  border-bottom: 1px solid var(--border);
+  backdrop-filter: blur(30px);
+  background: rgba(255, 255, 255, 0.92);
+}
+.header-left { display: flex; align-items: center; gap: 14px; }
+.logo {
+  width: 32px; height: 32px; border-radius: 8px;
+  background: linear-gradient(135deg, var(--blue), var(--purple));
+  display: flex; align-items: center; justify-content: center;
+  font-size: 14px; font-weight: 700; color: #fff;
+  box-shadow: 0 2px 8px rgba(37,99,235,0.25);
+}
+.header h1 { font-size: 15px; font-weight: 600; letter-spacing: -0.3px; }
+.header h1 span { color: var(--text-dim); font-weight: 400; margin-left: 6px; }
+.header-right { display: flex; align-items: center; gap: 16px; }
+.status-pill {
+  display: flex; align-items: center; gap: 6px;
+  font-size: 12px; color: var(--text-dim);
+  padding: 4px 12px; border-radius: 20px;
+  border: 1px solid var(--border);
+}
+.dot {
+  width: 7px; height: 7px; border-radius: 50%;
+  background: var(--green); box-shadow: 0 0 8px rgba(16,185,129,0.5);
+  animation: pulse 2s ease-in-out infinite;
+}
+.dot.warn { background: var(--amber); box-shadow: 0 0 8px rgba(245,158,11,0.5); }
+.dot.off { background: var(--red); box-shadow: none; animation: none; }
+@keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.4; } }
+
+/* ── App Layout — two columns ── */
+.app-layout {
+  display: flex;
+  height: calc(100vh - 52px);
+}
+
+/* ── Dashboard — left column, scrollable ── */
+.dashboard {
+  flex: 1; min-width: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 20px 24px 60px;
+}
+.dashboard > * { margin-bottom: 16px; }
+.dashboard > *:last-child { margin-bottom: 0; }
+
+/* ── Hero KPI Row ── */
+.kpi-row {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 10px;
+}
+.kpi-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 14px 16px;
+  text-align: center;
+  transition: border-color 0.3s;
+}
+.kpi-card:hover { border-color: var(--border-hover); }
+.kpi-value {
+  font-size: 24px; font-weight: 700; margin-bottom: 2px;
+  color: var(--text);
+}
+.kpi-label { font-size: 10px; color: var(--text-faint); text-transform: uppercase; letter-spacing: 0.8px; }
+
+/* ── Collapsible Section ── */
+.section {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+.section-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 14px 20px;
+  cursor: pointer; user-select: none;
+  transition: background 0.2s;
+}
+.section-header:hover { background: rgba(0,0,0,0.02); }
+.section-header-left { display: flex; align-items: center; gap: 10px; }
+.section-title { font-size: 13px; font-weight: 600; letter-spacing: -0.2px; }
+.section-count {
+  font-size: 10px; font-weight: 500; color: var(--text-dim);
+  padding: 2px 8px; border-radius: 10px;
+  background: rgba(0,0,0,0.04);
+}
+.section-chevron {
+  font-size: 12px; color: var(--text-faint);
+  transition: transform 0.25s var(--ease);
+}
+.section.collapsed .section-chevron { transform: rotate(-90deg); }
+.section-body { padding: 0 20px 16px; }
+.section.collapsed .section-body { display: none; }
+
+/* ── Product Grid ── */
+.product-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 8px;
+}
+.product-card {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 12px; border-radius: 10px;
+  border: 1px solid var(--border);
+  transition: all 0.25s var(--ease);
+}
+.product-card:hover { background: rgba(0,0,0,0.03); border-color: var(--border-hover); }
+.product-dot {
+  width: 32px; height: 32px; border-radius: 8px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 12px; font-weight: 700; color: #fff; flex-shrink: 0;
+}
+.product-info { flex: 1; min-width: 0; }
+.product-name { font-size: 12px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.product-sub { font-size: 10px; color: var(--text-faint); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.product-badge {
+  font-size: 8px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px;
+  padding: 2px 6px; border-radius: 5px; flex-shrink: 0;
+}
+.badge-production { background: rgba(16,185,129,0.12); color: var(--green); }
+.badge-active { background: rgba(59,130,246,0.12); color: var(--blue); }
+.badge-mvp { background: rgba(245,158,11,0.12); color: var(--amber); }
+.badge-sandbox { background: rgba(100,116,139,0.15); color: #94a3b8; }
+.badge-prototype { background: rgba(100,116,139,0.15); color: #94a3b8; }
+
+/* ── Pipeline Funnel ── */
+.funnel-row {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px; margin-bottom: 14px;
+}
+.funnel-stage {
+  text-align: center; padding: 12px 8px; border-radius: 10px;
+  border: 1px solid var(--border); background: rgba(0,0,0,0.015);
+}
+.funnel-stage-value { font-size: 22px; font-weight: 700; }
+.funnel-stage-label { font-size: 10px; color: var(--text-faint); text-transform: uppercase; letter-spacing: 0.5px; }
+.funnel-stage-amount { font-size: 11px; color: var(--text-dim); margin-top: 2px; }
+
+.deal-table { width: 100%; border-collapse: collapse; margin-bottom: 10px; }
+.deal-table th {
+  font-size: 10px; color: var(--text-faint); text-transform: uppercase;
+  letter-spacing: 0.5px; text-align: left; padding: 6px 8px;
+  border-bottom: 1px solid var(--border);
+}
+.deal-table td {
+  font-size: 11px; color: var(--text-dim); padding: 6px 8px;
+  border-bottom: 1px solid rgba(0,0,0,0.02);
+}
+.deal-table tr:hover td { color: var(--text); }
+.deal-stage-badge {
+  font-size: 9px; font-weight: 600; padding: 2px 6px; border-radius: 4px;
+  text-transform: uppercase; letter-spacing: 0.3px;
+}
+
+.add-deal-form {
+  display: none; background: rgba(0,0,0,0.02);
+  border: 1px solid var(--border); border-radius: 8px;
+  padding: 10px; margin-bottom: 10px;
+}
+.add-deal-form input, .add-deal-form select {
+  background: rgba(0,0,0,0.04); border: 1px solid var(--border); border-radius: 5px;
+  padding: 5px 8px; color: var(--text); font-size: 11px; font-family: inherit;
+}
+.add-deal-form button {
+  background: rgba(16,185,129,0.1); border: 1px solid rgba(16,185,129,0.3);
+  border-radius: 5px; padding: 5px 12px; color: var(--green);
+  font-size: 11px; font-weight: 600; cursor: pointer;
+}
+.deal-del-btn {
+  background: none; border: 1px solid rgba(239,68,68,0.2); border-radius: 4px;
+  padding: 1px 6px; color: var(--text-faint); font-size: 9px; cursor: pointer;
+}
+.deal-del-btn:hover { color: var(--red); border-color: var(--red); }
+
+/* ── Shipped / Commits ── */
+.commit-line {
+  display: flex; gap: 6px; align-items: center; padding: 3px 0; font-size: 11px;
+}
+.commit-type {
+  font-size: 9px; font-weight: 600; padding: 1px 5px; border-radius: 3px;
+  min-width: 36px; text-align: center;
+}
+.commit-hash { color: var(--text-faint); font-family: 'SF Mono', monospace; font-size: 10px; }
+.commit-msg { color: var(--text-dim); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.commit-category {
+  display: flex; align-items: center; gap: 8px; padding: 6px 0 4px;
+  border-bottom: 1px solid var(--border); margin-bottom: 4px; cursor: pointer;
+}
+.commit-category-bar { width: 3px; height: 14px; border-radius: 2px; flex-shrink: 0; }
+.commit-category-label { font-size: 12px; font-weight: 600; color: var(--text-dim); }
+.commit-category-count { font-size: 11px; font-weight: 400; color: var(--text-faint); }
+
+/* ── Roadmap ── */
+.roadmap-story {
+  background: rgba(0,0,0,0.02); border: 1px solid var(--border);
+  border-radius: 6px; padding: 8px 10px; margin-bottom: 4px;
+}
+.roadmap-story-header { display: flex; gap: 5px; align-items: center; }
+.rm-btn {
+  background: none; border: 1px solid var(--border); border-radius: 3px;
+  padding: 1px 6px; color: var(--text-faint); font-size: 10px; cursor: pointer;
+}
+.rm-btn:hover { border-color: var(--text-dim); color: var(--text-dim); }
+
+/* ── Platform Map ── */
+.map-svg { width: 100%; height: 400px; }
+.node { cursor: pointer; transition: filter 0.3s var(--ease); }
+.node:hover { filter: brightness(1.3); }
+.node-circle { stroke: rgba(0,0,0,0.06); stroke-width: 1.5; transition: all 0.4s var(--ease); }
+.node.active .node-circle { stroke-width: 2.5; filter: drop-shadow(0 0 12px var(--glow-color, rgba(59,130,246,0.6))); }
+.node-label { fill: var(--text); font-size: 9px; font-weight: 500; text-anchor: middle; pointer-events: none; }
+.node-sublabel { fill: var(--text-faint); font-size: 7px; text-anchor: middle; pointer-events: none; }
+.node-icon { fill: var(--text); font-size: 11px; text-anchor: middle; dominant-baseline: central; pointer-events: none; }
+.edge-path { fill: none; stroke: rgba(0,0,0,0.04); stroke-width: 1; stroke-dasharray: 4 8; animation: edgeFlow 3s linear infinite; }
+.edge-path.active { stroke: rgba(0,0,0,0.1); stroke-width: 1.5; stroke-dasharray: none; }
+@keyframes edgeFlow { to { stroke-dashoffset: -12; } }
+.col-label { fill: var(--text-faint); font-size: 8px; font-weight: 600; text-transform: uppercase; letter-spacing: 1.5px; text-anchor: middle; }
+
+/* ── Health Cards ── */
+.health-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 10px;
+}
+.health-card {
+  padding: 14px 16px; border-radius: 12px;
+  border: 1px solid var(--border); background: rgba(0,0,0,0.015);
+  transition: border-color 0.3s var(--ease);
+}
+.health-card:hover { border-color: var(--border-hover); }
+.health-card-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+.health-card-left { display: flex; align-items: center; gap: 8px; }
+.health-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+.health-dot.online { background: var(--green); box-shadow: 0 0 8px rgba(16,185,129,0.5); }
+.health-dot.degraded { background: var(--amber); box-shadow: 0 0 8px rgba(245,158,11,0.5); }
+.health-dot.offline { background: var(--red); box-shadow: 0 0 6px rgba(239,68,68,0.4); }
+.health-dot.unknown { background: rgba(0,0,0,0.1); }
+.health-name { font-size: 13px; font-weight: 600; }
+.health-status { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; padding: 2px 8px; border-radius: 6px; }
+.health-status.online { background: rgba(16,185,129,0.12); color: var(--green); }
+.health-status.degraded { background: rgba(245,158,11,0.12); color: var(--amber); }
+.health-status.offline { background: rgba(239,68,68,0.12); color: var(--red); }
+.health-status.unknown { background: rgba(0,0,0,0.04); color: var(--text-faint); }
+.health-metrics { display: flex; gap: 16px; margin-bottom: 10px; font-size: 11px; color: var(--text-dim); }
+.health-metrics b { color: var(--text); font-weight: 600; }
+.sparkline { display: flex; align-items: flex-end; gap: 1px; height: 28px; margin-bottom: 8px; }
+.spark-bar { flex: 1; min-width: 2px; max-width: 6px; border-radius: 1px 1px 0 0; transition: height 0.3s var(--ease); }
+.spark-bar.ok { background: rgba(16,185,129,0.5); }
+.spark-bar.slow { background: rgba(245,158,11,0.5); }
+.spark-bar.fail { background: rgba(239,68,68,0.5); }
+.uptime-row { display: flex; align-items: center; gap: 8px; font-size: 11px; }
+.uptime-label { color: var(--text-faint); width: 48px; }
+.uptime-track { flex: 1; height: 5px; border-radius: 3px; background: rgba(0,0,0,0.04); overflow: hidden; }
+.uptime-fill { height: 100%; border-radius: 3px; background: var(--green); transition: width 0.8s var(--ease); }
+.uptime-pct { width: 40px; text-align: right; color: var(--text-dim); font-weight: 600; }
+.health-extra { font-size: 10px; color: var(--text-faint); padding: 6px 8px; border-radius: 6px; background: rgba(0,0,0,0.02); margin-top: 6px; }
+
+/* ── LLM Stats (merged Health+LLM+Tokens) ── */
+.llm-stats-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 12px; }
+.llm-stat { background: rgba(0,0,0,0.02); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; text-align: center; }
+.llm-stat-value { font-size: 20px; font-weight: 700; margin-top: 2px; }
+.llm-stat-label { font-size: 10px; color: var(--text-faint); text-transform: uppercase; letter-spacing: 0.5px; }
+.llm-charts-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 12px; }
+.llm-chart-card { background: rgba(0,0,0,0.015); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; }
+.llm-chart-title { font-size: 10px; color: var(--text-faint); font-weight: 600; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.5px; }
+.llm-bar-row { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; }
+.llm-bar-label { font-size: 11px; color: var(--text-dim); min-width: 60px; }
+.llm-bar-track { flex: 1; height: 8px; background: rgba(0,0,0,0.04); border-radius: 4px; overflow: hidden; }
+.llm-bar-fill { height: 100%; border-radius: 4px; transition: width 0.5s var(--ease); }
+.llm-bar-pct { font-size: 10px; color: var(--text-faint); min-width: 32px; text-align: right; }
+.llm-decisions-table { width: 100%; border-collapse: collapse; }
+.llm-decisions-table th { font-size: 10px; color: var(--text-faint); text-transform: uppercase; letter-spacing: 0.5px; text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--border); }
+.llm-decisions-table td { font-size: 11px; color: var(--text-dim); padding: 5px 8px; border-bottom: 1px solid rgba(0,0,0,0.02); }
+.llm-decisions-table tr:hover td { color: var(--text); }
+
+/* ── Token Provider Row ── */
+.token-provider-row {
+  display: flex; align-items: center; gap: 10px;
+  padding: 8px 10px; background: rgba(0,0,0,0.03); border: 1px solid var(--border);
+  border-radius: 6px; margin-bottom: 4px;
+}
+
+/* ── AIIA / Memory / Insights section ── */
+.aiia-stats-compact {
+  display: flex; align-items: center; gap: 6px;
+  font-size: 11px; color: var(--text-dim);
+  padding: 8px 12px; border-radius: 8px;
+  background: rgba(0,0,0,0.02); border: 1px solid var(--border);
+  margin-bottom: 12px; flex-wrap: wrap;
+}
+.aiia-stats-compact b { color: var(--text); font-weight: 600; }
+.aiia-stats-compact .stat-sep { color: var(--text-faint); font-size: 9px; }
+
+.memory-card {
+  display: flex; gap: 8px; align-items: flex-start;
+  padding: 6px 10px; background: rgba(0,0,0,0.03); border: 1px solid var(--border);
+  border-radius: 6px; margin-bottom: 3px;
+}
+.insight-card {
+  display: flex; align-items: flex-start; gap: 10px;
+  padding: 8px 12px; border-radius: 8px; border: 1px solid var(--border);
+  background: rgba(0,0,0,0.015); margin-bottom: 4px;
+}
+.insight-icon { font-size: 14px; flex-shrink: 0; width: 20px; text-align: center; margin-top: 1px; }
+.insight-body { flex: 1; min-width: 0; }
+.insight-title { font-size: 12px; font-weight: 600; color: var(--text); }
+.insight-detail { font-size: 11px; color: var(--text-dim); margin-top: 2px; }
+.insight-meta { display: flex; align-items: center; gap: 8px; font-size: 10px; color: var(--text-faint); margin-top: 3px; }
+.insight-badge { font-size: 9px; padding: 1px 6px; border-radius: 4px; font-weight: 600; text-transform: uppercase; }
+.insight-badge.success { background: rgba(16,185,129,0.12); color: var(--green); }
+.insight-badge.warn { background: rgba(245,158,11,0.12); color: var(--amber); }
+.insight-badge.error { background: rgba(239,68,68,0.12); color: var(--red); }
+.insight-badge.info { background: rgba(59,130,246,0.12); color: var(--blue); }
+
+/* ── Action Cards ── */
+.action-card {
+  display: flex; align-items: flex-start; gap: 10px; padding: 10px 12px;
+  border-bottom: 1px solid var(--border); transition: background 0.15s;
+}
+.action-card:hover { background: rgba(0,0,0,0.02); }
+.action-severity {
+  font-size: 9px; padding: 2px 6px; border-radius: 4px; font-weight: 700;
+  text-transform: uppercase; flex-shrink: 0; margin-top: 2px;
+}
+.action-severity.critical { background: rgba(239,68,68,0.2); color: var(--red); }
+.action-severity.error { background: rgba(239,68,68,0.15); color: var(--red); }
+.action-severity.warn { background: rgba(245,158,11,0.15); color: var(--amber); }
+.action-severity.info { background: rgba(59,130,246,0.12); color: var(--blue); }
+.action-body { flex: 1; min-width: 0; }
+.action-title { font-size: 12px; font-weight: 600; color: var(--text); }
+.action-desc { font-size: 11px; color: var(--text-dim); margin-top: 2px; max-height: 40px; overflow: hidden; }
+.action-meta { display: flex; align-items: center; gap: 8px; font-size: 10px; color: var(--text-faint); margin-top: 4px; }
+.action-type { font-size: 9px; padding: 1px 5px; border-radius: 3px; background: rgba(0,0,0,0.05); }
+.action-buttons { display: flex; gap: 4px; flex-shrink: 0; margin-top: 2px; }
+.action-btn {
+  font-size: 10px; padding: 3px 8px; border-radius: 4px; border: none;
+  cursor: pointer; font-weight: 600; transition: all 0.15s;
+}
+.action-btn.approve { background: rgba(16,185,129,0.15); color: var(--green); }
+.action-btn.approve:hover { background: rgba(16,185,129,0.3); }
+.action-btn.reject { background: rgba(239,68,68,0.1); color: var(--text-dim); }
+.action-btn.reject:hover { background: rgba(239,68,68,0.2); color: var(--red); }
+.action-count-badge {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 18px; height: 18px; border-radius: 9px; font-size: 10px;
+  font-weight: 700; background: var(--red); color: #fff; margin-left: 6px;
+  padding: 0 5px;
+}
+
+/* ── Tasks (sidebar + section) ── */
+.task-row { padding: 8px 10px; border-radius: 8px; border: 1px solid transparent; margin-bottom: 2px; transition: all 0.3s var(--ease); }
+.task-row:hover { background: rgba(0,0,0,0.02); border-color: var(--border); }
+.task-row.running { background: rgba(168,85,247,0.04); border-color: rgba(168,85,247,0.25); border-left: 3px solid var(--purple); }
+.task-row.failed { border-left: 3px solid var(--red); }
+.task-row-header { display: flex; align-items: center; justify-content: space-between; }
+.task-row-left { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.task-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+.task-dot.idle { background: rgba(0,0,0,0.1); }
+.task-dot.running { background: var(--purple); box-shadow: 0 0 8px rgba(168,85,247,0.6); animation: pulse 1.2s ease-in-out infinite; }
+.task-dot.done { background: var(--green); box-shadow: 0 0 6px rgba(16,185,129,0.4); }
+.task-dot.failed { background: var(--red); box-shadow: 0 0 6px rgba(239,68,68,0.4); }
+.task-row-name { font-size: 12px; font-weight: 600; white-space: nowrap; }
+.task-llm-badge { font-size: 7px; padding: 1px 4px; border-radius: 3px; background: rgba(245,158,11,0.1); color: var(--amber); font-weight: 700; }
+.task-run-btn { background: none; border: 1px solid var(--border); border-radius: 6px; color: var(--text-faint); font-size: 10px; padding: 2px 8px; cursor: pointer; transition: all 0.2s; }
+.task-run-btn:hover { background: rgba(168,85,247,0.1); border-color: rgba(168,85,247,0.3); color: var(--purple); }
+.task-run-btn:disabled { opacity: 0.2; cursor: not-allowed; }
+.task-run-btn.running-btn { background: rgba(168,85,247,0.1); border-color: rgba(168,85,247,0.3); color: var(--purple); font-weight: 600; }
+.task-row-progress { margin-top: 8px; display: none; }
+.task-row.running .task-row-progress { display: block; }
+.task-progress-track { height: 4px; border-radius: 2px; background: rgba(0,0,0,0.05); overflow: hidden; margin-bottom: 5px; }
+.task-progress-fill { height: 100%; border-radius: 2px; background: linear-gradient(90deg, var(--purple), var(--blue)); transition: width 0.4s var(--ease); }
+.task-step { font-size: 10px; color: var(--purple); font-weight: 500; display: flex; align-items: center; gap: 5px; }
+.task-step-dot { width: 4px; height: 4px; border-radius: 50%; background: var(--purple); animation: pulse 1s ease-in-out infinite; }
+.task-pct { font-size: 10px; color: var(--purple); font-weight: 700; margin-left: auto; }
+.task-row-info { margin-top: 4px; font-size: 10px; color: var(--text-faint); display: flex; align-items: center; gap: 6px; }
+.task-row-info .result-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-dim); }
+.task-row.failed .task-row-info .result-text { color: var(--red); }
+.task-expand-chevron { display: inline-block; font-size: 9px; color: var(--text-faint); transition: transform 0.2s; margin-right: 4px; }
+.task-expand-chevron.open { transform: rotate(90deg); }
+.task-output { margin-top: 6px; padding: 8px 10px; background: rgba(0,0,0,0.04); border-radius: 6px; font-family: 'SF Mono', monospace; font-size: 10px; line-height: 1.5; color: var(--text-dim); white-space: pre-wrap; word-break: break-word; max-height: 200px; overflow-y: auto; }
+
+/* ── Components + Services grid ── */
+.tools-grid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 6px;
+}
+.tool-card {
+  padding: 10px 12px; border-radius: 8px; border: 1px solid var(--border);
+  background: rgba(0,0,0,0.01); transition: border-color 0.2s;
+}
+.tool-card:hover { border-color: var(--border-hover); }
+.tool-name { font-size: 12px; font-weight: 600; margin-bottom: 2px; }
+.tool-desc { font-size: 10px; color: var(--text-faint); line-height: 1.3; }
+.tool-tag { font-size: 8px; padding: 1px 5px; border-radius: 3px; background: rgba(0,0,0,0.04); color: var(--text-faint); margin-right: 3px; }
+
+/* ── Chat ── */
+.chat-toggle { display: none; }
+.chat-backdrop { display: none; }
+
+/* Inline chat panel */
+.chat-panel {
+  width: 380px; min-width: 320px; flex-shrink: 0;
+  background: var(--bg-card);
+  border-left: 1px solid var(--border);
+  display: flex; flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+}
+
+/* Chat header */
+.chat-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 14px 16px; border-bottom: 1px solid var(--border);
+  flex-shrink: 0; min-height: 48px; background: var(--bg-card);
+}
+.chat-header-left { display: flex; align-items: center; gap: 10px; }
+.chat-header-dot {
+  width: 8px; height: 8px; border-radius: 50%;
+  background: var(--purple); box-shadow: 0 0 8px rgba(168,85,247,0.5);
+  flex-shrink: 0;
+}
+.chat-header-title { font-size: 15px; font-weight: 600; }
+.chat-header-right { display: flex; align-items: center; gap: 8px; }
+.chat-btn-icon {
+  width: 36px; height: 36px; border-radius: 8px;
+  display: flex; align-items: center; justify-content: center;
+  background: none; border: 1px solid var(--border);
+  color: var(--text-dim); font-size: 14px; cursor: pointer;
+  transition: all 0.15s;
+}
+.chat-btn-icon:hover { background: rgba(0,0,0,0.04); color: var(--text); border-color: var(--border-hover); }
+
+/* Messages area */
+.chat-messages {
+  flex: 1; overflow-y: auto; padding: 16px;
+  display: flex; flex-direction: column; gap: 10px;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+}
+.chat-empty {
+  flex: 1; display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  color: var(--text-faint); text-align: center; padding: 40px 20px; gap: 12px;
+}
+.chat-empty-icon { font-size: 32px; opacity: 0.4; }
+.chat-empty-text { font-size: 13px; line-height: 1.6; }
+
+/* Bubbles */
+.chat-bubble {
+  max-width: 85%; padding: 10px 14px; border-radius: 16px;
+  font-size: 14px; line-height: 1.55; word-wrap: break-word;
+  animation: bubbleIn 0.2s var(--ease);
+}
+@keyframes bubbleIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+.chat-bubble.user {
+  align-self: flex-end;
+  background: var(--blue); color: #fff;
+  border-bottom-right-radius: 4px;
+}
+.chat-bubble.aiia {
+  align-self: flex-start;
+  background: var(--bg); border: 1px solid var(--border);
+  color: var(--text); border-bottom-left-radius: 4px;
+}
+.chat-bubble-label {
+  font-size: 10px; font-weight: 600; color: var(--purple);
+  margin-bottom: 4px; text-transform: uppercase; letter-spacing: 0.5px;
+}
+.chat-bubble-meta {
+  font-size: 10px; color: var(--text-faint); margin-top: 6px;
+  display: flex; align-items: center; gap: 6px;
+}
+.chat-bubble-meta .model-badge {
+  padding: 1px 6px; border-radius: 4px;
+  background: rgba(168,85,247,0.1); color: var(--purple);
+}
+.chat-bubble-meta .speak-btn {
+  background: none; border: 1px solid var(--border); border-radius: 4px;
+  color: var(--text-faint); font-size: 10px; padding: 1px 6px;
+  cursor: pointer; transition: all 0.15s;
+}
+.chat-bubble-meta .speak-btn:hover { color: var(--purple); border-color: rgba(168,85,247,0.3); }
+
+/* Thinking indicator */
+.chat-thinking {
+  align-self: flex-start; display: flex; align-items: center; gap: 8px;
+  padding: 12px 16px; color: var(--text-faint); font-size: 13px;
+  animation: bubbleIn 0.2s var(--ease);
+}
+.chat-thinking-dots { display: flex; gap: 4px; }
+.chat-thinking-dots span {
+  width: 6px; height: 6px; border-radius: 50%;
+  background: var(--purple); opacity: 0.3;
+  animation: dotPulse 1.4s ease-in-out infinite;
+}
+.chat-thinking-dots span:nth-child(2) { animation-delay: 0.2s; }
+.chat-thinking-dots span:nth-child(3) { animation-delay: 0.4s; }
+@keyframes dotPulse { 0%,80%,100% { opacity: 0.3; } 40% { opacity: 1; } }
+
+/* Transcript (voice interim) */
+.chat-transcript {
+  font-size: 12px; color: var(--cyan); font-style: italic;
+  padding: 0 16px; min-height: 0; overflow: hidden;
+  transition: all 0.2s; flex-shrink: 0;
+}
+
+/* Voice options bar */
+.chat-voice-bar {
+  display: flex; align-items: center; gap: 6px;
+  padding: 6px 16px 4px; flex-shrink: 0; flex-wrap: wrap;
+}
+.chat-voice-pill {
+  font-size: 11px; color: var(--text-faint);
+  padding: 4px 10px; border-radius: 14px;
+  border: 1px solid var(--border); background: none;
+  cursor: pointer; transition: all 0.15s; white-space: nowrap;
+}
+.chat-voice-pill:hover { border-color: var(--border-hover); color: var(--text-dim); }
+.chat-voice-pill.on { border-color: rgba(16,185,129,0.3); color: var(--green); background: rgba(16,185,129,0.06); }
+
+/* Input area */
+.chat-composer {
+  display: flex; align-items: flex-end; gap: 8px;
+  padding: 12px 16px; border-top: 1px solid var(--border);
+  flex-shrink: 0; background: var(--bg-card);
+}
+.chat-input {
+  flex: 1; padding: 12px 14px; border-radius: 12px;
+  background: rgba(0,0,0,0.04); border: 1px solid var(--border);
+  color: var(--text); font-size: 15px; outline: none;
+  font-family: inherit; resize: none; min-height: 44px; max-height: 120px;
+  line-height: 1.4;
+}
+.chat-input:focus { border-color: rgba(168,85,247,0.4); }
+.chat-input::placeholder { color: var(--text-faint); }
+.chat-mic-btn {
+  width: 44px; height: 44px; border-radius: 12px;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(0,0,0,0.04); border: 1px solid var(--border);
+  color: var(--text-dim); font-size: 18px; cursor: pointer;
+  transition: all 0.2s; flex-shrink: 0;
+}
+.chat-mic-btn:hover { border-color: var(--border-hover); color: var(--text); }
+.chat-mic-btn.recording {
+  border-color: var(--red); background: rgba(239,68,68,0.12);
+  color: var(--red); animation: mic-pulse 1.5s ease-in-out infinite;
+}
+@keyframes mic-pulse { 0%,100% { box-shadow: 0 0 0 0 rgba(239,68,68,0.2); } 50% { box-shadow: 0 0 0 8px rgba(239,68,68,0); } }
+.chat-send-btn {
+  width: 44px; height: 44px; border-radius: 12px;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--purple); border: none; color: #fff;
+  font-size: 18px; cursor: pointer; transition: all 0.2s; flex-shrink: 0;
+}
+.chat-send-btn:hover { background: #9333ea; }
+.chat-send-btn:disabled { opacity: 0.3; cursor: not-allowed; }
+
+/* Speaking indicator */
+.chat-speaking-icon { display: inline-flex; align-items: center; gap: 2px; margin-left: 4px; vertical-align: middle; }
+.chat-speaking-icon .bar { width: 2px; height: 8px; background: var(--purple); border-radius: 1px; animation: speakBar 0.8s ease-in-out infinite; }
+.chat-speaking-icon .bar:nth-child(2) { animation-delay: 0.15s; height: 11px; }
+.chat-speaking-icon .bar:nth-child(3) { animation-delay: 0.3s; height: 6px; }
+@keyframes speakBar { 0%,100% { transform: scaleY(0.4); } 50% { transform: scaleY(1); } }
+
+/* Mobile: stack chat below */
+@media (max-width: 900px) {
+  .app-layout { flex-direction: column; }
+  .chat-panel { width: 100%; height: 400px; position: relative; top: 0; border-left: none; border-top: 1px solid var(--border); }
+}
+
+/* ── Scrollbar ── */
+::-webkit-scrollbar { width: 5px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: rgba(0,0,0,0.12); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(0,0,0,0.2); }
+
+/* ── Responsive ── */
+@media (max-width: 900px) {
+  .kpi-row { grid-template-columns: repeat(3, 1fr); }
+  .product-grid { grid-template-columns: repeat(2, 1fr); }
+  .funnel-row { grid-template-columns: repeat(2, 1fr); }
+  .llm-stats-row { grid-template-columns: repeat(2, 1fr); }
+  .llm-charts-row { grid-template-columns: 1fr; }
+}
+@media (max-width: 600px) {
+  .kpi-row { grid-template-columns: repeat(2, 1fr); }
+  .product-grid { grid-template-columns: 1fr; }
+  .dashboard { padding: 12px; }
+  .header { padding: 0 12px; gap: 8px; }
+  .header h1 { font-size: 13px; }
+  .header h1 span { display: none; }
+  .header-left { gap: 8px; }
+  .header-right { gap: 8px; }
+  .status-pill { padding: 4px 8px; font-size: 11px; }
+  .status-pill span { display: none; }
+  .chat-toggle { padding: 8px 12px; min-height: 36px; font-size: 13px; }
+}
+
+.speak-btn {
+  background: none; border: 1px solid var(--border); border-radius: 4px;
+  color: var(--text-faint); font-size: 11px; padding: 2px 6px;
+  cursor: pointer; transition: all 0.15s; flex-shrink: 0;
+}
+.speak-btn:hover { background: rgba(168,85,247,0.1); border-color: rgba(168,85,247,0.3); color: var(--purple); }
+
+/* Sub-section labels inside merged sections */
+.sub-label {
+  font-size: 11px; font-weight: 600; text-transform: uppercase;
+  letter-spacing: 0.8px; color: var(--text-faint); margin: 12px 0 6px;
+}
+.sub-label:first-child { margin-top: 0; }
+</style>
+</head>
+<body>
+<div class="bg-canvas"></div>
+
+<!-- Header -->
+<header class="header">
+  <div class="header-left">
+    <div class="logo">X</div>
+    <h1>Mission Control<span>AIIA</span></h1>
+  </div>
+  <div class="header-right">
+    <div class="status-pill">
+      <div class="dot" id="ws-dot"></div>
+      <span id="ws-label">Connecting</span>
+    </div>
+    <a href="/work" style="font-size:12px;color:var(--text-dim);text-decoration:none;padding:4px 12px;border:1px solid var(--border);border-radius:6px">Work Board</a>
+  </div>
+</header>
+
+<!-- App Layout: dashboard + chat -->
+<div class="app-layout">
+<div class="dashboard">
+
+  <!-- Hero KPI Row -->
+  <div class="kpi-row">
+    <div class="kpi-card"><div class="kpi-value" id="kpi-tokens">--</div><div class="kpi-label">Tokens Today</div></div>
+    <div class="kpi-card"><div class="kpi-value" id="kpi-cost">$0</div><div class="kpi-label">Cost Today</div></div>
+    <div class="kpi-card"><div class="kpi-value" id="kpi-requests">0</div><div class="kpi-label">Requests</div></div>
+    <div class="kpi-card"><div class="kpi-value" id="kpi-commits">--</div><div class="kpi-label">Commits Today</div></div>
+    <div class="kpi-card"><div class="kpi-value" id="kpi-products">13</div><div class="kpi-label">Products</div></div>
+    <div class="kpi-card"><div class="kpi-value" id="kpi-uptime">--</div><div class="kpi-label">Uptime</div></div>
+  </div>
+
+  <!-- Roadmap / Work Tracking (first section) -->
+  <div class="section" id="sec-roadmap">
+    <div class="section-header" onclick="toggleSection('roadmap')">
+      <div class="section-header-left"><span class="section-title">Work Tracking</span><span class="section-count" id="roadmap-count">0</span></div>
+      <span class="section-chevron">&#9660;</span>
+    </div>
+    <div class="section-body">
+      <div style="display:flex;gap:6px;margin-bottom:8px;flex-wrap:wrap;align-items:center">
+        <select id="rm-filter-status" onchange="loadRoadmap()" style="background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:3px 6px;color:var(--text-dim);font-size:11px">
+          <option value="">All Status</option><option value="backlog">Backlog</option><option value="active">Active</option><option value="in_progress">In Progress</option><option value="shipped">Shipped</option><option value="blocked">Blocked</option>
+        </select>
+        <select id="rm-filter-product" onchange="loadRoadmap()" style="background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:3px 6px;color:var(--text-dim);font-size:11px">
+          <option value="">All Products</option>
+        </select>
+        <label style="font-size:10px;color:var(--text-faint);display:flex;align-items:center;gap:4px"><input type="checkbox" id="rm-hide-shipped" onchange="loadRoadmap()"> Hide shipped</label>
+        <button onclick="document.getElementById('add-story-form').style.display=document.getElementById('add-story-form').style.display==='none'?'block':'none'" style="background:rgba(5,150,105,0.1);border:1px solid rgba(5,150,105,0.25);border-radius:4px;padding:3px 8px;color:var(--green);font-size:11px;cursor:pointer;margin-left:auto">+ Add Story</button>
+      </div>
+      <div id="add-story-form" style="display:none;background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:8px;margin-bottom:8px">
+        <div style="display:flex;gap:4px;margin-bottom:4px"><input id="new-title" placeholder="Title..." style="flex:1;background:var(--bg-card);border:1px solid var(--border);border-radius:4px;padding:4px 6px;color:var(--text);font-size:11px">
+        <select id="new-product" style="background:var(--bg-card);border:1px solid var(--border);border-radius:4px;padding:4px;color:var(--text-dim);font-size:11px"><option value="analyst">Analyst</option><option value="legal">Legal</option><option value="platform">Platform</option><option value="local-brain">Local Brain</option><option value="content-engine">Content Engine</option></select>
+        <select id="new-priority" style="background:var(--bg-card);border:1px solid var(--border);border-radius:4px;padding:4px;color:var(--text-dim);font-size:11px"><option value="P0">P0</option><option value="P1">P1</option><option value="P2" selected>P2</option><option value="P3">P3</option></select></div>
+        <div style="display:flex;gap:4px"><textarea id="new-desc" placeholder="Description..." style="flex:1;background:var(--bg-card);border:1px solid var(--border);border-radius:4px;padding:4px 6px;color:var(--text);font-size:11px;min-height:30px;resize:vertical;font-family:inherit"></textarea>
+        <button onclick="saveStory()" style="background:rgba(5,150,105,0.1);border:1px solid rgba(5,150,105,0.25);border-radius:4px;padding:4px 10px;color:var(--green);font-size:11px;cursor:pointer;align-self:flex-end">Save</button></div>
+      </div>
+      <div id="roadmap-list" style="max-height:400px;overflow-y:auto"><div style="color:var(--text-faint);text-align:center;padding:20px">Loading...</div></div>
+    </div>
+  </div>
+
+  <!-- Morning Briefing -->
+  <div class="section" id="sec-briefing">
+    <div class="section-header" onclick="toggleSection('briefing')">
+      <div class="section-header-left"><span class="section-title">Morning Briefing</span><span class="section-count" id="briefing-status">loading</span></div>
+      <span class="section-chevron">&#9660;</span>
+    </div>
+    <div class="section-body">
+      <div style="display:flex;justify-content:flex-end;gap:8px;margin-bottom:8px">
+        <span id="briefing-time" style="font-size:10px;color:var(--text-faint);align-self:center;margin-right:auto"></span>
+        <button onclick="generateBriefing()" id="briefing-gen-btn" style="background:none;border:1px solid var(--border);border-radius:4px;padding:2px 8px;color:var(--text-faint);font-size:10px;cursor:pointer">Generate Fresh</button>
+      </div>
+      <div id="briefing-content" style="font-size:12px;line-height:1.7;color:var(--text);white-space:pre-wrap;font-family:inherit"><span style="color:var(--text-faint)">Loading briefing...</span></div>
+    </div>
+  </div>
+
+  <!-- Shipped Today / Commits -->
+  <div class="section" id="sec-shipped">
+    <div class="section-header" onclick="toggleSection('shipped')">
+      <div class="section-header-left"><span class="section-title">Shipped Today / Commits</span><span class="section-count" id="shipped-count">0</span></div>
+      <span class="section-chevron">&#9660;</span>
+    </div>
+    <div class="section-body">
+      <div style="display:flex;justify-content:flex-end;margin-bottom:6px"><button onclick="forceRegenReport()" style="background:none;border:1px solid var(--border);border-radius:4px;padding:2px 8px;color:var(--text-faint);font-size:10px;cursor:pointer">Regenerate</button></div>
+      <div id="shipped-content"><div style="color:var(--text-faint);text-align:center;padding:20px">Loading...</div></div>
+    </div>
+  </div>
+
+  <!-- Products & Clients -->
+  <div class="section" id="sec-products">
+    <div class="section-header" onclick="toggleSection('products')">
+      <div class="section-header-left"><span class="section-title">Products &amp; Clients</span><span class="section-count" id="products-count">13</span></div>
+      <span class="section-chevron">&#9660;</span>
+    </div>
+    <div class="section-body">
+      <div class="product-grid" id="products-grid"></div>
+    </div>
+  </div>
+
+  <!-- Pipeline & Sales -->
+  <div class="section" id="sec-pipeline">
+    <div class="section-header" onclick="toggleSection('pipeline')">
+      <div class="section-header-left"><span class="section-title">Pipeline &amp; Sales</span><span class="section-count" id="pipeline-count">0</span></div>
+      <span class="section-chevron">&#9660;</span>
+    </div>
+    <div class="section-body">
+      <div class="funnel-row" id="pipeline-funnel"></div>
+      <div style="display:flex;justify-content:flex-end;margin-bottom:8px"><button onclick="document.getElementById('add-deal-form').style.display=document.getElementById('add-deal-form').style.display==='none'?'flex':'none'" style="background:rgba(16,185,129,0.1);border:1px solid rgba(16,185,129,0.25);border-radius:5px;padding:3px 10px;color:var(--green);font-size:11px;font-weight:600;cursor:pointer">+ Add Deal</button></div>
+      <div class="add-deal-form" id="add-deal-form" style="flex-wrap:wrap;gap:6px">
+        <input id="deal-company" placeholder="Company..." style="flex:1;min-width:120px">
+        <input id="deal-contact" placeholder="Contact..." style="flex:1;min-width:100px">
+        <input id="deal-value" type="number" placeholder="Value $" style="width:80px">
+        <select id="deal-product"><option value="">Product</option></select>
+        <select id="deal-stage"><option value="lead">Lead</option><option value="qualified">Qualified</option><option value="proposal">Proposal</option><option value="negotiation">Negotiation</option></select>
+        <input id="deal-notes" placeholder="Notes..." style="flex:2;min-width:120px">
+        <button onclick="saveDeal()">Save</button>
+      </div>
+      <div id="pipeline-deals" style="max-height:300px;overflow-y:auto"></div>
+    </div>
+  </div>
+
+  <!-- Platform Map (collapsed by default) -->
+  <div class="section collapsed" id="sec-map">
+    <div class="section-header" onclick="toggleSection('map')">
+      <div class="section-header-left"><span class="section-title">Platform Map</span><span class="section-count" id="active-count">0 active</span></div>
+      <span class="section-chevron">&#9660;</span>
+    </div>
+    <div class="section-body">
+      <svg class="map-svg" id="platform-map" viewBox="0 0 1000 560" preserveAspectRatio="xMidYMid meet">
+        <defs>
+          <filter id="glow"><feGaussianBlur stdDeviation="4" result="blur"/><feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+        </defs>
+        <text class="col-label" x="75" y="22">Products</text>
+        <text class="col-label" x="290" y="22">Routing</text>
+        <text class="col-label" x="510" y="22">Agents</text>
+        <text class="col-label" x="720" y="22">Tools</text>
+        <text class="col-label" x="900" y="22">Infrastructure</text>
+        <g id="edges-layer">
+          <path class="edge-path" d="M100,65 Q195,120 290,170"/>
+          <path class="edge-path" d="M100,140 Q195,240 290,340"/>
+          <path class="edge-path" d="M100,215 Q195,200 290,185"/>
+          <path class="edge-path" d="M320,170 Q415,115 510,95"/>
+          <path class="edge-path" d="M320,185 Q415,220 510,235"/>
+          <path class="edge-path" d="M320,340 Q415,340 510,345"/>
+          <path class="edge-path" d="M320,355 Q415,395 510,430"/>
+          <path class="edge-path" d="M540,90 Q720,80 890,100"/>
+          <path class="edge-path" d="M540,235 Q720,165 890,110"/>
+          <path class="edge-path" d="M540,345 Q720,225 890,120"/>
+          <path class="edge-path" d="M535,225 Q630,190 710,170"/>
+          <path class="edge-path" d="M535,235 Q630,225 710,215"/>
+          <path class="edge-path" d="M535,245 Q630,260 710,260"/>
+          <path class="edge-path" d="M535,255 Q630,290 710,305"/>
+          <path class="edge-path" d="M900,355 Q905,400 900,425"/>
+          <path class="edge-path" d="M310,195 Q600,450 890,350" style="stroke-dasharray:2 10"/>
+        </g>
+        <g id="nodes-layer">
+          <g class="node"><circle class="node-circle" cx="75" cy="65" r="24" fill="rgba(59,130,246,0.15)"/><text class="node-icon" x="75" y="61" style="font-size:8px">Platform</text><text class="node-icon" x="75" y="73" style="font-size:6px;fill:var(--text-faint)">Analyst</text><text class="node-label" x="75" y="99">Analyst</text></g>
+          <g class="node"><circle class="node-circle" cx="75" cy="140" r="22" fill="rgba(168,85,247,0.15)"/><text class="node-icon" x="75" y="136" style="font-size:9px">MIA</text><text class="node-label" x="75" y="172">MIA</text></g>
+          <g class="node"><circle class="node-circle" cx="75" cy="215" r="20" fill="rgba(239,68,68,0.15)"/><text class="node-icon" x="75" y="213" style="font-size:7px">Code</text><text class="node-label" x="75" y="245">Codeword</text></g>
+          <g class="node"><circle class="node-circle" cx="290" cy="180" r="28" fill="rgba(59,130,246,0.12)"/><text class="node-icon" x="290" y="176" style="font-size:9px">EQ</text><text class="node-icon" x="290" y="188" style="font-size:7px;fill:var(--text-faint)">route</text><text class="node-label" x="290" y="220">Conductor</text></g>
+          <g class="node"><circle class="node-circle" cx="290" cy="345" r="24" fill="rgba(168,85,247,0.12)"/><text class="node-icon" x="290" y="345" style="font-size:9px">P</text><text class="node-label" x="290" y="380">PingOrch</text></g>
+          <g class="node"><circle class="node-circle" cx="510" cy="90" r="24" fill="rgba(59,130,246,0.12)"/><text class="node-icon" x="510" y="84" style="font-size:7px">Traction</text><text class="node-icon" x="510" y="96" style="font-size:9px">EOS</text><text class="node-label" x="510" y="124">Fast Path</text></g>
+          <g class="node"><circle class="node-circle" cx="510" cy="235" r="26" fill="rgba(168,85,247,0.15)"/><text class="node-icon" x="510" y="231" style="font-size:9px">RLM</text><text class="node-icon" x="510" y="243" style="font-size:6px;fill:var(--text-faint)">recursive</text><text class="node-label" x="510" y="272">RLM Engine</text></g>
+          <g class="node"><circle class="node-circle" cx="510" cy="345" r="22" fill="rgba(192,132,252,0.15)"/><text class="node-icon" x="510" y="345" style="font-size:9px">MIA</text><text class="node-label" x="510" y="377">Ethics</text></g>
+          <g class="node"><circle class="node-circle" cx="510" cy="430" r="20" fill="rgba(16,185,129,0.15)"/><text class="node-icon" x="510" y="430" style="font-size:9px">G</text><text class="node-label" x="510" y="460">GURU</text></g>
+          <g class="node"><circle class="node-circle" cx="710" cy="170" r="12" fill="rgba(245,158,11,0.1)"/><text class="node-label" x="710" y="190" style="font-size:8px">finance</text></g>
+          <g class="node"><circle class="node-circle" cx="710" cy="215" r="12" fill="rgba(34,211,238,0.1)"/><text class="node-label" x="710" y="235" style="font-size:8px">legal</text></g>
+          <g class="node"><circle class="node-circle" cx="710" cy="260" r="12" fill="rgba(16,185,129,0.1)"/><text class="node-label" x="710" y="280" style="font-size:8px">memory</text></g>
+          <g class="node"><circle class="node-circle" cx="710" cy="305" r="12" fill="rgba(59,130,246,0.1)"/><text class="node-label" x="710" y="325" style="font-size:8px">docs</text></g>
+          <g class="node"><circle class="node-circle" cx="900" cy="110" r="24" fill="rgba(245,158,11,0.12)"/><text class="node-icon" x="900" y="106" style="font-size:8px">Claude</text><text class="node-icon" x="900" y="118" style="font-size:6px;fill:var(--text-faint)">sonnet-4</text><text class="node-label" x="900" y="144">Claude API</text></g>
+          <g class="node"><circle class="node-circle" cx="900" cy="210" r="18" fill="rgba(16,185,129,0.1)"/><text class="node-icon" x="900" y="210" style="font-size:8px">G</text><text class="node-label" x="900" y="236">Gemini</text></g>
+          <g class="node"><circle class="node-circle" cx="900" cy="330" r="26" fill="rgba(168,85,247,0.15)"/><text class="node-icon" x="900" y="326" style="font-size:9px">AIIA</text><text class="node-icon" x="900" y="338" style="font-size:6px;fill:var(--text-faint)">llama3.1</text><text class="node-label" x="900" y="366">Mac Mini M4</text></g>
+          <g class="node"><circle class="node-circle" cx="900" cy="430" r="16" fill="rgba(34,211,238,0.1)"/><text class="node-icon" x="900" y="430" style="font-size:7px">DB</text><text class="node-label" x="900" y="454">ChromaDB</text></g>
+        </g>
+      </svg>
+    </div>
+  </div>
+
+  <!-- System Health + LLM + Tokens -->
+  <div class="section" id="sec-health">
+    <div class="section-header" onclick="toggleSection('health')">
+      <div class="section-header-left"><span class="section-title">System Health + LLM + Tokens</span><span class="section-count" id="health-count">4 services</span></div>
+      <span class="section-chevron">&#9660;</span>
+    </div>
+    <div class="section-body">
+      <div class="sub-label">Service Health</div>
+      <div class="health-grid" id="health-grid"></div>
+      <div id="transitions-log" style="display:none;margin-top:12px;padding-top:12px;border-top:1px solid var(--border)">
+        <div class="sub-label">Recent Status Changes</div>
+        <div id="transitions-list"></div>
+      </div>
+      <div class="sub-label">LLM Orchestration</div>
+      <div class="llm-stats-row" id="llm-stats-row">
+        <div class="llm-stat"><div class="llm-stat-label">Requests</div><div class="llm-stat-value" id="llm-total-req">0</div></div>
+        <div class="llm-stat"><div class="llm-stat-label">EOS</div><div class="llm-stat-value" id="llm-eos" style="color:var(--blue)">0</div></div>
+        <div class="llm-stat"><div class="llm-stat-label">RLM</div><div class="llm-stat-value" id="llm-rlm" style="color:var(--purple)">0</div></div>
+        <div class="llm-stat"><div class="llm-stat-label">Cost</div><div class="llm-stat-value" id="llm-cost" style="color:var(--green)">$0</div></div>
+      </div>
+      <div class="llm-charts-row">
+        <div class="llm-chart-card"><div class="llm-chart-title">Provider Split</div><div id="llm-provider-chart"></div></div>
+        <div class="llm-chart-card"><div class="llm-chart-title">Domain Split</div><div id="llm-domain-chart"></div></div>
+        <div class="llm-chart-card"><div class="llm-chart-title">EQ Distribution</div><div id="llm-eq-chart"></div></div>
+      </div>
+      <div style="font-size:11px;font-weight:600;color:var(--text-faint);text-transform:uppercase;letter-spacing:0.8px;margin-bottom:6px">Recent Routing Decisions</div>
+      <div style="max-height:180px;overflow-y:auto">
+        <table class="llm-decisions-table"><thead><tr><th>Time</th><th>Domain</th><th>Path</th><th>Model</th><th>Tokens</th></tr></thead><tbody id="llm-decisions-body"><tr><td colspan="5" style="color:var(--text-faint);text-align:center;padding:12px">No routing data yet</td></tr></tbody></table>
+      </div>
+      <div class="sub-label">Token Usage by Provider</div>
+      <div id="token-providers"><div style="color:var(--text-faint);text-align:center;padding:12px;font-size:11px">Waiting for token data...</div></div>
+    </div>
+  </div>
+
+  <!-- AIIA / Memory / Insights -->
+  <div class="section" id="sec-aiia">
+    <div class="section-header" onclick="toggleSection('aiia')">
+      <div class="section-header-left"><span class="section-title">AIIA / Memory / Insights</span><span class="section-count" id="aiia-status-badge">checking</span></div>
+      <span class="section-chevron">&#9660;</span>
+    </div>
+    <div class="section-body">
+      <div class="aiia-stats-compact">
+        <span><b id="aiia-docs">--</b> docs</span>
+        <span class="stat-sep">/</span>
+        <span><b id="aiia-memories">--</b> memories</span>
+        <span class="stat-sep">/</span>
+        <span id="aiia-model-compact">--</span>
+      </div>
+
+      <div class="sub-label">Autonomous Tasks <span id="tasks-running-dot" style="display:none;width:6px;height:6px;border-radius:50%;background:var(--purple);box-shadow:0 0 8px rgba(168,85,247,0.6);animation:pulse 1.2s ease-in-out infinite;display:inline-block;margin-left:4px"></span></div>
+      <div id="tasks-list" style="max-height:260px;overflow-y:auto;margin-bottom:12px"></div>
+
+      <div class="sub-label">Memories
+        <select id="mem-filter-cat" onchange="loadMemories()" style="margin-left:8px;background:rgba(0,0,0,0.04);border:1px solid var(--border);border-radius:4px;padding:2px 6px;color:var(--text-dim);font-size:10px">
+          <option value="">All</option><option value="decisions">Decisions</option><option value="patterns">Patterns</option><option value="lessons">Lessons</option><option value="team">Team</option><option value="project">Project</option><option value="wip">WIP</option>
+        </select>
+        <input id="mem-search" placeholder="Search..." oninput="filterMemories()" style="margin-left:4px;background:rgba(0,0,0,0.04);border:1px solid var(--border);border-radius:4px;padding:2px 6px;color:var(--text);font-size:10px;width:120px">
+      </div>
+      <div id="memory-list" style="max-height:200px;overflow-y:auto;margin-bottom:12px"><div style="color:var(--text-faint);text-align:center;padding:12px;font-size:11px">Loading memories...</div></div>
+
+      <div class="sub-label">Insights</div>
+      <div id="insights-list" style="max-height:240px;overflow-y:auto"><div style="color:var(--text-faint);text-align:center;padding:12px;font-size:11px">No insights yet</div></div>
+
+      <div class="sub-label">Action Queue <span id="action-count-badge" class="action-count-badge" style="display:none">0</span>
+        <select id="action-filter-status" onchange="fetchActions()" style="margin-left:8px;background:rgba(0,0,0,0.04);border:1px solid var(--border);border-radius:4px;padding:2px 6px;color:var(--text-dim);font-size:10px">
+          <option value="pending">Pending</option><option value="">All</option><option value="approved">Approved</option><option value="completed">Completed</option><option value="rejected">Rejected</option>
+        </select>
+      </div>
+      <div id="actions-list" style="max-height:300px;overflow-y:auto"><div style="color:var(--text-faint);text-align:center;padding:12px;font-size:11px">No actions yet</div></div>
+    </div>
+  </div>
+
+  <!-- Tools & Capabilities -->
+  <div class="section collapsed" id="sec-tools">
+    <div class="section-header" onclick="toggleSection('tools')">
+      <div class="section-header-left"><span class="section-title">Tools &amp; Capabilities</span><span class="section-count" id="tools-count">0</span></div>
+      <span class="section-chevron">&#9660;</span>
+    </div>
+    <div class="section-body">
+      <div class="sub-label">Components</div>
+      <div class="tools-grid" id="components-grid"></div>
+      <div class="sub-label">Services</div>
+      <div class="tools-grid" id="services-grid"></div>
+    </div>
+  </div>
+
+</div><!-- end .dashboard -->
+
+<!-- Inline Chat Panel -->
+<div class="chat-panel" id="chat-panel">
+  <div class="chat-header">
+    <div class="chat-header-left">
+      <div class="chat-header-dot"></div>
+      <span class="chat-header-title">AIIA</span>
+    </div>
+    <div class="chat-header-right">
+      <button class="chat-btn-icon" onclick="clearChat()" title="New chat">+</button>
+    </div>
+  </div>
+  <div class="chat-messages" id="chat-messages">
+    <div class="chat-empty" id="chat-empty">
+      <div class="chat-empty-icon">&#9670;</div>
+      <div class="chat-empty-text">Ask AIIA about the codebase,<br>architecture, or project history</div>
+    </div>
+  </div>
+  <div class="chat-transcript" id="chat-transcript"></div>
+  <div class="chat-voice-bar">
+    <button class="chat-voice-pill on" id="chat-autospeak-btn" onclick="toggleAutoSpeak()">&#9835; Auto-speak</button>
+    <button class="chat-voice-pill on" id="chat-gtts-btn" onclick="toggleGoogleTTS()">&#9729; Google TTS</button>
+  </div>
+  <div class="chat-composer">
+    <input class="chat-input" id="chat-input" type="text" placeholder="Ask AIIA..." onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendChat();}">
+    <button class="chat-mic-btn" id="chat-mic-btn" onclick="toggleChatMic()" title="Voice input">&#127908;</button>
+    <button class="chat-send-btn" id="chat-send-btn" onclick="sendChat()" title="Send">&#9654;</button>
+  </div>
+</div>
+</div><!-- end .app-layout -->
+
+<script>
+// ═══════════════════════════════════════════════════════════
+// AIIA Mission Control — Single-Scroll Dashboard
+// ═══════════════════════════════════════════════════════════
+
+// Debug: show JS errors on-screen (remove after debugging)
+window.onerror = function(msg, src, line) {
+  var d = document.createElement('div');
+  d.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:9999;background:#dc2626;color:#fff;padding:8px 12px;font-size:12px;font-family:monospace';
+  d.textContent = 'JS ERROR: ' + msg + ' (line ' + line + ')';
+  document.body.appendChild(d);
+  setTimeout(function(){ d.remove(); }, 15000);
+};
+
+function $(id) { return document.getElementById(id); }
+function esc(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+function escAttr(s) { return String(s).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/'/g,'&#39;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+const escapeHtml = esc;
+function formatNum(n) { if (n==='--'||n==null) return '--'; n=Number(n); if (n>=1e6) return (n/1e6).toFixed(1)+'M'; if (n>=1e3) return (n/1e3).toFixed(1)+'K'; return n.toString(); }
+function timeAgo(iso) { const d=new Date(iso),now=new Date(); let ms=Math.max(now-d,0); const s=Math.floor(ms/1e3); if(s<60) return s+'s'; const m=Math.floor(s/60); if(m<60) return m+'m'; const h=Math.floor(m/60); if(h<24) return h+'h'; return Math.floor(h/24)+'d'; }
+
+// ── Collapsible Sections with localStorage persistence ──
+
+let sectionState = {};
+try { sectionState = JSON.parse(localStorage.getItem('mc_sections') || '{}'); } catch(e) {}
+
+function initSections() {
+  const defaults = { map: true, tools: true };
+  document.querySelectorAll('.section').forEach(el => {
+    const id = el.id.replace('sec-', '');
+    const collapsed = sectionState[id] !== undefined ? sectionState[id] : (defaults[id] || false);
+    el.classList.toggle('collapsed', collapsed);
+  });
+}
+
+function toggleSection(id) {
+  const el = $('sec-' + id);
+  if (!el) return;
+  el.classList.toggle('collapsed');
+  sectionState[id] = el.classList.contains('collapsed');
+  try { localStorage.setItem('mc_sections', JSON.stringify(sectionState)); } catch(e) {}
+}
+
+// ── WebSocket ──
+
+let ws = null, platform = null, monitorData = null, tokenData = null, routingData = {};
+let tasksData = [], insightsData = [], actionsData = [], actionSummary = {}, taskExtraData = {};
+
+function connect() {
+  try {
+    const wsProto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+    ws = new WebSocket(wsProto + '//' + location.host + '/ws');
+    ws.onopen = () => { $('ws-dot').className='dot'; $('ws-label').textContent='Live'; };
+    ws.onclose = () => { $('ws-dot').className='dot warn'; $('ws-label').textContent='Reconnecting'; setTimeout(connect, 3000); };
+    ws.onerror = () => ws.close();
+    ws.onmessage = (e) => handleMessage(JSON.parse(e.data));
+  } catch(err) { $('ws-dot').className='dot off'; $('ws-label').textContent='Offline'; setTimeout(connect, 5000); }
+}
+
+function handleMessage(msg) {
+  switch(msg.type) {
+    case 'init':
+      platform = msg.data.platform;
+      renderProducts();
+      if (msg.data.monitor) { monitorData = msg.data.monitor; renderHealth(monitorData); }
+      if (msg.data.tasks) { tasksData = msg.data.tasks; renderTasks(); }
+      if (msg.data.insights) { insightsData = msg.data.insights; renderInsights(); }
+      if (msg.data.actions) { actionsData = msg.data.actions; renderActions(); }
+      if (msg.data.action_summary) { actionSummary = msg.data.action_summary; updateActionBadge(); }
+      if (msg.data.routing) renderLLMSection(msg.data.routing);
+      if (msg.data.tokens) renderTokens(msg.data.tokens);
+      break;
+    case 'monitor_update': monitorData = msg.data; renderHealth(monitorData); break;
+    case 'task_update': tasksData = msg.data; renderTasks(); break;
+    case 'task_progress': updateTaskProgress(msg.data.task_id, msg.data.progress_pct, msg.data.step); break;
+    case 'task_started': case 'task_complete': case 'task_failed': fetchTasks(); fetchInsights(); break;
+    case 'token_update': renderTokens(msg.data); break;
+    case 'new_insight': insightsData.unshift(msg.data); insightsData = insightsData.slice(0,50); renderInsights(); break;
+    case 'new_action': actionsData.unshift(msg.data); actionsData = actionsData.slice(0,30); renderActions(); fetchActionSummary(); break;
+    case 'action_updated': fetchActions(); fetchActionSummary(); break;
+    case 'routing_update': renderLLMSection(msg.data); break;
+  }
+}
+
+// ── KPI Row ──
+
+function updateKPIs() {
+  if (tokenData) {
+    $('kpi-tokens').textContent = formatNum(tokenData.total_tokens || 0);
+    $('kpi-cost').textContent = '$' + (tokenData.total_cost || 0).toFixed(2);
+    $('kpi-requests').textContent = tokenData.total_requests || 0;
+  }
+  if (monitorData && monitorData.services) {
+    const svcs = Object.values(monitorData.services);
+    const onlineCount = svcs.filter(s => s.status === 'online').length;
+    $('kpi-uptime').textContent = onlineCount + '/' + svcs.length;
+  }
+  const prodCount = (platform?.products || []).length;
+  if (prodCount) $('kpi-products').textContent = prodCount;
+}
+
+// ── Products Grid ──
+
+function renderProducts() {
+  const products = platform?.products || [];
+  $('products-count').textContent = products.length + ' tenants';
+  $('products-grid').innerHTML = products.map(p => {
+    const bc = p.status==='production'?'badge-production':p.status==='mvp'?'badge-mvp':(p.status==='sandbox'||p.status==='prototype')?'badge-sandbox':'badge-active';
+    return '<div class="product-card"><div class="product-dot" style="background:'+escAttr(p.color)+'">'+esc(p.name[0])+'</div><div class="product-info"><div class="product-name">'+esc(p.name)+(p.client?' <span style="color:var(--text-faint);font-weight:400;font-size:10px">/ '+esc(p.client)+'</span>':'')+'</div><div class="product-sub">'+esc(p.subtitle)+'</div></div><span class="product-badge '+escAttr(bc)+'">'+esc(p.status)+'</span></div>';
+  }).join('');
+
+  // Populate deal product dropdown
+  const sel = $('deal-product');
+  if (sel && sel.options.length <= 1) {
+    products.forEach(p => { const o = document.createElement('option'); o.value = p.id; o.textContent = p.name; sel.appendChild(o); });
+  }
+}
+
+// ── System Health ──
+
+function renderHealth(data) {
+  if (!data || !data.services) return;
+  const serviceOrder = ['aiia','ollama'];
+  $('health-grid').innerHTML = serviceOrder.map(sid => {
+    const svc = data.services[sid]; if (!svc) return '';
+    const status = svc.status||'unknown';
+    const latency = svc.response_time_ms!=null?Math.round(svc.response_time_ms)+'ms':'--';
+    const avgLatency = svc.avg_response_time_ms?Math.round(svc.avg_response_time_ms)+'ms':'--';
+    const uptimePct = svc.uptime_pct!=null?svc.uptime_pct:null;
+    const uptimeStr = uptimePct!=null?uptimePct.toFixed(1)+'%':'--';
+    const uptimeWidth = uptimePct!=null?uptimePct:0;
+    const sparkline = svc.sparkline||[];
+    const maxMs = Math.max(...sparkline.map(s=>s.ms),1);
+    const sparkBars = sparkline.map(s => { const h=Math.max(2,Math.round((Number(s.ms)||0/maxMs)*26)); let cls='ok'; if(!s.ok) cls='fail'; else if(s.ms>1000) cls='slow'; return '<div class="spark-bar '+escAttr(cls)+'" style="height:'+Number(h)+'px" title="'+Number(Math.round(s.ms))+'ms"></div>'; }).join('');
+    let extra = '';
+    if (sid==='aiia'&&svc.meta) { const d=svc.meta.docs||0,m=svc.meta.memories||0,mdl=svc.meta.model||''; if(d||m) extra='<div class="health-extra">'+esc(formatNum(d))+' docs, '+Number(m)+' memories'+(mdl?' &middot; '+esc(mdl):'')+'</div>'; }
+    else if (sid==='ollama'&&svc.meta) { const models=(svc.meta.models||[]).map(m=>esc(m)),cnt=Number(svc.meta.model_count)||0; if(cnt) extra='<div class="health-extra">'+cnt+' model'+(cnt!==1?'s':'')+': '+models.join(', ')+'</div>'; }
+    return '<div class="health-card"><div class="health-card-header"><div class="health-card-left"><div class="health-dot '+escAttr(status)+'"></div><span class="health-name">'+esc(svc.name)+'</span></div><span class="health-status '+escAttr(status)+'">'+esc(status)+'</span></div><div class="health-metrics"><span>Latency: <b>'+esc(latency)+'</b></span><span>Avg: <b>'+esc(avgLatency)+'</b></span><span>Checks: <b>'+Number(svc.total_checks||0)+'</b></span></div><div class="sparkline">'+sparkBars+'</div><div class="uptime-row"><span class="uptime-label">Uptime</span><div class="uptime-track"><div class="uptime-fill" style="width:'+Number(uptimeWidth)+'%;'+(uptimeWidth<95?'background:var(--amber)':'')+(uptimeWidth<80?'background:var(--red)':'')+'"></div></div><span class="uptime-pct">'+esc(uptimeStr)+'</span></div>'+extra+'</div>';
+  }).join('');
+
+  // Transitions
+  const transitions = data.transitions||[];
+  const logEl=$('transitions-log'), listEl=$('transitions-list');
+  if (transitions.length>0) { logEl.style.display='block'; listEl.innerHTML=transitions.slice(0,10).map(t=>'<div style="display:flex;gap:8px;align-items:center;font-size:11px;color:var(--text-dim);padding:3px 0"><span style="color:var(--text-faint);font-size:10px;width:60px">'+(t.at?esc(new Date(t.at).toLocaleTimeString()):'?')+'</span><span>'+esc(t.service)+'</span><span style="color:var(--text-faint)">'+esc(t.from)+' &rarr; '+esc(t.to)+'</span></div>').join(''); }
+  else { logEl.style.display='none'; }
+
+  // Update AIIA panel from monitor meta
+  if (data.services.aiia) {
+    const aiia = data.services.aiia;
+    const online = aiia.status === 'online';
+    $('aiia-status-badge').textContent = online ? 'online' : aiia.status;
+    $('aiia-status-badge').style.color = online ? 'var(--green)' : 'var(--red)';
+    if (aiia.meta) {
+      $('aiia-docs').textContent = formatNum(aiia.meta.docs || 0);
+      $('aiia-memories').textContent = aiia.meta.memories || '--';
+      if (aiia.meta.model) $('aiia-model-compact').innerHTML = '<b>' + esc(aiia.meta.model) + '</b>';
+    }
+  }
+
+  updateKPIs();
+}
+
+// ── Tokens ──
+
+function renderTokens(data) {
+  if (!data) return;
+  tokenData = data;
+  const providers = data.by_provider || {};
+  const COLORS = {local:'var(--cyan)',anthropic:'var(--amber)',google:'var(--green)'};
+  const el = $('token-providers');
+  if (Object.keys(providers).length === 0) {
+    el.innerHTML = '<div style="color:var(--text-faint);text-align:center;padding:12px;font-size:11px">No token data yet</div>';
+  } else {
+    el.innerHTML = Object.entries(providers).map(([name, stats]) => {
+      const color = COLORS[name]||'var(--text-dim)';
+      const costStr = name==='local'?'<span style="color:var(--green)">FREE</span>':'$'+(stats.cost||0).toFixed(4);
+      return '<div class="token-provider-row"><div style="width:8px;height:8px;border-radius:50%;background:'+color+';flex-shrink:0"></div><span style="font-size:12px;font-weight:600;color:var(--text);min-width:70px">'+esc(name)+'</span><span style="font-size:11px;color:var(--text-dim);flex:1">'+formatNum(stats.tokens||0)+' tokens</span><span style="font-size:11px;color:var(--text-dim)">'+stats.input_tokens+' in / '+stats.output_tokens+' out</span><span style="font-size:11px;min-width:60px;text-align:right">'+costStr+'</span><span style="font-size:10px;color:var(--text-faint)">'+(stats.requests||0)+' req</span></div>';
+    }).join('');
+  }
+  updateKPIs();
+}
+
+// ── LLM Orchestration ──
+
+function renderLLMSection(data) {
+  if (!data) return;
+  routingData = data;
+  $('llm-total-req').textContent = data.total_requests||0;
+  $('llm-eos').textContent = (data.eos_count||0) + ' (' + (data.eos_pct||0) + '%)';
+  $('llm-rlm').textContent = (data.rlm_count||0) + ' (' + (data.rlm_pct||0) + '%)';
+  if (tokenData) $('llm-cost').textContent = '$' + (tokenData.total_cost||0).toFixed(2);
+  renderBarChart('llm-provider-chart', data.by_provider||{}, {local:'var(--cyan)',anthropic:'var(--amber)',google:'var(--green)',eos:'var(--blue)',rlm:'var(--purple)'});
+  renderBarChart('llm-domain-chart', data.by_domain||{}, {finance:'var(--amber)',legal:'var(--cyan)',general:'var(--text-dim)',local_api:'var(--blue)',aiia_ask:'var(--purple)'});
+  renderBarChart('llm-eq-chart', data.by_eq_level||{}, {'1-2':'var(--blue)','3-5':'var(--green)','8-12':'var(--amber)','13+':'var(--red)'});
+  const decisions = data.recent_decisions||[];
+  const tbody = $('llm-decisions-body');
+  if (!decisions.length) { tbody.innerHTML='<tr><td colspan="5" style="color:var(--text-faint);text-align:center;padding:12px">No routing data yet</td></tr>'; return; }
+  tbody.innerHTML = decisions.slice(0,15).map(d => {
+    const time = d.timestamp?new Date(d.timestamp).toLocaleTimeString():'--';
+    const tokens = (d.input_tokens||0)+(d.output_tokens||0);
+    return '<tr><td>'+time+'</td><td>'+esc(d.domain||'--')+'</td><td>'+esc(d.recommended_path||'--')+'</td><td style="font-size:10px">'+esc(d.model||'--')+'</td><td>'+(tokens?formatNum(tokens):'--')+'</td></tr>';
+  }).join('');
+}
+
+function renderBarChart(containerId, data, colors) {
+  const el = $(containerId); if (!el) return;
+  const entries = Object.entries(data).sort((a,b)=>b[1]-a[1]);
+  const total = entries.reduce((s,[,v])=>s+v,0)||1;
+  if (!entries.length) { el.innerHTML='<div style="font-size:11px;color:var(--text-faint)">No data</div>'; return; }
+  el.innerHTML = entries.slice(0,5).map(([label,value])=>{
+    const pct=Math.round((value/total)*100), color=colors[label]||'var(--text-dim)';
+    return '<div class="llm-bar-row"><span class="llm-bar-label">'+esc(label)+'</span><div class="llm-bar-track"><div class="llm-bar-fill" style="width:'+pct+'%;background:'+color+'"></div></div><span class="llm-bar-pct">'+pct+'%</span></div>';
+  }).join('');
+}
+
+// ── Tasks ──
+
+const TASK_ICONS = {health_journal:{icon:'\u2661',color:'var(--green)'},repo_sync:{icon:'\u27F3',color:'var(--blue)'},code_health:{icon:'\u2714',color:'var(--cyan)'},learning_loop:{icon:'\u2731',color:'var(--pink)'},test_runner:{icon:'\u25B7',color:'var(--green)'},weekly_client_status:{icon:'\u2637',color:'var(--amber)'},memory_digest:{icon:'\u25CE',color:'var(--purple)'},daily_brief:{icon:'\u2600',color:'var(--amber)'},security_scan:{icon:'\uD83D\uDD12',color:'var(--red)'}};
+let expandedTask = null;
+
+function renderTasks() {
+  const list = $('tasks-list');
+  if (!tasksData||!tasksData.length) { list.innerHTML='<div style="font-size:11px;color:var(--text-faint);padding:8px 0">Waiting for tasks...</div>'; return; }
+  const anyRunning = tasksData.some(t=>t.status==='running');
+  const dot = $('tasks-running-dot');
+  if (dot) dot.style.display = anyRunning?'inline-block':'none';
+  list.innerHTML = tasksData.map(t => {
+    const status=t.status||'idle', isRunning=status==='running', progress=t.progress||0, step=t.current_step||'';
+    const llm = t.uses_llm?'<span class="task-llm-badge">LLM</span>':'';
+    const isExpanded = expandedTask===t.task_id;
+    const hasOutput = t.last_output&&t.last_output.length>0;
+    let infoHtml='';
+    if (!isRunning && t.last_result) {
+      const result = t.last_result.length>50?t.last_result.substring(0,47)+'...':t.last_result;
+      const ago = t.last_run?timeAgo(t.last_run):'';
+      const expandHint = hasOutput?' style="cursor:pointer" onclick="toggleTaskOutput(\''+escAttr(t.task_id)+'\')"':'';
+      const chevron = hasOutput?'<span class="task-expand-chevron'+(isExpanded?' open':'')+'">&#9656;</span>':'';
+      infoHtml = '<div class="task-row-info"'+expandHint+'>'+chevron+'<span class="result-text">'+esc(result)+'</span>'+(ago?'<span style="flex-shrink:0">'+esc(ago)+'</span>':'')+'</div>';
+    } else if (!isRunning) { infoHtml='<div class="task-row-info"><span class="result-text" style="color:var(--text-faint)">Not yet run</span></div>'; }
+    let outputHtml = isExpanded&&hasOutput?'<div class="task-output">'+esc(t.last_output)+'</div>':'';
+    let btnHtml = isRunning?'<button class="task-run-btn running-btn" disabled>'+Number(progress)+'%</button>':'<button class="task-run-btn" onclick="event.stopPropagation();triggerTask(\''+escAttr(t.task_id)+'\')">&#9654;</button>';
+    return '<div class="task-row '+escAttr(status)+'" id="task-row-'+escAttr(t.task_id)+'"><div class="task-row-header"><div class="task-row-left"><div class="task-dot '+escAttr(status)+'"></div><span class="task-row-name">'+esc(t.name)+'</span>'+llm+'</div>'+btnHtml+'</div><div class="task-row-progress"><div class="task-progress-track"><div class="task-progress-fill" id="task-progress-'+escAttr(t.task_id)+'" style="width:'+Number(progress)+'%"></div></div><div class="task-step" id="task-step-'+escAttr(t.task_id)+'"><div class="task-step-dot"></div><span>'+esc(step)+'</span><span class="task-pct">'+Number(progress)+'%</span></div></div>'+infoHtml+outputHtml+'</div>';
+  }).join('');
+}
+
+function updateTaskProgress(taskId, pct, step) {
+  const fill=$('task-progress-'+taskId), stepEl=$('task-step-'+taskId);
+  if (fill) fill.style.width=pct+'%';
+  if (stepEl) stepEl.innerHTML='<div class="task-step-dot"></div><span>'+esc(step||'')+'</span><span class="task-pct">'+Number(pct)+'%</span>';
+  const row=$('task-row-'+taskId);
+  if (row) { const btn=row.querySelector('.task-run-btn'); if(btn&&btn.disabled) btn.textContent=pct+'%'; }
+}
+
+function toggleTaskOutput(taskId) { expandedTask = expandedTask===taskId?null:taskId; renderTasks(); }
+async function triggerTask(taskId) { try { await fetch('/api/tasks/'+encodeURIComponent(taskId)+'/run',{method:'POST'}); } catch(e) { console.error(e); } }
+async function fetchTasks() { try { tasksData=await(await fetch('/api/tasks')).json(); renderTasks(); } catch(e){} }
+
+// ── Shipped Today ──
+
+const TYPE_COLORS = {feat:'#22c55e',fix:'#f59e0b',chore:'#8888cc',refactor:'#a78bfa',docs:'#60a5fa',nuke:'#ef4444',security:'#ef4444',ops:'#64d2ff',test:'#10b981',merge:'#666'};
+
+const CAT_ORDER = ['Primary-Client','Platform','AI/Infra','Other Tenants','Other'];
+const CAT_COLORS = {'Primary-Client':'#3b82f6','Platform':'#a855f7','AI/Infra':'#22d3ee','Other Tenants':'#f59e0b','Other':'#666'};
+
+async function loadReport() {
+  const el = $('shipped-content');
+  try {
+    const data = await(await fetch('/api/reports/today')).json();
+    const s = data.summary||{};
+    $('shipped-count').textContent = s.total_commits||0;
+    $('kpi-commits').textContent = s.total_commits||0;
+    if (!s.total_commits) { el.innerHTML='<div style="color:var(--text-faint);text-align:center;padding:20px">No commits today</div>'; return; }
+    let h = '<div style="font-size:12px;color:var(--text-dim);margin-bottom:10px"><b style="color:var(--text)">'+ s.total_commits+'</b> commits &middot; <b style="color:var(--text)">'+s.total_files_changed+'</b> files &middot; <span style="color:var(--green)">+'+s.total_additions+'</span> / <span style="color:var(--red)">-'+s.total_deletions+'</span> &middot; '+(s.authors||[]).join(', ')+'</div>';
+    // Render by category if available, fallback to products
+    const cats = data.categories;
+    if (cats && Object.keys(cats).length > 0) {
+      for (const cat of CAT_ORDER) {
+        const cd = cats[cat];
+        if (!cd || !cd.count) continue;
+        const cc = cd.color || CAT_COLORS[cat] || '#666';
+        h += '<div style="margin-bottom:8px"><div class="commit-category" onclick="this.nextElementSibling.style.display=this.nextElementSibling.style.display===\'none\'?\'block\':\'none\'">';
+        h += '<div class="commit-category-bar" style="background:'+cc+'"></div>';
+        h += '<span class="commit-category-label" style="color:'+cc+'">'+esc(cat)+'</span>';
+        h += '<span class="commit-category-count">('+cd.count+')</span></div><div>';
+        for (const c of cd.commits||[]) {
+          const tc = TYPE_COLORS[c.type]||'#666';
+          h += '<div class="commit-line"><span class="commit-type" style="background:'+tc+'22;color:'+tc+'">'+c.type+'</span><span class="commit-hash">'+c.hash+'</span><span class="commit-msg">'+esc(c.subject)+'</span></div>';
+        }
+        h += '</div></div>';
+      }
+    } else {
+      for (const [prod,pd] of Object.entries(data.products||{})) {
+        h += '<div style="margin-bottom:6px"><div style="font-size:12px;font-weight:600;color:var(--text-dim);padding:4px 0;border-bottom:1px solid var(--border);cursor:pointer" onclick="this.nextElementSibling.style.display=this.nextElementSibling.style.display===\'none\'?\'block\':\'none\'">'+esc(prod)+' <span style="font-weight:400;color:var(--text-faint)">'+pd.commit_count+' commits</span></div><div>';
+        for (const c of pd.commits||[]) {
+          const tc = TYPE_COLORS[c.type]||'#666';
+          h += '<div class="commit-line"><span class="commit-type" style="background:'+tc+'22;color:'+tc+'">'+c.type+'</span><span class="commit-hash">'+c.hash+'</span><span class="commit-msg">'+esc(c.subject)+'</span></div>';
+        }
+        h += '</div></div>';
+      }
+    }
+    el.innerHTML = h;
+  } catch(e) { el.innerHTML='<div style="color:var(--red);padding:20px;text-align:center">'+e.message+'</div>'; }
+}
+
+// ── Morning Briefing ──
+
+async function fetchBriefing() {
+  try {
+    const data = await(await fetch('/api/briefing/latest')).json();
+    if (data.error) { $('briefing-content').textContent = data.error; $('briefing-status').textContent = 'error'; return; }
+    const briefing = data.briefing || '';
+    const status = data.status || 'unknown';
+    const lastRun = data.last_run;
+    if (!briefing) {
+      $('briefing-content').innerHTML = '<span style="color:var(--text-faint)">No briefing yet. Click "Generate Fresh" to create one.</span>';
+      $('briefing-status').textContent = 'none';
+      return;
+    }
+    // Simple markdown-ish rendering: headers + bold
+    let html = briefing
+      .replace(/^### (.+)$/gm, '<div style="font-size:13px;font-weight:600;color:var(--blue);margin:12px 0 4px">$1</div>')
+      .replace(/^## (.+)$/gm, '<div style="font-size:14px;font-weight:700;color:var(--text);margin:16px 0 6px">$1</div>')
+      .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+    $('briefing-content').innerHTML = html;
+    $('briefing-status').textContent = status === 'done' ? 'ready' : status;
+    if (lastRun) {
+      const d = new Date(lastRun);
+      $('briefing-time').textContent = 'Generated ' + d.toLocaleString();
+    }
+  } catch(e) { $('briefing-content').textContent = 'Failed to load briefing'; $('briefing-status').textContent = 'error'; }
+}
+
+async function generateBriefing() {
+  const btn = $('briefing-gen-btn');
+  btn.textContent = 'Generating...'; btn.disabled = true;
+  $('briefing-content').innerHTML = '<span style="color:var(--text-faint)">Generating fresh briefing... this takes ~60s</span>';
+  $('briefing-status').textContent = 'running';
+  try {
+    await fetch('/api/briefing/generate', {method:'POST'});
+    // Poll for completion
+    let attempts = 0;
+    const poll = setInterval(async () => {
+      attempts++;
+      try {
+        const data = await(await fetch('/api/briefing/latest')).json();
+        if (data.status === 'done' && data.briefing || attempts > 30) {
+          clearInterval(poll);
+          btn.textContent = 'Generate Fresh'; btn.disabled = false;
+          fetchBriefing();
+        }
+      } catch(e) { /* keep polling */ }
+    }, 3000);
+  } catch(e) {
+    btn.textContent = 'Generate Fresh'; btn.disabled = false;
+    $('briefing-content').textContent = 'Generation failed: ' + e.message;
+  }
+}
+
+async function forceRegenReport() {
+  $('shipped-content').innerHTML='<div style="color:var(--text-faint);text-align:center;padding:20px">Regenerating...</div>';
+  await fetch('/api/reports/generate',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});
+  await loadReport();
+}
+
+// ── Pipeline ──
+
+let pipelineData = [];
+
+async function fetchPipeline() {
+  try {
+    const data = await(await fetch('/api/pipeline')).json();
+    pipelineData = data.deals||[];
+    $('pipeline-count').textContent = pipelineData.length + ' deals';
+    renderPipeline(data);
+  } catch(e) { console.error('Pipeline fetch failed:', e); }
+}
+
+function renderPipeline(data) {
+  const summary = data.summary||{};
+  const byStage = summary.by_stage||{};
+  const STAGE_COLORS = {lead:'var(--blue)',qualified:'var(--amber)',proposal:'var(--purple)',negotiation:'var(--pink)',closed_won:'var(--green)',closed_lost:'var(--red)'};
+  const funnelStages = ['lead','qualified','proposal','negotiation'];
+  $('pipeline-funnel').innerHTML = funnelStages.map(s => {
+    const d = byStage[s]||{count:0,value:0};
+    return '<div class="funnel-stage"><div class="funnel-stage-value" style="color:'+STAGE_COLORS[s]+'">'+d.count+'</div><div class="funnel-stage-label">'+s+'</div><div class="funnel-stage-amount">$'+formatNum(d.value)+'</div></div>';
+  }).join('');
+
+  const deals = data.deals||[];
+  if (!deals.length) { $('pipeline-deals').innerHTML='<div style="color:var(--text-faint);text-align:center;padding:16px;font-size:11px">No deals yet</div>'; return; }
+  let h = '<table class="deal-table"><thead><tr><th>Company</th><th>Contact</th><th>Stage</th><th>Value</th><th>Product</th><th></th></tr></thead><tbody>';
+  for (const d of deals) {
+    const sc = STAGE_COLORS[d.stage]||'var(--text-dim)';
+    h += '<tr><td style="font-weight:600;color:var(--text)">'+esc(d.company)+'</td><td>'+esc(d.contact||'--')+'</td><td><span class="deal-stage-badge" style="background:'+sc+'18;color:'+sc+'">'+d.stage+'</span></td><td>$'+formatNum(d.value||0)+'</td><td style="font-size:10px">'+esc(d.product||'--')+'</td><td><button class="deal-del-btn" onclick="deleteDeal(\''+d.id+'\')">Del</button></td></tr>';
+  }
+  h += '</tbody></table>';
+  // Won/Lost summary
+  const won = byStage.closed_won||{count:0,value:0};
+  const lost = byStage.closed_lost||{count:0,value:0};
+  if (won.count||lost.count) {
+    h += '<div style="display:flex;gap:12px;margin-top:8px;font-size:11px"><span style="color:var(--green)">Won: '+won.count+' ($'+formatNum(won.value)+')</span><span style="color:var(--red)">Lost: '+lost.count+' ($'+formatNum(lost.value)+')</span></div>';
+  }
+  $('pipeline-deals').innerHTML = h;
+}
+
+async function saveDeal() {
+  const company = $('deal-company').value.trim();
+  if (!company) return;
+  await fetch('/api/pipeline',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
+    company, contact:$('deal-contact').value.trim(), value:parseFloat($('deal-value').value)||0,
+    product:$('deal-product').value, stage:$('deal-stage').value, notes:$('deal-notes').value.trim(),
+  })});
+  $('deal-company').value=''; $('deal-contact').value=''; $('deal-value').value=''; $('deal-notes').value='';
+  $('add-deal-form').style.display='none';
+  await fetchPipeline();
+}
+
+async function deleteDeal(id) {
+  if (!confirm('Delete this deal?')) return;
+  await fetch('/api/pipeline/'+id,{method:'DELETE'});
+  await fetchPipeline();
+}
+
+// ── Roadmap ──
+
+async function loadRoadmap() {
+  const list=$('roadmap-list');
+  const status=$('rm-filter-status').value, product=$('rm-filter-product').value;
+  const hideShipped=$('rm-hide-shipped')&&$('rm-hide-shipped').checked;
+  let url='/api/roadmap?';
+  if (status) url+='status='+status+'&';
+  else if (hideShipped) url+=''; // filter client-side
+  if (product) url+='product='+product+'&';
+  try {
+    const data=await(await fetch(url)).json();
+    let stories=data.stories||[];
+    if (hideShipped && !status) stories=stories.filter(s=>s.status!=='shipped');
+    $('roadmap-count').textContent=stories.length;
+    if (!stories.length) { list.innerHTML='<div style="color:var(--text-faint);text-align:center;padding:20px">No stories</div>'; return; }
+    const PC={P0:'#ef4444',P1:'#f59e0b',P2:'#60a5fa',P3:'#666'}, SC={backlog:'#666',active:'#60a5fa',in_progress:'#22c55e',shipped:'#22c55e',blocked:'#ef4444'};
+    list.innerHTML=stories.map(s=>{
+      const pc=PC[s.priority]||'#666',sc=SC[s.status]||'#666';
+      let acts='';
+      if (s.status!=='shipped') acts+='<button class="rm-btn" onclick="updStory(\''+s.id+'\',\'shipped\')">Ship</button>';
+      if (s.status==='backlog') acts+='<button class="rm-btn" onclick="updStory(\''+s.id+'\',\'active\')">Start</button>';
+      if (s.status!=='blocked'&&s.status!=='shipped') acts+='<button class="rm-btn" onclick="updStory(\''+s.id+'\',\'blocked\')">Block</button>';
+      if (s.status==='blocked') acts+='<button class="rm-btn" onclick="updStory(\''+s.id+'\',\'active\')">Unblock</button>';
+      acts+='<button class="rm-btn" onclick="delStory(\''+s.id+'\')">Del</button>';
+      return '<div class="roadmap-story"><div class="roadmap-story-header"><span style="font-size:10px;font-weight:700;padding:1px 5px;border-radius:3px;background:'+pc+'22;color:'+pc+'">'+s.priority+'</span><span style="font-size:10px;padding:1px 5px;border-radius:3px;background:'+sc+'22;color:'+sc+'">'+s.status.replace('_',' ')+'</span><span style="font-size:12px;color:var(--text);flex:1">'+esc(s.title)+'</span><span style="font-size:10px;color:var(--text-faint)">'+esc(s.product)+'</span></div>'+(s.description?'<div style="font-size:11px;color:var(--text-faint);margin-top:3px">'+esc(s.description)+'</div>':'')+'<div style="display:flex;gap:3px;margin-top:4px">'+acts+'</div></div>';
+    }).join('');
+  } catch(e) { list.innerHTML='<div style="color:var(--red);padding:20px">'+e.message+'</div>'; }
+}
+
+async function saveStory() {
+  const title=$('new-title').value.trim(); if(!title) return;
+  await fetch('/api/roadmap',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({title,product:$('new-product').value,priority:$('new-priority').value,status:'backlog',description:$('new-desc').value.trim()})});
+  $('new-title').value=''; $('new-desc').value=''; $('add-story-form').style.display='none';
+  await loadRoadmap();
+}
+async function updStory(id,status) { await fetch('/api/roadmap/'+id,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({status})}); await loadRoadmap(); }
+async function delStory(id) { if(!confirm('Delete?')) return; await fetch('/api/roadmap/'+id,{method:'DELETE'}); await loadRoadmap(); }
+
+// ── Memory ──
+
+let memoriesAll=[], memoriesData=[];
+const MEM_CAT_COLORS = {decisions:'#f59e0b',patterns:'#a855f7',lessons:'#3b82f6',team:'#10b981',project:'#22d3ee',agents:'#ec4899',sessions:'#64748b',wip:'#ef4444',meta:'#8b5cf6'};
+
+async function loadMemories() {
+  const cat=$('mem-filter-cat').value;
+  let url='/api/memories?limit=100';
+  if (cat) url+='&category='+cat;
+  try {
+    const data=await(await fetch(url)).json();
+    memoriesAll=data.memories||[]; memoriesData=memoriesAll;
+    renderMemoryList();
+  } catch(e) { $('memory-list').innerHTML='<div style="color:var(--red);padding:12px;text-align:center;font-size:11px">Could not load</div>'; }
+}
+
+function filterMemories() {
+  const q=($('mem-search').value||'').toLowerCase();
+  memoriesData = q ? memoriesAll.filter(m=>(m.fact||'').toLowerCase().includes(q)||(m.category||'').toLowerCase().includes(q)) : memoriesAll;
+  renderMemoryList();
+}
+
+function renderMemoryList() {
+  const el=$('memory-list');
+  if (!memoriesData.length) { el.innerHTML='<div style="color:var(--text-faint);text-align:center;padding:12px;font-size:11px">No memories found</div>'; return; }
+  el.innerHTML = memoriesData.map(m=>{
+    const cat=m.category||'unknown', color=MEM_CAT_COLORS[cat]||'#666';
+    return '<div class="memory-card"><span style="font-size:9px;padding:2px 6px;border-radius:4px;background:'+color+'18;color:'+color+';font-weight:600;white-space:nowrap;margin-top:2px">'+esc(cat)+'</span><div style="flex:1;min-width:0"><div style="font-size:11px;color:var(--text-dim);word-break:break-word">'+esc(m.fact||'')+'</div><div style="font-size:9px;color:var(--text-faint);margin-top:2px">'+esc(m.created_at||'')+'</div></div>'+(m.id?'<button class="deal-del-btn" onclick="deleteMemory(\''+esc(m.id)+'\')">Del</button>':'')+'</div>';
+  }).join('');
+}
+
+async function deleteMemory(memId) { if(!confirm('Delete?')) return; await fetch('/api/memories/'+memId,{method:'DELETE'}); await loadMemories(); }
+
+// ── Insights ──
+
+async function fetchInsights() {
+  try {
+    const data = await(await fetch('/api/insights')).json();
+    insightsData = data.insights||[];
+    renderInsights();
+  } catch(e) {}
+}
+
+function renderInsights() {
+  const el=$('insights-list');
+  if (!insightsData||!insightsData.length) { el.innerHTML='<div style="color:var(--text-faint);text-align:center;padding:12px;font-size:11px">No insights yet</div>'; return; }
+  const ICONS = {shipped:'\u26A1',security:'\uD83D\uDD12',quality:'\u2714',memory:'\uD83D\uDCA1',metric:'\uD83D\uDCCA',learning:'\u2731'};
+  el.innerHTML = insightsData.map(i => {
+    const icon=ICONS[i.type]||'\u25CF', ago=i.timestamp?timeAgo(i.timestamp):'';
+    return '<div class="insight-card"><span class="insight-icon">'+icon+'</span><div class="insight-body"><div class="insight-title">'+esc(i.title)+'</div>'+(i.detail?'<div class="insight-detail">'+esc(i.detail).substring(0,200)+'</div>':'')+'<div class="insight-meta"><span class="insight-badge '+escAttr(i.severity||'info')+'">'+esc(i.severity||'info')+'</span>'+(i.source_task?'<span>'+esc(i.source_task)+'</span>':'')+(ago?'<span>'+esc(ago)+'</span>':'')+'</div></div></div>';
+  }).join('');
+}
+
+// ── Actions ──
+
+async function fetchActions() {
+  try {
+    const status = $('action-filter-status')?.value || 'pending';
+    const url = '/api/actions' + (status ? '?status=' + status + '&limit=30' : '?limit=30');
+    const data = await(await fetch(url)).json();
+    actionsData = data.actions || [];
+    renderActions();
+  } catch(e) {}
+}
+
+async function fetchActionSummary() {
+  try {
+    const data = await(await fetch('/api/actions/summary')).json();
+    actionSummary = data;
+    updateActionBadge();
+  } catch(e) {}
+}
+
+function updateActionBadge() {
+  const badge = $('action-count-badge');
+  if (!badge) return;
+  const pending = (actionSummary.by_status || {}).pending || 0;
+  if (pending > 0) { badge.textContent = pending; badge.style.display = 'inline-flex'; }
+  else { badge.style.display = 'none'; }
+}
+
+function renderActions() {
+  const el = $('actions-list');
+  if (!el) return;
+  if (!actionsData || !actionsData.length) {
+    el.innerHTML = '<div style="color:var(--text-faint);text-align:center;padding:12px;font-size:11px">No actions</div>';
+    return;
+  }
+  el.innerHTML = actionsData.map(a => {
+    const ago = a.created_at ? timeAgo(a.created_at) : '';
+    const sev = a.severity || 'info';
+    const isPending = a.status === 'pending';
+    const btns = isPending
+      ? '<div class="action-buttons"><button class="action-btn approve" onclick="approveAction(\''+escAttr(a.id)+'\')">Approve</button><button class="action-btn reject" onclick="rejectAction(\''+escAttr(a.id)+'\')">Reject</button></div>'
+      : '<div class="action-buttons"><span class="action-type">'+esc(a.status)+'</span></div>';
+    return '<div class="action-card"><span class="action-severity '+escAttr(sev)+'">'+esc(sev)+'</span><div class="action-body"><div class="action-title">'+esc(a.title)+'</div>'
+      + (a.description ? '<div class="action-desc">'+esc(a.description).substring(0,150)+'</div>' : '')
+      + '<div class="action-meta"><span class="action-type">'+esc(a.type)+'</span>'
+      + (a.source_task ? '<span>'+esc(a.source_task)+'</span>' : '')
+      + (ago ? '<span>'+ago+'</span>' : '')
+      + '</div></div>'+btns+'</div>';
+  }).join('');
+}
+
+async function approveAction(id) {
+  try {
+    await fetch('/api/actions/'+encodeURIComponent(id)+'/approve', {method:'POST'});
+    fetchActions();
+    fetchActionSummary();
+  } catch(e) { console.error('Approve failed:', e); }
+}
+
+async function rejectAction(id) {
+  const reason = prompt('Rejection reason (optional):') || '';
+  try {
+    await fetch('/api/actions/'+encodeURIComponent(id)+'/reject', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({reason:reason})});
+    fetchActions();
+    fetchActionSummary();
+  } catch(e) { console.error('Reject failed:', e); }
+}
+
+// ── Components + Services ──
+
+const COMPONENTS = [
+  {name:'Excel/CSV Parsing',desc:'Ingest spreadsheets, P&L data',product:'analyst',tags:['ingestion','financial']},
+  {name:'Sidechat',desc:'Contextual AI within doc review',product:'analyst',tags:['chat','UX']},
+  {name:'Scorecard Generator',desc:'EOS scorecards, KPIs, Rocks',product:'analyst',tags:['reports','EOS']},
+  {name:'Document Export',desc:'Word, PDF, Excel, PowerPoint',product:'analyst',tags:['export']},
+  {name:'Estate Planning',desc:'Trusts, wills, powers of attorney',product:'analyst',tags:['estate','legal']},
+  {name:'PI Case Analysis',desc:'Case grading A-F, liability/damages',product:'analyst',tags:['PI','grading']},
+  {name:'4-Pillar Dashboard',desc:'Case Intelligence + Pipeline + Marketing + Capacity',product:'analyst',tags:['dashboard']},
+  {name:'Family Law Tools',desc:'Communication parser, timeline generator',product:'analyst',tags:['family-law']},
+  {name:'Marketing Agent',desc:'Content calendar, brand voice, multi-platform',product:'analyst',tags:['marketing']},
+  {name:'Neutralization Detection',desc:'Cognitive distortions, ethical drift',product:'mia',tags:['ethics']},
+  {name:'Socratic Questioning',desc:'19-framework ethical reasoning',product:'mia',tags:['ethics']},
+  {name:'Crisis Coach Agent',desc:'Safety planning, crisis intervention',product:'codeword',tags:['safety']},
+  {name:'Critical Audio Alerts',desc:'Bypass DND/silent via FCM v1',product:'codeword',tags:['mobile']},
+];
+
+const SERVICES = [
+  {name:'Conductor',desc:'EQ + Thomson routing + complexity (< 1ms)'},
+  {name:'RLM Engine',desc:'Recursive agentic reasoning with tool_use loop'},
+  {name:'EQ Engine',desc:'Fibonacci-scaled emotional intelligence (1-21)'},
+  {name:'Unified LLM',desc:'Claude primary, Gemini fallback'},
+  {name:'RAG Pipeline',desc:'ChromaDB vector search + Supermemory'},
+  {name:'Privacy Router',desc:'PHI/PII filtering at system boundaries'},
+  {name:'User Memory',desc:'PostgreSQL-backed learned user facts'},
+  {name:'File Ingestion',desc:'PDF, DOCX, CSV, Excel, Email parsing'},
+  {name:'Token Tracker',desc:'Per-session and per-tenant usage monitoring'},
+  {name:'PingOrchestrator',desc:'Ethics routing for MIA'},
+];
+
+const PRODUCT_COLORS = {analyst:'#3b82f6',mia:'#a855f7',codeword:'#ef4444'};
+
+function renderTools() {
+  $('tools-count').textContent = COMPONENTS.length + SERVICES.length;
+  $('components-grid').innerHTML = COMPONENTS.map(c=>{
+    const color=PRODUCT_COLORS[c.product]||'#666';
+    const tags=c.tags.map(t=>'<span class="tool-tag">'+t+'</span>').join('');
+    return '<div class="tool-card"><div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:2px"><span class="tool-name">'+c.name+'</span><span style="font-size:8px;padding:1px 5px;border-radius:3px;background:'+color+'15;color:'+color+';font-weight:600">'+c.product+'</span></div><div class="tool-desc">'+c.desc+'</div><div style="margin-top:3px">'+tags+'</div></div>';
+  }).join('');
+  $('services-grid').innerHTML = SERVICES.map(s=>'<div class="tool-card"><div class="tool-name">'+s.name+'</div><div class="tool-desc">'+s.desc+'</div></div>').join('');
+}
+
+// ── Chat with AIIA ──
+
+let chatSending = false;
+
+function renderChatMessages(history) {
+  const c = $('chat-messages');
+  if (!history || !history.length) {
+    c.innerHTML = '<div class="chat-empty" id="chat-empty"><div class="chat-empty-icon">&#9670;</div><div class="chat-empty-text">Ask AIIA about the codebase,<br>architecture, or project history</div></div>';
+    return;
+  }
+  c.innerHTML = history.map(e => e.role === 'user'
+    ? '<div class="chat-bubble user">' + esc(e.content) + '</div>'
+    : '<div class="chat-bubble aiia"><div class="chat-bubble-label">AIIA</div><div>' + esc(e.content) + '</div></div>'
+  ).join('');
+  c.scrollTop = c.scrollHeight;
+}
+
+function scrollChat() { const c = $('chat-messages'); c.scrollTop = c.scrollHeight; }
+
+// ── Voice State ──
+let chatAutoSpeak = true, chatGoogleTTS = true, chatMicActive = false, chatIsSpeaking = false, chatRecognition = null;
+const _ttsAudio = new Audio();
+_ttsAudio.preload = 'auto';
+
+// Unlock audio on first user interaction (iOS/Chrome autoplay policy)
+const SILENT_MP3 = 'data:audio/mpeg;base64,SUQzBAAAAAABEVRTU0UAAAAPAAADTGF2ZjU4Ljc2LjEwMAAAAAAAAAAAAAAA//tQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWGluZwAAAA8AAAACAAABhgC7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7//////////////////////////////////////////////////////////////////8AAAAATGF2YzU4LjEzAAAAAAAAAAAAAAAAJAAAAAAAAAAAAYYoRBIhAAAAAAAAAAAAAAAAAAA=';
+let _audioUnlocked = false;
+function _unlockAudio() {
+  if (_audioUnlocked) return;
+  _ttsAudio.src = SILENT_MP3;
+  const p = _ttsAudio.play();
+  if (p) p.then(() => { _audioUnlocked = true; }).catch(() => {});
+}
+document.addEventListener('click', _unlockAudio, { once: false });
+document.addEventListener('touchstart', _unlockAudio, { once: false });
+
+// Restore voice prefs from storage
+try { chatAutoSpeak = localStorage.getItem('mc_autospeak') !== 'false'; } catch(e) {}
+try { chatGoogleTTS = localStorage.getItem('mc_gtts') !== 'false'; } catch(e) {}
+
+function toggleAutoSpeak() {
+  chatAutoSpeak = !chatAutoSpeak;
+  $('chat-autospeak-btn').classList.toggle('on', chatAutoSpeak);
+  try { localStorage.setItem('mc_autospeak', chatAutoSpeak); } catch(e) {}
+}
+function toggleGoogleTTS() {
+  chatGoogleTTS = !chatGoogleTTS;
+  $('chat-gtts-btn').classList.toggle('on', chatGoogleTTS);
+  try { localStorage.setItem('mc_gtts', chatGoogleTTS); } catch(e) {}
+}
+
+// Apply initial toggle state
+try { $('chat-autospeak-btn').classList.toggle('on', chatAutoSpeak); } catch(e) {}
+try { $('chat-gtts-btn').classList.toggle('on', chatGoogleTTS); } catch(e) {}
+
+// ── Speech Recognition ──
+function initChatMic() {
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SR) { $('chat-mic-btn').style.display = 'none'; return; }
+  chatRecognition = new SR();
+  chatRecognition.continuous = true;
+  chatRecognition.interimResults = true;
+  chatRecognition.lang = 'en-US';
+  chatRecognition.onresult = (e) => {
+    let interim = '', final = '';
+    for (let i = e.resultIndex; i < e.results.length; i++) {
+      if (e.results[i].isFinal) final += e.results[i][0].transcript;
+      else interim += e.results[i][0].transcript;
+    }
+    $('chat-transcript').textContent = interim || '';
+    if (final && final.trim()) {
+      $('chat-transcript').textContent = '';
+      $('chat-input').value = final.trim();
+      sendChat();
+    }
+  };
+  chatRecognition.onend = () => { if (chatMicActive) try { chatRecognition.start(); } catch(e) {} };
+  chatRecognition.onerror = (e) => {
+    if (e.error === 'no-speech' || e.error === 'aborted') return;
+    if (e.error === 'not-allowed') { chatMicActive = false; $('chat-mic-btn').classList.remove('recording'); }
+  };
+}
+
+function toggleChatMic() {
+  if (!chatRecognition) return;
+  chatMicActive = !chatMicActive;
+  $('chat-mic-btn').classList.toggle('recording', chatMicActive);
+  if (chatMicActive) {
+    try { chatRecognition.start(); } catch(e) { chatRecognition.stop(); setTimeout(() => { try { chatRecognition.start(); } catch(e2) {} }, 150); }
+  } else {
+    chatRecognition.stop();
+    $('chat-transcript').textContent = '';
+  }
+}
+
+// ── TTS ──
+function stripMarkdown(t) {
+  return t.replace(/\*\*(.+?)\*\*/g,'$1').replace(/\*(.+?)\*/g,'$1')
+    .replace(/__(.+?)__/g,'$1').replace(/_(.+?)_/g,'$1')
+    .replace(/~~(.+?)~~/g,'$1').replace(/^#{1,6}\s+/gm,'')
+    .replace(/^\s*[\*\-\+]\s+/gm,'').replace(/^\s*\d+\.\s+/gm,'')
+    .replace(/`{1,3}[^`]*`{1,3}/g,'').replace(/\[([^\]]+)\]\([^)]+\)/g,'$1')
+    .replace(/\n{2,}/g,'. ').replace(/\n/g,' ').trim();
+}
+
+function resumeMic() {
+  if (chatMicActive && chatRecognition) setTimeout(() => { try { chatRecognition.start(); } catch(e) {} }, 300);
+}
+
+async function speakReply(text) {
+  if (!chatAutoSpeak || !text) return;
+  const clean = stripMarkdown(text);
+  if (!clean) return;
+  chatIsSpeaking = true;
+  try {
+    if (chatGoogleTTS) {
+      const resp = await fetch('/api/tts', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({text:clean, voice:'aiia'}) });
+      if (resp.ok) {
+        const ct = resp.headers.get('content-type') || '';
+        if (ct.includes('audio')) {
+          const blob = await resp.blob();
+          if (blob.size > 0) {
+            if (_ttsAudio._url) URL.revokeObjectURL(_ttsAudio._url);
+            const url = URL.createObjectURL(blob);
+            _ttsAudio._url = url;
+            _ttsAudio.src = url;
+            _ttsAudio.onended = () => { URL.revokeObjectURL(url); _ttsAudio._url = null; chatIsSpeaking = false; resumeMic(); };
+            _ttsAudio.onerror = () => { URL.revokeObjectURL(url); _ttsAudio._url = null; chatIsSpeaking = false; resumeMic(); };
+            try { await _ttsAudio.play(); return; } catch(e) {
+              URL.revokeObjectURL(url); _ttsAudio._url = null;
+              chatIsSpeaking = false; resumeMic(); return;
+            }
+          }
+        }
+      }
+    }
+    // Fallback: macOS say (audible on Mini only)
+    await fetch('/api/speak', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({text:clean}) });
+    const words = clean.split(/\s+/).length;
+    setTimeout(() => { chatIsSpeaking = false; resumeMic(); }, Math.max(1500, (words/2.5)*1000));
+  } catch(e) { chatIsSpeaking = false; resumeMic(); }
+}
+
+// ── Send Message ──
+async function sendChat() {
+  const input = $('chat-input'), msg = input.value.trim();
+  if (!msg || chatSending) return;
+  chatSending = true; input.value = ''; $('chat-send-btn').disabled = true;
+  if (chatMicActive && chatRecognition) try { chatRecognition.stop(); } catch(e) {}
+
+  const container = $('chat-messages');
+  const empty = $('chat-empty'); if (empty) empty.remove();
+
+  container.insertAdjacentHTML('beforeend', '<div class="chat-bubble user">' + esc(msg) + '</div>');
+  container.insertAdjacentHTML('beforeend', '<div class="chat-thinking" id="chat-thinking"><div class="chat-thinking-dots"><span></span><span></span><span></span></div>Thinking...</div>');
+  scrollChat();
+
+  try {
+    const resp = await fetch('/api/chat/stream', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({message: msg, mode: chatMicActive ? 'voice' : 'text'})
+    });
+    const t = $('chat-thinking'); if (t) t.remove();
+
+    // Create the AIIA bubble with a streaming content area
+    const bubbleId = 'stream-' + Date.now();
+    container.insertAdjacentHTML('beforeend',
+      '<div class="chat-bubble aiia" id="' + bubbleId + '"><div class="chat-bubble-label">AIIA</div>' +
+      '<div class="stream-content"></div><div class="chat-bubble-meta"></div></div>'
+    );
+    const bubble = $(bubbleId);
+    const contentEl = bubble.querySelector('.stream-content');
+    const metaEl = bubble.querySelector('.chat-bubble-meta');
+    scrollChat();
+
+    let fullReply = '';
+    let model = '';
+    let sources = 0;
+    const reader = resp.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+
+    while (true) {
+      const {done, value} = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, {stream: true});
+      const lines = buffer.split('\n');
+      buffer = lines.pop(); // keep incomplete line in buffer
+      for (const line of lines) {
+        if (!line.startsWith('data: ')) continue;
+        try {
+          const evt = JSON.parse(line.slice(6));
+          if (evt.type === 'chunk') {
+            fullReply += evt.content;
+            contentEl.textContent = fullReply;
+            scrollChat();
+          } else if (evt.type === 'meta') {
+            model = evt.model || '';
+            sources = (evt.knowledge_hits || 0) + (evt.session_hits || 0);
+          } else if (evt.type === 'done') {
+            if (evt.answer) fullReply = evt.answer;
+            model = evt.model || model;
+          } else if (evt.type === 'error') {
+            fullReply = 'Error: ' + (evt.message || 'unknown');
+            contentEl.textContent = fullReply;
+          }
+        } catch(e) { /* skip malformed SSE */ }
+      }
+    }
+
+    if (!fullReply) fullReply = 'No response';
+    contentEl.textContent = fullReply;
+    metaEl.innerHTML = '<span class="model-badge">' + esc(model) + '</span><span>' + sources + ' sources</span>' +
+      '<button class="speak-btn" onclick="speakReply(\'' + esc(fullReply).replace(/'/g,"\\&#39;") + '\')">&#9835;</button>';
+    scrollChat();
+    if (model !== 'error') await speakReply(fullReply);
+  } catch(e) {
+    const t = $('chat-thinking'); if (t) t.remove();
+    container.insertAdjacentHTML('beforeend', '<div class="chat-bubble aiia"><div class="chat-bubble-label">AIIA</div><div>Could not reach AIIA: ' + esc(e.message) + '</div></div>');
+    scrollChat(); resumeMic();
+  }
+  chatSending = false; $('chat-send-btn').disabled = false; input.focus();
+}
+
+async function clearChat() { try { await fetch('/api/chat/history',{method:'DELETE'}); } catch(e) {} renderChatMessages([]); }
+async function fetchChatHistory() { try { const d = await(await fetch('/api/chat/history')).json(); if (d.history && d.history.length) renderChatMessages(d.history); } catch(e) {} }
+async function speakText(text) { try { await fetch('/api/speak',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text})}); } catch(e) {} }
+
+// ── AIIA Status (direct fetch fallback) ──
+
+async function fetchAIIA() {
+  try {
+    const data = await(await fetch('/api/aiia')).json();
+    const online = data?.knowledge || data?.model;
+    $('aiia-status-badge').textContent = online ? 'online' : (data?.status||'offline');
+    $('aiia-status-badge').style.color = online ? 'var(--green)' : 'var(--red)';
+    const docs = data?.knowledge?.knowledge_docs ?? '--';
+    const mems = data?.memory?.total_memories ?? '--';
+    $('aiia-docs').textContent = formatNum(docs);
+    $('aiia-memories').textContent = mems;
+    const model = data?.model ?? 'unknown';
+    $('aiia-model-compact').innerHTML = '<b>' + esc(model) + '</b>';
+  } catch(e) { $('aiia-status-badge').textContent = 'unreachable'; }
+}
+
+// ── Fallback fetch for products (in case WebSocket is slow/blocked) ──
+
+async function fetchProducts() {
+  try {
+    const r = await fetch('/api/platform');
+    const d = await r.json();
+    if (d && d.products && (!platform || !platform.products || platform.products.length === 0)) {
+      platform = d;
+      renderProducts();
+      updateKPIs();
+    }
+  } catch(e) {}
+}
+
+// ── Initialize ──
+
+initSections();
+connect();
+initChatMic();
+setTimeout(fetchProducts, 2000);
+fetchBriefing();
+fetchAIIA();
+fetchTasks();
+fetchPipeline();
+fetchInsights();
+fetchActions();
+fetchActionSummary();
+fetchChatHistory();
+loadReport();
+loadRoadmap();
+loadMemories();
+renderTools();
+setInterval(fetchAIIA, 60000);
+setInterval(fetchInsights, 120000);
+setInterval(fetchActions, 120000);
+setInterval(fetchActionSummary, 120000);
+</script>
+</body>
+</html>

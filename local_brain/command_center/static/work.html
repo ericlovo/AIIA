@@ -1,0 +1,2473 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AIIA Work Dashboard</title>
+<style>
+  :root {
+    --bg: #0a0a0f;
+    --surface: rgba(255,255,255,0.04);
+    --surface-hover: rgba(255,255,255,0.08);
+    --surface-active: rgba(255,255,255,0.12);
+    --border: rgba(255,255,255,0.08);
+    --border-focus: rgba(59,130,246,0.5);
+    --text: #e4e4e7;
+    --text-dim: #71717a;
+    --blue: #3b82f6;
+    --purple: #a855f7;
+    --green: #22c55e;
+    --amber: #f59e0b;
+    --red: #ef4444;
+    --cyan: #22d3ee;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Inter', sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  .header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 20px 28px 12px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .header h1 { font-size: 20px; font-weight: 600; letter-spacing: -0.3px; }
+
+  .header-right {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    font-size: 13px;
+    color: var(--text-dim);
+  }
+
+  .header-right a {
+    color: var(--text-dim);
+    text-decoration: none;
+    transition: color 0.2s;
+  }
+
+  .header-right a:hover { color: var(--text); }
+
+  /* Tab navigation */
+  .tabs {
+    display: flex;
+    gap: 0;
+    padding: 0 28px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .tab {
+    padding: 10px 20px;
+    font-size: 13px;
+    color: var(--text-dim);
+    cursor: pointer;
+    border-bottom: 2px solid transparent;
+    transition: all 0.2s;
+    user-select: none;
+  }
+
+  .tab:hover { color: var(--text); }
+  .tab.active { color: var(--text); border-bottom-color: var(--blue); }
+
+  .tab-content { display: none; }
+  .tab-content.active { display: block; }
+
+  /* Stats strip */
+  .stats-strip {
+    display: grid;
+    grid-template-columns: repeat(6, 1fr);
+    gap: 12px;
+    padding: 16px 28px 0;
+  }
+
+  .stat-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 16px;
+    text-align: center;
+  }
+
+  .stat-value {
+    font-size: 28px;
+    font-weight: 700;
+    letter-spacing: -1px;
+    line-height: 1;
+  }
+
+  .stat-label {
+    font-size: 11px;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-top: 6px;
+  }
+
+  .grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+    padding: 20px 28px;
+    max-width: 1400px;
+  }
+
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 20px;
+    transition: border-color 0.2s;
+  }
+
+  .card:hover { border-color: rgba(255,255,255,0.15); }
+
+  .card-title {
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 16px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .card-title .dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    display: inline-block;
+  }
+
+  /* ── Kanban Board ────────────────────────────── */
+  .kanban-controls {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 16px 28px 0;
+    flex-wrap: wrap;
+  }
+
+  .kanban-controls select, .kanban-controls input {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 6px 12px;
+    border-radius: 6px;
+    font-size: 13px;
+    outline: none;
+  }
+
+  .kanban-controls select:focus, .kanban-controls input:focus {
+    border-color: var(--border-focus);
+  }
+
+  .kanban-controls select option { background: #1a1a2e; }
+
+  .btn {
+    background: var(--blue);
+    color: white;
+    border: none;
+    padding: 6px 14px;
+    border-radius: 6px;
+    font-size: 13px;
+    cursor: pointer;
+    font-weight: 500;
+    transition: opacity 0.2s;
+  }
+
+  .btn:hover { opacity: 0.85; }
+  .btn-sm { padding: 4px 10px; font-size: 11px; }
+  .btn-ghost {
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--text-dim);
+  }
+  .btn-ghost:hover { background: var(--surface-hover); color: var(--text); }
+  .btn-red { background: var(--red); }
+
+  .kanban {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 12px;
+    padding: 12px 28px 28px;
+    min-height: 400px;
+  }
+
+  .kanban-col {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 12px;
+    min-height: 300px;
+    transition: border-color 0.2s;
+  }
+
+  .kanban-col.drag-over { border-color: var(--blue); background: rgba(59,130,246,0.05); }
+
+  .kanban-col-header {
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--text-dim);
+    margin-bottom: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .kanban-col-count {
+    font-size: 10px;
+    background: var(--surface-hover);
+    padding: 2px 6px;
+    border-radius: 4px;
+  }
+
+  .kanban-col[data-status="backlog"] .kanban-col-header { color: var(--text-dim); }
+  .kanban-col[data-status="active"] .kanban-col-header { color: var(--blue); }
+  .kanban-col[data-status="in_progress"] .kanban-col-header { color: var(--amber); }
+  .kanban-col[data-status="shipped"] .kanban-col-header { color: var(--green); }
+  .kanban-col[data-status="blocked"] .kanban-col-header { color: var(--red); }
+
+  .story-card {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px 12px;
+    margin-bottom: 8px;
+    cursor: grab;
+    transition: all 0.15s;
+    font-size: 13px;
+  }
+
+  .story-card:active { cursor: grabbing; }
+  .story-card:hover { border-color: rgba(255,255,255,0.2); }
+  .story-card.dragging { opacity: 0.4; }
+
+  .story-title {
+    font-weight: 500;
+    margin-bottom: 6px;
+    line-height: 1.3;
+  }
+
+  .story-meta {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-wrap: wrap;
+  }
+
+  .story-product {
+    font-size: 10px;
+    padding: 2px 6px;
+    border-radius: 3px;
+    font-weight: 600;
+    background: rgba(59,130,246,0.15);
+    color: var(--blue);
+  }
+
+  .story-priority {
+    font-size: 10px;
+    padding: 2px 6px;
+    border-radius: 3px;
+    font-weight: 700;
+  }
+
+  .story-priority.P0 { background: rgba(239,68,68,0.2); color: var(--red); }
+  .story-priority.P1 { background: rgba(245,158,11,0.2); color: var(--amber); }
+  .story-priority.P2 { background: rgba(113,113,122,0.15); color: var(--text-dim); }
+  .story-priority.P3 { background: rgba(113,113,122,0.1); color: var(--text-dim); }
+
+  .story-desc {
+    font-size: 11px;
+    color: var(--text-dim);
+    margin-top: 4px;
+    line-height: 1.4;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+
+  .story-actions {
+    display: none;
+    gap: 4px;
+    margin-top: 6px;
+  }
+
+  .story-card:hover .story-actions { display: flex; }
+
+  .story-date {
+    font-size: 10px;
+    color: var(--text-dim);
+    margin-left: auto;
+  }
+
+  /* ── Modal ────────────────────────────── */
+  .modal-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.6);
+    z-index: 100;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .modal-overlay.open { display: flex; }
+
+  .modal {
+    background: #1a1a2e;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 24px;
+    width: 480px;
+    max-width: 90vw;
+  }
+
+  .modal h2 {
+    font-size: 16px;
+    font-weight: 600;
+    margin-bottom: 16px;
+  }
+
+  .form-group {
+    margin-bottom: 12px;
+  }
+
+  .form-group label {
+    display: block;
+    font-size: 12px;
+    color: var(--text-dim);
+    margin-bottom: 4px;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+  }
+
+  .form-group input, .form-group select, .form-group textarea {
+    width: 100%;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 8px 12px;
+    border-radius: 6px;
+    font-size: 13px;
+    font-family: inherit;
+    outline: none;
+  }
+
+  .form-group input:focus, .form-group select:focus, .form-group textarea:focus {
+    border-color: var(--border-focus);
+  }
+
+  .form-group textarea { resize: vertical; min-height: 60px; }
+  .form-group select option { background: #1a1a2e; }
+
+  .modal-actions {
+    display: flex;
+    gap: 8px;
+    justify-content: flex-end;
+    margin-top: 16px;
+  }
+
+  /* ── Commit feed (unchanged) ────────── */
+  .commit-list { list-style: none; }
+
+  .commit-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 10px 0;
+    border-bottom: 1px solid var(--border);
+    font-size: 13px;
+  }
+
+  .commit-item:last-child { border-bottom: none; }
+
+  .commit-hash {
+    font-family: 'SF Mono', 'Fira Code', monospace;
+    color: var(--blue);
+    font-size: 12px;
+    flex-shrink: 0;
+    min-width: 55px;
+  }
+
+  .commit-type {
+    font-size: 10px;
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-weight: 600;
+    text-transform: uppercase;
+    flex-shrink: 0;
+  }
+
+  .commit-type.feat { background: rgba(34,197,94,0.15); color: var(--green); }
+  .commit-type.fix { background: rgba(239,68,68,0.15); color: var(--red); }
+  .commit-type.chore { background: rgba(113,113,122,0.15); color: var(--text-dim); }
+  .commit-type.refactor { background: rgba(168,85,247,0.15); color: var(--purple); }
+  .commit-type.docs { background: rgba(59,130,246,0.15); color: var(--blue); }
+  .commit-type.other { background: rgba(113,113,122,0.1); color: var(--text-dim); }
+
+  .commit-subject { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .commit-product { color: var(--text-dim); font-size: 11px; flex-shrink: 0; }
+
+  /* Pipeline */
+  .deal-list { list-style: none; }
+
+  .deal-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 0;
+    border-bottom: 1px solid var(--border);
+    font-size: 13px;
+  }
+
+  .deal-item:last-child { border-bottom: none; }
+
+  .deal-stage {
+    font-size: 10px;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-weight: 600;
+    text-transform: uppercase;
+    flex-shrink: 0;
+  }
+
+  .deal-stage.lead { background: rgba(113,113,122,0.15); color: var(--text-dim); }
+  .deal-stage.qualified { background: rgba(59,130,246,0.15); color: var(--blue); }
+  .deal-stage.proposal { background: rgba(245,158,11,0.15); color: var(--amber); }
+  .deal-stage.negotiation { background: rgba(168,85,247,0.15); color: var(--purple); }
+  .deal-stage.closed_won { background: rgba(34,197,94,0.15); color: var(--green); }
+  .deal-stage.closed_lost { background: rgba(239,68,68,0.15); color: var(--red); }
+
+  .deal-company { font-weight: 500; flex: 1; }
+  .deal-value { color: var(--green); font-family: 'SF Mono', 'Fira Code', monospace; font-size: 12px; }
+  .deal-notes { color: var(--text-dim); font-size: 11px; max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  /* Uncommitted */
+  .uncommitted-list { list-style: none; }
+
+  .uncommitted-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 0;
+    font-size: 12px;
+    font-family: 'SF Mono', 'Fira Code', monospace;
+    color: var(--text-dim);
+  }
+
+  .uncommitted-badge {
+    font-size: 9px;
+    padding: 1px 5px;
+    border-radius: 3px;
+    font-weight: 600;
+    text-transform: uppercase;
+    font-family: -apple-system, sans-serif;
+  }
+
+  .uncommitted-badge.modified { background: rgba(245,158,11,0.15); color: var(--amber); }
+  .uncommitted-badge.staged { background: rgba(34,197,94,0.15); color: var(--green); }
+
+  /* Heatmap */
+  .heatmap { display: flex; gap: 6px; align-items: flex-end; height: 100px; margin-top: 8px; }
+  .heatmap-day { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 6px; }
+  .heatmap-bar { width: 100%; border-radius: 4px 4px 0 0; background: var(--blue); min-height: 2px; transition: height 0.3s; }
+  .heatmap-label { font-size: 10px; color: var(--text-dim); }
+  .heatmap-count { font-size: 11px; font-weight: 600; color: var(--text); }
+
+  /* Projects */
+  .project-list { list-style: none; }
+  .project-item { display: flex; align-items: center; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--border); }
+  .project-item:last-child { border-bottom: none; }
+  .project-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+  .project-name { font-weight: 500; font-size: 14px; flex: 1; }
+  .project-commits { font-size: 12px; color: var(--text-dim); }
+  .project-lines { font-size: 11px; font-family: 'SF Mono', 'Fira Code', monospace; }
+  .project-lines .add { color: var(--green); }
+  .project-lines .del { color: var(--red); }
+
+  .full-width { grid-column: 1 / -1; }
+
+  .empty { color: var(--text-dim); font-size: 13px; font-style: italic; padding: 20px 0; text-align: center; }
+
+  .refresh-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--green); animation: pulse 2s infinite; }
+  @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
+
+  .today-md {
+    font-family: 'SF Mono', 'Fira Code', monospace;
+    font-size: 12px;
+    white-space: pre-wrap;
+    color: var(--text-dim);
+    max-height: 300px;
+    overflow-y: auto;
+    line-height: 1.5;
+  }
+
+  .today-md strong, .today-md b { color: var(--text); font-weight: 600; }
+  .today-md h2 { color: var(--blue); font-size: 13px; margin-top: 8px; }
+  .today-md h3 { color: var(--purple); font-size: 12px; }
+  .today-md hr { border: none; border-top: 1px solid var(--border); margin: 8px 0; }
+
+  /* ── Badge ────────────────────────────── */
+  .badge {
+    display: inline-block;
+    background: var(--red);
+    color: #fff;
+    font-size: 10px;
+    font-weight: 700;
+    padding: 1px 6px;
+    border-radius: 10px;
+    min-width: 18px;
+    text-align: center;
+    line-height: 16px;
+    vertical-align: middle;
+    margin-left: 4px;
+  }
+
+  .badge.hidden { display: none; }
+
+  /* ── Actions Tab ────────────────────────────── */
+  .actions-filter-bar {
+    display: flex;
+    gap: 6px;
+    padding: 16px 28px 0;
+    flex-wrap: wrap;
+  }
+
+  .filter-pill {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    color: var(--text-dim);
+    padding: 5px 14px;
+    border-radius: 16px;
+    font-size: 12px;
+    cursor: pointer;
+    transition: all 0.2s;
+    user-select: none;
+  }
+
+  .filter-pill:hover { background: var(--surface-hover); color: var(--text); }
+  .filter-pill.active { background: var(--blue); border-color: var(--blue); color: #fff; }
+
+  .action-list {
+    padding: 12px 28px 28px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .action-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 14px 16px;
+    transition: border-color 0.2s;
+    display: flex;
+    gap: 12px;
+    align-items: flex-start;
+  }
+
+  .action-card:hover { border-color: rgba(255,255,255,0.15); }
+
+  .action-card.removing {
+    opacity: 0;
+    transform: translateX(20px);
+    transition: opacity 0.3s, transform 0.3s;
+  }
+
+  .action-severity {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    margin-top: 5px;
+  }
+
+  .action-severity.critical { background: var(--red); box-shadow: 0 0 6px var(--red); }
+  .action-severity.high { background: var(--amber); }
+  .action-severity.medium { background: var(--blue); }
+  .action-severity.low { background: var(--text-dim); }
+
+  .action-body { flex: 1; min-width: 0; }
+
+  .action-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 4px;
+  }
+
+  .action-type-badge {
+    font-size: 10px;
+    padding: 2px 7px;
+    border-radius: 4px;
+    font-weight: 600;
+    text-transform: uppercase;
+    flex-shrink: 0;
+  }
+
+  .action-type-badge.security_fix { background: rgba(239,68,68,0.15); color: var(--red); }
+  .action-type-badge.test_fix { background: rgba(245,158,11,0.15); color: var(--amber); }
+  .action-type-badge.lint_fix { background: rgba(59,130,246,0.15); color: var(--blue); }
+  .action-type-badge.ci_fix { background: rgba(168,85,247,0.15); color: var(--purple); }
+  .action-type-badge.tech_debt { background: rgba(113,113,122,0.15); color: var(--text-dim); }
+
+  .action-title {
+    font-size: 13px;
+    font-weight: 500;
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .action-time {
+    font-size: 11px;
+    color: var(--text-dim);
+    flex-shrink: 0;
+  }
+
+  .action-desc {
+    font-size: 12px;
+    color: var(--text-dim);
+    line-height: 1.4;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    margin-bottom: 6px;
+  }
+
+  .action-files {
+    font-size: 11px;
+    font-family: 'SF Mono', 'Fira Code', monospace;
+    color: var(--text-dim);
+    margin-bottom: 6px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .action-buttons {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+  }
+
+  .btn-approve {
+    background: transparent;
+    border: 1px solid var(--green);
+    color: var(--green);
+    padding: 4px 12px;
+    border-radius: 6px;
+    font-size: 11px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+
+  .btn-approve:hover { background: var(--green); color: #fff; }
+
+  .btn-reject {
+    background: transparent;
+    border: 1px solid var(--red);
+    color: var(--red);
+    padding: 4px 12px;
+    border-radius: 6px;
+    font-size: 11px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+
+  .btn-reject:hover { background: var(--red); color: #fff; }
+
+  .reject-input-row {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+    margin-top: 6px;
+  }
+
+  .reject-input-row input {
+    flex: 1;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 4px 10px;
+    border-radius: 6px;
+    font-size: 12px;
+    outline: none;
+  }
+
+  .reject-input-row input:focus { border-color: var(--border-focus); }
+
+  /* ── Check-in Tab ────────────────────────────── */
+  .checkin-status-bar {
+    display: flex;
+    align-items: center;
+    gap: 20px;
+    padding: 12px 28px;
+    font-size: 12px;
+    color: var(--text-dim);
+    border-bottom: 1px solid var(--border);
+  }
+
+  .checkin-status-bar .nightly-indicator {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .checkin-status-bar .nightly-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    display: inline-block;
+  }
+
+  .checkin-status-bar .nightly-dot.ok { background: var(--green); }
+  .checkin-status-bar .nightly-dot.stale { background: var(--amber); }
+  .checkin-status-bar .nightly-dot.missing { background: var(--red); }
+
+  .checkin-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+    padding: 20px 28px;
+    max-width: 1400px;
+  }
+
+  .checkin-grid .full-width { grid-column: 1 / -1; }
+
+  .checkin-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 20px;
+    transition: border-color 0.2s;
+  }
+
+  .checkin-card:hover { border-color: rgba(255,255,255,0.15); }
+
+  .checkin-card.wip-card {
+    border-left: 3px solid var(--blue);
+  }
+
+  .checkin-card-title {
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 12px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .checkin-card-title .count {
+    font-size: 11px;
+    background: var(--surface-hover);
+    padding: 1px 7px;
+    border-radius: 10px;
+    color: var(--text);
+    font-weight: 600;
+  }
+
+  .checkin-wip-item {
+    font-size: 13px;
+    line-height: 1.5;
+    padding: 8px 0;
+    border-bottom: 1px solid var(--border);
+    white-space: pre-wrap;
+  }
+
+  .checkin-wip-item:last-child { border-bottom: none; }
+
+  .checkin-story-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 0;
+    border-bottom: 1px solid var(--border);
+    font-size: 13px;
+  }
+
+  .checkin-story-item:last-child { border-bottom: none; }
+
+  .checkin-blocked-label {
+    font-size: 10px;
+    font-weight: 700;
+    padding: 2px 7px;
+    border-radius: 4px;
+    background: rgba(239,68,68,0.15);
+    color: var(--red);
+    text-transform: uppercase;
+    margin-top: 12px;
+    margin-bottom: 6px;
+    display: inline-block;
+  }
+
+  .checkin-commit-product-breakdown {
+    font-size: 12px;
+    font-family: 'SF Mono', 'Fira Code', monospace;
+    color: var(--text-dim);
+    margin-bottom: 10px;
+  }
+
+  .checkin-commit-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 5px 0;
+    border-bottom: 1px solid var(--border);
+    font-size: 12px;
+  }
+
+  .checkin-commit-item:last-child { border-bottom: none; }
+
+  .checkin-commit-hash {
+    font-family: 'SF Mono', 'Fira Code', monospace;
+    color: var(--blue);
+    font-size: 11px;
+    flex-shrink: 0;
+  }
+
+  .checkin-commit-msg {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .checkin-pipeline-stage {
+    margin-bottom: 10px;
+  }
+
+  .checkin-pipeline-stage-label {
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+    color: var(--text-dim);
+    margin-bottom: 4px;
+  }
+
+  .checkin-pipeline-deal {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 4px 0;
+    font-size: 13px;
+  }
+
+  .checkin-pipeline-deal .deal-company { font-weight: 500; }
+  .checkin-pipeline-deal .deal-value { color: var(--green); font-family: 'SF Mono', 'Fira Code', monospace; font-size: 12px; }
+  .checkin-pipeline-deal .deal-product { color: var(--text-dim); font-size: 11px; }
+
+  .checkin-action-link {
+    font-size: 12px;
+    color: var(--blue);
+    cursor: pointer;
+    margin-top: 10px;
+    display: inline-block;
+  }
+
+  .checkin-action-link:hover { text-decoration: underline; }
+
+  /* ── Priority Score + Tags ────────────────── */
+  .story-score {
+    font-size: 10px;
+    padding: 2px 6px;
+    border-radius: 3px;
+    font-weight: 700;
+    font-family: 'SF Mono', 'Fira Code', monospace;
+    background: rgba(168,85,247,0.15);
+    color: var(--purple);
+  }
+
+  .story-tags {
+    display: flex;
+    gap: 3px;
+    flex-wrap: wrap;
+    margin-top: 4px;
+  }
+
+  .story-tag {
+    font-size: 9px;
+    padding: 1px 5px;
+    border-radius: 3px;
+    background: rgba(255,255,255,0.06);
+    color: var(--text-dim);
+  }
+
+  .story-source {
+    font-size: 9px;
+    color: var(--cyan);
+    font-style: italic;
+  }
+
+  /* Prioritize button */
+  .btn-purple { background: var(--purple); }
+  .btn-amber { background: var(--amber); color: #000; }
+
+  .priority-panel {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 20px;
+    margin: 0 28px 16px;
+  }
+
+  .priority-panel-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 16px;
+  }
+
+  .priority-panel-header h3 {
+    font-size: 14px;
+    font-weight: 600;
+  }
+
+  .priority-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    padding: 12px 0;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .priority-item:last-child { border-bottom: none; }
+
+  .priority-rank {
+    font-size: 20px;
+    font-weight: 700;
+    color: var(--text-dim);
+    min-width: 28px;
+    text-align: center;
+    line-height: 1;
+    padding-top: 2px;
+  }
+
+  .priority-item-body { flex: 1; min-width: 0; }
+
+  .priority-item-title {
+    font-size: 14px;
+    font-weight: 500;
+    margin-bottom: 4px;
+  }
+
+  .priority-item-meta {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-wrap: wrap;
+    margin-bottom: 4px;
+  }
+
+  .priority-item-reasoning {
+    font-size: 12px;
+    color: var(--text-dim);
+    line-height: 1.4;
+  }
+
+  .priority-filters {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-top: 4px;
+  }
+
+  .priority-filter-chip {
+    font-size: 10px;
+    padding: 2px 6px;
+    border-radius: 3px;
+    font-family: 'SF Mono', 'Fira Code', monospace;
+  }
+
+  .priority-filter-chip.high { background: rgba(34,197,94,0.15); color: var(--green); }
+  .priority-filter-chip.medium { background: rgba(245,158,11,0.15); color: var(--amber); }
+  .priority-filter-chip.low { background: rgba(113,113,122,0.1); color: var(--text-dim); }
+
+  .priority-loading {
+    text-align: center;
+    padding: 40px;
+    color: var(--text-dim);
+    font-size: 13px;
+  }
+
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .spinner {
+    display: inline-block;
+    width: 16px;
+    height: 16px;
+    border: 2px solid var(--border);
+    border-top-color: var(--purple);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+    vertical-align: middle;
+    margin-right: 8px;
+  }
+
+  /* Tags input in modal */
+  .tags-input-container {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    padding: 6px 8px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    min-height: 34px;
+    align-items: center;
+    cursor: text;
+  }
+
+  .tags-input-container:focus-within { border-color: var(--border-focus); }
+
+  .tag-chip {
+    font-size: 11px;
+    padding: 2px 8px;
+    border-radius: 4px;
+    background: rgba(59,130,246,0.15);
+    color: var(--blue);
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+
+  .tag-chip .tag-remove {
+    cursor: pointer;
+    opacity: 0.6;
+    font-size: 13px;
+    line-height: 1;
+  }
+
+  .tag-chip .tag-remove:hover { opacity: 1; }
+
+  .tags-input {
+    border: none;
+    background: transparent;
+    color: var(--text);
+    font-size: 12px;
+    outline: none;
+    flex: 1;
+    min-width: 80px;
+  }
+
+  @media (max-width: 1200px) { .kanban { grid-template-columns: repeat(3, 1fr); } }
+  @media (max-width: 900px) {
+    .grid { grid-template-columns: 1fr; }
+    .checkin-grid { grid-template-columns: 1fr; }
+    .stats-strip { grid-template-columns: repeat(3, 1fr); }
+    .kanban { grid-template-columns: 1fr 1fr; }
+  }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>Work Dashboard</h1>
+  <div class="header-right">
+    <div class="refresh-dot"></div>
+    <span class="last-updated" id="lastUpdated">Loading...</span>
+    <a href="/">Console</a>
+    <a href="/old">Ops</a>
+    <a href="/voice">Voice</a>
+  </div>
+</div>
+
+<!-- Tab navigation -->
+<div class="tabs">
+  <div class="tab active" data-tab="checkin">Check-in</div>
+  <div class="tab" data-tab="board">Board</div>
+  <div class="tab" data-tab="activity">Activity</div>
+  <div class="tab" data-tab="actions">Actions <span id="actionBadge" class="badge hidden">0</span></div>
+</div>
+
+<!-- ═══════ TAB: Check-in (morning overview) ═══════ -->
+<div class="tab-content active" id="tab-checkin">
+
+  <!-- Status bar: nightly jobs -->
+  <div class="checkin-status-bar" id="checkinStatusBar">
+    <span style="color:var(--text-dim)">Loading nightly status...</span>
+  </div>
+
+  <div class="checkin-grid">
+
+    <!-- WIP card — full width, most important -->
+    <div class="checkin-card wip-card full-width" id="checkinWip">
+      <div class="checkin-card-title">Last Work in Progress</div>
+      <div class="empty">Loading...</div>
+    </div>
+
+    <!-- Active Stories card -->
+    <div class="checkin-card" id="checkinStories">
+      <div class="checkin-card-title">Active <span class="count" id="checkinStoriesCount">0</span></div>
+      <div class="empty">Loading...</div>
+    </div>
+
+    <!-- Action Alerts card -->
+    <div class="checkin-card" id="checkinActions">
+      <div class="checkin-card-title">Pending Actions <span class="count" id="checkinActionsCount">0</span></div>
+      <div class="empty">Loading...</div>
+    </div>
+
+    <!-- Recent Commits card -->
+    <div class="checkin-card" id="checkinCommits">
+      <div class="checkin-card-title">Recent Commits <span class="count" id="checkinCommitsCount">0</span></div>
+      <div class="empty">Loading...</div>
+    </div>
+
+    <!-- Pipeline card -->
+    <div class="checkin-card" id="checkinPipeline">
+      <div class="checkin-card-title">Pipeline <span class="count" id="checkinPipelineValue">--</span></div>
+      <div class="empty">Loading...</div>
+    </div>
+
+    <!-- What to Build Next — priority-scored backlog -->
+    <div class="checkin-card full-width" id="checkinPriority" style="border-left: 3px solid var(--purple);">
+      <div class="checkin-card-title" style="display:flex; justify-content:space-between; align-items:center;">
+        <span>What to Build Next</span>
+        <button class="btn btn-sm btn-purple" onclick="runPrioritization('checkin')" id="checkinPriorityBtn">Score Backlog</button>
+      </div>
+      <div id="checkinPriorityContent">
+        <div class="empty">Click "Score Backlog" to rank stories by business impact</div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- ═══════ TAB: Board (Kanban + Pipeline) ═══════ -->
+<div class="tab-content" id="tab-board">
+
+  <!-- Stats strip -->
+  <div class="stats-strip">
+    <div class="stat-card">
+      <div class="stat-value" id="statBacklog">--</div>
+      <div class="stat-label">Backlog</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-value" style="color: var(--blue)" id="statActive">--</div>
+      <div class="stat-label">Active</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-value" style="color: var(--amber)" id="statInProgress">--</div>
+      <div class="stat-label">In Progress</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-value" style="color: var(--red)" id="statBlocked">--</div>
+      <div class="stat-label">Blocked</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-value" style="color: var(--green)" id="statShipped">--</div>
+      <div class="stat-label">Shipped</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-value" id="statCommits">--</div>
+      <div class="stat-label">Commits Today</div>
+    </div>
+  </div>
+
+  <!-- Kanban controls -->
+  <div class="kanban-controls">
+    <select id="filterProduct">
+      <option value="">All products</option>
+    </select>
+    <select id="filterPriority">
+      <option value="">All priorities</option>
+      <option value="P0">P0</option>
+      <option value="P1">P1</option>
+      <option value="P2">P2</option>
+      <option value="P3">P3</option>
+    </select>
+    <label style="font-size:12px; color:var(--text-dim); display:flex; align-items:center; gap:4px;">
+      <input type="checkbox" id="hideShipped"> Hide shipped
+    </label>
+    <div style="flex:1"></div>
+    <button class="btn btn-purple" onclick="togglePriorityPanel()" id="prioritizeBtn">Prioritize</button>
+    <button class="btn" onclick="openCreateModal()">+ New Story</button>
+  </div>
+
+  <!-- Priority panel (hidden by default, slides in above kanban) -->
+  <div id="priorityPanel" style="display:none;"></div>
+
+  <!-- Kanban board -->
+  <div class="kanban" id="kanban">
+    <div class="kanban-col" data-status="backlog">
+      <div class="kanban-col-header">Backlog <span class="kanban-col-count" id="countBacklog">0</span></div>
+      <div class="kanban-cards" data-status="backlog"></div>
+    </div>
+    <div class="kanban-col" data-status="active">
+      <div class="kanban-col-header">Active <span class="kanban-col-count" id="countActive">0</span></div>
+      <div class="kanban-cards" data-status="active"></div>
+    </div>
+    <div class="kanban-col" data-status="in_progress">
+      <div class="kanban-col-header">In Progress <span class="kanban-col-count" id="countIn_progress">0</span></div>
+      <div class="kanban-cards" data-status="in_progress"></div>
+    </div>
+    <div class="kanban-col" data-status="blocked">
+      <div class="kanban-col-header">Blocked <span class="kanban-col-count" id="countBlocked2">0</span></div>
+      <div class="kanban-cards" data-status="blocked"></div>
+    </div>
+    <div class="kanban-col" data-status="shipped">
+      <div class="kanban-col-header">Shipped <span class="kanban-col-count" id="countShipped2">0</span></div>
+      <div class="kanban-cards" data-status="shipped"></div>
+    </div>
+  </div>
+
+  <!-- Pipeline below kanban -->
+  <div style="padding: 0 28px 28px;">
+    <div class="card full-width">
+      <div class="card-title"><span class="dot" style="background: var(--amber)"></span> Pipeline</div>
+      <ul class="deal-list" id="dealList">
+        <li class="empty">Loading...</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════ TAB: Activity (commits, heatmap, etc) ═══════ -->
+<div class="tab-content" id="tab-activity">
+  <div class="stats-strip">
+    <div class="stat-card">
+      <div class="stat-value" id="statCommits2">--</div>
+      <div class="stat-label">Commits Today</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-value" id="statFiles">--</div>
+      <div class="stat-label">Files Changed</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-value" id="statAdds" style="color: var(--green)">--</div>
+      <div class="stat-label">Lines Added</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-value" id="statDels" style="color: var(--red)">--</div>
+      <div class="stat-label">Lines Removed</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-value" id="statProducts">--</div>
+      <div class="stat-label">Products Touched</div>
+    </div>
+  </div>
+
+  <div class="grid">
+    <div class="card">
+      <div class="card-title"><span class="dot" style="background: var(--blue)"></span> Active Projects</div>
+      <ul class="project-list" id="projectList"><li class="empty">Loading...</li></ul>
+    </div>
+    <div class="card">
+      <div class="card-title"><span class="dot" style="background: var(--cyan)"></span> Weekly Activity</div>
+      <div class="heatmap" id="heatmap"><div class="empty">Loading...</div></div>
+    </div>
+    <div class="card">
+      <div class="card-title"><span class="dot" style="background: var(--green)"></span> Recent Commits (12h)</div>
+      <ul class="commit-list" id="commitList"><li class="empty">Loading...</li></ul>
+    </div>
+    <div class="card">
+      <div class="card-title"><span class="dot" style="background: var(--amber)"></span> Uncommitted Changes</div>
+      <ul class="uncommitted-list" id="uncommittedList"><li class="empty">Loading...</li></ul>
+    </div>
+    <div class="card full-width">
+      <div class="card-title"><span class="dot" style="background: var(--purple)"></span> Today's Report (today.md)</div>
+      <div class="today-md" id="todayMd">Loading...</div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════ TAB: Actions (pending action queue) ═══════ -->
+<div class="tab-content" id="tab-actions">
+
+  <!-- Stats strip -->
+  <div class="stats-strip" style="grid-template-columns: repeat(3, 1fr);">
+    <div class="stat-card">
+      <div class="stat-value" style="color: var(--amber)" id="actStatPending">--</div>
+      <div class="stat-label">Pending</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-value" style="color: var(--red)" id="actStatCritical">--</div>
+      <div class="stat-label">Critical</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-value" style="color: var(--green)" id="actStatCompleted">--</div>
+      <div class="stat-label">Completed Today</div>
+    </div>
+  </div>
+
+  <!-- Filter bar -->
+  <div class="actions-filter-bar">
+    <div class="filter-pill active" data-action-type="">All</div>
+    <div class="filter-pill" data-action-type="security_fix">security_fix</div>
+    <div class="filter-pill" data-action-type="test_fix">test_fix</div>
+    <div class="filter-pill" data-action-type="lint_fix">lint_fix</div>
+    <div class="filter-pill" data-action-type="ci_fix">ci_fix</div>
+    <div class="filter-pill" data-action-type="tech_debt">tech_debt</div>
+  </div>
+
+  <!-- Action list -->
+  <div class="action-list" id="actionList">
+    <div class="empty">Loading...</div>
+  </div>
+
+</div>
+
+<!-- ═══════ Create/Edit Modal ═══════ -->
+<div class="modal-overlay" id="storyModal">
+  <div class="modal">
+    <h2 id="modalTitle">New Story</h2>
+    <input type="hidden" id="editStoryId">
+    <div class="form-group">
+      <label>Title</label>
+      <input type="text" id="storyTitleInput" placeholder="What needs to be done?">
+    </div>
+    <div class="form-group">
+      <label>Product</label>
+      <select id="storyProductInput">
+        <option value="platform">platform</option>
+        <option value="my-app">my-app</option>
+        <option value="legal">legal</option>
+        <option value="marketing">marketing</option>
+        <option value="sales">sales</option>
+        <option value="ck-marketing">ck-marketing</option>
+        <option value="content-engine">content-engine</option>
+        <option value="acping-ethics-ai">acping-ethics-ai</option>
+        <option value="realiz">realiz</option>
+        <option value="codeword">codeword</option>
+        <option value="estate-planner">estate-planner</option>
+        <option value="family-law-suite">family-law-suite</option>
+        <option value="modivcare">modivcare</option>
+        <option value="local-brain">local-brain</option>
+      </select>
+    </div>
+    <div style="display:flex; gap:12px;">
+      <div class="form-group" style="flex:1">
+        <label>Priority</label>
+        <select id="storyPriorityInput">
+          <option value="P0">P0 — Critical</option>
+          <option value="P1">P1 — High</option>
+          <option value="P2" selected>P2 — Normal</option>
+          <option value="P3">P3 — Low</option>
+        </select>
+      </div>
+      <div class="form-group" style="flex:1">
+        <label>Status</label>
+        <select id="storyStatusInput">
+          <option value="backlog">Backlog</option>
+          <option value="active">Active</option>
+          <option value="in_progress">In Progress</option>
+          <option value="blocked">Blocked</option>
+          <option value="shipped">Shipped</option>
+        </select>
+      </div>
+    </div>
+    <div class="form-group">
+      <label>Description</label>
+      <textarea id="storyDescInput" placeholder="Context, acceptance criteria, notes..."></textarea>
+    </div>
+    <div class="form-group">
+      <label>Tags</label>
+      <div class="tags-input-container" onclick="document.getElementById('tagsInput').focus()">
+        <span id="tagChips"></span>
+        <input type="text" class="tags-input" id="tagsInput" placeholder="Type and press Enter..."
+          onkeydown="handleTagInput(event)">
+      </div>
+      <div style="font-size:10px; color:var(--text-dim); margin-top:2px;">feature, bug, tech-debt, integration, ux, security, performance, devops</div>
+    </div>
+    <div class="form-group">
+      <label>Client Impact</label>
+      <input type="text" id="storyImpactInput" placeholder="Who benefits and why?">
+    </div>
+    <div id="modalScoreInfo" style="display:none; font-size:12px; color:var(--text-dim); margin-bottom:12px; padding:8px; background:var(--surface); border-radius:6px;"></div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-red" id="deleteBtn" style="display:none" onclick="deleteStory()">Delete</button>
+      <button class="btn" onclick="saveStory()">Save</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ── State ──────────────────────────────────────────────
+let allStories = [];
+let workData = {};
+
+const PRODUCT_COLORS = {
+  'my-app': '#3b82f6', 'platform': '#a855f7', 'root': '#a855f7',
+  'shared': '#a855f7', 'marketing': '#f59e0b', 'sales': '#f59e0b',
+  'legal': '#f59e0b', 'ethics-ai': '#f59e0b', 'ck-marketing': '#22d3ee',
+  'modivcare': '#22d3ee', 'family-law-suite': '#22d3ee', 'estate-planner': '#22d3ee',
+  'content-engine': '#10b981', 'local-brain': '#22d3ee', 'realiz': '#10b981',
+  'codeword': '#ef4444',
+};
+
+const STATUS_LABELS = { backlog: 'Backlog', active: 'Active', in_progress: 'In Progress', shipped: 'Shipped', blocked: 'Blocked', cancelled: 'Cancelled' };
+
+function escapeHtml(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+function formatNum(n) { return n >= 1000 ? (n/1000).toFixed(1) + 'K' : String(n); }
+function relativeDate(iso) {
+  if (!iso) return '';
+  const d = new Date(iso);
+  const now = new Date();
+  const days = Math.floor((now - d) / 86400000);
+  if (days === 0) return 'today';
+  if (days === 1) return 'yesterday';
+  if (days < 7) return days + 'd ago';
+  if (days < 30) return Math.floor(days/7) + 'w ago';
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+}
+
+// ── Tabs ───────────────────────────────────────────────
+document.querySelectorAll('.tab').forEach(tab => {
+  tab.addEventListener('click', () => {
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+    tab.classList.add('active');
+    document.getElementById('tab-' + tab.dataset.tab).classList.add('active');
+    if (tab.dataset.tab === 'checkin') loadCheckin();
+    if (tab.dataset.tab === 'actions') loadActions();
+  });
+});
+
+// ── Kanban Rendering ───────────────────────────────────
+function getFilteredStories() {
+  let stories = [...allStories];
+  const product = document.getElementById('filterProduct').value;
+  const priority = document.getElementById('filterPriority').value;
+  const hideShipped = document.getElementById('hideShipped').checked;
+  if (product) stories = stories.filter(s => s.product === product);
+  if (priority) stories = stories.filter(s => s.priority === priority);
+  if (hideShipped) stories = stories.filter(s => s.status !== 'shipped');
+  return stories;
+}
+
+function renderKanban() {
+  const stories = getFilteredStories();
+  const grouped = { backlog: [], active: [], in_progress: [], shipped: [], blocked: [] };
+  stories.forEach(s => {
+    if (grouped[s.status]) grouped[s.status].push(s);
+  });
+
+  // Priority sort within columns: P0 first
+  const prioOrder = { P0: 0, P1: 1, P2: 2, P3: 3 };
+  Object.values(grouped).forEach(arr => arr.sort((a, b) => (prioOrder[a.priority]||9) - (prioOrder[b.priority]||9)));
+
+  // Update column counts
+  Object.entries(grouped).forEach(([status, items]) => {
+    const container = document.querySelector(`.kanban-cards[data-status="${status}"]`);
+    if (!container) return;
+    container.innerHTML = items.map(s => storyCardHTML(s)).join('') || '<div class="empty" style="padding:30px 0">Drop here</div>';
+
+    // Count badges
+    const countEl = container.parentElement.querySelector('.kanban-col-count');
+    if (countEl) countEl.textContent = items.length;
+  });
+
+  // Update board stats
+  const all = allStories; // unfiltered for stats
+  const counts = { backlog: 0, active: 0, in_progress: 0, shipped: 0, blocked: 0 };
+  all.forEach(s => { if (counts[s.status] !== undefined) counts[s.status]++; });
+  document.getElementById('statBacklog').textContent = counts.backlog;
+  document.getElementById('statActive').textContent = counts.active;
+  document.getElementById('statInProgress').textContent = counts.in_progress;
+  document.getElementById('statBlocked').textContent = counts.blocked;
+  document.getElementById('statShipped').textContent = counts.shipped;
+
+  // Populate product filter dropdown
+  const products = [...new Set(allStories.map(s => s.product))].sort();
+  const sel = document.getElementById('filterProduct');
+  const currentVal = sel.value;
+  sel.innerHTML = '<option value="">All products</option>' + products.map(p =>
+    `<option value="${p}" ${p === currentVal ? 'selected' : ''}>${p}</option>`
+  ).join('');
+
+  // Setup drag
+  setupDrag();
+}
+
+function storyCardHTML(s) {
+  const color = PRODUCT_COLORS[s.product] || '#71717a';
+  const tags = s.tags || [];
+  const score = s.priority_score;
+  const sourceType = s.source_type;
+  return `<div class="story-card" draggable="true" data-id="${s.id}">
+    <div class="story-title">${escapeHtml(s.title)}</div>
+    <div class="story-meta">
+      <span class="story-product" style="background:${color}22; color:${color}">${s.product}</span>
+      <span class="story-priority ${s.priority}">${s.priority}</span>
+      ${score ? `<span class="story-score" title="Priority score">${score}</span>` : ''}
+      ${sourceType === 'auto-extracted' ? '<span class="story-source">auto</span>' : ''}
+      <span class="story-date">${relativeDate(s.updated_at)}</span>
+    </div>
+    ${s.description ? `<div class="story-desc">${escapeHtml(s.description)}</div>` : ''}
+    ${tags.length ? `<div class="story-tags">${tags.map(t => `<span class="story-tag">${escapeHtml(t)}</span>`).join('')}</div>` : ''}
+    <div class="story-actions">
+      <button class="btn btn-sm btn-ghost" onclick="openEditModal('${s.id}')">Edit</button>
+    </div>
+  </div>`;
+}
+
+// ── Drag & Drop ────────────────────────────────────────
+function setupDrag() {
+  document.querySelectorAll('.story-card').forEach(card => {
+    card.addEventListener('dragstart', e => {
+      e.dataTransfer.setData('text/plain', card.dataset.id);
+      card.classList.add('dragging');
+    });
+    card.addEventListener('dragend', () => card.classList.remove('dragging'));
+  });
+
+  document.querySelectorAll('.kanban-col').forEach(col => {
+    col.addEventListener('dragover', e => { e.preventDefault(); col.classList.add('drag-over'); });
+    col.addEventListener('dragleave', () => col.classList.remove('drag-over'));
+    col.addEventListener('drop', async e => {
+      e.preventDefault();
+      col.classList.remove('drag-over');
+      const storyId = e.dataTransfer.getData('text/plain');
+      const newStatus = col.dataset.status;
+      await updateStoryStatus(storyId, newStatus);
+    });
+  });
+}
+
+async function updateStoryStatus(id, status) {
+  // Validate id is alphanumeric/dash/underscore only (prevent path traversal)
+  if (!/^[\w-]+$/.test(id)) return;
+  try {
+    const resp = await fetch(`/api/roadmap/${encodeURIComponent(id)}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status }),
+    });
+    if (resp.ok) {
+      const updated = await resp.json();
+      allStories = allStories.map(s => s.id === id ? updated.story : s);
+      renderKanban();
+    }
+  } catch (e) { console.error('Failed to update story:', e); }
+}
+
+// ── Modal ──────────────────────────────────────────────
+let modalTags = [];
+
+function renderModalTags() {
+  document.getElementById('tagChips').innerHTML = modalTags.map(t =>
+    `<span class="tag-chip">${escapeHtml(t)}<span class="tag-remove" onclick="removeTag('${escapeHtml(t)}')">&times;</span></span>`
+  ).join('');
+}
+
+function handleTagInput(e) {
+  if (e.key === 'Enter' || e.key === ',') {
+    e.preventDefault();
+    const val = e.target.value.trim().replace(',', '');
+    if (val && !modalTags.includes(val)) {
+      modalTags.push(val);
+      renderModalTags();
+    }
+    e.target.value = '';
+  }
+  if (e.key === 'Backspace' && !e.target.value && modalTags.length) {
+    modalTags.pop();
+    renderModalTags();
+  }
+}
+
+function removeTag(tag) {
+  modalTags = modalTags.filter(t => t !== tag);
+  renderModalTags();
+}
+
+function openCreateModal() {
+  document.getElementById('modalTitle').textContent = 'New Story';
+  document.getElementById('editStoryId').value = '';
+  document.getElementById('storyTitleInput').value = '';
+  document.getElementById('storyProductInput').value = 'platform';
+  document.getElementById('storyPriorityInput').value = 'P2';
+  document.getElementById('storyStatusInput').value = 'backlog';
+  document.getElementById('storyDescInput').value = '';
+  document.getElementById('storyImpactInput').value = '';
+  document.getElementById('modalScoreInfo').style.display = 'none';
+  modalTags = [];
+  renderModalTags();
+  document.getElementById('deleteBtn').style.display = 'none';
+  document.getElementById('storyModal').classList.add('open');
+  document.getElementById('storyTitleInput').focus();
+}
+
+function openEditModal(id) {
+  const story = allStories.find(s => s.id === id);
+  if (!story) return;
+  document.getElementById('modalTitle').textContent = 'Edit Story';
+  document.getElementById('editStoryId').value = id;
+  document.getElementById('storyTitleInput').value = story.title;
+  document.getElementById('storyProductInput').value = story.product;
+  document.getElementById('storyPriorityInput').value = story.priority;
+  document.getElementById('storyStatusInput').value = story.status;
+  document.getElementById('storyDescInput').value = story.description || '';
+  document.getElementById('storyImpactInput').value = story.client_impact || '';
+  modalTags = [...(story.tags || [])];
+  renderModalTags();
+
+  // Show score info if available
+  const scoreInfo = document.getElementById('modalScoreInfo');
+  if (story.priority_score) {
+    let info = `Score: ${story.priority_score}/150`;
+    if (story.suggested_priority && story.suggested_priority !== story.priority) {
+      info += ` | Suggested: ${story.suggested_priority}`;
+    }
+    if (story.priority_reasoning) info += ` | ${story.priority_reasoning}`;
+    if (story.source_type) info += ` | Source: ${story.source_type}`;
+    if (story.source_session) info += ` | Session: ${story.source_session.substring(0, 8)}...`;
+    scoreInfo.textContent = info;
+    scoreInfo.style.display = 'block';
+  } else {
+    scoreInfo.style.display = 'none';
+  }
+
+  document.getElementById('deleteBtn').style.display = 'inline-block';
+  document.getElementById('storyModal').classList.add('open');
+  document.getElementById('storyTitleInput').focus();
+}
+
+function closeModal() { document.getElementById('storyModal').classList.remove('open'); }
+
+async function saveStory() {
+  const id = document.getElementById('editStoryId').value;
+  const payload = {
+    title: document.getElementById('storyTitleInput').value.trim(),
+    product: document.getElementById('storyProductInput').value,
+    priority: document.getElementById('storyPriorityInput').value,
+    status: document.getElementById('storyStatusInput').value,
+    description: document.getElementById('storyDescInput').value.trim(),
+    tags: modalTags,
+    client_impact: document.getElementById('storyImpactInput').value.trim(),
+  };
+
+  if (!payload.title) { document.getElementById('storyTitleInput').focus(); return; }
+
+  try {
+    let resp;
+    if (id) {
+      resp = await fetch(`/api/roadmap/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      if (resp.ok) {
+        const data = await resp.json();
+        allStories = allStories.map(s => s.id === id ? data.story : s);
+      }
+    } else {
+      resp = await fetch('/api/roadmap', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      if (resp.ok) {
+        const data = await resp.json();
+        allStories.push(data.story);
+      }
+    }
+    closeModal();
+    renderKanban();
+  } catch (e) { console.error('Failed to save story:', e); }
+}
+
+async function deleteStory() {
+  const id = document.getElementById('editStoryId').value;
+  if (!id || !confirm('Delete this story?')) return;
+  try {
+    await fetch(`/api/roadmap/${id}`, { method: 'DELETE' });
+    allStories = allStories.filter(s => s.id !== id);
+    closeModal();
+    renderKanban();
+  } catch (e) { console.error('Failed to delete story:', e); }
+}
+
+// Close modal on overlay click or Escape
+document.getElementById('storyModal').addEventListener('click', e => {
+  if (e.target === document.getElementById('storyModal')) closeModal();
+});
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') closeModal();
+  if (e.key === 'Enter' && document.getElementById('storyModal').classList.contains('open')) {
+    if (document.activeElement.tagName !== 'TEXTAREA') saveStory();
+  }
+});
+
+// ── Filter listeners ───────────────────────────────────
+document.getElementById('filterProduct').addEventListener('change', renderKanban);
+document.getElementById('filterPriority').addEventListener('change', renderKanban);
+document.getElementById('hideShipped').addEventListener('change', renderKanban);
+
+// ── Activity Tab Renderers (mostly unchanged) ──────────
+function renderActivityStats(summary) {
+  document.getElementById('statCommits2').textContent = summary.total_commits || 0;
+  document.getElementById('statFiles').textContent = summary.total_files_changed || 0;
+  document.getElementById('statAdds').textContent = '+' + formatNum(summary.total_additions || 0);
+  document.getElementById('statDels').textContent = '-' + formatNum(summary.total_deletions || 0);
+  document.getElementById('statProducts').textContent = summary.products_touched || 0;
+}
+
+function renderProjects(products) {
+  const el = document.getElementById('projectList');
+  const entries = Object.entries(products || {}).sort((a,b) => b[1].commit_count - a[1].commit_count);
+  if (!entries.length) { el.innerHTML = '<li class="empty">No commits today</li>'; return; }
+  el.innerHTML = entries.map(([name, data]) => {
+    const color = PRODUCT_COLORS[name] || '#71717a';
+    return `<li class="project-item">
+      <span class="project-dot" style="background:${color}"></span>
+      <span class="project-name">${name}</span>
+      <span class="project-commits">${data.commit_count} commit${data.commit_count !== 1 ? 's' : ''}</span>
+      <span class="project-lines"><span class="add">+${data.total_additions}</span> <span class="del">-${data.total_deletions}</span></span>
+    </li>`;
+  }).join('');
+}
+
+function renderCommits(commits) {
+  const el = document.getElementById('commitList');
+  if (!commits || !commits.length) { el.innerHTML = '<li class="empty">No recent commits</li>'; return; }
+  const seen = new Set();
+  const unique = commits.filter(c => { if (seen.has(c.hash)) return false; seen.add(c.hash); return true; });
+  el.innerHTML = unique.slice(0, 20).map(c => {
+    const typeClass = ['feat','fix','chore','refactor','docs'].includes(c.type) ? c.type : 'other';
+    return `<li class="commit-item">
+      <span class="commit-hash">${c.hash}</span>
+      <span class="commit-type ${typeClass}">${c.type}</span>
+      <span class="commit-subject">${escapeHtml(c.subject || '')}</span>
+      <span class="commit-product">${c.product || ''}</span>
+    </li>`;
+  }).join('');
+}
+
+function renderPipeline(deals) {
+  const el = document.getElementById('dealList');
+  if (!deals || !deals.length) { el.innerHTML = '<li class="empty">No deals in pipeline</li>'; return; }
+  const stageIdx = {closed_won:0, negotiation:1, proposal:2, qualified:3, lead:4, closed_lost:5};
+  const sorted = [...deals].sort((a,b) => (stageIdx[a.stage]||9) - (stageIdx[b.stage]||9));
+  el.innerHTML = sorted.map(d => {
+    const valueStr = d.value > 0 ? '$' + d.value.toLocaleString() : '';
+    return `<li class="deal-item">
+      <span class="deal-stage ${d.stage}">${d.stage.replace('_',' ')}</span>
+      <span class="deal-company">${escapeHtml(d.company)}</span>
+      ${valueStr ? `<span class="deal-value">${valueStr}</span>` : ''}
+      <span class="deal-notes">${escapeHtml(d.notes || '')}</span>
+    </li>`;
+  }).join('');
+}
+
+function renderUncommitted(files) {
+  const el = document.getElementById('uncommittedList');
+  if (!files || !files.length) { el.innerHTML = '<li class="empty">Working tree clean</li>'; return; }
+  el.innerHTML = files.slice(0, 25).map(f =>
+    `<li class="uncommitted-item"><span class="uncommitted-badge ${f.status}">${f.status}</span><span>${escapeHtml(f.file)}</span></li>`
+  ).join('');
+  if (files.length > 25) el.innerHTML += `<li class="uncommitted-item" style="color:var(--text-dim)">...and ${files.length - 25} more</li>`;
+}
+
+function renderHeatmap(data) {
+  const el = document.getElementById('heatmap');
+  if (!data || !Object.keys(data).length) { el.innerHTML = '<div class="empty">No data yet</div>'; return; }
+  const days = [];
+  const now = new Date();
+  for (let i = 6; i >= 0; i--) {
+    const d = new Date(now); d.setDate(d.getDate() - i);
+    const key = d.toISOString().slice(0, 10);
+    days.push({ key, label: d.toLocaleDateString('en-US', {weekday: 'short'}), count: data[key] || 0 });
+  }
+  const maxCount = Math.max(...days.map(d => d.count), 1);
+  el.innerHTML = days.map(d => {
+    const height = Math.max(2, (d.count / maxCount) * 80);
+    const opacity = d.count > 0 ? 0.5 + (d.count / maxCount) * 0.5 : 0.15;
+    return `<div class="heatmap-day">
+      <div class="heatmap-count">${d.count || ''}</div>
+      <div class="heatmap-bar" style="height:${height}px; opacity:${opacity}"></div>
+      <div class="heatmap-label">${d.label}</div>
+    </div>`;
+  }).join('');
+}
+
+function renderTodayMd(text) {
+  const el = document.getElementById('todayMd');
+  if (!text) { el.textContent = 'No report yet today'; return; }
+  let html = escapeHtml(text);
+  html = html.replace(/^# (.+)$/gm, '<h2>$1</h2>');
+  html = html.replace(/^## (.+)$/gm, '<h2 style="color:var(--blue)">$1</h2>');
+  html = html.replace(/^### (.+)$/gm, '<h3>$1</h3>');
+  html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+  html = html.replace(/^---$/gm, '<hr>');
+  html = html.replace(/^&gt; (.+)$/gm, '<span style="color:var(--amber)">$1</span>');
+  html = html.replace(/`([^`]+)`/g, '<code style="color:var(--cyan)">$1</code>');
+  el.innerHTML = html;
+}
+
+// ── Actions Tab ────────────────────────────────────────
+let currentActionFilter = '';
+let actionsRefreshInterval = null;
+
+function relativeTime(iso) {
+  if (!iso) return '';
+  const d = new Date(iso);
+  const now = new Date();
+  const diffMs = now - d;
+  const diffMin = Math.floor(diffMs / 60000);
+  if (diffMin < 1) return 'just now';
+  if (diffMin < 60) return diffMin + 'm ago';
+  const diffHr = Math.floor(diffMin / 60);
+  if (diffHr < 24) return diffHr + 'h ago';
+  const diffDays = Math.floor(diffHr / 24);
+  if (diffDays < 7) return diffDays + 'd ago';
+  if (diffDays < 30) return Math.floor(diffDays / 7) + 'w ago';
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+}
+
+// Filter pill clicks
+document.querySelectorAll('.filter-pill[data-action-type]').forEach(pill => {
+  pill.addEventListener('click', () => {
+    document.querySelectorAll('.filter-pill[data-action-type]').forEach(p => p.classList.remove('active'));
+    pill.classList.add('active');
+    currentActionFilter = pill.dataset.actionType;
+    loadActions(currentActionFilter);
+  });
+});
+
+async function loadActions(typeFilter) {
+  try {
+    let url = '/api/actions?status=pending&limit=100';
+    if (typeFilter) url += '&type=' + encodeURIComponent(typeFilter);
+
+    const [actionsResp, summaryResp] = await Promise.all([
+      fetch(url),
+      fetch('/api/actions/summary'),
+    ]);
+
+    const actions = actionsResp.ok ? await actionsResp.json() : [];
+    const summary = summaryResp.ok ? await summaryResp.json() : {};
+
+    // Update stats
+    const pendingCount = summary.by_status?.pending || 0;
+    const criticalCount = summary.by_severity?.critical || 0;
+    const completedToday = summary.completed_today || 0;
+
+    document.getElementById('actStatPending').textContent = pendingCount;
+    document.getElementById('actStatCritical').textContent = criticalCount;
+    document.getElementById('actStatCompleted').textContent = completedToday;
+
+    // Update badge
+    updateActionBadge(pendingCount);
+
+    // Render list
+    const list = document.getElementById('actionList');
+    const items = Array.isArray(actions) ? actions : (actions.actions || []);
+
+    if (!items.length) {
+      list.innerHTML = '<div class="empty">No pending actions</div>';
+      return;
+    }
+
+    list.innerHTML = items.map(a => actionCardHTML(a)).join('');
+  } catch (e) {
+    console.error('Failed to load actions:', e);
+    document.getElementById('actionList').innerHTML = '<div class="empty">Failed to load actions</div>';
+  }
+}
+
+function actionCardHTML(a) {
+  const typeClass = a.type || 'tech_debt';
+  const severity = a.severity || 'medium';
+  const files = a.files_affected || a.files || [];
+  const filesStr = Array.isArray(files) ? files.join(', ') : (files || '');
+  const created = a.created_at || a.timestamp || '';
+
+  return `<div class="action-card" data-action-id="${a.id}">
+    <div class="action-severity ${severity}"></div>
+    <div class="action-body">
+      <div class="action-header">
+        <span class="action-type-badge ${typeClass}">${typeClass}</span>
+        <span class="action-title">${escapeHtml(a.title || '')}</span>
+        <span class="action-time">${relativeTime(created)}</span>
+      </div>
+      ${a.description ? `<div class="action-desc">${escapeHtml(a.description)}</div>` : ''}
+      ${filesStr ? `<div class="action-files">${escapeHtml(filesStr)}</div>` : ''}
+      <div class="action-buttons">
+        <button class="btn-approve" onclick="approveAction('${a.id}')">Approve</button>
+        <button class="btn-reject" onclick="showRejectInput('${a.id}')">Reject</button>
+      </div>
+      <div class="reject-input-row" id="reject-${a.id}" style="display:none;">
+        <input type="text" placeholder="Reason for rejection..." id="reject-reason-${a.id}" onkeydown="if(event.key==='Enter')confirmReject('${a.id}')">
+        <button class="btn btn-sm btn-red" onclick="confirmReject('${a.id}')">Confirm</button>
+        <button class="btn btn-sm btn-ghost" onclick="hideRejectInput('${a.id}')">Cancel</button>
+      </div>
+    </div>
+  </div>`;
+}
+
+function updateActionBadge(count) {
+  const badge = document.getElementById('actionBadge');
+  if (count > 0) {
+    badge.textContent = count;
+    badge.classList.remove('hidden');
+  } else {
+    badge.classList.add('hidden');
+  }
+}
+
+async function approveAction(id) {
+  try {
+    const resp = await fetch(`/api/actions/${id}/approve`, { method: 'POST' });
+    if (resp.ok) {
+      const card = document.querySelector(`.action-card[data-action-id="${id}"]`);
+      if (card) {
+        card.classList.add('removing');
+        setTimeout(() => { card.remove(); checkEmptyActionList(); }, 300);
+      }
+      // Update counts
+      const summaryResp = await fetch('/api/actions/summary');
+      if (summaryResp.ok) {
+        const summary = await summaryResp.json();
+        document.getElementById('actStatPending').textContent = summary.by_status?.pending || 0;
+        document.getElementById('actStatCritical').textContent = summary.by_severity?.critical || 0;
+        document.getElementById('actStatCompleted').textContent = summary.completed_today || 0;
+        updateActionBadge(summary.by_status?.pending || 0);
+      }
+    }
+  } catch (e) { console.error('Failed to approve action:', e); }
+}
+
+function showRejectInput(id) {
+  document.getElementById('reject-' + id).style.display = 'flex';
+  document.getElementById('reject-reason-' + id).focus();
+}
+
+function hideRejectInput(id) {
+  document.getElementById('reject-' + id).style.display = 'none';
+}
+
+async function confirmReject(id) {
+  const reason = document.getElementById('reject-reason-' + id).value.trim();
+  await rejectAction(id, reason);
+}
+
+async function rejectAction(id, reason) {
+  try {
+    const resp = await fetch(`/api/actions/${id}/reject`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ reason: reason || '' }),
+    });
+    if (resp.ok) {
+      const card = document.querySelector(`.action-card[data-action-id="${id}"]`);
+      if (card) {
+        card.classList.add('removing');
+        setTimeout(() => { card.remove(); checkEmptyActionList(); }, 300);
+      }
+      // Update counts
+      const summaryResp = await fetch('/api/actions/summary');
+      if (summaryResp.ok) {
+        const summary = await summaryResp.json();
+        document.getElementById('actStatPending').textContent = summary.by_status?.pending || 0;
+        document.getElementById('actStatCritical').textContent = summary.by_severity?.critical || 0;
+        document.getElementById('actStatCompleted').textContent = summary.completed_today || 0;
+        updateActionBadge(summary.by_status?.pending || 0);
+      }
+    }
+  } catch (e) { console.error('Failed to reject action:', e); }
+}
+
+function checkEmptyActionList() {
+  const list = document.getElementById('actionList');
+  if (!list.querySelector('.action-card')) {
+    list.innerHTML = '<div class="empty">No pending actions</div>';
+  }
+}
+
+// Auto-refresh actions every 60s when tab is visible
+function startActionsAutoRefresh() {
+  if (actionsRefreshInterval) clearInterval(actionsRefreshInterval);
+  actionsRefreshInterval = setInterval(() => {
+    const actionsTab = document.querySelector('.tab[data-tab="actions"]');
+    if (actionsTab && actionsTab.classList.contains('active')) {
+      loadActions(currentActionFilter);
+    }
+  }, 60000);
+}
+
+// Load badge count on startup
+async function loadActionBadge() {
+  try {
+    const resp = await fetch('/api/actions/summary');
+    if (resp.ok) {
+      const summary = await resp.json();
+      updateActionBadge(summary.by_status?.pending || 0);
+    }
+  } catch (e) { /* silent */ }
+}
+
+// ── Check-in Tab ───────────────────────────────────────
+async function loadCheckin() {
+  try {
+    const resp = await fetch('/api/checkin');
+    if (!resp.ok) throw new Error('Failed to fetch check-in data');
+    const data = await resp.json();
+    renderCheckin(data);
+  } catch (e) {
+    console.error('Failed to load check-in:', e);
+    document.getElementById('checkinStatusBar').innerHTML = '<span style="color:var(--red)">Failed to load check-in data</span>';
+  }
+}
+
+function renderCheckin(data) {
+  // Status bar — nightly jobs
+  renderCheckinStatusBar(data.nightly_jobs, data.timestamp);
+
+  // WIP card
+  renderCheckinWip(data.wip);
+
+  // Stories card
+  renderCheckinStories(data.stories);
+
+  // Actions card
+  renderCheckinActions(data.actions);
+
+  // Commits card
+  renderCheckinCommits(data.recent_commits);
+
+  // Pipeline card
+  renderCheckinPipeline(data.pipeline);
+}
+
+function renderCheckinStatusBar(jobs, timestamp) {
+  const bar = document.getElementById('checkinStatusBar');
+  if (!jobs || jobs.error) {
+    bar.innerHTML = '<span style="color:var(--text-dim)">Nightly job status unavailable</span>';
+    return;
+  }
+
+  const jobEntries = [
+    { key: 'security_scan', label: 'Security Scan' },
+    { key: 'memory_sync', label: 'Memory Sync' },
+    { key: 'daily_report', label: 'Daily Report' },
+  ];
+
+  const indicators = jobEntries.map(j => {
+    const job = jobs[j.key] || { status: 'missing' };
+    const dotClass = job.status || 'missing';
+    const ageText = job.status === 'missing' ? 'missing' : Math.round(job.age_hours || 0) + 'h ago';
+    return `<div class="nightly-indicator">
+      <span class="nightly-dot ${dotClass}"></span>
+      <span>${j.label}</span>
+      <span style="color:var(--text-dim)">${ageText}</span>
+    </div>`;
+  }).join('');
+
+  const ts = timestamp ? new Date(timestamp).toLocaleTimeString() : '';
+  bar.innerHTML = indicators + (ts ? `<span style="margin-left:auto; color:var(--text-dim)">Checked ${ts}</span>` : '');
+}
+
+function renderCheckinWip(wip) {
+  const card = document.getElementById('checkinWip');
+  const title = '<div class="checkin-card-title">Last Work in Progress</div>';
+
+  if (!wip || wip.error) {
+    card.innerHTML = title + '<div class="empty">WIP data unavailable</div>';
+    return;
+  }
+
+  if (!Array.isArray(wip) || wip.length === 0) {
+    card.innerHTML = title + '<div class="empty">No WIP saved -- start a Claude Code session to begin tracking</div>';
+    return;
+  }
+
+  const items = wip.map(w => {
+    const content = w.description || w.content || w.summary || JSON.stringify(w);
+    return `<div class="checkin-wip-item">${escapeHtml(content)}</div>`;
+  }).join('');
+
+  card.innerHTML = title + items;
+}
+
+function renderCheckinStories(stories) {
+  const card = document.getElementById('checkinStories');
+  const countEl = document.getElementById('checkinStoriesCount');
+
+  if (!stories || stories.error) {
+    card.innerHTML = '<div class="checkin-card-title">Active <span class="count">0</span></div><div class="empty">Story data unavailable</div>';
+    return;
+  }
+
+  const active = stories.active || [];
+  const blocked = stories.blocked || [];
+  countEl.textContent = active.length;
+
+  let html = `<div class="checkin-card-title">Active <span class="count">${active.length}</span></div>`;
+
+  if (active.length === 0 && blocked.length === 0) {
+    html += '<div class="empty">No active stories</div>';
+    card.innerHTML = html;
+    return;
+  }
+
+  html += active.map(s => {
+    const color = PRODUCT_COLORS[s.product] || '#71717a';
+    return `<div class="checkin-story-item">
+      <span style="flex:1; font-weight:500;">${escapeHtml(s.title || '')}</span>
+      <span class="story-product" style="background:${color}22; color:${color}">${s.product || ''}</span>
+      ${s.priority ? `<span class="story-priority ${s.priority}">${s.priority}</span>` : ''}
+    </div>`;
+  }).join('');
+
+  if (blocked.length > 0) {
+    html += `<div class="checkin-blocked-label">BLOCKED ${blocked.length}</div>`;
+    html += blocked.map(s => {
+      const color = PRODUCT_COLORS[s.product] || '#71717a';
+      return `<div class="checkin-story-item">
+        <span style="flex:1; font-weight:500; color:var(--red);">${escapeHtml(s.title || '')}</span>
+        <span class="story-product" style="background:${color}22; color:${color}">${s.product || ''}</span>
+      </div>`;
+    }).join('');
+  }
+
+  if (stories.backlog_count > 0) {
+    html += `<div style="font-size:11px; color:var(--text-dim); margin-top:8px;">${stories.backlog_count} stories in backlog</div>`;
+  }
+
+  card.innerHTML = html;
+}
+
+function renderCheckinActions(actions) {
+  const card = document.getElementById('checkinActions');
+  const countEl = document.getElementById('checkinActionsCount');
+
+  if (!actions || actions.error) {
+    card.innerHTML = '<div class="checkin-card-title">Pending Actions <span class="count">0</span></div><div class="empty">Action data unavailable</div>';
+    return;
+  }
+
+  const total = actions.summary?.pending || actions.summary?.total || 0;
+  const topCritical = actions.top_critical || [];
+  countEl.textContent = total;
+
+  let html = `<div class="checkin-card-title">Pending Actions <span class="count">${total}</span></div>`;
+
+  if (topCritical.length === 0) {
+    html += '<div class="empty">No pending actions</div>';
+    card.innerHTML = html;
+    return;
+  }
+
+  html += topCritical.slice(0, 5).map(a => {
+    const typeClass = a.type || 'tech_debt';
+    return `<div style="padding:6px 0; border-bottom:1px solid var(--border);">
+      <div style="display:flex; align-items:center; gap:8px; margin-bottom:4px;">
+        <span class="action-type-badge ${typeClass}">${typeClass}</span>
+        <span style="font-size:13px; font-weight:500; flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${escapeHtml(a.title || '')}</span>
+      </div>
+      <div class="action-buttons">
+        <button class="btn-approve" onclick="approveAction('${a.id}'); setTimeout(loadCheckin, 500);">Approve</button>
+        <button class="btn-reject" onclick="showRejectInput('${a.id}')">Reject</button>
+      </div>
+      <div class="reject-input-row" id="reject-${a.id}" style="display:none;">
+        <input type="text" placeholder="Reason..." id="reject-reason-${a.id}" onkeydown="if(event.key==='Enter'){confirmReject('${a.id}'); setTimeout(loadCheckin, 500);}">
+        <button class="btn btn-sm btn-red" onclick="confirmReject('${a.id}'); setTimeout(loadCheckin, 500);">Confirm</button>
+        <button class="btn btn-sm btn-ghost" onclick="hideRejectInput('${a.id}')">Cancel</button>
+      </div>
+    </div>`;
+  }).join('');
+
+  if (total > 5) {
+    html += `<div class="checkin-action-link" onclick="document.querySelector('.tab[data-tab=\\'actions\\']').click();">View all ${total} actions &rarr;</div>`;
+  }
+
+  card.innerHTML = html;
+}
+
+function renderCheckinCommits(commits) {
+  const card = document.getElementById('checkinCommits');
+  const countEl = document.getElementById('checkinCommitsCount');
+
+  if (!commits || commits.error) {
+    card.innerHTML = '<div class="checkin-card-title">Recent Commits <span class="count">0</span></div><div class="empty">Commit data unavailable</div>';
+    return;
+  }
+
+  const total = commits.total || 0;
+  const byProduct = commits.by_product || {};
+  const commitList = commits.commits || [];
+  countEl.textContent = total;
+
+  let html = `<div class="checkin-card-title">Recent Commits <span class="count">${total}</span></div>`;
+
+  // by_product breakdown
+  const breakdown = Object.entries(byProduct).map(([p, n]) => `${p}: ${n}`).join(' | ');
+  if (breakdown) {
+    html += `<div class="checkin-commit-product-breakdown">${escapeHtml(breakdown)}</div>`;
+  }
+
+  if (commitList.length === 0) {
+    html += '<div class="empty">No recent commits</div>';
+    card.innerHTML = html;
+    return;
+  }
+
+  html += commitList.slice(0, 5).map(c => {
+    const hash = (c.hash || '').substring(0, 7);
+    const color = PRODUCT_COLORS[c.product] || '#71717a';
+    return `<div class="checkin-commit-item">
+      <span class="checkin-commit-hash">${hash}</span>
+      <span class="checkin-commit-msg">${escapeHtml(c.message || c.subject || '')}</span>
+      <span class="story-product" style="background:${color}22; color:${color}; font-size:10px;">${c.product || ''}</span>
+    </div>`;
+  }).join('');
+
+  card.innerHTML = html;
+}
+
+function renderCheckinPipeline(pipeline) {
+  const card = document.getElementById('checkinPipeline');
+  const valueEl = document.getElementById('checkinPipelineValue');
+
+  if (!pipeline || pipeline.error) {
+    card.innerHTML = '<div class="checkin-card-title">Pipeline <span class="count">--</span></div><div class="empty">Pipeline data unavailable</div>';
+    return;
+  }
+
+  const totalValue = pipeline.total_value || 0;
+  const formattedValue = totalValue > 0 ? '$' + totalValue.toLocaleString() : '$0';
+  valueEl.textContent = formattedValue;
+
+  let html = `<div class="checkin-card-title">Pipeline <span class="count">${formattedValue}</span></div>`;
+
+  const dealsByStage = pipeline.deals_by_stage || {};
+  const stageOrder = ['closed_won', 'proposal', 'qualified', 'lead'];
+  const stageColors = { closed_won: 'var(--green)', proposal: 'var(--amber)', qualified: 'var(--blue)', lead: 'var(--text-dim)', negotiation: 'var(--purple)' };
+
+  let hasDeals = false;
+  stageOrder.forEach(stage => {
+    const deals = dealsByStage[stage];
+    if (!deals || !deals.length) return;
+    hasDeals = true;
+
+    html += `<div class="checkin-pipeline-stage">
+      <div class="checkin-pipeline-stage-label" style="color:${stageColors[stage] || 'var(--text-dim)'}">${stage.replace('_', ' ')} (${deals.length})</div>`;
+
+    html += deals.map(d => {
+      const val = d.value > 0 ? '$' + d.value.toLocaleString() : '';
+      return `<div class="checkin-pipeline-deal">
+        <span class="deal-company">${escapeHtml(d.company || d.name || '')}</span>
+        ${val ? `<span class="deal-value">${val}</span>` : ''}
+        ${d.product ? `<span class="deal-product">${escapeHtml(d.product)}</span>` : ''}
+      </div>`;
+    }).join('');
+
+    html += '</div>';
+  });
+
+  // Handle any stages not in stageOrder
+  Object.keys(dealsByStage).forEach(stage => {
+    if (stageOrder.includes(stage)) return;
+    const deals = dealsByStage[stage];
+    if (!deals || !deals.length) return;
+    hasDeals = true;
+
+    html += `<div class="checkin-pipeline-stage">
+      <div class="checkin-pipeline-stage-label">${stage.replace('_', ' ')} (${deals.length})</div>`;
+    html += deals.map(d => {
+      const val = d.value > 0 ? '$' + d.value.toLocaleString() : '';
+      return `<div class="checkin-pipeline-deal">
+        <span class="deal-company">${escapeHtml(d.company || d.name || '')}</span>
+        ${val ? `<span class="deal-value">${val}</span>` : ''}
+      </div>`;
+    }).join('');
+    html += '</div>';
+  });
+
+  if (!hasDeals) {
+    html += '<div class="empty">No deals in pipeline</div>';
+  }
+
+  card.innerHTML = html;
+}
+
+// ── Prioritization ─────────────────────────────────────
+let priorityPanelVisible = false;
+
+async function runPrioritization(target) {
+  const btnId = target === 'checkin' ? 'checkinPriorityBtn' : 'prioritizeBtn';
+  const btn = document.getElementById(btnId);
+  const originalText = btn.textContent;
+  btn.textContent = 'Scoring...';
+  btn.disabled = true;
+
+  const contentId = target === 'checkin' ? 'checkinPriorityContent' : 'priorityPanel';
+  const el = document.getElementById(contentId);
+  el.innerHTML = '<div class="priority-loading"><span class="spinner"></span> AIIA is scoring stories against the 5-filter framework...</div>';
+  if (target !== 'checkin') el.style.display = 'block';
+
+  try {
+    const resp = await fetch('/api/roadmap/prioritize', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ limit: 10 }),
+    });
+    if (!resp.ok) throw new Error('Failed to prioritize');
+    const data = await resp.json();
+
+    if (data.error) {
+      el.innerHTML = `<div class="empty">${escapeHtml(data.error)}</div>`;
+      return;
+    }
+
+    renderPriorityResults(el, data.stories || [], target);
+  } catch (e) {
+    el.innerHTML = `<div class="empty">Prioritization failed: ${escapeHtml(e.message)}</div>`;
+  } finally {
+    btn.textContent = originalText;
+    btn.disabled = false;
+  }
+}
+
+function renderPriorityResults(container, stories, target) {
+  if (!stories.length) {
+    container.innerHTML = '<div class="empty">No backlog stories to prioritize</div>';
+    return;
+  }
+
+  const filterLabels = {
+    closes_deal: 'Closes Deal',
+    retains_client: 'Retains client',
+    reduces_cost: 'Reduces Cost',
+    enables_tenants: 'Enables Tenants',
+    new_revenue: 'New Revenue',
+  };
+
+  let html = '';
+  if (target !== 'checkin') {
+    html += '<div class="priority-panel">';
+    html += '<div class="priority-panel-header"><h3>Backlog Priority Ranking</h3>';
+    html += '<button class="btn btn-sm btn-ghost" onclick="togglePriorityPanel()">Close</button></div>';
+  }
+
+  html += stories.map((s, i) => {
+    const color = PRODUCT_COLORS[s.product] || '#71717a';
+    const scores = s.filter_scores || {};
+    const suggested = s.suggested_priority;
+    const current = s.priority;
+    const change = suggested && suggested !== current
+      ? `<span style="font-size:10px; color:var(--amber);">&rarr; ${suggested}</span>` : '';
+
+    const filterChips = Object.entries(scores)
+      .filter(([, v]) => v > 0)
+      .sort(([, a], [, b]) => b - a)
+      .map(([k, v]) => {
+        const level = v >= 7 ? 'high' : v >= 4 ? 'medium' : 'low';
+        return `<span class="priority-filter-chip ${level}">${filterLabels[k] || k}: ${v}</span>`;
+      }).join('');
+
+    return `<div class="priority-item">
+      <div class="priority-rank">${i + 1}</div>
+      <div class="priority-item-body">
+        <div class="priority-item-title">${escapeHtml(s.title)}</div>
+        <div class="priority-item-meta">
+          <span class="story-product" style="background:${color}22; color:${color}">${s.product}</span>
+          <span class="story-priority ${current}">${current}</span>
+          ${change}
+          <span class="story-score">${s.priority_score || 0}/150</span>
+        </div>
+        ${s.priority_reasoning ? `<div class="priority-item-reasoning">${escapeHtml(s.priority_reasoning)}</div>` : ''}
+        ${filterChips ? `<div class="priority-filters">${filterChips}</div>` : ''}
+      </div>
+    </div>`;
+  }).join('');
+
+  if (target !== 'checkin') html += '</div>';
+  container.innerHTML = html;
+}
+
+function togglePriorityPanel() {
+  const panel = document.getElementById('priorityPanel');
+  priorityPanelVisible = !priorityPanelVisible;
+  if (priorityPanelVisible) {
+    runPrioritization('board');
+  } else {
+    panel.style.display = 'none';
+  }
+}
+
+// ── Data Loading ───────────────────────────────────────
+async function loadData() {
+  try {
+    const resp = await fetch('/api/work/context');
+    workData = await resp.json();
+
+    // Board tab
+    allStories = workData.roadmap || [];
+    renderKanban();
+    renderPipeline(workData.pipeline);
+    document.getElementById('statCommits').textContent = workData.today?.summary?.total_commits || 0;
+
+    // Activity tab
+    if (workData.today?.summary) renderActivityStats(workData.today.summary);
+    renderProjects(workData.today?.products);
+    renderCommits(workData.recent_commits);
+    renderUncommitted(workData.uncommitted);
+    renderHeatmap(workData.weekly_heatmap);
+
+    document.getElementById('lastUpdated').textContent = 'Updated ' + new Date().toLocaleTimeString();
+  } catch(e) {
+    console.error('Failed to load work context:', e);
+    document.getElementById('lastUpdated').textContent = 'Error loading data';
+  }
+}
+
+async function loadTodayMd() {
+  try {
+    const resp = await fetch('/api/reports/today-md');
+    if (resp.ok) { const data = await resp.json(); renderTodayMd(data.content); }
+    else renderTodayMd(null);
+  } catch(e) { renderTodayMd(null); }
+}
+
+// ── WebSocket ──────────────────────────────────────────
+function connectWS() {
+  const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+  const ws = new WebSocket(`${proto}//${location.host}/ws`);
+  ws.onmessage = (evt) => {
+    try {
+      const msg = JSON.parse(evt.data);
+      if (msg.type === 'interval_report') { loadData(); loadTodayMd(); }
+    } catch(e) {}
+  };
+  ws.onclose = () => { setTimeout(connectWS, 5000); };
+  ws.onerror = () => { ws.close(); };
+}
+
+// ── Init ───────────────────────────────────────────────
+loadCheckin();
+loadData();
+loadTodayMd();
+loadActionBadge();
+startActionsAutoRefresh();
+connectWS();
+setInterval(() => { loadCheckin(); loadData(); loadTodayMd(); }, 300000);
+</script>
+</body>
+</html>

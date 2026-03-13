@@ -1,0 +1,21 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "name": "aiia-command-center",
+  "version": 2,
+  "ignoreCommand": "git diff HEAD^ HEAD --quiet local_brain/command_center/",
+  "buildCommand": null,
+  "outputDirectory": "static",
+  "rewrites": [
+    { "source": "/", "destination": "/dashboard.html" },
+    { "source": "/dashboard", "destination": "/dashboard.html" }
+  ],
+  "headers": [
+    {
+      "source": "/(.*)",
+      "headers": [
+        { "key": "X-Frame-Options", "value": "DENY" },
+        { "key": "X-Content-Type-Options", "value": "nosniff" }
+      ]
+    }
+  ]
+}
