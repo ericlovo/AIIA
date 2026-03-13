@@ -50,7 +50,7 @@ graph TB
 
   subgraph "Cloud Services"
     Supermemory["Supermemory<br/>21 containers<br/>3M tokens/month"]
-    Render["Render (5 services)<br/>Cathcap · Platform<br/>Marketing · Sales · CK"]
+    Render["Render (5 services)<br/>Product · Platform<br/>Marketing · Sales · Client"]
     Vercel["Vercel<br/>Per-tenant frontends"]
   end
 
@@ -226,8 +226,8 @@ Every backlog story is scored against these filters (0-10 each, weighted):
 
 | Filter | Weight | Question |
 |--------|--------|----------|
-| Closes Deal | 5x | Does this help close LNS, Automotive ($75K), Marketing Agency, or Fractional CFO? |
-| Retains Cathcap | 4x | Does this fix a bug, improve UX, or add a feature for the paying client? |
+| Closes Deal | 5x | Does this help close an active sales opportunity? |
+| Retains Client | 4x | Does this fix a bug, improve UX, or add a feature for the paying client? |
 | Reduces Cost | 3x | Does this reduce token spend, infra cost, or manual overhead? |
 | Enables Tenants | 2x | Does this improve the platform for all products? |
 | New Revenue | 1x | Does this create a new revenue stream (Content Engine, new product)? |
@@ -278,7 +278,7 @@ Every backlog story is scored against these filters (0-10 each, weighted):
 | `cross_tenant_analytics` | Daily 3am | Yes | Cross-tenant pattern analysis |
 | `memory_digest` | Daily 6am | Yes | Memory consolidation digest |
 | `daily_brief` | Daily 8am | Yes | Morning briefing generation |
-| `weekly_cathcap_status` | Every 7 days | Yes | Cathcap client health report |
+| `weekly_client_status` | Every 7 days | Yes | Primary client health report |
 
 ### Nightly Automation (launchd)
 
@@ -313,7 +313,7 @@ pending → approved → executing → completed
 | SUPERVISED | 30s delay | test_fix, tech_debt, commit |
 | GATED | Manual only | security_fix (critical/error), review |
 
-**Forbidden Files:** `.env*`, `*.pem`, `*.key`, `*/migration/*`, `render.yaml`, `products/cathcap-analyst/backend/main.py`
+**Forbidden Files:** `.env*`, `*.pem`, `*.key`, `*/migration/*`, `render.yaml`, `products/*/backend/main.py`
 
 ---
 
@@ -404,7 +404,7 @@ aiia_session_end(
     summary="Refactored auth middleware",
     key_decisions=["Switched to jose library"],
     next_steps=["Add refresh token rotation"],
-    blockers=["Need Cathcap staging access"]
+    blockers=["Need staging access"]
 )
 # ^ Auto-extracts stories from next_steps/blockers
 ```
@@ -650,8 +650,8 @@ Checks 4 services every 30 seconds with 24-hour history retention:
 | Service | Check URL | Timeout | Category |
 |---------|-----------|---------|----------|
 | AIIA Local Brain | `localhost:8100/v1/aiia/status` | 5s | intelligence |
-| Aplora Analyst (Cathcap) | `traction-eos-ai.onrender.com/health` | 10s | backend |
-| Aplora Platform | `xcai-intelligence.onrender.com/health` | 10s | backend |
+| Product Backend | `{product}.onrender.com/health` | 10s | backend |
+| Platform API | `{platform}.onrender.com/health` | 10s | backend |
 | Ollama | `localhost:11434/api/tags` | 3s | local |
 
 **Status Values:** online, degraded (slow/4xx), offline (timeout/5xx/error)
@@ -693,8 +693,8 @@ Checks 4 services every 30 seconds with 24-hour history retention:
            │ Tailscale tunnel (WireGuard)
 ┌──────────┼────────────────────────────────────────┐
 │          │            │              │             │
-│  Aplora Platform  Aplora Analyst  Marketing    CK Marketing
-│  (xcai-intelligence) (traction-eos-ai) (aplora-marketing) (ck-marketing)
+│  Platform       Product A     Product B     Product C
+│  (platform)     (product-a)   (product-b)   (product-c)
 │          │            │
 │     Render.com    Render.com
 └───────────────────────────────────────────────────┘
