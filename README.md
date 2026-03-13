@@ -1,10 +1,56 @@
 # AIIA — AI Information Architecture
 
-> Persistent AI teammate running on Mac Mini M4. Local LLM reasoning, structured memory, autonomous task scheduling, story capture & prioritization, production monitoring, and MCP integration with Claude Code.
+> Your AI coding assistant forgets everything between sessions. AIIA doesn't.
 
-**Owner:** Eric Lovold, CTO @ Aplora AI
 **Hardware:** Mac Mini M4, 24GB unified memory
+**License:** Apache 2.0
 **Status:** Production (since February 2026)
+
+---
+
+## What Is This?
+
+AIIA is the missing runtime layer between you and your AI coding tools.
+
+Today, AI assistants like Claude Code, Cursor, and Copilot are powerful — but stateless. Every session starts from zero. They don't remember what you decided last week, what broke in production yesterday, or which feature your client is waiting on. You re-explain context, re-discover patterns, and lose continuity across every conversation.
+
+AIIA fixes that. It runs on a Mac Mini next to your cloud infrastructure and gives your AI tools **persistent memory, autonomous background work, and a prioritized backlog** — turning a chat assistant into a teammate that knows your codebase, remembers your decisions, and wakes up every morning with a plan.
+
+### How It Works
+
+```
+You ←→ Claude Code (MCP) ←→ AIIA (Mac Mini) ←→ Your Cloud Services
+                               │
+                               ├── Remembers every decision, pattern, and lesson
+                               ├── Indexes your entire codebase for instant RAG
+                               ├── Runs security scans, health checks, and reports overnight
+                               ├── Captures stories from your work sessions automatically
+                               ├── Scores and prioritizes your backlog using business impact
+                               └── Executes safe fixes autonomously (lint, formatting, deps)
+```
+
+### What Makes This Different
+
+**vs. OpenClaw / Computer Use agents:** Those operate your computer. AIIA operates *alongside* you — it's infrastructure, not a screen driver. It doesn't click buttons; it maintains memory, schedules background work, and feeds context into your existing AI tools via MCP.
+
+**vs. RAG-only solutions:** RAG gives you search. AIIA gives you search + structured memory + autonomous task scheduling + story capture + safety-gated execution. Memory isn't just "retrieve similar chunks" — it's 9 typed categories with sync tiers, quality scoring, and automatic decay.
+
+**vs. Custom GPTs / System Prompts:** Those are prompt engineering. AIIA is a running service with a real API, background jobs, a dashboard, health monitoring, and a CLI. It persists across sessions, across tools, across days.
+
+### Who Is This For?
+
+- **Solo developers or small teams** running production SaaS who want their AI tools to have institutional memory
+- **Platform engineers** building multi-tenant products who need a local intelligence layer that knows every service, every tenant, every deployment
+- **Anyone tired of re-explaining context** to Claude/Cursor/Copilot every single session
+
+### The 60-Second Version
+
+1. **You work.** Write code, make decisions, ship features — using Claude Code, Cursor, whatever.
+2. **AIIA remembers.** Decisions, patterns, lessons, and work-in-progress are captured to structured memory via MCP tools. Stories are auto-extracted from your session summaries.
+3. **AIIA works overnight.** Security scans, memory consolidation, codebase re-indexing, morning briefings — all on a schedule, all on local hardware, all at $0 LLM cost.
+4. **You come back.** Next session, AIIA loads your context: what you were doing, what decisions you made, what the security scan found, what to build next. No re-explaining.
+
+That's the loop. Work → Remember → Background → Context → Work.
 
 ---
 
