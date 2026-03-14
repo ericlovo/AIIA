@@ -134,9 +134,11 @@ function FilterSelect({ value, onChange, options, placeholder }: {
 }
 
 function ListView({ stories, onSelect, selected }: { stories: Story[]; onSelect: (s: Story) => void; selected: Story | null }) {
-  // Sort by priority score desc, then priority, then title
+  // Sort by composite score desc (falls back to priority_score), then priority
   const sorted = [...stories].sort((a, b) => {
-    if ((b.priority_score ?? 0) !== (a.priority_score ?? 0)) return (b.priority_score ?? 0) - (a.priority_score ?? 0)
+    const aScore = a.composite_score ?? a.priority_score ?? 0
+    const bScore = b.composite_score ?? b.priority_score ?? 0
+    if (bScore !== aScore) return bScore - aScore
     const pOrder = ['P0', 'P1', 'P2', 'P3']
     return pOrder.indexOf(a.priority) - pOrder.indexOf(b.priority)
   })
@@ -164,7 +166,7 @@ function ListView({ stories, onSelect, selected }: { stories: Story[]; onSelect:
           <span className={`text-[10px] px-1.5 py-0.5 rounded border font-medium inline-flex items-center justify-center ${PRIORITY_COLORS[s.priority]}`}>
             {s.priority}
           </span>
-          <span className="text-xs text-[#888] font-mono text-right">{s.priority_score ?? '—'}</span>
+          <span className="text-xs text-[#888] font-mono text-right">{s.composite_score != null ? s.composite_score : s.priority_score ?? '—'}</span>
         </div>
       ))}
     </div>
@@ -240,10 +242,22 @@ function StoryDrawer({ story, onClose }: { story: Story; onClose: () => void }) 
           <span className="text-[#666]">Status</span>
           <span className={STATUS_COLORS[story.status]}>{story.status}</span>
         </div>
+        {story.composite_score != null && (
+          <div className="flex justify-between">
+            <span className="text-[#666]">Composite</span>
+            <span className="text-[#ccc] font-mono">{story.composite_score}/100</span>
+          </div>
+        )}
         {story.priority_score != null && (
           <div className="flex justify-between">
-            <span className="text-[#666]">Score</span>
-            <span className="text-[#ccc] font-mono">{story.priority_score}/150</span>
+            <span className="text-[#666]">Additive</span>
+            <span className="text-[#888] font-mono text-xs">{story.priority_score}/150</span>
+          </div>
+        )}
+        {story.geometric && (
+          <div className="flex justify-between">
+            <span className="text-[#666]">Alignment</span>
+            <span className="text-[#888] font-mono text-xs">{(story.geometric.alignment * 100).toFixed(0)}%</span>
           </div>
         )}
         {story.source_type && (

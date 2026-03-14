@@ -185,8 +185,8 @@ function PriorityList() {
             )}
           </div>
           <div className="text-right shrink-0">
-            <div className="text-xs text-[#888] font-mono">{s.priority_score ?? '—'}</div>
-            <div className="text-[10px] text-[#555]">/150</div>
+            <div className="text-xs text-[#888] font-mono">{s.composite_score != null ? s.composite_score : s.priority_score ?? '—'}</div>
+            <div className="text-[10px] text-[#555]">{s.composite_score != null ? '/100' : '/150'}</div>
           </div>
         </div>
       ))}

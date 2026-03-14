@@ -56,6 +56,8 @@ export interface Story {
   tags?: string[];
   client_impact?: string;
   priority_score?: number;
+  composite_score?: number;
+  geometric?: { alignment: number; magnitude: number; geometric_score: number };
   priority_reasoning?: string;
   filter_scores?: Record<string, number>;
   suggested_priority?: string;

@@ -13,9 +13,80 @@ Also extracts candidate stories from session end data (next_steps, blockers).
 
 import json
 import logging
+import math
 from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger("aiia.story_prioritizer")
+
+# ---------------------------------------------------------------------------
+# Geometric scoring — vector-based priority analysis
+#
+# Instead of just summing weighted intervals, we also treat each story as a
+# vector in 5D filter space and measure its alignment with an "ideal" business
+# impact direction. This captures non-linear interactions: a story that moves
+# TWO high-weight needles is more valuable than the additive sum suggests.
+#
+# Composite score = 70% additive (interpretable) + 30% geometric (interaction-aware)
+# ---------------------------------------------------------------------------
+
+# Ideal business impact direction — same weights as filters, normalized
+_IDEAL_RAW = [5.0, 4.0, 3.0, 2.0, 1.0]
+_IDEAL_MAG = math.sqrt(sum(x * x for x in _IDEAL_RAW))
+_IDEAL_UNIT = [x / _IDEAL_MAG for x in _IDEAL_RAW]
+# Max possible geometric score (all filters at 10, perfect alignment)
+_MAX_GEO = math.sqrt(sum(10.0**2 for _ in _IDEAL_RAW))  # ~22.36
+
+ADDITIVE_WEIGHT = 0.7
+GEOMETRIC_WEIGHT = 0.3
+
+
+def _dot(a: List[float], b: List[float]) -> float:
+    return sum(x * y for x, y in zip(a, b))
+
+
+def _magnitude(v: List[float]) -> float:
+    return math.sqrt(sum(x * x for x in v))
+
+
+def geometric_score(filter_scores: Dict[str, int]) -> Dict[str, float]:
+    """Compute vector-based priority metrics from filter scores.
+
+    Returns alignment (cosine similarity to ideal), magnitude, and
+    a geometric score that rewards stories moving multiple high-weight needles.
+    """
+    vec = [
+        float(filter_scores.get("closes_deal", 0)),
+        float(filter_scores.get("retains_client", 0)),
+        float(filter_scores.get("reduces_cost", 0)),
+        float(filter_scores.get("enables_tenants", 0)),
+        float(filter_scores.get("new_revenue", 0)),
+    ]
+
+    mag = _magnitude(vec)
+    if mag == 0:
+        return {"alignment": 0.0, "magnitude": 0.0, "geometric_score": 0.0}
+
+    unit = [x / mag for x in vec]
+    alignment = _dot(unit, _IDEAL_UNIT)
+    geo = alignment * mag
+
+    return {
+        "alignment": round(alignment, 3),
+        "magnitude": round(mag, 2),
+        "geometric_score": round(geo, 2),
+    }
+
+
+def composite_score(weighted_total: float, geo: Dict[str, float]) -> float:
+    """Blend additive and geometric scores into a single 0-100 composite.
+
+    70% additive (interpretable, max 150) + 30% geometric (interaction-aware).
+    """
+    additive_norm = weighted_total / 150.0  # 0-1
+    geo_norm = geo.get("geometric_score", 0.0) / _MAX_GEO  # 0-1
+    raw = ADDITIVE_WEIGHT * additive_norm + GEOMETRIC_WEIGHT * geo_norm
+    return round(raw * 100, 1)
+
 
 # Priority framework — scored 0-10 per filter, weighted
 PRIORITY_FILTERS = [
@@ -157,6 +228,8 @@ class StoryPrioritizer:
                     {
                         **story,
                         "priority_score": score.get("weighted_total", 0),
+                        "composite_score": score.get("composite_score", 0.0),
+                        "geometric": score.get("geometric", {}),
                         "priority_reasoning": score.get("reasoning", ""),
                         "suggested_priority": score.get("suggested_priority", "P2"),
                         "filter_scores": score.get("scores", {}),
@@ -164,10 +237,10 @@ class StoryPrioritizer:
                 )
             else:
                 results.append(
-                    {**story, "priority_score": 0, "score_error": score["error"]}
+                    {**story, "priority_score": 0, "composite_score": 0.0, "score_error": score["error"]}
                 )
 
-        results.sort(key=lambda x: x.get("priority_score", 0), reverse=True)
+        results.sort(key=lambda x: x.get("composite_score", 0.0), reverse=True)
         return results
 
     async def extract_stories_from_session(
@@ -259,21 +332,22 @@ class StoryPrioritizer:
                 scores.get(f["name"], 0) * f["weight"] for f in PRIORITY_FILTERS
             )
             result["weighted_total"] = total
+
+            # Geometric scoring — vector analysis of filter scores
+            geo = geometric_score(scores)
+            result["geometric"] = geo
+            result["composite_score"] = composite_score(total, geo)
         elif "weighted_total" not in result:
             result["weighted_total"] = 0
+            result["composite_score"] = 0.0
 
-        # Always override LLM's priority suggestion with our thresholds
-        # Max possible = 150 (all filters score 10)
-        # P0 = 90+ (60%+) — truly critical, moves multiple needles
-        # P1 = 50-89 (33-59%) — important, clear business impact
-        # P2 = 25-49 (17-32%) — normal backlog
-        # P3 = 0-24 (<17%) — nice to have
-        total = result.get("weighted_total", 0)
-        if total >= 90:
+        # Priority from composite score (0-100 scale)
+        cs = result.get("composite_score", 0.0)
+        if cs >= 55:
             result["suggested_priority"] = "P0"
-        elif total >= 50:
+        elif cs >= 35:
             result["suggested_priority"] = "P1"
-        elif total >= 25:
+        elif cs >= 18:
             result["suggested_priority"] = "P2"
         else:
             result["suggested_priority"] = "P3"
