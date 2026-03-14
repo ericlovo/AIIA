@@ -132,7 +132,7 @@ AGENTS = [
     },
     {
         "id": "eos",
-        "name": "Traction EOS",
+        "name": "Fast Path",
         "type": "chat",
         "color": "#3b82f6",
         "detail": "Single-shot fast path",
@@ -221,12 +221,10 @@ INFRASTRUCTURE = [
 
 EDGES = [
     # Products → Routers
-    {"from": "analyst", "to": "conductor", "type": "chat"},
+    {"from": "app_a", "to": "conductor", "type": "chat"},
     {"from": "mia", "to": "ping_orchestrator", "type": "chat"},
-    {"from": "codeword", "to": "conductor", "type": "chat"},
-    {"from": "psg", "to": "conductor", "type": "chat"},
-    {"from": "ck_marketing", "to": "conductor", "type": "chat"},
-    {"from": "lns", "to": "conductor", "type": "chat"},
+    {"from": "app_b", "to": "conductor", "type": "chat"},
+    {"from": "app_c", "to": "conductor", "type": "chat"},
     # Routers → Agents
     {"from": "conductor", "to": "eos", "type": "routing", "label": "< 0.6"},
     {"from": "conductor", "to": "rlm", "type": "routing", "label": ">= 0.6"},

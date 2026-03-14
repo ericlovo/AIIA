@@ -10,10 +10,10 @@ This package contains everything that runs on the local Mac Mini:
 
 Architecture:
     Mac Mini (Ollama + AIIA + Local Brain API)
-        ↕ Tailscale tunnel
-    Render (Production backend)
+        ↕ Optional tunnel (Tailscale/WireGuard)
+    Your Cloud Services (production backends)
 
-The production backend calls Local Brain for:
+Production backends can call Local Brain for:
 1. Smart routing (replaces keyword matching in Conductor)
 2. Fast/cheap completions (summarization, memory extraction)
 3. Embeddings (local nomic-embed-text)

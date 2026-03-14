@@ -4,7 +4,7 @@
 
 **Hardware:** Mac Mini M4 (or any Apple Silicon with 24GB+ RAM)
 **Status:** Production-ready (since February 2026)
-**License:** MIT
+**License:** Apache 2.0
 
 ---
 
@@ -332,6 +332,21 @@ sequenceDiagram
 
 ## MCP Integration (Claude Code)
 
+Configure in your project's `.mcp.json` (see [`../.mcp.json`](../.mcp.json) for a template):
+
+```json
+{
+  "mcpServers": {
+    "aiia": {
+      "command": "/path/to/venv/bin/python3",
+      "args": ["-m", "local_brain.mcp_server"],
+      "cwd": "/path/to/AIIA",
+      "env": { "EQ_BRAIN_DATA_DIR": "/path/to/.aiia/eq_data" }
+    }
+  }
+}
+```
+
 ### Available Tools
 
 | Tool | Purpose |
@@ -396,7 +411,7 @@ aiia_session_end(
 - **Activity:** Commits, heatmap, projects, uncommitted changes, daily report
 - **Actions:** Pending action queue with approve/reject, severity filters
 
-### API Endpoints (47 total)
+### API Endpoints (111 total — 74 server.py + 37 local_api.py)
 
 <details>
 <summary>Full endpoint list</summary>
@@ -520,7 +535,7 @@ AIIA/
 │   │
 │   ├── scripts/                    # Utilities
 │   │   ├── roadmap_store.py        # Story CRUD + dedup
-│   │   ├── pipeline_store.py       # Sales pipeline
+│   │   ├── pipeline_store.py       # Deal pipeline CRUD
 │   │   ├── daily_report.py         # Git report generator
 │   │   └── memory_sync_runner.py   # CLI for brain sync
 │   │
@@ -533,7 +548,7 @@ AIIA/
 ├── docker-compose.yml              # Full stack (AIIA + Ollama)
 ├── .gitignore
 ├── CONTRIBUTING.md
-├── LICENSE                         # MIT
+├── LICENSE                         # Apache 2.0
 └── README.md                       # This file
 ```
 
@@ -740,4 +755,4 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 
 ## License
 
-MIT — see [LICENSE](LICENSE) for details.
+Apache 2.0 — see [LICENSE](../LICENSE) for details.

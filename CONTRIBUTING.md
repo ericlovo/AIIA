@@ -27,7 +27,7 @@ Thank you for your interest in contributing to AIIA! This document provides guid
 
 ### Prerequisites
 
-- **Python 3.11+**
+- **Python 3.12+**
 - **Ollama** — Install from [ollama.com](https://ollama.com) and pull a model:
   ```bash
   ollama pull llama3.1:8b-instruct-q8_0

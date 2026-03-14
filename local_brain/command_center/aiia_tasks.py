@@ -1186,13 +1186,13 @@ class TaskRunner:
             for m in recent_memories[:10]
         )
 
-        prompt = f"""Generate a morning briefing for Eric (the development team lead). Structure your response in exactly 4 sections:
+        prompt = f"""Generate a morning briefing for the development team lead. Structure your response in exactly 4 sections:
 
 ## 1. Shipped Code (by product)
 Summarize what was built yesterday, grouped by product. Highlight notable features, fixes, and patterns.
 
 ## 2. Priority Recommendations
-Based on WIP items, project priorities, and what shipped — what should Eric focus on today? Consider: client deadlines, revenue impact, security items, unfinished work.
+Based on WIP items, project priorities, and what shipped — what should the team focus on today? Consider: client deadlines, revenue impact, security items, unfinished work.
 
 ## 3. Platform Health
 Brief service status — what's up, what's degraded, any concerns.
@@ -1228,7 +1228,7 @@ RECENT MEMORIES:
                 "/v1/aiia/ask",
                 {
                     "question": prompt,
-                    "context": "You are AIIA generating the morning briefing for Eric. Be concise, actionable, and specific. Use the 4-section format requested. Prioritize recommendations based on revenue impact and client deadlines.",
+                    "context": "You are AIIA generating the morning briefing for the development team. Be concise, actionable, and specific. Use the 4-section format requested. Prioritize recommendations based on revenue impact and client deadlines.",
                     "n_results": 3,
                 },
                 timeout=90.0,

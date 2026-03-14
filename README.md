@@ -413,6 +413,21 @@ sequenceDiagram
 
 ## MCP Integration (Claude Code)
 
+Configure in your project's `.mcp.json` (see [`.mcp.json`](.mcp.json) for a template):
+
+```json
+{
+  "mcpServers": {
+    "aiia": {
+      "command": "/path/to/venv/bin/python3",
+      "args": ["-m", "local_brain.mcp_server"],
+      "cwd": "/path/to/AIIA",
+      "env": { "EQ_BRAIN_DATA_DIR": "/path/to/.aiia/eq_data" }
+    }
+  }
+}
+```
+
 ### Available Tools
 
 | Tool | Purpose |
@@ -607,7 +622,7 @@ brain help           # All commands
 │       │
 │       ├── scripts/                      # Utilities & CLI runners
 │       │   ├── roadmap_store.py          # Story CRUD + dedup
-│       │   ├── pipeline_store.py         # Sales pipeline
+│       │   ├── pipeline_store.py         # Deal pipeline CRUD
 │       │   ├── daily_report.py           # Git report generator
 │       │   ├── memory_sync_runner.py     # CLI for brain sync
 │       │   ├── consolidation_runner.py   # CLI for brain consolidate

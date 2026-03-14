@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "aiia": {
+      "command": "/path/to/your/venv/bin/python3",
+      "args": ["-m", "local_brain.mcp_server"],
+      "cwd": "/path/to/AIIA",
+      "env": {
+        "EQ_BRAIN_DATA_DIR": "/path/to/.aiia/eq_data"
+      }
+    }
+  }
+}
