@@ -21,6 +21,9 @@ env/
 *.pem
 *.key
 
+# Node
+node_modules/
+
 # IDE
 .vscode/
 .idea/
