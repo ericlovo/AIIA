@@ -44,6 +44,9 @@ class LocalBrainConfig:
         EXECUTION_BRANCH_PREFIX: Git branch prefix (default: aiia/)
         EXECUTION_DATA_DIR: Data dir (default: ~/.aiia/eq_data/execution)
         CLAUDE_CODE_PATH: Path to claude CLI binary (default: claude)
+        EXECUTION_MAX_CONCURRENT: Max concurrent subprocesses (default: 1)
+        EXECUTION_MAX_FILES_PER_ACTION: Safety limit on files per action (default: 20)
+        EXECUTION_SUPERVISED_COUNTDOWN: Seconds before supervised actions execute (default: 30)
     """
 
     # Ollama connection
@@ -100,6 +103,9 @@ class LocalBrainConfig:
     execution_branch_prefix: str = "aiia/"  # git branch naming
     execution_data_dir: str = ""  # set in __post_init__
     claude_code_path: str = "claude"  # path to claude CLI binary
+    execution_max_concurrent: int = 1  # max concurrent subprocesses
+    execution_max_files_per_action: int = 20  # safety: max files an action can touch
+    execution_supervised_countdown: int = 30  # seconds before supervised actions execute
 
     def __post_init__(self):
         """Load from environment variables."""
@@ -192,6 +198,24 @@ class LocalBrainConfig:
         )
         self.claude_code_path = os.getenv(
             "CLAUDE_CODE_PATH", self.claude_code_path
+        )
+        self.execution_max_concurrent = int(
+            os.getenv(
+                "EXECUTION_MAX_CONCURRENT",
+                str(self.execution_max_concurrent),
+            )
+        )
+        self.execution_max_files_per_action = int(
+            os.getenv(
+                "EXECUTION_MAX_FILES_PER_ACTION",
+                str(self.execution_max_files_per_action),
+            )
+        )
+        self.execution_supervised_countdown = int(
+            os.getenv(
+                "EXECUTION_SUPERVISED_COUNTDOWN",
+                str(self.execution_supervised_countdown),
+            )
         )
 
         # Default model assignments

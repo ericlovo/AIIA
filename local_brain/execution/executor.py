@@ -37,8 +37,11 @@ class ExecutionEngine:
         self._task: asyncio.Task | None = None
 
         repo_path = REPO_PATH
-        self.safety = SafetyGate()
-        self.pool = SubprocessPool(max_concurrent=1)
+        self.safety = SafetyGate(
+            max_concurrent=config.execution_max_concurrent,
+            max_files_per_action=config.execution_max_files_per_action,
+        )
+        self.pool = SubprocessPool(max_concurrent=config.execution_max_concurrent)
         self.execution_log = ExecutionLog(data_dir=config.execution_data_dir)
         self._git = GitOps(repo_path, self.pool)
         self._verifier = Verifier(self.pool, repo_path)
@@ -139,19 +142,20 @@ class ExecutionEngine:
             logger.info(f"Skipping GATED action {action_id} — needs explicit trigger")
             return {"status": "gated", "action_id": action_id}
 
-        # SUPERVISED: 30s notification window
+        # SUPERVISED: countdown notification window
         if tier == SafetyTier.SUPERVISED:
+            countdown = self._config.execution_supervised_countdown
             self._emit(
                 "execution_pending",
                 action_id=action_id,
                 action_type=action_type,
-                countdown=30,
+                countdown=countdown,
                 message=(
                     f"SUPERVISED: {action.get('title', '')} "
-                    f"— executing in 30s, kill switch to abort"
+                    f"— executing in {countdown}s, kill switch to abort"
                 ),
             )
-            await asyncio.sleep(30)
+            await asyncio.sleep(countdown)
             if self.safety.kill_switch:
                 return {
                     "status": "aborted",
