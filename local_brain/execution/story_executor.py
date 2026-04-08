@@ -32,7 +32,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger("aiia.execution.story")
 
 DECOMPOSE_SYSTEM = """\
-You are a technical project planner for a Python/FastAPI/React monorepo.
+You are a technical project planner for the AIIA codebase (Python/FastAPI/React monorepo).
 
 Given a story title and description, decompose it into concrete, executable action steps.
 
@@ -42,7 +42,10 @@ Each step must be one of these action types:
 - security_fix: Fix security vulnerabilities
 - ci_fix: Fix CI/CD issues
 - tech_debt: Refactoring or cleanup
+- branch_prep: Non-trivial code change that needs human-in-the-loop coding (creates a branch with context, then hands off to a developer + Claude)
 - review: Code review needed (human)
+
+Use branch_prep for any step that requires writing new logic, adding features, refactoring across multiple files, or making architectural changes. These are too complex for automated fixes — they need a human developer working with Claude in real time.
 
 For each step, specify:
 - type: one of the action types above
@@ -61,7 +64,7 @@ Example:
     "title": "Extract config into dataclass",
     "description": "Move hardcoded values from main.py into a Config dataclass",
     "proposed_fix": "Create config.py with @dataclass Config class, import in main.py",
-    "files_affected": ["local_brain/config.py", "local_brain/main.py"]
+    "files_affected": ["local_brain/local_brain/config.py", "local_brain/local_brain/main.py"]
   }
 ]"""
 
@@ -75,7 +78,7 @@ Description:
 {description}
 
 Break this into 2-8 concrete steps that can be executed independently or sequentially.
-Focus on what code changes are needed. Be specific about file paths in the repo.
+Focus on what code changes are needed. Be specific about file paths in the AIIA repo.
 Respond with ONLY a JSON array."""
 
 
@@ -187,7 +190,7 @@ class StoryExecutor:
                 system=DECOMPOSE_SYSTEM,
                 temperature=0.3,  # Low for structured output
                 max_tokens=2048,
-                num_ctx=8192,
+                num_ctx=32768,
             )
         except Exception as e:
             logger.error(f"LLM decomposition failed: {e}")
@@ -242,6 +245,7 @@ class StoryExecutor:
             "security_fix",
             "ci_fix",
             "tech_debt",
+            "branch_prep",
             "review",
         }
         validated = []

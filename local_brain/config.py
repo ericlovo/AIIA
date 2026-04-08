@@ -31,7 +31,7 @@ class LocalBrainConfig:
         LOCAL_BRAIN_HOST: Host to bind to (default: 0.0.0.0)
         LOCAL_BRAIN_API_KEY: API key for securing the Local Brain endpoint
         LOCAL_ROUTING_MODEL: Model for smart conductor routing (default: llama3.1:8b)
-        LOCAL_TASK_MODEL: Model for general tasks (default: deepseek-r1)
+        LOCAL_TASK_MODEL: Model for general tasks (default: llama3.1:8b)
         LOCAL_DEEP_MODEL: Model for deep reasoning — nightly workers (default: deepseek-r1:14b)
         LOCAL_EMBED_MODEL: Model for embeddings (default: nomic-embed-text)
         EQ_BRAIN_ENABLED: Enable EQ Brain persistent memory (default: true)
@@ -68,13 +68,13 @@ class LocalBrainConfig:
     )
     eq_brain_collection: str = "aiia_knowledge"
 
-    # Supermemory cloud sync
-    supermemory_enabled: bool = True  # env: SUPERMEMORY_ENABLED
-    supermemory_timeout: float = 8.0  # env: SUPERMEMORY_TIMEOUT
+    # Supermemory cloud sync — SDK removed (April 2026), hardcoded off
+    supermemory_enabled: bool = False
+    supermemory_timeout: float = 8.0
 
-    # Hybrid cloud memory (AIIA ask() queries Supermemory in parallel)
-    hybrid_cloud_enabled: bool = True  # env: HYBRID_CLOUD_ENABLED
-    hybrid_cloud_timeout: float = 8.0  # env: HYBRID_CLOUD_TIMEOUT
+    # Hybrid cloud memory — disabled with Supermemory removal
+    hybrid_cloud_enabled: bool = False
+    hybrid_cloud_timeout: float = 8.0
 
     # Metered sync tuning
     sync_quality_gate: int = 3  # env: SYNC_QUALITY_GATE (min score to sync)
@@ -86,6 +86,10 @@ class LocalBrainConfig:
     recursive_max_depth: int = 3  # env: RECURSIVE_MAX_DEPTH
     recursive_token_budget: int = 50_000  # env: RECURSIVE_TOKEN_BUDGET
     recursive_temperature: float = 0.15  # Low temp for reliable JSON output
+
+    # Obsidian vault sync (VaultWriter) — optional knowledge vault export
+    vault_dir: str = ""  # Set from env OBSIDIAN_VAULT_DIR or default to ~/.aiia/vault
+    auto_file_queries: bool = True  # File substantive AIIA answers to wiki/
 
     # Feature flags
     smart_routing_enabled: bool = True  # Use local LLM for conductor routing
@@ -126,9 +130,9 @@ class LocalBrainConfig:
             "EQ_BRAIN_COLLECTION", self.eq_brain_collection
         )
 
-        # Supermemory
+        # Supermemory cloud sync — disabled by default (optional integration)
         self.supermemory_enabled = (
-            os.getenv("SUPERMEMORY_ENABLED", "true").lower() == "true"
+            os.getenv("SUPERMEMORY_ENABLED", "false").lower() == "true"
         )
         self.supermemory_timeout = float(
             os.getenv("SUPERMEMORY_TIMEOUT", str(self.supermemory_timeout))
@@ -136,11 +140,16 @@ class LocalBrainConfig:
 
         # Hybrid cloud memory
         self.hybrid_cloud_enabled = (
-            os.getenv("HYBRID_CLOUD_ENABLED", "true").lower() == "true"
+            os.getenv("HYBRID_CLOUD_ENABLED", "false").lower() == "true"
         )
         self.hybrid_cloud_timeout = float(
             os.getenv("HYBRID_CLOUD_TIMEOUT", str(self.hybrid_cloud_timeout))
         )
+
+        # Obsidian vault — optional knowledge export
+        _vault_default = os.path.expanduser("~/.aiia/vault")
+        self.vault_dir = os.getenv("OBSIDIAN_VAULT_DIR", _vault_default)
+        self.auto_file_queries = os.getenv("AUTO_FILE_QUERIES", "true").lower() == "true"
 
         # Metered sync tuning
         self.sync_quality_gate = int(
@@ -168,19 +177,13 @@ class LocalBrainConfig:
         _exec_enabled = os.getenv("EXECUTION_ENABLED", "false").lower()
         self.execution_enabled = _exec_enabled in ("true", "1")
         self.execution_poll_interval = int(
-            os.getenv(
-                "EXECUTION_POLL_INTERVAL", str(self.execution_poll_interval)
-            )
+            os.getenv("EXECUTION_POLL_INTERVAL", str(self.execution_poll_interval))
         )
         self.execution_max_timeout = int(
-            os.getenv(
-                "EXECUTION_MAX_TIMEOUT", str(self.execution_max_timeout)
-            )
+            os.getenv("EXECUTION_MAX_TIMEOUT", str(self.execution_max_timeout))
         )
         self.execution_max_retries = int(
-            os.getenv(
-                "EXECUTION_MAX_RETRIES", str(self.execution_max_retries)
-            )
+            os.getenv("EXECUTION_MAX_RETRIES", str(self.execution_max_retries))
         )
         _auto_commit = os.getenv("EXECUTION_AUTO_COMMIT", "false").lower()
         self.execution_auto_commit = _auto_commit in ("true", "1")
@@ -196,8 +199,24 @@ class LocalBrainConfig:
                 "execution",
             ),
         )
-        self.claude_code_path = os.getenv(
-            "CLAUDE_CODE_PATH", self.claude_code_path
+        self.claude_code_path = os.getenv("CLAUDE_CODE_PATH", self.claude_code_path)
+        self.execution_max_concurrent = int(
+            os.getenv(
+                "EXECUTION_MAX_CONCURRENT",
+                str(self.execution_max_concurrent),
+            )
+        )
+        self.execution_max_files_per_action = int(
+            os.getenv(
+                "EXECUTION_MAX_FILES_PER_ACTION",
+                str(self.execution_max_files_per_action),
+            )
+        )
+        self.execution_supervised_countdown = int(
+            os.getenv(
+                "EXECUTION_SUPERVISED_COUNTDOWN",
+                str(self.execution_supervised_countdown),
+            )
         )
         self.execution_max_concurrent = int(
             os.getenv(
@@ -245,14 +264,14 @@ class LocalBrainConfig:
                     description="Text embeddings for RAG and similarity search",
                 ),
                 "pii": ModelConfig(
-                    model_name=routing_model,  # Same small model, different prompt
+                    model_name=routing_model,  # Same model, different prompt
                     temperature=0.0,  # Deterministic for compliance
                     max_tokens=512,
                     description="PII/PHI detection and classification",
                 ),
                 "deep": ModelConfig(
                     model_name=deep_model,
-                    temperature=0.6,  # DeepSeek R1 optimal — chain-of-thought is self-correcting
+                    temperature=0.6,
                     max_tokens=8192,
                     description="Deep reasoning — consolidation, code review, briefings (nightly)",
                 ),

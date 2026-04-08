@@ -661,6 +661,148 @@ body {
   letter-spacing: 0.8px; color: var(--text-faint); margin: 12px 0 6px;
 }
 .sub-label:first-child { margin-top: 0; }
+
+/* ── Attention Required Section ── */
+.attention-section {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--amber);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+.attention-section .section-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 14px 20px;
+  cursor: pointer; user-select: none;
+  transition: background 0.2s;
+}
+.attention-section .section-header:hover { background: rgba(217,119,6,0.04); }
+.attention-section.collapsed .section-chevron { transform: rotate(-90deg); }
+.attention-section.collapsed .section-body { display: none; }
+.attention-title-row { display: flex; align-items: center; gap: 10px; }
+.attention-title {
+  font-size: 13px; font-weight: 600; letter-spacing: -0.2px;
+  color: var(--amber);
+}
+.attention-badge {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 18px; height: 18px; border-radius: 9px; font-size: 10px;
+  font-weight: 700; background: var(--amber); color: #fff; padding: 0 5px;
+}
+.attention-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 10px;
+  padding: 0 20px 16px;
+}
+.attention-card {
+  background: rgba(0,0,0,0.015);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 12px 14px;
+  min-height: 120px;
+  display: flex; flex-direction: column;
+}
+.attention-card-header {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 8px;
+}
+.attention-card-title {
+  font-size: 11px; font-weight: 600; text-transform: uppercase;
+  letter-spacing: 0.6px; color: var(--text-dim);
+}
+.attention-card-badge {
+  font-size: 9px; font-weight: 700; padding: 1px 6px; border-radius: 8px;
+  background: rgba(217,119,6,0.12); color: var(--amber);
+}
+.attention-card-body {
+  flex: 1; overflow-y: auto; max-height: 200px;
+}
+.attention-card-empty {
+  font-size: 11px; color: var(--text-faint); text-align: center;
+  padding: 16px 0;
+}
+.attn-action-item {
+  display: flex; align-items: flex-start; gap: 8px;
+  padding: 6px 8px; border-radius: 6px;
+  border: 1px solid var(--border); background: rgba(0,0,0,0.01);
+  margin-bottom: 4px; transition: background 0.15s;
+}
+.attn-action-item:hover { background: rgba(0,0,0,0.03); }
+.attn-action-body { flex: 1; min-width: 0; }
+.attn-action-title { font-size: 11px; font-weight: 600; color: var(--text); }
+.attn-action-desc { font-size: 10px; color: var(--text-faint); margin-top: 1px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.attn-action-meta { display: flex; align-items: center; gap: 6px; margin-top: 3px; font-size: 9px; color: var(--text-faint); }
+.attn-action-btns { display: flex; gap: 3px; flex-shrink: 0; margin-top: 2px; }
+.attn-btn {
+  font-size: 9px; padding: 2px 7px; border-radius: 4px; border: none;
+  cursor: pointer; font-weight: 600; transition: all 0.15s;
+}
+.attn-btn.approve { background: rgba(16,185,129,0.15); color: var(--green); }
+.attn-btn.approve:hover { background: rgba(16,185,129,0.3); }
+.attn-btn.reject { background: rgba(239,68,68,0.1); color: var(--text-dim); }
+.attn-btn.reject:hover { background: rgba(239,68,68,0.2); color: var(--red); }
+.attn-btn.retry { background: rgba(59,130,246,0.1); color: var(--blue); }
+.attn-btn.retry:hover { background: rgba(59,130,246,0.2); }
+.attn-btn.priority { border: 1px solid var(--border); background: none; }
+.attn-btn.priority:hover { border-color: var(--text-dim); }
+.attn-btn.priority.p0 { color: var(--red); }
+.attn-btn.priority.p0:hover { background: rgba(239,68,68,0.1); border-color: var(--red); }
+.attn-btn.priority.p1 { color: var(--amber); }
+.attn-btn.priority.p1:hover { background: rgba(217,119,6,0.1); border-color: var(--amber); }
+.attn-btn.priority.p2 { color: var(--blue); }
+.attn-btn.priority.p2:hover { background: rgba(59,130,246,0.1); border-color: var(--blue); }
+.attn-exec-item {
+  display: flex; align-items: center; gap: 6px;
+  padding: 5px 8px; border-radius: 5px;
+  border: 1px solid var(--border); margin-bottom: 3px;
+  font-size: 10px; color: var(--text-dim);
+}
+.attn-exec-status {
+  font-size: 8px; font-weight: 700; padding: 1px 5px; border-radius: 3px;
+  text-transform: uppercase;
+}
+.attn-exec-status.completed { background: rgba(16,185,129,0.12); color: var(--green); }
+.attn-exec-status.failed { background: rgba(239,68,68,0.12); color: var(--red); }
+.attn-exec-status.running { background: rgba(168,85,247,0.12); color: var(--purple); }
+.attn-running-indicator {
+  display: flex; align-items: center; gap: 6px;
+  padding: 6px 8px; border-radius: 6px;
+  background: rgba(0,0,0,0.03); margin-bottom: 6px;
+  font-size: 11px; color: var(--text-dim);
+}
+.attn-running-dot {
+  width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0;
+}
+.attn-running-dot.active { background: var(--green); box-shadow: 0 0 8px rgba(16,185,129,0.5); animation: pulse 2s ease-in-out infinite; }
+.attn-running-dot.idle { background: rgba(0,0,0,0.1); }
+.attn-story-item {
+  display: flex; align-items: center; gap: 6px;
+  padding: 5px 8px; border-radius: 5px;
+  border: 1px solid var(--border); margin-bottom: 3px;
+}
+.attn-story-title { font-size: 11px; color: var(--text); flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.attn-story-product {
+  font-size: 8px; font-weight: 600; padding: 1px 5px; border-radius: 3px;
+  background: rgba(59,130,246,0.1); color: var(--blue); flex-shrink: 0;
+}
+.attn-alert-item {
+  display: flex; align-items: flex-start; gap: 8px;
+  padding: 5px 8px; border-radius: 5px;
+  border: 1px solid var(--border); margin-bottom: 3px;
+  font-size: 11px; color: var(--text-dim);
+}
+.attn-auto-score-btn {
+  display: block; width: 100%; margin-top: 6px; padding: 5px 0;
+  background: rgba(168,85,247,0.08); border: 1px solid rgba(168,85,247,0.2);
+  border-radius: 5px; color: var(--purple); font-size: 10px;
+  font-weight: 600; cursor: pointer; transition: all 0.15s;
+}
+.attn-auto-score-btn:hover { background: rgba(168,85,247,0.15); }
+
+@media (max-width: 900px) {
+  .attention-grid { grid-template-columns: 1fr; }
+}
 </style>
 </head>
 <body>
@@ -695,6 +837,60 @@ body {
     <div class="kpi-card"><div class="kpi-value" id="kpi-uptime">--</div><div class="kpi-label">Uptime</div></div>
   </div>
 
+  <!-- Attention Required — PM Inbox -->
+  <div class="attention-section" id="sec-attention">
+    <div class="section-header" onclick="toggleAttentionSection()">
+      <div class="attention-title-row">
+        <span class="attention-title">Attention Required</span>
+        <span class="attention-badge" id="attention-total-badge" style="display:none">0</span>
+      </div>
+      <span class="section-chevron">&#9660;</span>
+    </div>
+    <div class="section-body">
+      <div class="attention-grid">
+        <!-- Card 1: Pending Actions -->
+        <div class="attention-card" id="attn-card-actions">
+          <div class="attention-card-header">
+            <span class="attention-card-title">Pending Actions</span>
+            <span class="attention-card-badge" id="attn-actions-badge" style="display:none">0</span>
+          </div>
+          <div class="attention-card-body" id="attn-actions-body">
+            <div class="attention-card-empty">Loading...</div>
+          </div>
+        </div>
+        <!-- Card 2: Execution Status -->
+        <div class="attention-card" id="attn-card-execution">
+          <div class="attention-card-header">
+            <span class="attention-card-title">Execution Status</span>
+          </div>
+          <div class="attention-card-body" id="attn-execution-body">
+            <div class="attention-card-empty">Loading...</div>
+          </div>
+        </div>
+        <!-- Card 3: Stories Needing Priority -->
+        <div class="attention-card" id="attn-card-stories">
+          <div class="attention-card-header">
+            <span class="attention-card-title">Stories Needing Priority</span>
+            <span class="attention-card-badge" id="attn-stories-badge" style="display:none">0</span>
+          </div>
+          <div class="attention-card-body" id="attn-stories-body">
+            <div class="attention-card-empty">Loading...</div>
+          </div>
+        </div>
+        <!-- Card 4: System Alerts -->
+        <div class="attention-card" id="attn-card-alerts">
+          <div class="attention-card-header">
+            <span class="attention-card-title">System Alerts</span>
+            <span class="attention-card-badge" id="attn-alerts-badge" style="display:none">0</span>
+          </div>
+          <div class="attention-card-body" id="attn-alerts-body">
+            <div class="attention-card-empty">Loading...</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- Roadmap / Work Tracking (first section) -->
   <div class="section" id="sec-roadmap">
     <div class="section-header" onclick="toggleSection('roadmap')">
@@ -714,7 +910,7 @@ body {
       </div>
       <div id="add-story-form" style="display:none;background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:8px;margin-bottom:8px">
         <div style="display:flex;gap:4px;margin-bottom:4px"><input id="new-title" placeholder="Title..." style="flex:1;background:var(--bg-card);border:1px solid var(--border);border-radius:4px;padding:4px 6px;color:var(--text);font-size:11px">
-        <select id="new-product" style="background:var(--bg-card);border:1px solid var(--border);border-radius:4px;padding:4px;color:var(--text-dim);font-size:11px"><option value="analyst">Analyst</option><option value="legal">Legal</option><option value="platform">Platform</option><option value="local-brain">Local Brain</option><option value="content-engine">Content Engine</option></select>
+        <select id="new-product" style="background:var(--bg-card);border:1px solid var(--border);border-radius:4px;padding:4px;color:var(--text-dim);font-size:11px"><option value="aiia-analyst">Analyst</option><option value="aiia-legal">Legal</option><option value="platform">Platform</option><option value="local-brain">Local Brain</option><option value="content-engine">Content Engine</option></select>
         <select id="new-priority" style="background:var(--bg-card);border:1px solid var(--border);border-radius:4px;padding:4px;color:var(--text-dim);font-size:11px"><option value="P0">P0</option><option value="P1">P1</option><option value="P2" selected>P2</option><option value="P3">P3</option></select></div>
         <div style="display:flex;gap:4px"><textarea id="new-desc" placeholder="Description..." style="flex:1;background:var(--bg-card);border:1px solid var(--border);border-radius:4px;padding:4px 6px;color:var(--text);font-size:11px;min-height:30px;resize:vertical;font-family:inherit"></textarea>
         <button onclick="saveStory()" style="background:rgba(5,150,105,0.1);border:1px solid rgba(5,150,105,0.25);border-radius:4px;padding:4px 10px;color:var(--green);font-size:11px;cursor:pointer;align-self:flex-end">Save</button></div>
@@ -818,12 +1014,12 @@ body {
           <path class="edge-path" d="M310,195 Q600,450 890,350" style="stroke-dasharray:2 10"/>
         </g>
         <g id="nodes-layer">
-          <g class="node"><circle class="node-circle" cx="75" cy="65" r="24" fill="rgba(59,130,246,0.15)"/><text class="node-icon" x="75" y="61" style="font-size:8px">Platform</text><text class="node-icon" x="75" y="73" style="font-size:6px;fill:var(--text-faint)">Analyst</text><text class="node-label" x="75" y="99">Analyst</text></g>
+          <g class="node"><circle class="node-circle" cx="75" cy="65" r="24" fill="rgba(59,130,246,0.15)"/><text class="node-icon" x="75" y="61" style="font-size:8px">AIIA</text><text class="node-icon" x="75" y="73" style="font-size:6px;fill:var(--text-faint)">Analyst</text><text class="node-label" x="75" y="99">AIIA</text></g>
           <g class="node"><circle class="node-circle" cx="75" cy="140" r="22" fill="rgba(168,85,247,0.15)"/><text class="node-icon" x="75" y="136" style="font-size:9px">MIA</text><text class="node-label" x="75" y="172">MIA</text></g>
           <g class="node"><circle class="node-circle" cx="75" cy="215" r="20" fill="rgba(239,68,68,0.15)"/><text class="node-icon" x="75" y="213" style="font-size:7px">Code</text><text class="node-label" x="75" y="245">Codeword</text></g>
           <g class="node"><circle class="node-circle" cx="290" cy="180" r="28" fill="rgba(59,130,246,0.12)"/><text class="node-icon" x="290" y="176" style="font-size:9px">EQ</text><text class="node-icon" x="290" y="188" style="font-size:7px;fill:var(--text-faint)">route</text><text class="node-label" x="290" y="220">Conductor</text></g>
           <g class="node"><circle class="node-circle" cx="290" cy="345" r="24" fill="rgba(168,85,247,0.12)"/><text class="node-icon" x="290" y="345" style="font-size:9px">P</text><text class="node-label" x="290" y="380">PingOrch</text></g>
-          <g class="node"><circle class="node-circle" cx="510" cy="90" r="24" fill="rgba(59,130,246,0.12)"/><text class="node-icon" x="510" y="84" style="font-size:7px">Traction</text><text class="node-icon" x="510" y="96" style="font-size:9px">EOS</text><text class="node-label" x="510" y="124">Fast Path</text></g>
+          <g class="node"><circle class="node-circle" cx="510" cy="90" r="24" fill="rgba(59,130,246,0.12)"/><text class="node-icon" x="510" y="84" style="font-size:7px">Strategy</text><text class="node-icon" x="510" y="96" style="font-size:9px">EOS</text><text class="node-label" x="510" y="124">Fast Path</text></g>
           <g class="node"><circle class="node-circle" cx="510" cy="235" r="26" fill="rgba(168,85,247,0.15)"/><text class="node-icon" x="510" y="231" style="font-size:9px">RLM</text><text class="node-icon" x="510" y="243" style="font-size:6px;fill:var(--text-faint)">recursive</text><text class="node-label" x="510" y="272">RLM Engine</text></g>
           <g class="node"><circle class="node-circle" cx="510" cy="345" r="22" fill="rgba(192,132,252,0.15)"/><text class="node-icon" x="510" y="345" style="font-size:9px">MIA</text><text class="node-label" x="510" y="377">Ethics</text></g>
           <g class="node"><circle class="node-circle" cx="510" cy="430" r="20" fill="rgba(16,185,129,0.15)"/><text class="node-icon" x="510" y="430" style="font-size:9px">G</text><text class="node-label" x="510" y="460">GURU</text></g>
@@ -986,11 +1182,18 @@ try { sectionState = JSON.parse(localStorage.getItem('mc_sections') || '{}'); } 
 
 function initSections() {
   const defaults = { map: true, tools: true };
+  // Handle standard sections
   document.querySelectorAll('.section').forEach(el => {
     const id = el.id.replace('sec-', '');
     const collapsed = sectionState[id] !== undefined ? sectionState[id] : (defaults[id] || false);
     el.classList.toggle('collapsed', collapsed);
   });
+  // Handle attention section (default OPEN)
+  const attnEl = $('sec-attention');
+  if (attnEl) {
+    const attnCollapsed = sectionState['attention'] !== undefined ? sectionState['attention'] : false;
+    attnEl.classList.toggle('collapsed', attnCollapsed);
+  }
 }
 
 function toggleSection(id) {
@@ -1036,8 +1239,10 @@ function handleMessage(msg) {
     case 'task_started': case 'task_complete': case 'task_failed': fetchTasks(); fetchInsights(); break;
     case 'token_update': renderTokens(msg.data); break;
     case 'new_insight': insightsData.unshift(msg.data); insightsData = insightsData.slice(0,50); renderInsights(); break;
-    case 'new_action': actionsData.unshift(msg.data); actionsData = actionsData.slice(0,30); renderActions(); fetchActionSummary(); break;
-    case 'action_updated': fetchActions(); fetchActionSummary(); break;
+    case 'new_action': actionsData.unshift(msg.data); actionsData = actionsData.slice(0,30); renderActions(); fetchActionSummary(); fetchAttnPendingActions(); break;
+    case 'action_updated': fetchActions(); fetchActionSummary(); fetchAttnPendingActions(); break;
+    case 'execution_update': fetchAttnExecutionStatus(); break;
+    case 'attention_update': fetchAttnAlerts(); break;
     case 'routing_update': renderLLMSection(msg.data); break;
   }
 }
@@ -1080,7 +1285,7 @@ function renderProducts() {
 
 function renderHealth(data) {
   if (!data || !data.services) return;
-  const serviceOrder = ['aiia','ollama'];
+  const serviceOrder = ['aiia','defaultapp','aiia','ollama'];
   $('health-grid').innerHTML = serviceOrder.map(sid => {
     const svc = data.services[sid]; if (!svc) return '';
     const status = svc.status||'unknown';
@@ -1175,7 +1380,7 @@ function renderBarChart(containerId, data, colors) {
 
 // ── Tasks ──
 
-const TASK_ICONS = {health_journal:{icon:'\u2661',color:'var(--green)'},repo_sync:{icon:'\u27F3',color:'var(--blue)'},code_health:{icon:'\u2714',color:'var(--cyan)'},learning_loop:{icon:'\u2731',color:'var(--pink)'},test_runner:{icon:'\u25B7',color:'var(--green)'},weekly_client_status:{icon:'\u2637',color:'var(--amber)'},memory_digest:{icon:'\u25CE',color:'var(--purple)'},daily_brief:{icon:'\u2600',color:'var(--amber)'},security_scan:{icon:'\uD83D\uDD12',color:'var(--red)'}};
+const TASK_ICONS = {health_journal:{icon:'\u2661',color:'var(--green)'},repo_sync:{icon:'\u27F3',color:'var(--blue)'},code_health:{icon:'\u2714',color:'var(--cyan)'},learning_loop:{icon:'\u2731',color:'var(--pink)'},test_runner:{icon:'\u25B7',color:'var(--green)'},weekly_defaultapp_status:{icon:'\u2637',color:'var(--amber)'},memory_digest:{icon:'\u25CE',color:'var(--purple)'},daily_brief:{icon:'\u2600',color:'var(--amber)'},security_scan:{icon:'\uD83D\uDD12',color:'var(--red)'}};
 let expandedTask = null;
 
 function renderTasks() {
@@ -1219,8 +1424,8 @@ async function fetchTasks() { try { tasksData=await(await fetch('/api/tasks')).j
 
 const TYPE_COLORS = {feat:'#22c55e',fix:'#f59e0b',chore:'#8888cc',refactor:'#a78bfa',docs:'#60a5fa',nuke:'#ef4444',security:'#ef4444',ops:'#64d2ff',test:'#10b981',merge:'#666'};
 
-const CAT_ORDER = ['Primary-Client','Platform','AI/Infra','Other Tenants','Other'];
-const CAT_COLORS = {'Primary-Client':'#3b82f6','Platform':'#a855f7','AI/Infra':'#22d3ee','Other Tenants':'#f59e0b','Other':'#666'};
+const CAT_ORDER = ['DefaultApp-Direct','Platform','AI/Infra','Other Tenants','Other'];
+const CAT_COLORS = {'DefaultApp-Direct':'#3b82f6','Platform':'#a855f7','AI/Infra':'#22d3ee','Other Tenants':'#f59e0b','Other':'#666'};
 
 async function loadReport() {
   const el = $('shipped-content');
@@ -1543,15 +1748,15 @@ async function rejectAction(id) {
 // ── Components + Services ──
 
 const COMPONENTS = [
-  {name:'Excel/CSV Parsing',desc:'Ingest spreadsheets, P&L data',product:'analyst',tags:['ingestion','financial']},
-  {name:'Sidechat',desc:'Contextual AI within doc review',product:'analyst',tags:['chat','UX']},
-  {name:'Scorecard Generator',desc:'EOS scorecards, KPIs, Rocks',product:'analyst',tags:['reports','EOS']},
-  {name:'Document Export',desc:'Word, PDF, Excel, PowerPoint',product:'analyst',tags:['export']},
-  {name:'Estate Planning',desc:'Trusts, wills, powers of attorney',product:'analyst',tags:['estate','legal']},
-  {name:'PI Case Analysis',desc:'Case grading A-F, liability/damages',product:'analyst',tags:['PI','grading']},
-  {name:'4-Pillar Dashboard',desc:'Case Intelligence + Pipeline + Marketing + Capacity',product:'analyst',tags:['dashboard']},
-  {name:'Family Law Tools',desc:'Communication parser, timeline generator',product:'analyst',tags:['family-law']},
-  {name:'Marketing Agent',desc:'Content calendar, brand voice, multi-platform',product:'analyst',tags:['marketing']},
+  {name:'Excel/CSV Parsing',desc:'Ingest spreadsheets, P&L data',product:'aiia',tags:['ingestion','financial']},
+  {name:'Sidechat',desc:'Contextual AI within doc review',product:'aiia',tags:['chat','UX']},
+  {name:'Scorecard Generator',desc:'EOS scorecards, KPIs, Rocks',product:'aiia',tags:['reports','EOS']},
+  {name:'Document Export',desc:'Word, PDF, Excel, PowerPoint',product:'aiia',tags:['export']},
+  {name:'Estate Planning',desc:'Trusts, wills, powers of attorney',product:'aiia',tags:['estate','legal']},
+  {name:'PI Case Analysis',desc:'Case grading A-F, liability/damages',product:'aiia',tags:['PI','grading']},
+  {name:'4-Pillar Dashboard',desc:'Case Intelligence + Pipeline + Marketing + Capacity',product:'aiia',tags:['dashboard']},
+  {name:'Family Law Tools',desc:'Communication parser, timeline generator',product:'aiia',tags:['family-law']},
+  {name:'Marketing Agent',desc:'Content calendar, brand voice, multi-platform',product:'aiia',tags:['marketing']},
   {name:'Neutralization Detection',desc:'Cognitive distortions, ethical drift',product:'mia',tags:['ethics']},
   {name:'Socratic Questioning',desc:'19-framework ethical reasoning',product:'mia',tags:['ethics']},
   {name:'Crisis Coach Agent',desc:'Safety planning, crisis intervention',product:'codeword',tags:['safety']},
@@ -1561,7 +1766,7 @@ const COMPONENTS = [
 const SERVICES = [
   {name:'Conductor',desc:'EQ + Thomson routing + complexity (< 1ms)'},
   {name:'RLM Engine',desc:'Recursive agentic reasoning with tool_use loop'},
-  {name:'EQ Engine',desc:'Fibonacci-scaled emotional intelligence (1-21)'},
+  {name:'AIIA EQ',desc:'Fibonacci-scaled emotional intelligence (1-21)'},
   {name:'Unified LLM',desc:'Claude primary, Gemini fallback'},
   {name:'RAG Pipeline',desc:'ChromaDB vector search + Supermemory'},
   {name:'Privacy Router',desc:'PHI/PII filtering at system boundaries'},
@@ -1571,7 +1776,7 @@ const SERVICES = [
   {name:'PingOrchestrator',desc:'Ethics routing for MIA'},
 ];
 
-const PRODUCT_COLORS = {analyst:'#3b82f6',mia:'#a855f7',codeword:'#ef4444'};
+const PRODUCT_COLORS = {aiia:'#3b82f6',mia:'#a855f7',codeword:'#ef4444'};
 
 function renderTools() {
   $('tools-count').textContent = COMPONENTS.length + SERVICES.length;
@@ -1843,6 +2048,263 @@ async function fetchProducts() {
   } catch(e) {}
 }
 
+// ── Attention Required Section ──
+
+let attnPendingActions = [], attnExecStatus = null, attnUnprioritizedStories = [], attnAlerts = [];
+
+function toggleAttentionSection() {
+  const el = $('sec-attention');
+  if (!el) return;
+  el.classList.toggle('collapsed');
+  sectionState['attention'] = el.classList.contains('collapsed');
+  try { localStorage.setItem('mc_sections', JSON.stringify(sectionState)); } catch(e) {}
+}
+
+function updateAttentionTotalBadge() {
+  const total = attnPendingActions.length + attnUnprioritizedStories.length + attnAlerts.length;
+  const badge = $('attention-total-badge');
+  if (!badge) return;
+  if (total > 0) { badge.textContent = total; badge.style.display = 'inline-flex'; }
+  else { badge.style.display = 'none'; }
+}
+
+// Card 1: Pending Actions
+async function fetchAttnPendingActions() {
+  try {
+    const data = await(await fetch('/api/actions?status=pending&limit=20')).json();
+    attnPendingActions = data.actions || [];
+    renderAttnPendingActions();
+    updateAttentionTotalBadge();
+  } catch(e) {
+    attnPendingActions = [];
+    $('attn-actions-body').innerHTML = '<div class="attention-card-empty">Could not load actions</div>';
+    updateAttentionTotalBadge();
+  }
+}
+
+function renderAttnPendingActions() {
+  const el = $('attn-actions-body');
+  const badge = $('attn-actions-badge');
+  if (!el) return;
+  if (badge) {
+    if (attnPendingActions.length > 0) { badge.textContent = attnPendingActions.length; badge.style.display = 'inline-flex'; }
+    else { badge.style.display = 'none'; }
+  }
+  if (!attnPendingActions.length) {
+    el.innerHTML = '<div class="attention-card-empty">No pending actions</div>';
+    return;
+  }
+  el.innerHTML = attnPendingActions.map(a => {
+    const sev = a.severity || 'info';
+    const desc = (a.description || '').substring(0, 100);
+    const filesCount = (a.files_affected || []).length;
+    return '<div class="attn-action-item">'
+      + '<span class="action-severity ' + escAttr(sev) + '">' + esc(sev) + '</span>'
+      + '<div class="attn-action-body">'
+      + '<div class="attn-action-title">' + esc(a.title) + '</div>'
+      + (desc ? '<div class="attn-action-desc">' + esc(desc) + '</div>' : '')
+      + '<div class="attn-action-meta">'
+      + (filesCount ? '<span>' + filesCount + ' file' + (filesCount !== 1 ? 's' : '') + '</span>' : '')
+      + (a.created_at ? '<span>' + timeAgo(a.created_at) + '</span>' : '')
+      + '</div></div>'
+      + '<div class="attn-action-btns">'
+      + '<button class="attn-btn approve" onclick="attnApproveAction(\'' + escAttr(a.id) + '\')">Approve</button>'
+      + '<button class="attn-btn reject" onclick="attnRejectAction(\'' + escAttr(a.id) + '\')">Reject</button>'
+      + '</div></div>';
+  }).join('');
+}
+
+async function attnApproveAction(id) {
+  try {
+    await fetch('/api/actions/' + encodeURIComponent(id) + '/approve', {method: 'POST'});
+    fetchAttnPendingActions();
+    fetchActions(); fetchActionSummary();
+  } catch(e) { console.error('Approve failed:', e); }
+}
+
+async function attnRejectAction(id) {
+  const reason = prompt('Rejection reason (optional):') || '';
+  try {
+    await fetch('/api/actions/' + encodeURIComponent(id) + '/reject', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({reason: reason})});
+    fetchAttnPendingActions();
+    fetchActions(); fetchActionSummary();
+  } catch(e) { console.error('Reject failed:', e); }
+}
+
+// Card 2: Execution Status
+async function fetchAttnExecutionStatus() {
+  try {
+    const data = await(await fetch('/api/execution/status')).json();
+    attnExecStatus = data;
+    renderAttnExecutionStatus();
+  } catch(e) {
+    attnExecStatus = null;
+    $('attn-execution-body').innerHTML = '<div class="attention-card-empty">Execution API not available</div>';
+  }
+}
+
+function renderAttnExecutionStatus() {
+  const el = $('attn-execution-body');
+  if (!el || !attnExecStatus) return;
+  const isRunning = attnExecStatus.is_running || false;
+  const subprocesses = attnExecStatus.active_subprocesses || 0;
+  const recent = (attnExecStatus.recent || []).slice(0, 3);
+
+  let h = '<div class="attn-running-indicator">'
+    + '<div class="attn-running-dot ' + (isRunning ? 'active' : 'idle') + '"></div>'
+    + '<span style="font-weight:600">' + (isRunning ? 'Running' : 'Idle') + '</span>'
+    + (isRunning ? '<span style="color:var(--text-faint)">' + subprocesses + ' subprocess' + (subprocesses !== 1 ? 'es' : '') + '</span>' : '')
+    + '</div>';
+
+  if (recent.length) {
+    h += recent.map(r => {
+      const status = r.status || 'unknown';
+      const dur = r.duration_ms != null ? Math.round(r.duration_ms) + 'ms' : '--';
+      const hasError = status === 'failed' && r.error;
+      return '<div class="attn-exec-item">'
+        + '<span class="attn-exec-status ' + escAttr(status) + '">' + esc(status) + '</span>'
+        + '<span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + esc(r.action_type || r.action_id || '--') + '</span>'
+        + '<span style="color:var(--text-faint)">' + esc(dur) + '</span>'
+        + (hasError ? '<span style="color:var(--red);font-size:9px;max-width:80px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + escAttr(r.error) + '">' + esc(r.error).substring(0, 30) + '</span>' : '')
+        + (status === 'failed' && r.action_id ? '<button class="attn-btn retry" onclick="attnRetryExecution(\'' + escAttr(r.action_id) + '\')">Retry</button>' : '')
+        + '</div>';
+    }).join('');
+  } else if (!isRunning) {
+    h += '<div style="font-size:10px;color:var(--text-faint);text-align:center;padding:6px 0">No recent executions</div>';
+  }
+
+  el.innerHTML = h;
+}
+
+async function attnRetryExecution(actionId) {
+  try {
+    await fetch('/api/execution/execute/' + encodeURIComponent(actionId), {method: 'POST'});
+    setTimeout(fetchAttnExecutionStatus, 1000);
+  } catch(e) { console.error('Retry failed:', e); }
+}
+
+// Card 3: Stories Needing Priority
+async function fetchAttnUnprioritizedStories() {
+  try {
+    const data = await(await fetch('/api/roadmap')).json();
+    const stories = data.stories || [];
+    attnUnprioritizedStories = stories.filter(s =>
+      s.status === 'backlog' && (!s.priority || s.priority === 'P3' || Number(s.priority) > 2)
+    );
+    renderAttnUnprioritizedStories();
+    updateAttentionTotalBadge();
+  } catch(e) {
+    attnUnprioritizedStories = [];
+    $('attn-stories-body').innerHTML = '<div class="attention-card-empty">Could not load stories</div>';
+    updateAttentionTotalBadge();
+  }
+}
+
+function renderAttnUnprioritizedStories() {
+  const el = $('attn-stories-body');
+  const badge = $('attn-stories-badge');
+  if (!el) return;
+  if (badge) {
+    if (attnUnprioritizedStories.length > 0) { badge.textContent = attnUnprioritizedStories.length; badge.style.display = 'inline-flex'; }
+    else { badge.style.display = 'none'; }
+  }
+  if (!attnUnprioritizedStories.length) {
+    el.innerHTML = '<div class="attention-card-empty">All stories prioritized</div>';
+    return;
+  }
+  let h = attnUnprioritizedStories.map(s => {
+    return '<div class="attn-story-item">'
+      + '<span class="attn-story-title">' + esc(s.title) + '</span>'
+      + '<span class="attn-story-product">' + esc(s.product || '--') + '</span>'
+      + '<div style="display:flex;gap:2px;flex-shrink:0">'
+      + '<button class="attn-btn priority p0" onclick="attnSetPriority(\'' + escAttr(s.id) + '\',0)">P0</button>'
+      + '<button class="attn-btn priority p1" onclick="attnSetPriority(\'' + escAttr(s.id) + '\',1)">P1</button>'
+      + '<button class="attn-btn priority p2" onclick="attnSetPriority(\'' + escAttr(s.id) + '\',2)">P2</button>'
+      + '</div></div>';
+  }).join('');
+  h += '<button class="attn-auto-score-btn" onclick="attnAutoScoreAll()">Auto-Score All</button>';
+  el.innerHTML = h;
+}
+
+async function attnSetPriority(storyId, priority) {
+  const label = 'P' + priority;
+  try {
+    await fetch('/api/roadmap/' + encodeURIComponent(storyId), {method: 'PUT', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({priority: label})});
+    fetchAttnUnprioritizedStories();
+    loadRoadmap();
+  } catch(e) { console.error('Set priority failed:', e); }
+}
+
+async function attnAutoScoreAll() {
+  const btn = document.querySelector('.attn-auto-score-btn');
+  if (btn) { btn.textContent = 'Scoring...'; btn.disabled = true; }
+  try {
+    await fetch('/api/roadmap/prioritize', {method: 'POST'});
+    setTimeout(() => {
+      fetchAttnUnprioritizedStories();
+      loadRoadmap();
+      if (btn) { btn.textContent = 'Auto-Score All'; btn.disabled = false; }
+    }, 2000);
+  } catch(e) {
+    console.error('Auto-score failed:', e);
+    if (btn) { btn.textContent = 'Auto-Score All'; btn.disabled = false; }
+  }
+}
+
+// Card 4: System Alerts
+async function fetchAttnAlerts() {
+  try {
+    const resp = await fetch('/api/attention');
+    if (resp.status === 404) {
+      attnAlerts = [];
+      $('attn-alerts-body').innerHTML = '<div class="attention-card-empty">Attention API not available</div>';
+      updateAttentionTotalBadge();
+      return;
+    }
+    const data = await resp.json();
+    attnAlerts = data.alerts || data.items || [];
+    renderAttnAlerts();
+    updateAttentionTotalBadge();
+  } catch(e) {
+    attnAlerts = [];
+    $('attn-alerts-body').innerHTML = '<div class="attention-card-empty">Attention API not available</div>';
+    updateAttentionTotalBadge();
+  }
+}
+
+function renderAttnAlerts() {
+  const el = $('attn-alerts-body');
+  const badge = $('attn-alerts-badge');
+  if (!el) return;
+  if (badge) {
+    if (attnAlerts.length > 0) { badge.textContent = attnAlerts.length; badge.style.display = 'inline-flex'; }
+    else { badge.style.display = 'none'; }
+  }
+  if (!attnAlerts.length) {
+    el.innerHTML = '<div class="attention-card-empty">No alerts</div>';
+    return;
+  }
+  const SEV_ICONS = {critical: '\u26A0', error: '\u26A0', warn: '\u26A1', info: '\u2139'};
+  const SEV_COLORS = {critical: 'var(--red)', error: 'var(--red)', warn: 'var(--amber)', info: 'var(--blue)'};
+  el.innerHTML = attnAlerts.map(a => {
+    const sev = a.severity || 'info';
+    const icon = SEV_ICONS[sev] || '\u25CF';
+    const color = SEV_COLORS[sev] || 'var(--text-dim)';
+    return '<div class="attn-alert-item">'
+      + '<span style="color:' + color + ';flex-shrink:0;font-size:13px">' + icon + '</span>'
+      + '<span style="flex:1">' + esc(a.description || a.message || a.title || '--') + '</span>'
+      + '</div>';
+  }).join('');
+}
+
+// Fetch all attention data
+function fetchAllAttentionData() {
+  fetchAttnPendingActions();
+  fetchAttnExecutionStatus();
+  fetchAttnUnprioritizedStories();
+  fetchAttnAlerts();
+}
+
 // ── Initialize ──
 
 initSections();
@@ -1861,10 +2323,12 @@ loadReport();
 loadRoadmap();
 loadMemories();
 renderTools();
+fetchAllAttentionData();
 setInterval(fetchAIIA, 60000);
 setInterval(fetchInsights, 120000);
 setInterval(fetchActions, 120000);
 setInterval(fetchActionSummary, 120000);
+setInterval(fetchAllAttentionData, 30000);
 </script>
 </body>
 </html>

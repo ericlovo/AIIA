@@ -124,7 +124,7 @@ async def _run_indexer(force: bool) -> dict:
 
     # Log pre-run state
     mem_stats = memory.stats()
-    kb_stats = knowledge.stats_sync_sync()
+    kb_stats = knowledge.stats_sync()
     logger.info(
         f"Memory: {mem_stats['total_memories']} total, "
         f"ChromaDB: {kb_stats['session_docs']} sessions, "
@@ -157,7 +157,7 @@ def _write_report(result: dict):
     latency = result.get("total_latency_ms", 0)
 
     lines = [
-        f"Session Index ({timestamp})",
+        f"AIIA Session Index ({timestamp})",
         "=" * 50,
         f"Status: {status}",
         f"Total time: {latency:.0f}ms",

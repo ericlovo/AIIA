@@ -20,7 +20,7 @@ set -e
 echo "╔═══════════════════════════════════════════════════╗"
 echo "║  AIIA — Mac Mini Pilot Setup                      ║"
 echo "║  AI Information Architecture + Ollama              ║"
-echo "║  The persistent AI teammate for your platform      ║"
+echo "║  The persistent AI teammate of Team AIIA         ║"
 echo "╚═══════════════════════════════════════════════════╝"
 echo ""
 
@@ -124,7 +124,7 @@ PYTHON_VERSION=$(python3 --version | cut -d' ' -f2)
 step "Python ${PYTHON_VERSION}"
 
 # Create virtual environment
-BRAIN_DIR="$HOME/.aiia"
+BRAIN_DIR="$HOME/aiia-local-brain"
 mkdir -p "$BRAIN_DIR"
 
 if [ ! -d "$BRAIN_DIR/venv" ]; then
@@ -147,13 +147,13 @@ pip install --quiet \
 step "Python dependencies installed (AIIA stack: FastAPI + ChromaDB + utilities)"
 
 # ─────────────────────────────────────────────────────────────
-# Step 5: Clone/Update Codebase
+# Step 5: Clone/Update AIIA Codebase
 # ─────────────────────────────────────────────────────────────
 
 REPO_DIR="$BRAIN_DIR/AIIA"
 if [ ! -d "$REPO_DIR" ]; then
     step "Cloning AIIA repository..."
-    git clone https://github.com/OWNER/AIIA.git "$REPO_DIR"
+    git clone https://github.com/ericlovo/AIIA.git "$REPO_DIR"
     cd "$REPO_DIR"
     git checkout main
 else
@@ -193,7 +193,7 @@ LOCAL_EMBED_MODEL=nomic-embed-text
 
 # AIIA — persistent AI teammate (knowledge + memory)
 EQ_BRAIN_ENABLED=true
-EQ_BRAIN_DATA_DIR=$HOME/.aiia/eq_data
+EQ_BRAIN_DATA_DIR=$HOME/aiia-local-brain/eq_data
 EQ_BRAIN_COLLECTION=aiia_knowledge
 
 # Feature flags
@@ -240,7 +240,7 @@ export EQ_BRAIN_DATA_DIR="$EQ_DATA_DIR"
 
 python3 -c "
 import asyncio
-from local_brain.eq_brain.bootstrap import bootstrap_from_repo
+from local_brain.local_brain.eq_brain.bootstrap import bootstrap_from_repo
 asyncio.run(bootstrap_from_repo('$REPO_DIR'))
 print('AIIA knowledge bootstrapped successfully.')
 " 2>/dev/null || warn "AIIA bootstrap will run on first start (module may need repo update)"
@@ -252,19 +252,19 @@ print('AIIA knowledge bootstrapped successfully.')
 LAUNCH_SCRIPT="$BRAIN_DIR/start_brain.sh"
 cat > "$LAUNCH_SCRIPT" << 'LAUNCHEOF'
 #!/bin/bash
-# Start AIIA — the persistent AI teammate for your platform.
+# Start AIIA — the persistent AI teammate of Team AIIA
 # Run this to bring the full stack online.
 
 set -e
 
-BRAIN_DIR="$HOME/.aiia"
+BRAIN_DIR="$HOME/aiia-local-brain"
 source "$BRAIN_DIR/.env"
 source "$BRAIN_DIR/venv/bin/activate"
 
 echo ""
 echo "╔═══════════════════════════════════════════════════╗"
 echo "║       A I I A — Waking Up...                      ║"
-echo "║  AI Information Architecture                       ║"
+echo "║  AI Information Architecture • Team AIIA         ║"
 echo "╚═══════════════════════════════════════════════════╝"
 echo ""
 
@@ -286,14 +286,14 @@ export PYTHONPATH="$BRAIN_DIR/AIIA:$PYTHONPATH"
 export EQ_BRAIN_DATA_DIR="$BRAIN_DIR/eq_data"
 
 echo "Starting AIIA on :8100..."
-python -m uvicorn local_brain.local_api:app \
+python -m uvicorn local_brain.local_brain.local_api:app \
     --host ${LOCAL_BRAIN_HOST:-0.0.0.0} \
     --port ${LOCAL_BRAIN_PORT:-8100} &
 BRAIN_PID=$!
 
 sleep 2
 echo "Starting Command Center on :8200..."
-python -m uvicorn local_brain.command_center.server:app \
+python -m uvicorn local_brain.local_brain.command_center.server:app \
     --host 0.0.0.0 \
     --port 8200 &
 CMD_PID=$!
@@ -301,7 +301,7 @@ CMD_PID=$!
 echo ""
 echo "╔═══════════════════════════════════════════════════╗"
 echo "║       A I I A — Online                            ║"
-echo "║  AI Information Architecture                       ║"
+echo "║  AI Information Architecture • Team AIIA         ║"
 echo "╠═══════════════════════════════════════════════════╣"
 echo "║  Ollama:          http://localhost:11434           ║"
 echo "║  AIIA API:        http://localhost:8100            ║"
@@ -421,7 +421,7 @@ echo "    curl http://localhost:8100/health            # Health check"
 echo "    curl http://localhost:8100/v1/aiia/status    # AIIA stats"
 echo "    tail -f $BRAIN_DIR/logs/brain.log            # Watch logs"
 echo ""
-echo "  Then on your production server, set:"
+echo "  Then on Render, set:"
 echo "    LOCAL_LLM_URL=http://<your-tailscale-ip>:11434"
 echo "    LOCAL_BRAIN_URL=http://<your-tailscale-ip>:8100"
 echo ""

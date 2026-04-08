@@ -30,7 +30,7 @@ from local_brain.scripts.daily_report import generate_report
 
 logger = logging.getLogger("aiia.tasks")
 
-AIIA_BASE_URL = "http://localhost:8100"
+AIIA_BASE_URL = "http://100.125.92.21:8100"
 TASK_DATA_FILE = Path(__file__).parent / "task_data.json"
 MAX_RUN_HISTORY = 10
 MAX_INSIGHTS = 50
@@ -46,6 +46,7 @@ SKIP_DIRS = {
     "venv",
     ".venv",
     ".venv-ml",
+    ".venv-default",
     "__pycache__",
     ".git",
     ".next",
@@ -233,8 +234,8 @@ TASK_DEFINITIONS = {
         "schedule_cron_minute": 0,
         "uses_llm": True,
     },
-    "weekly_client_status": {
-        "name": "Client Weekly Status",
+    "weekly_default_status": {
+        "name": "DefaultApp Weekly Status",
         "description": "Generate client delivery report: features shipped, bugs fixed, metrics",
         "schedule_seconds": 604800,  # 7 days
         "uses_llm": True,
@@ -315,7 +316,7 @@ class TaskRunner:
             "test_runner": self._task_test_runner,
             "memory_digest": self._task_memory_digest,
             "daily_brief": self._task_daily_brief,
-            "weekly_client_status": self._task_weekly_client_status,
+            "weekly_default_status": self._task_weekly_default_status,
             "cross_tenant_analytics": self._task_cross_tenant_analytics,
             "security_scan": self._task_security_scan,
             "ci_monitor": self._task_ci_monitor,
@@ -962,12 +963,13 @@ class TaskRunner:
 
         await self._progress("memory_digest", 75, "Storing digest findings")
 
-        # Store findings as a memory
-        if findings:
+        # Store findings as a memory — only if we got actual results, not errors
+        successful_findings = [f for f in findings if "failed:" not in f.lower()]
+        if successful_findings and categories_reviewed > 0:
             digest_text = (
                 f"Memory Digest {datetime.now(timezone.utc).strftime('%Y-%m-%d')}: "
                 f"Reviewed {categories_reviewed} categories ({len(memories)} total memories). "
-                + " | ".join(findings)
+                + " | ".join(successful_findings)
             )
             # Truncate if too long
             if len(digest_text) > 2000:
@@ -1556,16 +1558,17 @@ Be specific and reference actual file names. Keep each point to 1-2 sentences.""
 
         await self._progress("learning_loop", 75, "Storing learnings")
 
-        # Store as structured memories
-        await self._aiia_request(
-            "POST",
-            "/v1/aiia/remember",
-            {
-                "fact": f"Learning Loop {datetime.now(timezone.utc).strftime('%Y-%m-%d')}: Reviewed {len(commits)} commits. {analysis[:500]}",
-                "category": "patterns",
-                "source": "task:learning_loop",
-            },
-        )
+        # Store as structured memories — only if analysis succeeded
+        if analysis and not analysis.startswith("Analysis failed"):
+            await self._aiia_request(
+                "POST",
+                "/v1/aiia/remember",
+                {
+                    "fact": f"Learning Loop {datetime.now(timezone.utc).strftime('%Y-%m-%d')}: Reviewed {len(commits)} commits. {analysis[:500]}",
+                    "category": "patterns",
+                    "source": "task:learning_loop",
+                },
+            )
 
         # Create review actions if AIIA detected risks or issues
         if self.action_queue and analysis:
@@ -1744,43 +1747,43 @@ Be specific and reference actual file names. Keep each point to 1-2 sentences.""
         summary = f"{passed} passed, {failed} failed, {errors} errors"
         return (summary, report)
 
-    async def _task_weekly_client_status(self) -> str:
-        """Generate a client delivery report for the last 7 days."""
+    async def _task_weekly_default_status(self) -> str:
+        """Generate a DefaultApp client delivery report for the last 7 days."""
         await self._progress(
-            "weekly_client_status", 5, "Getting client commits (7 days)"
+            "weekly_default_status", 5, "Getting DefaultApp commits (7 days)"
         )
 
-        # 1. Client-specific commits
+        # 1. DefaultApp-specific commits
         try:
-            client_log = await self._run_git(
+            default_log = await self._run_git(
                 "log",
                 "--oneline",
                 "--since=7 days ago",
                 "--",
-                "products/my-app/",
+                "products/default-app/",
             )
-            client_commits = [l for l in client_log.strip().split("\n") if l]
+            default_commits = [l for l in default_log.strip().split("\n") if l]
         except Exception:
-            client_commits = []
+            default_commits = []
 
-        await self._progress("weekly_client_status", 15, "Getting platform commits")
+        await self._progress("weekly_default_status", 15, "Getting platform commits")
 
-        # 2. Platform commits that affect client infra
+        # 2. Platform commits that affect DefaultApp infra
         try:
             platform_log = await self._run_git(
                 "log",
                 "--oneline",
                 "--since=7 days ago",
                 "--",
-                "platform/",
+                "local_brain/",
             )
             platform_commits = [l for l in platform_log.strip().split("\n") if l]
         except Exception:
             platform_commits = []
 
-        await self._progress("weekly_client_status", 25, "Parsing commit stats")
+        await self._progress("weekly_default_status", 25, "Parsing commit stats")
 
-        # 3. Detailed stats for client changes
+        # 3. Detailed stats for DefaultApp changes
         try:
             stat_output = await self._run_git(
                 "diff",
@@ -1788,7 +1791,7 @@ Be specific and reference actual file names. Keep each point to 1-2 sentences.""
                 "--since=7 days ago",
                 "HEAD@{7 days ago}..HEAD",
                 "--",
-                "products/my-app/",
+                "products/default-app/",
             )
         except Exception:
             # Fallback: use shortlog
@@ -1796,7 +1799,7 @@ Be specific and reference actual file names. Keep each point to 1-2 sentences.""
 
         # Parse commit types
         features, fixes, chores, other = [], [], [], []
-        for c in client_commits:
+        for c in default_commits:
             subject = c.split(" ", 1)[1] if " " in c else c
             lower = subject.lower()
             if lower.startswith("feat"):
@@ -1816,7 +1819,7 @@ Be specific and reference actual file names. Keep each point to 1-2 sentences.""
                 "--since=7 days ago",
                 "--format=",
                 "--",
-                "products/my-app/",
+                "products/default-app/",
             )
             additions, deletions, files_changed = 0, 0, set()
             for line in numstat.strip().split("\n"):
@@ -1833,7 +1836,7 @@ Be specific and reference actual file names. Keep each point to 1-2 sentences.""
         except Exception:
             additions, deletions, files_changed = 0, 0, set()
 
-        await self._progress("weekly_client_status", 35, "Getting AIIA KB stats")
+        await self._progress("weekly_default_status", 35, "Getting AIIA KB stats")
 
         # 4. AIIA knowledge stats
         try:
@@ -1845,16 +1848,16 @@ Be specific and reference actual file names. Keep each point to 1-2 sentences.""
         except Exception:
             kb_docs, total_memories = 0, 0
 
-        await self._progress("weekly_client_status", 45, "Building report data")
+        await self._progress("weekly_default_status", 45, "Building report data")
 
         # 5. Build structured data
         today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
         report_data = {
             "report_date": today,
             "period": "7 days",
-            "product": "my-app",
-            "client": "primary",
-            "client_commits": len(client_commits),
+            "product": "default-app",
+            "client": "DefaultApp",
+            "default_commits": len(default_commits),
             "platform_commits": len(platform_commits),
             "features": features,
             "fixes": fixes,
@@ -1868,7 +1871,7 @@ Be specific and reference actual file names. Keep each point to 1-2 sentences.""
         }
 
         await self._progress(
-            "weekly_client_status", 60, "AIIA generating client summary"
+            "weekly_default_status", 60, "AIIA generating client summary"
         )
 
         # 6. Ask AIIA to generate client-facing summary
@@ -1887,7 +1890,7 @@ Be specific and reference actual file names. Keep each point to 1-2 sentences.""
         fix_list = _clean(fixes)
 
         prompt = (
-            f"Weekly status report for primary client, 7 days ending {today}. "
+            f"Weekly status report for DefaultApp (App Analyst), 7 days ending {today}. "
             f"Features shipped ({len(features)}): {'; '.join(feat_list)}. "
             f"Bug fixes ({len(fixes)}): {'; '.join(fix_list)}. "
             f"Also {len(chores)} maintenance and {len(platform_commits)} platform commits. "
@@ -1911,7 +1914,7 @@ Be specific and reference actual file names. Keep each point to 1-2 sentences.""
         except Exception as e:
             report_text = f"Report generation failed: {str(e)[:200]}"
 
-        await self._progress("weekly_client_status", 80, "Saving report")
+        await self._progress("weekly_default_status", 80, "Saving report")
 
         # 7. Save report JSON
         reports_dir = Path(
@@ -1924,7 +1927,7 @@ Be specific and reference actual file names. Keep each point to 1-2 sentences.""
         report_path = reports_dir / f"{today}.json"
         report_path.write_text(json.dumps(report_data, indent=2))
 
-        await self._progress("weekly_client_status", 90, "Storing in AIIA memory")
+        await self._progress("weekly_default_status", 90, "Storing in AIIA memory")
 
         # 8. Store summary in AIIA memory
         brief = report_text[:500] if len(report_text) > 500 else report_text
@@ -1932,29 +1935,29 @@ Be specific and reference actual file names. Keep each point to 1-2 sentences.""
             "POST",
             "/v1/aiia/remember",
             {
-                "fact": f"Client Weekly Status {today}: {len(client_commits)} commits ({len(features)} features, {len(fixes)} fixes), +{additions}/-{deletions} lines, {len(files_changed)} files. {brief}",
+                "fact": f"DefaultApp Weekly Status {today}: {len(default_commits)} commits ({len(features)} features, {len(fixes)} fixes), +{additions}/-{deletions} lines, {len(files_changed)} files. {brief}",
                 "category": "project",
-                "source": "task:weekly_client_status",
+                "source": "task:weekly_default_status",
             },
         )
 
         await self._emit_insight(
             "shipped",
             "info",
-            f"Client weekly: {len(features)} features, {len(fixes)} fixes, +{additions}/-{deletions} lines",
-            source_task="weekly_client_status",
+            f"DefaultApp weekly: {len(features)} features, {len(fixes)} fixes, +{additions}/-{deletions} lines",
+            source_task="weekly_default_status",
         )
 
         # Track in _extra for delta comparison
-        self._extra["weekly_client_last"] = {
+        self._extra["weekly_default_last"] = {
             "date": today,
-            "commits": len(client_commits),
+            "commits": len(default_commits),
             "features": len(features),
             "fixes": len(fixes),
         }
 
-        await self._progress("weekly_client_status", 100, "Complete")
-        summary = f"{len(client_commits)} commits ({len(features)} feat, {len(fixes)} fix), +{additions}/-{deletions} lines"
+        await self._progress("weekly_default_status", 100, "Complete")
+        summary = f"{len(default_commits)} commits ({len(features)} feat, {len(fixes)} fix), +{additions}/-{deletions} lines"
         return (summary, report_text)
 
     async def _task_cross_tenant_analytics(self) -> str:
@@ -2095,7 +2098,7 @@ Be specific and reference actual file names. Keep each point to 1-2 sentences.""
             alerts_json = await self._run_command(
                 "gh",
                 "api",
-                "repos/OWNER/AIIA/dependabot/alerts",
+                "repos/ericlovo/AIIA/dependabot/alerts",
                 "--jq",
                 '[.[] | select(.state=="open") | {severity: .security_advisory.severity, package: .dependency.package.name, summary: .security_advisory.summary}]',
                 timeout=20.0,
@@ -2121,7 +2124,7 @@ Be specific and reference actual file names. Keep each point to 1-2 sentences.""
             runs_json = await self._run_command(
                 "gh",
                 "api",
-                "repos/OWNER/AIIA/actions/runs?per_page=5",
+                "repos/ericlovo/AIIA/actions/runs?per_page=5",
                 "--jq",
                 "[.workflow_runs[:5] | .[] | {status: .status, conclusion: .conclusion, name: .name, created_at: .created_at}]",
                 timeout=20.0,
@@ -2270,7 +2273,7 @@ Be specific and reference actual file names. Keep each point to 1-2 sentences.""
             runs_json = await self._run_command(
                 "gh",
                 "api",
-                "repos/OWNER/AIIA/actions/runs?per_page=3",
+                "repos/ericlovo/AIIA/actions/runs?per_page=3",
                 "--jq",
                 "[.workflow_runs[:3] | .[] | {id: .id, status: .status, conclusion: .conclusion, name: .name, created_at: .created_at, html_url: .html_url, head_branch: .head_branch}]",
                 timeout=20.0,

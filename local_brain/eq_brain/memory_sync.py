@@ -58,6 +58,17 @@ DEFAULT_PROJECT_EXCLUDED_SOURCES = {
     "code_health",
     "test_run",
     "security_scan",
+    "interval_report",
+}
+
+# Sources that produce low-quality auto-generated content across all tiers.
+# These are skipped before quality scoring to save Ollama cycles.
+AUTO_GENERATED_LOW_QUALITY_SOURCES = {
+    "post_commit",
+    "post_commit_review",
+    "daily_report",
+    "task:learning_loop",
+    "task:memory_digest",
 }
 
 
@@ -186,7 +197,7 @@ class TokenLedger:
 # Memory Quality Scorer
 # ═══════════════════════════════════════════════════════════════════
 
-SCORER_PROMPT = """You are a memory quality evaluator for an AI platform.
+SCORER_PROMPT = """You are a memory quality evaluator for an AI platform called AIIA.
 
 Score this memory on a scale of 1-5 for long-term persistence value:
 
@@ -365,7 +376,7 @@ class SyncReport:
             "PASS" if not self.errors and not self.circuit_breaker_tripped else "FAIL"
         )
         lines = [
-            f"Memory Sync — {self.mode.title()} ({self.timestamp})",
+            f"AIIA Memory Sync — {self.mode.title()} ({self.timestamp})",
             "=" * 50,
             f"Status: {status}",
             "",
@@ -508,6 +519,12 @@ class MeteredSync:
                 # Skip already-synced memories
                 if self._is_already_synced(fact, category):
                     report.tier1_already_synced += 1
+                    continue
+
+                # Skip known low-quality auto-generated sources
+                source = item.get("source", "")
+                if source in AUTO_GENERATED_LOW_QUALITY_SOURCES:
+                    report.tier1_skipped += 1
                     continue
 
                 # Budget gate

@@ -3,7 +3,7 @@ Tests for the streaming chat fix — verifies that the CC dashboard chat
 routes through /api/chat/stream (SSE) and that the Brain API's async
 ChromaDB and reduced context window changes work correctly.
 
-Run: pytest local_brain/tests/test_streaming_chat.py -v
+Run: pytest local_brain/local_brain/tests/test_streaming_chat.py -v
 Requires: Brain API on :8100, Command Center on :8200, Ollama running
 """
 
@@ -183,9 +183,9 @@ class TestCommandCenterChat:
         types = [e["type"] for e in events]
         assert "meta" in types, "Should have meta event"
         assert "chunk" in types, "Should have chunk events"
-        assert "done" in types or any(
-            e.get("type") == "chunk" for e in events
-        ), "Should have content"
+        assert "done" in types or any(e.get("type") == "chunk" for e in events), (
+            "Should have content"
+        )
 
     def test_stream_saves_chat_history(self):
         """After a stream chat, the message should appear in history."""
@@ -215,4 +215,6 @@ class TestCommandCenterChat:
         assert r.status_code == 200
         html = r.text
         assert "/api/chat/stream" in html, "Dashboard JS should use streaming endpoint"
-        assert "stream-content" in html, "Dashboard should have stream content container"
+        assert "stream-content" in html, (
+            "Dashboard should have stream content container"
+        )

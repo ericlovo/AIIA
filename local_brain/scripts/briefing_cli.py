@@ -82,7 +82,7 @@ def main():
         print("No briefing available. Run with --fresh to generate one.")
         return 0
 
-    print(f"\n  AIIA Morning Briefing")
+    print("\n  AIIA Morning Briefing")
     print(f"  Generated: {last_run} | Status: {status} | {duration:.0f}ms")
     print(f"  {'=' * 52}\n")
     print(f"  {briefing.replace(chr(10), chr(10) + '  ')}")

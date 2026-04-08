@@ -1,8 +1,8 @@
 """
 AIIA Command Center — Platform Intelligence Dashboard
 
-Real-time visualization of the AIIA platform.
-Shows products, agent workflows, AIIA intelligence, and system connections.
+Real-time visualization of the entire AIIA multi-tenant AI platform.
+Shows microproducts, agent workflows, AIIA intelligence, and system connections.
 Includes autonomous Production Monitor that checks all services every 30s.
 
 Start:
@@ -29,49 +29,34 @@ from fastapi.responses import HTMLResponse, JSONResponse, Response, StreamingRes
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-logger = logging.getLogger("aiia.command_center")
+logger = logging.getLogger("aiia.console")
 
 # ─────────────────────────────────────────────────────────────
 # Platform Registry — defines the full system topology
-# Configure via AIIA_PRODUCTS_CONFIG env var pointing to a JSON file,
-# or edit the PRODUCTS list below to match your deployment.
 # ─────────────────────────────────────────────────────────────
 
-def _load_products() -> list:
-    """Load product registry from env-configured JSON file, or use defaults.
-
-    Set AIIA_PRODUCTS_CONFIG to a JSON file path to override.
-    Each product entry should have: id, name, subtitle, client, status, color,
-    agents (list), components (list), knowledge_files (int), knowledge_words (str),
-    and optionally frontend/backend URLs.
-    """
-    config_path = os.getenv("AIIA_PRODUCTS_CONFIG")
-    if config_path and Path(config_path).exists():
-        import json
-        with open(config_path) as f:
-            return json.load(f)
-    return _DEFAULT_PRODUCTS
-
-
+# Default products — customize this list for your deployment.
+# Each product represents a tenant in the multi-tenant architecture.
+# Override via AIIA_PRODUCTS_CONFIG env var (path to JSON file).
 _DEFAULT_PRODUCTS = [
     {
         "id": "my_app",
         "name": "My App",
-        "subtitle": "AI-powered application",
-        "client": "Example Client",
+        "subtitle": "Your AI Application",
+        "client": "Default",
         "status": "production",
         "color": "#3b82f6",
-        "agents": ["conductor", "eos", "rlm", "finance", "advisor"],
-        "components": ["Document Parsing", "Report Generation"],
-        "knowledge_files": 5,
-        "knowledge_words": "50K",
+        "agents": [],
+        "components": [],
+        "knowledge_files": 0,
+        "knowledge_words": "0",
         "frontend": os.getenv("APP_FRONTEND_URL", "http://localhost:3000"),
         "backend": os.getenv("APP_BACKEND_URL", "http://localhost:9000"),
     },
     {
         "id": "demo",
         "name": "Demo",
-        "subtitle": "Development & Testing",
+        "subtitle": "Development & Testing Tenant",
         "client": "Internal",
         "status": "active",
         "color": "#475569",
@@ -80,9 +65,16 @@ _DEFAULT_PRODUCTS = [
         "knowledge_files": 0,
         "knowledge_words": "0",
     },
-    # Add your products here. Each entry represents a tenant/application
-    # that AIIA monitors. See docs/PRODUCTS.md for the full schema.
 ]
+
+def _load_products():
+    """Load product config from env var JSON file, or use defaults."""
+    config_path = os.getenv("AIIA_PRODUCTS_CONFIG")
+    if config_path and os.path.exists(config_path):
+        import json
+        with open(config_path) as f:
+            return json.load(f)
+    return _DEFAULT_PRODUCTS
 
 PRODUCTS = _load_products()
 
@@ -201,7 +193,7 @@ INFRASTRUCTURE = [
         "name": "AIIA",
         "type": "intelligence",
         "color": "#a855f7",
-        "detail": "llama3.1:8b on Mac Mini M4",
+        "detail": "llama3.1:8b-instruct-q8_0 on Mac Mini M4",
     },
     {
         "id": "chromadb",
@@ -262,17 +254,25 @@ MONITORED_SERVICES = {
         "timeout": 5.0,
         "category": "intelligence",
     },
-    "backend": {
-        "name": "Primary Backend",
-        "url": os.getenv("PRIMARY_BACKEND_URL", "http://localhost:9000") + "/health",
-        "metrics_url": os.getenv("PRIMARY_BACKEND_URL", "http://localhost:9000")
+    "default": {
+        "name": "App Analyst",
+        "url": os.getenv(
+            "APP_BACKEND_URL", "https://localhost:9000"
+        )
+        + "/health",
+        "metrics_url": os.getenv(
+            "APP_BACKEND_URL", "https://localhost:9000"
+        )
         + "/metrics",
         "timeout": 10.0,
         "category": "backend",
     },
     "platform": {
-        "name": "Platform API",
-        "url": os.getenv("PLATFORM_API_URL", "http://localhost:8000") + "/health",
+        "name": "AIIA Platform",
+        "url": os.getenv(
+            "AIIA_PLATFORM_URL", "http://localhost:9000"
+        )
+        + "/health",
         "timeout": 10.0,
         "category": "backend",
     },
@@ -627,16 +627,50 @@ async def production_monitor_loop():
 
 app = FastAPI(title="AIIA Command Center", version="2.1.0")
 app.add_middleware(
-    CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"]
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost:3000",
+        "http://localhost:5173",
+        "http://localhost:8200",
+        "http://127.0.0.1:8200",
+    ],
+    allow_methods=["GET", "POST"],
+    allow_headers=["Content-Type", "Authorization"],
 )
 
 STATIC_DIR = Path(__file__).parent / "static"
+
+# React dashboard (built assets from products/command-center/frontend/dist)
+REACT_DIST = (
+    Path(__file__).parents[3] / "products" / "command-center" / "frontend" / "dist"
+)
+if REACT_DIST.exists():
+    app.mount(
+        "/assets",
+        StaticFiles(directory=str(REACT_DIST / "assets")),
+        name="react-assets",
+    )
+
 if STATIC_DIR.exists():
     app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
+
+from local_brain.command_center.session_registry import (
+    SessionRegistry,
+)
+from local_brain.command_center.workstream_registry import (
+    WorkstreamRegistry,
+)
 
 state = PlatformState()
 manager = ConnectionManager()
 monitor = MonitorState()
+session_registry = SessionRegistry(
+    data_dir=os.path.expanduser("~/.aiia/eq_data"),
+    broadcast_fn=lambda et, d: manager.broadcast(et, d),
+)
+workstream_registry = WorkstreamRegistry(
+    data_dir=os.path.expanduser("~/.aiia/eq_data"),
+)
 
 
 # ─────────────────────────────────────────────────────────────
@@ -935,7 +969,10 @@ class ChatMessage(BaseModel):
 
 @app.get("/", response_class=HTMLResponse)
 async def serve_console():
-    """Serve the Product Console (new) or fallback to old dashboard."""
+    """Serve the React Command Center dashboard, or fallback to legacy."""
+    react_index = REACT_DIST / "index.html" if REACT_DIST.exists() else None
+    if react_index and react_index.exists():
+        return HTMLResponse(content=react_index.read_text())
     html_path = STATIC_DIR / "console.html"
     if html_path.exists():
         return HTMLResponse(content=html_path.read_text())
@@ -1006,6 +1043,8 @@ async def websocket_endpoint(ws: WebSocket):
                             status="pending", limit=20
                         ),
                         "action_summary": action_queue.summary(),
+                        "sessions": session_registry.summary(),
+                        "workstreams": workstream_registry.summary(),
                     },
                 }
             )
@@ -1119,9 +1158,7 @@ async def create_action(body: dict = Body(...)):
     if not action_type or not severity or not title:
         return JSONResponse(
             status_code=400,
-            content={
-                "error": "action_type, severity, and title are required"
-            },
+            content={"error": "action_type, severity, and title are required"},
         )
 
     if action_type not in action_queue.VALID_TYPES:
@@ -1129,8 +1166,7 @@ async def create_action(body: dict = Body(...)):
             status_code=400,
             content={
                 "error": (
-                    f"Invalid action_type. Valid:"
-                    f" {sorted(action_queue.VALID_TYPES)}"
+                    f"Invalid action_type. Valid: {sorted(action_queue.VALID_TYPES)}"
                 )
             },
         )
@@ -1140,8 +1176,7 @@ async def create_action(body: dict = Body(...)):
             status_code=400,
             content={
                 "error": (
-                    f"Invalid severity. Valid:"
-                    f" {sorted(action_queue.VALID_SEVERITIES)}"
+                    f"Invalid severity. Valid: {sorted(action_queue.VALID_SEVERITIES)}"
                 )
             },
         )
@@ -1171,11 +1206,38 @@ async def get_action_summary():
 
 @app.post("/api/actions/{action_id}/approve")
 async def approve_action(action_id: str):
-    """Approve an action for execution."""
+    """Approve an action for execution.
+
+    AUTO-tier actions (lint_fix, verify_*) execute immediately on approval.
+    SUPERVISED/GATED actions stay in 'approved' status awaiting explicit trigger.
+    """
     action = action_queue.approve(action_id)
     if not action:
         return {"error": f"Action {action_id} not found"}
     await manager.broadcast("action_updated", action)
+
+    # Auto-execute for AUTO tier actions
+    if _execution_engine and action.get("status") == "approved":
+        from local_brain.execution.safety import (
+            SafetyGate,
+            SafetyTier,
+        )
+
+        gate = SafetyGate()
+        tier = gate.get_tier(action)
+        if tier == SafetyTier.AUTO:
+            logger.info(
+                f"Auto-executing AUTO-tier action: {action_id} ({action.get('type')})"
+            )
+            try:
+                result = await _execution_engine.execute_now(action_id)
+                action = action_queue.get_action(action_id)
+                await manager.broadcast("action_updated", action)
+                return {**action, "auto_executed": True, "execution_result": result}
+            except Exception as e:
+                logger.warning(f"Auto-execute failed for {action_id}: {e}")
+                # Action stays approved, user can retry manually
+
     return action
 
 
@@ -1199,6 +1261,243 @@ async def complete_action(action_id: str, body: Dict[str, Any] = {}):
         return {"error": f"Action {action_id} not found"}
     await manager.broadcast("action_updated", action)
     return action
+
+
+# ─── Session Registry API ────────────────────────────────────
+
+
+class SessionRegisterRequest(BaseModel):
+    description: str
+    working_directory: str = ""
+    tags: list[str] = Field(default_factory=list)
+    agent_name: str = ""
+    machine_id: str = ""
+
+
+class SessionUpdateRequest(BaseModel):
+    description: str | None = None
+    status: str | None = None
+    milestone: str | None = None
+    commits_delta: int = 0
+    stories_delta: int = 0
+    decisions_delta: int = 0
+    files_changed: list[str] = Field(default_factory=list)
+
+
+@app.post("/api/sessions/register")
+async def register_session(body: SessionRegisterRequest):
+    """Register a new Claude Code session. Returns session with ID."""
+    session = session_registry.register(
+        description=body.description,
+        working_directory=body.working_directory,
+        tags=body.tags,
+        agent_name=body.agent_name,
+        machine_id=body.machine_id,
+    )
+    await manager.broadcast(
+        "session_update",
+        {
+            "event": "registered",
+            "session": session.to_dict(),
+        },
+    )
+    return session.to_dict()
+
+
+@app.post("/api/sessions/{session_id}/update")
+async def update_session(session_id: str, body: SessionUpdateRequest):
+    """Update an active session with progress info."""
+    session = session_registry.update(
+        session_id=session_id,
+        description=body.description,
+        status=body.status,
+        milestone=body.milestone,
+        commits_delta=body.commits_delta,
+        stories_delta=body.stories_delta,
+        decisions_delta=body.decisions_delta,
+        files_changed=body.files_changed or None,
+    )
+    if not session:
+        return {"error": f"Session {session_id} not found"}
+    await manager.broadcast(
+        "session_update",
+        {
+            "event": "updated",
+            "session": session.to_dict(),
+        },
+    )
+    return session.to_dict()
+
+
+@app.post("/api/sessions/{session_id}/close")
+async def close_session(session_id: str, body: Dict[str, Any] = {}):
+    """Close a session when Claude Code stops."""
+    summary = body.get("summary", "")
+    session = session_registry.close(session_id, summary=summary)
+    if not session:
+        return {"error": f"Session {session_id} not found"}
+    await manager.broadcast(
+        "session_update",
+        {
+            "event": "closed",
+            "session": session.to_dict(),
+        },
+    )
+    return session.to_dict()
+
+
+@app.post("/api/sessions/{session_id}/heartbeat")
+async def heartbeat_session(session_id: str):
+    """Touch session timestamp to keep it active."""
+    ok = session_registry.heartbeat(session_id)
+    if not ok:
+        return {"error": f"Session {session_id} not found"}
+    return {"status": "ok"}
+
+
+class AgentUpdateRequest(BaseModel):
+    agent_name: str
+    task_summary: str = ""
+    chain_id: str = ""
+    chain_position: int = 0
+
+
+@app.post("/api/sessions/{session_id}/agent")
+async def set_session_agent(session_id: str, body: AgentUpdateRequest):
+    """Update which agent is active in a session. Records agent transitions."""
+    session = session_registry.set_agent(
+        session_id=session_id,
+        agent_name=body.agent_name,
+        task_summary=body.task_summary,
+        chain_id=body.chain_id,
+        chain_position=body.chain_position,
+    )
+    if not session:
+        return {"error": f"Session {session_id} not found"}
+    await manager.broadcast(
+        "agent_update",
+        {
+            "event": "agent_changed",
+            "session_id": session_id,
+            "agent_name": session.agent_name,
+            "agent_tier": session.agent_tier,
+            "agent_color": session.agent_color,
+            "machine_id": session.machine_id,
+            "current_task": session.current_task,
+            "chain_id": session.chain_id,
+            "chain_position": session.chain_position,
+        },
+    )
+    return session.to_dict()
+
+
+@app.get("/api/sessions")
+async def list_sessions(active_only: bool = False, limit: int = 50):
+    """List sessions."""
+    if active_only:
+        return session_registry.list_active()
+    return session_registry.list_all(limit=limit)
+
+
+@app.get("/api/sessions/summary")
+async def sessions_summary():
+    """Return session summary stats for the dashboard."""
+    return session_registry.summary()
+
+
+# ─── Workstream API ──────────────────────────────────────────
+
+
+class WorkstreamCreateRequest(BaseModel):
+    name: str
+    type: str = "product"
+    description: str = ""
+    tags: list[str] = Field(default_factory=list)
+    story_ids: list[str] = Field(default_factory=list)
+    color: str = ""
+
+
+@app.get("/api/workstreams")
+async def list_workstreams(active_only: bool = True):
+    if active_only:
+        return workstream_registry.list_active()
+    return workstream_registry.list_all()
+
+
+@app.get("/api/workstreams/summary")
+async def workstreams_summary():
+    return workstream_registry.summary()
+
+
+@app.post("/api/workstreams")
+async def create_workstream(body: WorkstreamCreateRequest):
+    ws = workstream_registry.create(
+        name=body.name,
+        type=body.type,
+        description=body.description,
+        tags=body.tags,
+        story_ids=body.story_ids,
+        color=body.color,
+    )
+    await manager.broadcast(
+        "workstream_update", {"event": "created", "workstream": ws.to_dict()}
+    )
+    return ws.to_dict()
+
+
+@app.put("/api/workstreams/{workstream_id}")
+async def update_workstream(workstream_id: str, body: Dict[str, Any]):
+    ws = workstream_registry.update(workstream_id, **body)
+    if not ws:
+        return {"error": f"Workstream {workstream_id} not found"}
+    await manager.broadcast(
+        "workstream_update", {"event": "updated", "workstream": ws.to_dict()}
+    )
+    return ws.to_dict()
+
+
+@app.delete("/api/workstreams/{workstream_id}")
+async def delete_workstream(workstream_id: str):
+    deleted = workstream_registry.delete(workstream_id)
+    if deleted:
+        await manager.broadcast(
+            "workstream_update", {"event": "deleted", "id": workstream_id}
+        )
+    return {"deleted": deleted}
+
+
+@app.post("/api/workstreams/{workstream_id}/attach")
+async def attach_session_to_workstream(workstream_id: str, body: Dict[str, Any] = {}):
+    session_id = body.get("session_id", "")
+    description = body.get("description", "")
+    ok = workstream_registry.attach_session(workstream_id, session_id, description)
+    if not ok:
+        return {"error": f"Workstream {workstream_id} not found"}
+    ws = workstream_registry.get(workstream_id)
+    await manager.broadcast(
+        "workstream_update", {"event": "session_attached", "workstream": ws.to_dict()}
+    )
+    return ws.to_dict()
+
+
+@app.post("/api/workstreams/{workstream_id}/stories")
+async def add_stories_to_workstream(workstream_id: str, body: Dict[str, Any]):
+    story_ids = body.get("story_ids", [])
+    ok = workstream_registry.add_stories(workstream_id, story_ids)
+    if not ok:
+        return {"error": f"Workstream {workstream_id} not found"}
+    ws = workstream_registry.get(workstream_id)
+    return ws.to_dict()
+
+
+@app.get("/api/workstreams/suggest")
+async def suggest_workstream(
+    directory: str = "", branch: str = "", description: str = ""
+):
+    ws = workstream_registry.suggest_workstream(directory, branch, description)
+    if ws:
+        return {"suggested": ws.to_dict()}
+    return {"suggested": None}
 
 
 # ─── Briefing API ────────────────────────────────────────────
@@ -1374,6 +1673,7 @@ async def get_tokens_recent(days: int = 7):
 
 AIIA_BASE_URL = "http://localhost:8100"
 
+
 # Shared httpx client for AIIA calls — connection pooling, avoids per-request overhead
 async def get_aiia_client() -> httpx.AsyncClient:
     """Create a fresh httpx client per request — persistent clients go stale after long AIIA calls."""
@@ -1432,15 +1732,21 @@ async def chat_with_aiia(msg: ChatMessage):
         context_lines.append(f"{role}: {entry['content']}")
     context = "\n".join(context_lines)
     if msg.mode == "voice":
-        context = VOICE_MODE_INSTRUCTION + (f"\n## Recent Conversation\n{context}" if context else "")
+        context = VOICE_MODE_INSTRUCTION + (
+            f"\n## Recent Conversation\n{context}" if context else ""
+        )
 
-    chat_history.append({"role": "user", "content": msg.message, "ts": now, "mode": msg.mode})
+    chat_history.append(
+        {"role": "user", "content": msg.message, "ts": now, "mode": msg.mode}
+    )
 
     reply = "No response"
     model = "unknown"
     sources = 0
     try:
-        async with httpx.AsyncClient(timeout=httpx.Timeout(90.0, connect=10.0)) as client:
+        async with httpx.AsyncClient(
+            timeout=httpx.Timeout(90.0, connect=10.0)
+        ) as client:
             resp = await client.post(
                 AIIA_ASK_URL,
                 json={"question": msg.message, "context": context, "n_results": 5},
@@ -1458,7 +1764,9 @@ async def chat_with_aiia(msg: ChatMessage):
         reply = f"Could not reach AIIA: {str(e)[:120]}"
         model = "error"
 
-    chat_history.append({"role": "aiia", "content": reply, "ts": datetime.now(timezone.utc).isoformat()})
+    chat_history.append(
+        {"role": "aiia", "content": reply, "ts": datetime.now(timezone.utc).isoformat()}
+    )
     _save_chat_history()
     return {"reply": reply, "model": model, "sources": sources}
 
@@ -1522,7 +1830,7 @@ async def chat_with_aiia_stream(msg: ChatMessage):
                         "context": context,
                         "n_results": n_results,
                         "max_tokens": max_tokens,
-                        "num_ctx": 8192,
+                        "num_ctx": 32768,
                     },
                 ) as resp:
                     async for line in resp.aiter_lines():
@@ -1760,6 +2068,127 @@ _pipeline = PipelineStore()
 _story_prioritizer: StoryPrioritizer | None = None
 
 
+@app.get("/api/work/context-v1")
+async def work_context_v1():
+    """DEPRECATED: Use /api/work/context (v2) instead.
+
+    Original work context endpoint. Kept for backward compat.
+    """
+    import subprocess
+    from datetime import date as date_type
+
+    today_str = date_type.today().isoformat()
+
+    # Today's report (git analysis)
+    existing = load_report(today_str)
+    if not existing:
+        existing = generate_report(date=today_str, repo_dir=REPO_PATH)
+        save_report(existing)
+
+    # Roadmap stories
+    stories = _roadmap.list()
+
+    # Pipeline deals
+    deals = _pipeline.list()
+
+    # Git uncommitted files
+    uncommitted = []
+    try:
+        result = subprocess.run(
+            ["git", "status", "--porcelain", "--no-renames"],
+            capture_output=True,
+            text=True,
+            cwd=REPO_PATH,
+            timeout=10,
+        )
+        for line in result.stdout.splitlines()[:25]:
+            if len(line) < 4:
+                continue
+            idx = line[0]
+            wt = line[1]
+            fname = line[3:].strip()
+            if idx != " " and idx != "?":
+                uncommitted.append({"file": fname, "status": "staged"})
+            elif wt != " " or idx == "?":
+                uncommitted.append({"file": fname, "status": "modified"})
+    except Exception:
+        pass
+
+    # Recent commits (last 20)
+    recent_commits = []
+    try:
+        result = subprocess.run(
+            [
+                "git",
+                "log",
+                "-20",
+                "--format=%H|%s|%an",
+                "--no-merges",
+            ],
+            capture_output=True,
+            text=True,
+            cwd=REPO_PATH,
+            timeout=10,
+        )
+        for line in result.stdout.splitlines():
+            parts = line.split("|", 2)
+            if len(parts) < 3:
+                continue
+            sha, subject, author = parts
+            # Parse conventional commit type and product
+            ctype = "other"
+            product = ""
+            if "(" in subject and ")" in subject:
+                prefix = subject.split(")")[0]
+                if "(" in prefix:
+                    ctype = prefix.split("(")[0].strip()
+                    product = prefix.split("(")[1].strip()
+            elif ":" in subject:
+                ctype = subject.split(":")[0].strip()
+            recent_commits.append(
+                {
+                    "hash": sha[:8],
+                    "subject": subject,
+                    "author": author,
+                    "type": ctype,
+                    "product": product,
+                }
+            )
+    except Exception:
+        pass
+
+    # Weekly heatmap (commits per day, last 7 days)
+    weekly_heatmap = {}
+    try:
+        result = subprocess.run(
+            ["git", "log", "--since=7 days ago", "--format=%ai", "--no-merges"],
+            capture_output=True,
+            text=True,
+            cwd=REPO_PATH,
+            timeout=10,
+        )
+        for line in result.stdout.splitlines():
+            day = line.strip()[:10]
+            weekly_heatmap[day] = weekly_heatmap.get(day, 0) + 1
+    except Exception:
+        pass
+
+    return {
+        "today": {
+            "date": today_str,
+            "summary": existing.get("summary", {}),
+            "products": existing.get("products", {}),
+            "categories": existing.get("categories", {}),
+        },
+        "interval": {},
+        "pipeline": deals,
+        "uncommitted": uncommitted,
+        "weekly_heatmap": weekly_heatmap,
+        "roadmap": stories,
+        "recent_commits": recent_commits,
+    }
+
+
 @app.get("/api/reports/today")
 async def report_today():
     from datetime import date as date_type
@@ -1811,6 +2240,18 @@ async def roadmap_list(product: Optional[str] = None, status: Optional[str] = No
     return {"stories": stories, "count": len(stories)}
 
 
+async def _index_story_in_aiia(story: Dict[str, Any]) -> None:
+    """Fire-and-forget: index a story in AIIA's ChromaDB."""
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            await client.post(
+                "http://localhost:8100/v1/aiia/index-story",
+                json={"story": story},
+            )
+    except Exception as e:
+        logger.debug(f"Story index fire-and-forget failed: {e}")
+
+
 @app.post("/api/roadmap")
 async def roadmap_create(body: Dict[str, Any]):
     try:
@@ -1826,6 +2267,8 @@ async def roadmap_create(body: Dict[str, Any]):
             source_type=body.get("source_type", "manual"),
             dedup=body.get("dedup", True),
         )
+        # Index in ChromaDB for semantic search
+        asyncio.create_task(_index_story_in_aiia(story))
         return {"story": story}
     except (KeyError, ValueError) as e:
         return {"error": str(e)}
@@ -1837,6 +2280,8 @@ async def roadmap_update(story_id: str, body: Dict[str, Any]):
         story = _roadmap.update(story_id, **body)
         if story is None:
             return {"error": "Story not found"}
+        # Re-index in ChromaDB
+        asyncio.create_task(_index_story_in_aiia(story))
         return {"story": story}
     except ValueError as e:
         return {"error": str(e)}
@@ -2065,7 +2510,9 @@ async def checkin():
         async with httpx.AsyncClient(timeout=10.0) as client:
             resp = await client.get(f"{AIIA_BASE_URL}/v1/aiia/memory?category=wip")
             if resp.status_code == 200:
-                result["wip"] = resp.json().get("memories", resp.json() if isinstance(resp.json(), list) else [])
+                result["wip"] = resp.json().get(
+                    "memories", resp.json() if isinstance(resp.json(), list) else []
+                )
             else:
                 result["wip"] = {"error": f"AIIA returned {resp.status_code}"}
     except Exception as e:
@@ -2078,9 +2525,13 @@ async def checkin():
             if resp.status_code == 200:
                 data = resp.json()
                 memories = data.get("memories", data if isinstance(data, list) else [])
-                result["recent_sessions"] = memories[-3:] if len(memories) > 3 else memories
+                result["recent_sessions"] = (
+                    memories[-3:] if len(memories) > 3 else memories
+                )
             else:
-                result["recent_sessions"] = {"error": f"AIIA returned {resp.status_code}"}
+                result["recent_sessions"] = {
+                    "error": f"AIIA returned {resp.status_code}"
+                }
     except Exception as e:
         result["recent_sessions"] = {"error": str(e)}
 
@@ -2100,7 +2551,12 @@ async def checkin():
             "commits": commits_flat,
         }
     except Exception as e:
-        result["recent_commits"] = {"total": 0, "by_product": {}, "commits": [], "error": str(e)}
+        result["recent_commits"] = {
+            "total": 0,
+            "by_product": {},
+            "commits": [],
+            "error": str(e),
+        }
 
     # 4. Nightly job freshness — check file modification timestamps
     nightly: Dict[str, Any] = {}
@@ -2116,7 +2572,12 @@ async def checkin():
             status = "ok" if age_hours <= stale_threshold_hours else "stale"
             return {"status": status, "age_hours": age_hours, "path": str(path)}
         except Exception as e:
-            return {"status": "missing", "age_hours": None, "path": str(path), "error": str(e)}
+            return {
+                "status": "missing",
+                "age_hours": None,
+                "path": str(path),
+                "error": str(e),
+            }
 
     home = Path.home()
     nightly["security_scan"] = _check_job_file(
@@ -2130,15 +2591,31 @@ async def checkin():
     reports_dir = home / ".aiia" / "eq_data" / "reports"
     try:
         if reports_dir.exists():
-            report_files = sorted(reports_dir.glob("*.json"), key=lambda p: p.stat().st_mtime, reverse=True)
+            report_files = sorted(
+                reports_dir.glob("*.json"),
+                key=lambda p: p.stat().st_mtime,
+                reverse=True,
+            )
             if report_files:
                 nightly["daily_report"] = _check_job_file(report_files[0])
             else:
-                nightly["daily_report"] = {"status": "missing", "age_hours": None, "path": str(reports_dir)}
+                nightly["daily_report"] = {
+                    "status": "missing",
+                    "age_hours": None,
+                    "path": str(reports_dir),
+                }
         else:
-            nightly["daily_report"] = {"status": "missing", "age_hours": None, "path": str(reports_dir)}
+            nightly["daily_report"] = {
+                "status": "missing",
+                "age_hours": None,
+                "path": str(reports_dir),
+            }
     except Exception as e:
-        nightly["daily_report"] = {"status": "missing", "age_hours": None, "error": str(e)}
+        nightly["daily_report"] = {
+            "status": "missing",
+            "age_hours": None,
+            "error": str(e),
+        }
 
     result["nightly_jobs"] = nightly
 
@@ -2157,16 +2634,27 @@ async def checkin():
     # 6. Active/blocked stories from roadmap
     try:
         all_stories = _roadmap.list()
-        active = [s for s in all_stories if s.get("status") in ("active", "in_progress")]
+        active = [
+            s for s in all_stories if s.get("status") in ("active", "in_progress")
+        ]
         blocked = [s for s in all_stories if s.get("status") == "blocked"]
-        backlog = [s for s in all_stories if s.get("status") not in ("active", "in_progress", "blocked", "done")]
+        backlog = [
+            s
+            for s in all_stories
+            if s.get("status") not in ("active", "in_progress", "blocked", "done")
+        ]
         result["stories"] = {
             "active": active,
             "blocked": blocked,
             "backlog_count": len(backlog),
         }
     except Exception as e:
-        result["stories"] = {"active": [], "blocked": [], "backlog_count": 0, "error": str(e)}
+        result["stories"] = {
+            "active": [],
+            "blocked": [],
+            "backlog_count": 0,
+            "error": str(e),
+        }
 
     # 7. Pipeline snapshot — deals grouped by stage
     try:
@@ -2179,6 +2667,131 @@ async def checkin():
         result["pipeline"] = {"deals_by_stage": {}, "total_value": 0, "error": str(e)}
 
     return result
+
+
+# ─── Attention Aggregator (Dashboard Inbox) ──────────────────
+
+
+@app.get("/api/attention")
+async def get_attention_items():
+    """Aggregate everything that needs Eric's attention into one response.
+
+    This is the dashboard's inbox view. One call, all actionable items.
+    """
+    items = {
+        "pending_actions": [],
+        "failed_executions": [],
+        "unscored_stories": [],
+        "stale_sessions": [],
+        "failed_tasks": [],
+        "total_attention": 0,
+    }
+
+    # 1. Pending actions
+    try:
+        pending = action_queue.list_actions(status="pending", limit=20)
+        items["pending_actions"] = [
+            {
+                "id": a["id"],
+                "type": a["type"],
+                "severity": a["severity"],
+                "title": a["title"],
+                "description": (a.get("description") or "")[:200],
+                "files_affected": len(a.get("files_affected", [])),
+                "created_at": a.get("created_at"),
+            }
+            for a in pending
+        ]
+    except Exception as e:
+        logger.warning(f"Attention: actions check failed: {e}")
+
+    # 2. Failed executions
+    try:
+        if _execution_engine:
+            status = await _execution_engine.get_status()
+            recent = status.get("recent", [])
+            items["failed_executions"] = [
+                {
+                    "id": r.get("id"),
+                    "action_id": r.get("action_id"),
+                    "action_type": r.get("action_type"),
+                    "error": r.get("error", "")[:200],
+                    "completed_at": r.get("completed_at"),
+                }
+                for r in recent
+                if r.get("status") == "failed"
+            ][:5]
+    except Exception as e:
+        logger.warning(f"Attention: execution check failed: {e}")
+
+    # 3. Unscored backlog stories (no priority or P3+)
+    try:
+        stories = _roadmap.list_stories() if _roadmap else []
+        items["unscored_stories"] = [
+            {
+                "id": s.get("id"),
+                "title": s.get("title"),
+                "product": s.get("product"),
+                "status": s.get("status"),
+            }
+            for s in stories
+            if s.get("status") == "backlog"
+            and (not s.get("priority") or s.get("priority", 99) > 2)
+        ][:10]
+    except Exception as e:
+        logger.warning(f"Attention: stories check failed: {e}")
+
+    # 4. Stale sessions (active but idle > 2 hours)
+    try:
+        if session_registry:
+            all_sessions = session_registry.list_sessions(active_only=True)
+            now = datetime.now(timezone.utc)
+            for sess in all_sessions:
+                updated = sess.get("updated_at") or sess.get("started_at", "")
+                if updated:
+                    try:
+                        ts = datetime.fromisoformat(updated)
+                        if ts.tzinfo is None:
+                            ts = ts.replace(tzinfo=timezone.utc)
+                        hours_idle = (now - ts).total_seconds() / 3600
+                        if hours_idle > 2:
+                            items["stale_sessions"].append(
+                                {
+                                    "id": sess.get("id"),
+                                    "description": sess.get("description"),
+                                    "hours_idle": round(hours_idle, 1),
+                                }
+                            )
+                    except (ValueError, TypeError):
+                        pass
+    except Exception as e:
+        logger.warning(f"Attention: sessions check failed: {e}")
+
+    # 5. Failed background tasks
+    try:
+        for task in task_runner.tasks:
+            if task.get("status") in ("error", "failed"):
+                items["failed_tasks"].append(
+                    {
+                        "id": task.get("id"),
+                        "name": task.get("name"),
+                        "last_result": (task.get("last_result") or "")[:200],
+                        "last_run": task.get("last_run"),
+                    }
+                )
+    except Exception as e:
+        logger.warning(f"Attention: tasks check failed: {e}")
+
+    # Total attention count
+    items["total_attention"] = (
+        len(items["pending_actions"])
+        + len(items["failed_executions"])
+        + len(items["unscored_stories"])
+        + len(items["stale_sessions"])
+        + len(items["failed_tasks"])
+    )
+
+    return items
 
 
 # ─── Execution Engine Endpoints ──────────────────────────────
@@ -2221,9 +2834,7 @@ async def execution_story(story_id: str, body: Dict[str, Any] = {}):
     if not _execution_engine:
         return {"error": "Execution engine not running"}
     auto_approve = body.get("auto_approve", False)
-    result = await _execution_engine.execute_story(
-        story_id, auto_approve=auto_approve
-    )
+    result = await _execution_engine.execute_story(story_id, auto_approve=auto_approve)
     return result
 
 
@@ -2289,6 +2900,24 @@ async def startup():
     expired = action_queue.expire_old(hours=72)
     if expired:
         logger.info(f"Expired {expired} stale action items")
+
+    # Index all stories in AIIA's ChromaDB (fire-and-forget after delay)
+    async def _index_all_stories():
+        await asyncio.sleep(10)  # Wait for Brain API to be ready
+        try:
+            stories = _roadmap.list()
+            if stories:
+                async with httpx.AsyncClient(timeout=30.0) as client:
+                    resp = await client.post(
+                        "http://localhost:8100/v1/aiia/index-stories",
+                        json={"stories": stories},
+                    )
+                    if resp.status_code == 200:
+                        logger.info(f"Indexed {len(stories)} stories in AIIA ChromaDB")
+        except Exception as e:
+            logger.debug(f"Story indexing on startup failed: {e}")
+
+    asyncio.create_task(_index_all_stories())
 
     logger.info("AIIA Command Center started on :8200")
 

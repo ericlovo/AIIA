@@ -50,7 +50,7 @@ class KnowledgeStore:
         # Main knowledge collection
         self._collection = self._client.get_or_create_collection(
             name=self._collection_name,
-            metadata={"description": "AIIA knowledge base"},
+            metadata={"description": "AIIA platform knowledge base"},
         )
 
         # Session memory collection
@@ -225,8 +225,14 @@ class KnowledgeStore:
 
     async def stats(self) -> Dict[str, Any]:
         """Return knowledge store statistics (async, non-blocking)."""
-        k_count = await asyncio.to_thread(self._collection.count) if self._collection else 0
-        s_count = await asyncio.to_thread(self._sessions_collection.count) if self._sessions_collection else 0
+        k_count = (
+            await asyncio.to_thread(self._collection.count) if self._collection else 0
+        )
+        s_count = (
+            await asyncio.to_thread(self._sessions_collection.count)
+            if self._sessions_collection
+            else 0
+        )
         return {
             "knowledge_docs": k_count,
             "session_docs": s_count,
@@ -234,11 +240,111 @@ class KnowledgeStore:
             "collection": self._collection_name,
         }
 
+    async def index_story(self, story: Dict[str, Any]) -> None:
+        """Index a roadmap story so AIIA can find it via semantic search."""
+        if not self._collection:
+            raise RuntimeError("KnowledgeStore not initialized")
+
+        story_id = story.get("id", "")
+        title = story.get("title", "")
+        description = story.get("description", "")
+        product = story.get("product", "")
+        priority = story.get("priority", "P2")
+        status = story.get("status", "backlog")
+        tags = story.get("tags", [])
+        client_impact = story.get("client_impact", "")
+        assignee = story.get("assignee", "")
+
+        # Build searchable text
+        parts = [f"Story: {title}"]
+        if description:
+            parts.append(description)
+        if client_impact:
+            parts.append(f"Impact: {client_impact}")
+        if tags:
+            parts.append(f"Tags: {', '.join(tags)}")
+        text = "\n".join(parts)
+
+        doc_id = f"story_{story_id}"
+        metadata = {
+            "source": f"roadmap/stories/{story_id}",
+            "doc_type": "story",
+            "story_id": story_id,
+            "product": product,
+            "priority": priority,
+            "status": status,
+            "assignee": assignee or "unassigned",
+            "indexed_at": time.strftime("%Y-%m-%dT%H:%M:%SZ"),
+        }
+
+        await asyncio.to_thread(
+            self._collection.upsert,
+            ids=[doc_id],
+            documents=[text],
+            metadatas=[metadata],
+        )
+        logger.info(f"Indexed story {story_id}: {title}")
+
+    async def index_stories(self, stories: List[Dict[str, Any]]) -> int:
+        """Bulk index roadmap stories. Returns count indexed."""
+        if not self._collection:
+            raise RuntimeError("KnowledgeStore not initialized")
+
+        ids = []
+        documents = []
+        metadatas = []
+
+        for story in stories:
+            story_id = story.get("id", "")
+            title = story.get("title", "")
+            description = story.get("description", "")
+            tags = story.get("tags", [])
+            client_impact = story.get("client_impact", "")
+
+            parts = [f"Story: {title}"]
+            if description:
+                parts.append(description)
+            if client_impact:
+                parts.append(f"Impact: {client_impact}")
+            if tags:
+                parts.append(f"Tags: {', '.join(tags)}")
+
+            ids.append(f"story_{story_id}")
+            documents.append("\n".join(parts))
+            metadatas.append(
+                {
+                    "source": f"roadmap/stories/{story_id}",
+                    "doc_type": "story",
+                    "story_id": story_id,
+                    "product": story.get("product", ""),
+                    "priority": story.get("priority", "P2"),
+                    "status": story.get("status", "backlog"),
+                    "assignee": story.get("assignee", "unassigned"),
+                    "indexed_at": time.strftime("%Y-%m-%dT%H:%M:%SZ"),
+                }
+            )
+
+        # Batch upsert
+        batch_size = 100
+        for start in range(0, len(ids), batch_size):
+            end = start + batch_size
+            await asyncio.to_thread(
+                self._collection.upsert,
+                ids=ids[start:end],
+                documents=documents[start:end],
+                metadatas=metadatas[start:end],
+            )
+
+        logger.info(f"Indexed {len(ids)} stories into ChromaDB")
+        return len(ids)
+
     def stats_sync(self) -> Dict[str, Any]:
         """Return knowledge store statistics (sync, for scripts)."""
         return {
             "knowledge_docs": self._collection.count() if self._collection else 0,
-            "session_docs": self._sessions_collection.count() if self._sessions_collection else 0,
+            "session_docs": self._sessions_collection.count()
+            if self._sessions_collection
+            else 0,
             "data_dir": self._data_dir,
             "collection": self._collection_name,
         }

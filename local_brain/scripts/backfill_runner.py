@@ -18,7 +18,7 @@ import logging
 import os
 import sys
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 # Setup logging before imports that use it
@@ -131,7 +131,7 @@ async def _run_backfill(dry_run: bool, categories: list = None) -> dict:
     target_categories = categories or ALL_CATEGORIES
 
     report = {
-        "timestamp": datetime.utcnow().isoformat(),
+        "timestamp": datetime.now(timezone.utc).isoformat(),
         "dry_run": dry_run,
         "categories": target_categories,
         "by_category": {},
@@ -213,7 +213,7 @@ async def _run_backfill(dry_run: bool, categories: list = None) -> dict:
                 # Track in sync state
                 synced_hashes[content_hash] = {
                     "category": category,
-                    "synced_at": datetime.utcnow().isoformat(),
+                    "synced_at": datetime.now(timezone.utc).isoformat(),
                     "preview": fact[:80],
                 }
             else:
@@ -239,7 +239,7 @@ async def _run_backfill(dry_run: bool, categories: list = None) -> dict:
     # Save sync state (unless dry run)
     if not dry_run:
         sync_state["synced_hashes"] = synced_hashes
-        sync_state["last_backfill"] = datetime.utcnow().isoformat()
+        sync_state["last_backfill"] = datetime.now(timezone.utc).isoformat()
         os.makedirs(os.path.dirname(sync_state_path), exist_ok=True)
         with open(sync_state_path, "w") as f:
             json.dump(sync_state, f, indent=2, default=str)
@@ -260,7 +260,7 @@ async def _run_backfill(dry_run: bool, categories: list = None) -> dict:
 
 def _write_report(result: dict):
     """Write backfill report to disk."""
-    date = datetime.utcnow().strftime("%Y-%m-%d")
+    date = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     report_dir = LOG_DIR / date
     report_dir.mkdir(parents=True, exist_ok=True)
 
@@ -277,7 +277,7 @@ def _write_report(result: dict):
     latency = result.get("total_latency_ms", 0)
 
     lines = [
-        f"Memory Backfill ({result.get('timestamp', date)})",
+        f"AIIA Memory Backfill ({result.get('timestamp', date)})",
         "=" * 50,
         f"Status: {status}",
         f"Total time: {latency:.0f}ms",

@@ -17,7 +17,7 @@ import json
 import logging
 import os
 import sys
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 # Setup logging before imports that use it
@@ -83,7 +83,7 @@ async def _run_briefing() -> dict:
     if health["status"] != "online":
         logger.error(f"Ollama offline: {health.get('error', 'unknown')}")
         return {
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
             "errors": ["Ollama offline — cannot run briefing"],
         }
 
@@ -142,7 +142,7 @@ async def _run_briefing() -> dict:
 
 def _write_report(result: dict):
     """Write briefing report to disk."""
-    date = datetime.utcnow().strftime("%Y-%m-%d")
+    date = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     report_dir = LOG_DIR / date
     report_dir.mkdir(parents=True, exist_ok=True)
 
@@ -162,7 +162,7 @@ def _write_report(result: dict):
     fallback = result.get("fallback", False)
 
     lines = [
-        f"Morning Briefing ({timestamp})",
+        f"AIIA Morning Briefing ({timestamp})",
         "=" * 50,
         f"Health Grade: {grade}",
         f"Model: {'heuristic fallback' if fallback else 'DeepSeek R1'}",
@@ -219,7 +219,9 @@ def _write_report(result: dict):
     for d in LOG_DIR.iterdir():
         if d.is_dir() and d.name.startswith("20") and len(d.name) == 10:
             try:
-                age = (datetime.utcnow() - datetime.strptime(d.name, "%Y-%m-%d")).days
+                age = (
+                    datetime.now(timezone.utc) - datetime.strptime(d.name, "%Y-%m-%d")
+                ).days
                 if age > 30:
                     shutil.rmtree(d)
                     logger.info(f"Cleaned old report: {d.name}")

@@ -13,7 +13,7 @@ model: claude-sonnet-4-5-20250929
 ## Skills Directory
 
 ```
-skills_dir: ~/.aiia/AIIA/local_brain/pilot/openclaw_skills/
+skills_dir: ~/aiia-local-brain/AIIA/local_brain/local_brain/pilot/openclaw_skills/
 ```
 
 ## Environment Variables

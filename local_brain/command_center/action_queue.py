@@ -67,7 +67,23 @@ class ActionQueue:
         source_task: str = "",
         files_affected: Optional[List[str]] = None,
     ) -> Dict[str, Any]:
-        """Create a new pending action item."""
+        """Create a new pending action item.
+
+        Deduplicates: if a pending action with the same type + title already
+        exists, returns the existing one instead of creating a duplicate.
+        """
+        # Dedup — skip if identical pending action exists
+        for existing in self.actions:
+            if (
+                existing["status"] == "pending"
+                and existing["type"] == action_type
+                and existing["title"] == title
+            ):
+                logger.debug(
+                    f"Skipping duplicate action: [{severity}] {action_type} — {title}"
+                )
+                return existing
+
         action = {
             "id": uuid.uuid4().hex[:12],
             "type": action_type,
@@ -168,16 +184,13 @@ class ActionQueue:
                 action_type=chain_type,
                 severity=action["severity"],
                 title=f"Chained from {action['title']}",
-                description=(
-                    f"Auto-created after completion of {action_id}"
-                ),
+                description=(f"Auto-created after completion of {action_id}"),
                 files_affected=action.get("files_affected", []),
             )
             chained["parent_id"] = action_id
             self.save()
             logger.info(
-                f"Chain created: {chained['id']} ({chain_type})"
-                f" from parent {action_id}"
+                f"Chain created: {chained['id']} ({chain_type}) from parent {action_id}"
             )
 
         return action
@@ -191,27 +204,19 @@ class ActionQueue:
             return None
         action["status"] = "executing"
         action["execution_log_id"] = execution_log_id
-        action["execution_started_at"] = (
-            datetime.now(timezone.utc).isoformat()
-        )
+        action["execution_started_at"] = datetime.now(timezone.utc).isoformat()
         action["updated_at"] = datetime.now(timezone.utc).isoformat()
         self.save()
-        logger.info(
-            f"Action executing: {action_id} (log={execution_log_id})"
-        )
+        logger.info(f"Action executing: {action_id} (log={execution_log_id})")
         return action
 
     def get_approved(self, limit: int = 10) -> List[Dict[str, Any]]:
         """Return approved actions sorted by created_at (oldest first)."""
-        approved = [
-            a for a in self.actions if a["status"] == "approved"
-        ]
+        approved = [a for a in self.actions if a["status"] == "approved"]
         approved.sort(key=lambda a: a.get("created_at", ""))
         return approved[:limit]
 
-    def fail_action(
-        self, action_id: str, error: str
-    ) -> Optional[Dict[str, Any]]:
+    def fail_action(self, action_id: str, error: str) -> Optional[Dict[str, Any]]:
         """Mark an action as failed with an error message."""
         action = self.get_action(action_id)
         if not action:
@@ -223,9 +228,7 @@ class ActionQueue:
         logger.info(f"Action failed: {action_id} — {error}")
         return action
 
-    def increment_retry(
-        self, action_id: str
-    ) -> Optional[Dict[str, Any]]:
+    def increment_retry(self, action_id: str) -> Optional[Dict[str, Any]]:
         """Increment retry_count and reset status to approved."""
         action = self.get_action(action_id)
         if not action:
@@ -234,20 +237,12 @@ class ActionQueue:
         action["status"] = "approved"
         action["updated_at"] = datetime.now(timezone.utc).isoformat()
         self.save()
-        logger.info(
-            f"Action retry #{action['retry_count']}: {action_id}"
-        )
+        logger.info(f"Action retry #{action['retry_count']}: {action_id}")
         return action
 
-    def get_chain_children(
-        self, parent_id: str
-    ) -> List[Dict[str, Any]]:
+    def get_chain_children(self, parent_id: str) -> List[Dict[str, Any]]:
         """Return actions whose parent_id matches."""
-        return [
-            a
-            for a in self.actions
-            if a.get("parent_id") == parent_id
-        ]
+        return [a for a in self.actions if a.get("parent_id") == parent_id]
 
     def expire_old(self, hours: int = 72) -> int:
         """Expire pending actions older than `hours`. Returns count expired."""

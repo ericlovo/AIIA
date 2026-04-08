@@ -55,7 +55,7 @@ class Verifier:
     async def _verify_lint(self, action: dict) -> VerificationResult:
         files = action.get("files_affected", [])
         if not files:
-            files = ["local_brain/execution/"]
+            files = ["local_brain/local_brain/execution/"]
 
         cmd = ["ruff", "check"] + files
         result = await self._pool.run(cmd, cwd=self._repo_path, timeout=30)

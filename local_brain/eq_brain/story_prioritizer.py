@@ -1,9 +1,9 @@
 """
 Story Prioritizer — LLM-scored prioritization for roadmap stories.
 
-Scores stories against the 5-filter priority framework:
+Scores stories against AIIA's 5-filter priority framework:
   1. Does it close a deal?
-  2. Does it retain the primary client?
+  2. Does it retain DefaultApp?
   3. Does it reduce cost?
   4. Does it enable multiple tenants?
   5. Does it create a new revenue stream?
@@ -88,17 +88,18 @@ def composite_score(weighted_total: float, geo: Dict[str, float]) -> float:
     return round(raw * 100, 1)
 
 
-# Priority framework — scored 0-10 per filter, weighted
+# AIIA priority framework — scored 0-10 per filter, weighted
+# Customize these filters to match your team's priorities
 PRIORITY_FILTERS = [
     {
         "name": "closes_deal",
         "weight": 5,
-        "question": "Does this help close an active deal?",
+        "question": "Does this help close an active deal or bring in new business?",
     },
     {
         "name": "retains_client",
         "weight": 4,
-        "question": "Does this fix a bug, improve UX, or add a feature that retains the primary client?",
+        "question": "Does this fix a bug, improve UX, or add a feature that retains a paying client?",
     },
     {
         "name": "reduces_cost",
@@ -113,19 +114,19 @@ PRIORITY_FILTERS = [
     {
         "name": "new_revenue",
         "weight": 1,
-        "question": "Does this create a new revenue stream (new product)?",
+        "question": "Does this create a new revenue stream or product line?",
     },
 ]
 
 PRIORITIZE_SYSTEM = """\
-You are a product prioritization engine for a multi-tenant AI platform for professional services.
+You are a product prioritization engine for a multi-tenant AI platform.
 
 Score each story against these filters (0-10 each):
-1. Closes a deal? (weight 5) — active pipeline deals
-2. Retains primary client? (weight 4) — bug fix, UX improvement, feature for the paying client
+1. Closes a deal? (weight 5) — directly enables new business
+2. Retains client? (weight 4) — bug fix, UX improvement, feature for paying clients
 3. Reduces cost? (weight 3) — token spend, infra, manual overhead
 4. Enables multiple tenants? (weight 2) — platform capability, not one-off customization
-5. New revenue stream? (weight 1) — new product line or GA release
+5. New revenue stream? (weight 1) — new product line or offering
 
 Respond with ONLY a JSON object:
 {
@@ -146,7 +147,7 @@ Tags: {tags}
 Client Impact: {client_impact}"""
 
 EXTRACT_STORIES_SYSTEM = """\
-You are a product backlog extractor for a multi-tenant AI platform.
+You are a product backlog extractor for AIIA.
 
 Given session end data (summary, next steps, blockers), extract concrete stories that should be tracked.
 
@@ -237,7 +238,12 @@ class StoryPrioritizer:
                 )
             else:
                 results.append(
-                    {**story, "priority_score": 0, "composite_score": 0.0, "score_error": score["error"]}
+                    {
+                        **story,
+                        "priority_score": 0,
+                        "composite_score": 0.0,
+                        "score_error": score["error"],
+                    }
                 )
 
         results.sort(key=lambda x: x.get("composite_score", 0.0), reverse=True)

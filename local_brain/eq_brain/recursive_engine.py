@@ -145,6 +145,7 @@ class RecursiveEngine:
         self._memory_callback = (
             memory_callback  # async (fact, category, source, metadata) -> None
         )
+        self._background_tasks: set = set()
 
     def _build_system_prompt(
         self,
@@ -189,7 +190,7 @@ RULES:
             system=system,
             temperature=temperature,
             max_tokens=max_tokens,
-            num_ctx=8192,
+            num_ctx=32768,
         )
         return response.get("message", {}).get("content", "")
 
@@ -455,7 +456,7 @@ RULES:
                     ],
                     temperature=0.1,
                     max_tokens=512,
-                    num_ctx=8192,
+                    num_ctx=32768,
                 )
                 summary = response.get("message", {}).get("content", "")
                 if summary:
@@ -542,7 +543,7 @@ RULES:
             try:
                 import asyncio
 
-                asyncio.create_task(
+                task = asyncio.create_task(
                     self._memory_callback(
                         fact=fact,
                         category="lessons",
@@ -554,6 +555,19 @@ RULES:
                         },
                     )
                 )
-                logger.info(f"Trajectory memory stored for session {session_id}")
+                # Strong reference prevents GC cancellation
+                self._background_tasks.add(task)
+                task.add_done_callback(self._background_tasks.discard)
+                task.add_done_callback(
+                    lambda t: (
+                        logger.info(
+                            f"Trajectory memory stored for session {session_id}"
+                        )
+                        if not t.cancelled() and t.exception() is None
+                        else logger.debug(
+                            f"Trajectory memory task failed for {session_id}"
+                        )
+                    )
+                )
             except Exception as e:
                 logger.debug(f"Trajectory memory failed: {e}")

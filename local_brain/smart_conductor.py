@@ -125,7 +125,7 @@ class SmartConductor:
 
         try:
             model = (
-                self._routing_model.model_name if self._routing_model else "llama3:8b"
+                self._routing_model.model_name if self._routing_model else "llama3.1:8b-instruct-q8_0"
             )
             temperature = (
                 self._routing_model.temperature if self._routing_model else 0.1

@@ -18,7 +18,7 @@ import json
 import logging
 import os
 import sys
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 # Setup logging before imports that use it
@@ -41,7 +41,7 @@ def main():
     weekly = "--weekly" in sys.argv or "-w" in sys.argv
 
     # Auto-detect weekly: if today is Sunday, run weekly mode
-    if not weekly and datetime.utcnow().weekday() == 6:
+    if not weekly and datetime.now(timezone.utc).weekday() == 6:
         weekly = True
         logger.info("Sunday detected — running weekly mode (includes Tier 2)")
 
@@ -119,16 +119,14 @@ async def _run_sync(weekly: bool) -> dict:
     if ollama_health["status"] != "online":
         logger.error(f"Ollama offline: {ollama_health.get('error', 'unknown')}")
         return {
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
             "errors": ["Ollama offline — cannot score memories"],
             "mode": "weekly" if weekly else "daily",
         }
 
     # Get scorer model name from config
     scorer_model = config.models.get("task", config.models.get("routing"))
-    model_name = (
-        scorer_model.model_name if scorer_model else "llama3.1:8b-instruct-q8_0"
-    )
+    model_name = scorer_model.model_name if scorer_model else "llama3.1:8b-instruct-q8_0"
 
     # Parse project excluded sources from config
     excluded = set(
@@ -156,7 +154,7 @@ async def _run_sync(weekly: bool) -> dict:
 
 def _write_report(result: dict):
     """Write sync report to disk."""
-    date = datetime.utcnow().strftime("%Y-%m-%d")
+    date = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     report_dir = LOG_DIR / date
     report_dir.mkdir(parents=True, exist_ok=True)
 
@@ -178,7 +176,7 @@ def _write_report(result: dict):
     scoring = result.get("scoring", {})
 
     lines = [
-        f"Memory Sync — {mode.title()} ({timestamp})",
+        f"AIIA Memory Sync — {mode.title()} ({timestamp})",
         "=" * 50,
         f"Status: {status}",
         "",
@@ -228,11 +226,13 @@ def _write_report(result: dict):
     # Cleanup old reports (keep 30 days)
     import shutil
 
-    cutoff = datetime.utcnow().strftime("%Y-%m-%d")
+    cutoff = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     for d in LOG_DIR.iterdir():
         if d.is_dir() and d.name.startswith("20") and len(d.name) == 10:
             try:
-                age = (datetime.utcnow() - datetime.strptime(d.name, "%Y-%m-%d")).days
+                age = (
+                    datetime.now(timezone.utc) - datetime.strptime(d.name, "%Y-%m-%d")
+                ).days
                 if age > 30:
                     shutil.rmtree(d)
                     logger.info(f"Cleaned old report: {d.name}")

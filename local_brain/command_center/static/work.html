@@ -1344,10 +1344,10 @@
       <label>Product</label>
       <select id="storyProductInput">
         <option value="platform">platform</option>
-        <option value="my-app">my-app</option>
-        <option value="legal">legal</option>
-        <option value="marketing">marketing</option>
-        <option value="sales">sales</option>
+        <option value="defaultapp-analyst">defaultapp-analyst</option>
+        <option value="aiia-legal">aiia-legal</option>
+        <option value="aiia-marketing">aiia-marketing</option>
+        <option value="aiiasales">aiiasales</option>
         <option value="ck-marketing">ck-marketing</option>
         <option value="content-engine">content-engine</option>
         <option value="acping-ethics-ai">acping-ethics-ai</option>
@@ -1412,9 +1412,9 @@ let allStories = [];
 let workData = {};
 
 const PRODUCT_COLORS = {
-  'my-app': '#3b82f6', 'platform': '#a855f7', 'root': '#a855f7',
-  'shared': '#a855f7', 'marketing': '#f59e0b', 'sales': '#f59e0b',
-  'legal': '#f59e0b', 'ethics-ai': '#f59e0b', 'ck-marketing': '#22d3ee',
+  'defaultapp-analyst': '#3b82f6', 'platform': '#a855f7', 'root': '#a855f7',
+  'shared': '#a855f7', 'aiia-marketing': '#f59e0b', 'aiiasales': '#f59e0b',
+  'aiia-legal': '#f59e0b', 'acping-ethics-ai': '#f59e0b', 'ck-marketing': '#22d3ee',
   'modivcare': '#22d3ee', 'family-law-suite': '#22d3ee', 'estate-planner': '#22d3ee',
   'content-engine': '#10b981', 'local-brain': '#22d3ee', 'realiz': '#10b981',
   'codeword': '#ef4444',
@@ -2353,7 +2353,7 @@ function renderPriorityResults(container, stories, target) {
 
   const filterLabels = {
     closes_deal: 'Closes Deal',
-    retains_client: 'Retains client',
+    retains_defaultapp: 'Retains DefaultApp',
     reduces_cost: 'Reduces Cost',
     enables_tenants: 'Enables Tenants',
     new_revenue: 'New Revenue',

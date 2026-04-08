@@ -18,7 +18,7 @@ from local_brain.scripts.syntax_checker import check_syntax
 
 # Default data directory
 DATA_DIR = Path.home() / ".aiia" / "eq_data" / "reports"
-REPO_DIR = Path(__file__).parent.parent.parent.parent  # repo root
+REPO_DIR = Path(__file__).parent.parent.parent.parent  # AIIA root
 
 
 def _run_git(args: List[str], cwd: str) -> str:
@@ -82,7 +82,7 @@ def _classify_file(filepath: str) -> str:
         parts = filepath.split("/")
         if len(parts) >= 2:
             return parts[1]
-    elif filepath.startswith("platform/"):
+    elif filepath.startswith("local_brain/"):
         return "platform"
     elif filepath.startswith("shared/"):
         return "shared"
@@ -92,18 +92,27 @@ def _classify_file(filepath: str) -> str:
 
 
 # Business-impact categories for dashboard display
-# Customize this map for your product directory names
 CATEGORY_MAP = {
+    "default-app": "DefaultApp-Direct",
+    "aiiasales": "DefaultApp-Direct",
+    "aiia-sales": "DefaultApp-Direct",
     "platform": "Platform",
     "root": "Platform",
     "shared": "Platform",
-    # Add your product directories here, e.g.:
-    # "my-product": "Primary-Client",
-    # "other-product": "Other Tenants",
+    "aiia-legal": "Other Tenants",
+    "aiia-marketing": "Other Tenants",
+    "acping-ethics-ai": "Other Tenants",
+    "realiz": "Other Tenants",
+    "codeword": "Other Tenants",
+    "estate-planner": "Other Tenants",
+    "family-law-suite": "Other Tenants",
+    "ck-marketing": "Other Tenants",
+    "content-engine": "Other Tenants",
+    "modivcare": "Other Tenants",
 }
 
 CATEGORY_COLORS = {
-    "Primary-Client": "#3b82f6",
+    "DefaultApp-Direct": "#3b82f6",
     "Platform": "#a855f7",
     "AI/Infra": "#22d3ee",
     "Other Tenants": "#f59e0b",

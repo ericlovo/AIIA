@@ -19,10 +19,24 @@ Data lives at: {eq_data_dir}/memory/
 import json
 import logging
 import os
+import re
 import time
 from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger("aiia.eq_brain.memory")
+
+# Patterns that indicate a memory is too vague or empty to be worth storing
+_LOW_QUALITY_PATTERNS = [
+    re.compile(r"^no (?:new |reusable )?(?:files|patterns|conventions|changes)", re.I),
+    re.compile(r"Fix:\s*(?:None|Not)\s*specified", re.I),
+    re.compile(r"^\s*Problem:.*->\s*Fix:\s*$", re.I),
+    re.compile(r"^(?:Files affected|Changes):?\s*\(not specified\)", re.I),
+    re.compile(r"Analysis failed:\s*$"),
+    re.compile(r"Review(?:ed)? failed:.*HTTP [45]\d\d", re.I),
+]
+
+# Minimum fact length to be worth storing (after stripping)
+_MIN_FACT_LENGTH = 20
 
 
 class Memory:
@@ -78,6 +92,17 @@ class Memory:
         """Monotonically increasing counter, bumped on every memory write."""
         return self._version
 
+    @staticmethod
+    def _is_low_quality(fact: str) -> bool:
+        """Check if a fact is too vague or empty to be worth storing."""
+        stripped = fact.strip()
+        if len(stripped) < _MIN_FACT_LENGTH:
+            return True
+        for pattern in _LOW_QUALITY_PATTERNS:
+            if pattern.search(stripped):
+                return True
+        return False
+
     def remember(
         self,
         fact: str,
@@ -93,9 +118,17 @@ class Memory:
             category: One of CATEGORIES
             source: Where this came from (session, bootstrap, user)
             metadata: Additional context
+
+        Returns:
+            The stored entry, or an empty dict if rejected.
         """
         if category not in self.CATEGORIES:
             category = "lessons"
+
+        # Quality gate: reject obviously low-quality facts
+        if self._is_low_quality(fact):
+            logger.debug(f"Low-quality memory rejected [{category}]: {fact[:60]}...")
+            return {}
 
         items = self._read_category(category)
 

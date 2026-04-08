@@ -688,8 +688,8 @@ select.setting-select {
       <div class="health-grid" id="healthGrid">
         <div class="health-row"><span class="health-name">AIIA</span><span class="health-ms" id="healthAiiaMs">--</span><span class="health-dot unknown" id="healthAiia"></span></div>
         <div class="health-row"><span class="health-name">Ollama</span><span class="health-ms" id="healthOllamaMs">--</span><span class="health-dot unknown" id="healthOllama"></span></div>
-        <div class="health-row"><span class="health-name">Backend</span><span class="health-ms" id="healthBackendMs">--</span><span class="health-dot unknown" id="healthBackend"></span></div>
-        <div class="health-row"><span class="health-name">Platform</span><span class="health-ms" id="healthPlatformMs">--</span><span class="health-dot unknown" id="healthPlatform"></span></div>
+        <div class="health-row"><span class="health-name">DefaultApp</span><span class="health-ms" id="healthDefaultAppMs">--</span><span class="health-dot unknown" id="healthDefaultApp"></span></div>
+        <div class="health-row"><span class="health-name">AIIA</span><span class="health-ms" id="healthPlatformMs">--</span><span class="health-dot unknown" id="healthPlatform"></span></div>
       </div>
     </div>
 
@@ -1670,8 +1670,8 @@ const SidebarManager = {
     const map = {
       aiia: { dot: $('healthAiia'), ms: $('healthAiiaMs') },
       ollama: { dot: $('healthOllama'), ms: $('healthOllamaMs') },
-      backend: { dot: $('healthBackend'), ms: $('healthBackendMs') },
-      platform: { dot: $('healthPlatform'), ms: $('healthPlatformMs') },
+      defaultapp: { dot: $('healthDefaultApp'), ms: $('healthDefaultAppMs') },
+      aiia: { dot: $('healthPlatform'), ms: $('healthPlatformMs') },
     };
     for (const [id, els] of Object.entries(map)) {
       const svc = services[id];

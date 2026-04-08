@@ -4,14 +4,19 @@ Supermemory Bridge — Bidirectional cloud sync for AIIA.
 Connects AIIA's local memory (JSON + ChromaDB) to the Supermemory cloud service.
 Two directions:
   - PUSH: Local memories (decisions, lessons, patterns, sessions) sync to cloud backup
-  - PULL: Search domain knowledge (legal, financial, compliance, etc.)
+  - PULL: Search DefaultApp's SME domain knowledge (legal, financial, compliance)
 
-Container naming:
-  aiia_{category}   — AIIA's own memory categories (decisions, lessons, etc.)
-  sme_{domain}      — Subject Matter Expert knowledge by domain
-
-Configure container prefixes via AIIA_CONTAINER_PREFIX env var (default: "aiia").
-Configure SME containers via AIIA_SME_CONFIG env var pointing to a JSON file.
+Container naming (separate from tenant containers):
+  aiia_decisions   — Architecture decisions, tech choices
+  aiia_lessons     — Lessons learned
+  aiia_patterns    — Code patterns, conventions
+  aiia_sessions    — Session summaries
+  aiia_personal    — Household/life context
+  aiia_team        — Team preferences
+  aiia_project     — Project state
+  aiia_agents      — Agent-specific memories
+  aiia_wip         — Work-in-progress
+  aiia_meta        — Self-reflection
 
 Design:
   - Lazy init: reads SUPERMEMORY_API_KEY on first use
@@ -25,49 +30,38 @@ import asyncio
 import hashlib
 import logging
 import os
-from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger("aiia.eq_brain.supermemory_bridge")
 
-# Container prefix — customize via AIIA_CONTAINER_PREFIX env var
-_CONTAINER_PREFIX = os.getenv("AIIA_CONTAINER_PREFIX", "aiia")
-
 # AIIA memory category -> Supermemory container
 CATEGORY_CONTAINER_MAP = {
-    "decisions": f"{_CONTAINER_PREFIX}_decisions",
-    "lessons": f"{_CONTAINER_PREFIX}_lessons",
-    "patterns": f"{_CONTAINER_PREFIX}_patterns",
-    "sessions": f"{_CONTAINER_PREFIX}_sessions",
-    "personal": f"{_CONTAINER_PREFIX}_personal",
-    "team": f"{_CONTAINER_PREFIX}_team",
-    "project": f"{_CONTAINER_PREFIX}_project",
-    "agents": f"{_CONTAINER_PREFIX}_agents",
-    "wip": f"{_CONTAINER_PREFIX}_wip",
-    "meta": f"{_CONTAINER_PREFIX}_meta",
+    "decisions": "aiia_decisions",
+    "lessons": "aiia_lessons",
+    "patterns": "aiia_patterns",
+    "sessions": "aiia_sessions",
+    "personal": "aiia_personal",
+    "team": "aiia_team",
+    "project": "aiia_project",
+    "agents": "aiia_agents",
+    "wip": "aiia_wip",
+    "meta": "aiia_meta",
 }
 
-
-def _load_sme_containers() -> dict:
-    """Load SME domain -> container mappings from config file or defaults.
-
-    Set AIIA_SME_CONFIG to a JSON file path with {"domain": "container_tag"} entries.
-    """
-    import json
-
-    config_path = os.getenv("AIIA_SME_CONFIG")
-    if config_path and Path(config_path).exists():
-        with open(config_path) as f:
-            return json.load(f)
-    # Default: empty — configure via AIIA_SME_CONFIG for your domain knowledge
-    return {
-        # Example: "finance": "sme_finance",
-        # Example: "legal": "sme_legal",
-    }
-
-
-# SME domain -> Supermemory container (configure via AIIA_SME_CONFIG)
-SME_DOMAIN_CONTAINERS = _load_sme_containers()
+# DefaultApp SME domain -> Supermemory container (existing tenant containers)
+SME_DOMAIN_CONTAINERS = {
+    "finance": "aiia_sme_default_finance",
+    "pi_law": "aiia_sme_default_pi_law",
+    "family_law": "aiia_sme_default_family_law",
+    "family_law_mn": "aiia_sme_default_family_law_mn",
+    "compliance": "aiia_sme_default_compliance",
+    "patent_law": "aiia_sme_default_patent_law",
+    "client_system": "aiia_sme_default_client_system",
+    "general": "aiia_sme_default_general",
+    "eq": "aiia_sme_default_eq",
+    "estate_planning": "aiia_sme_default_estate_planning",
+    "wealth_management": "aiia_sme_default_wealth_management",
+}
 
 
 def _make_custom_id(category: str, content: str) -> str:
@@ -91,34 +85,13 @@ class SupermemoryBridge:
         self._timeout = timeout
 
     def _init_client(self):
-        """Lazy init — called on first use."""
+        """Lazy init — called on first use. Supermemory SDK removed (April 2026)."""
         if self._initialized:
             return
 
-        self._enabled = os.getenv("SUPERMEMORY_ENABLED", "true").lower() == "true"
-        if not self._enabled:
-            logger.info("Supermemory bridge disabled (SUPERMEMORY_ENABLED=false)")
-            self._initialized = True
-            return
-
-        api_key = os.getenv("SUPERMEMORY_API_KEY")
-        if not api_key:
-            logger.warning(
-                "SUPERMEMORY_API_KEY not set — bridge disabled, AIIA works normally"
-            )
-            self._client = None
-            self._initialized = True
-            return
-
-        try:
-            from supermemory import Supermemory
-
-            self._client = Supermemory()
-            logger.info("Supermemory bridge initialized")
-        except Exception as e:
-            logger.error(f"Failed to init Supermemory client: {e}")
-            self._client = None
-
+        self._enabled = False
+        self._client = None
+        logger.info("Supermemory SDK removed — bridge permanently disabled")
         self._initialized = True
 
     @property
@@ -148,7 +121,7 @@ class SupermemoryBridge:
         if not self._client:
             return {"synced": False, "reason": "bridge_unavailable"}
 
-        container = CATEGORY_CONTAINER_MAP.get(category, f"{_CONTAINER_PREFIX}_lessons")
+        container = CATEGORY_CONTAINER_MAP.get(category, "aiia_lessons")
         custom_id = _make_custom_id(category, fact)
 
         sm_metadata = {
@@ -291,7 +264,7 @@ class SupermemoryBridge:
         limit: int = 5,
     ) -> List[Dict[str, Any]]:
         """
-        Search SME containers for domain knowledge.
+        Search DefaultApp's SME containers for domain knowledge.
 
         Args:
             query: What to search for
@@ -309,7 +282,7 @@ class SupermemoryBridge:
             for d in domains:
                 container = SME_DOMAIN_CONTAINERS.get(d)
                 if container:
-                    # Replace default tenant prefix with actual tenant_id if different
+                    # Replace default with actual tenant_id if different
                     if tenant_id != "default":
                         container = container.replace("default", tenant_id)
                     containers.append((d, container))

@@ -1,6 +1,6 @@
 # AIIA — AI Information Architecture
 
-> Persistent AI runtime layer for development teams. Runs on Apple Silicon with local LLM reasoning, structured memory, autonomous task scheduling, story capture & prioritization, production monitoring, and MCP integration with Claude Code.
+> Persistent AI teammate running on Mac Mini M4. Local LLM reasoning, structured memory, autonomous task scheduling, story capture & prioritization, production monitoring, and MCP integration with Claude Code.
 
 **Hardware:** Mac Mini M4 (or any Apple Silicon with 24GB+ RAM)
 **Status:** Production-ready (since February 2026)
@@ -34,15 +34,15 @@ graph TB
       AIIA["AIIA Brain<br/>brain.py"]
       Conductor["Smart Conductor<br/>Intent Classification"]
       Memory["Structured Memory<br/>9 categories, JSON"]
-      Knowledge["ChromaDB<br/>Vector Knowledge Store"]
+      Knowledge["ChromaDB<br/>5,512 docs indexed"]
       SessionIdx["Session Indexer<br/>Claude Code transcripts"]
       Prioritizer["Story Prioritizer<br/>5-filter framework"]
-      RLM["Recursive Engine<br/>Multi-step reasoning"]
+      RLM["Recursive Engine<br/>RLM Phase 4"]
     end
 
     subgraph "Command Center :8200"
       Dashboard["Web Dashboard<br/>4 views + WebSocket"]
-      Tasks["Task Runner<br/>Scheduled tasks"]
+      Tasks["Task Runner<br/>11 scheduled tasks"]
       Actions["Action Queue<br/>Approval workflow"]
       Monitor["Production Monitor<br/>30s check cycle"]
       Roadmap["Roadmap Store<br/>Stories + Pipeline"]
@@ -50,18 +50,20 @@ graph TB
     end
 
     subgraph "Nightly Automation (launchd)"
-      SecurityScan["Security Scan<br/>6 scanners"]
-      MemorySync["Memory Sync<br/>Quality-scored"]
-      DailyReport["Daily Report<br/>git analysis"]
-      Consolidation["Consolidation<br/>Deep reasoning"]
-      Briefing["Morning Briefing<br/>Alert synthesis"]
-      SessionIndex["Session Index<br/>Transcripts → ChromaDB"]
+      SecurityScan["Security Scan<br/>12:00am · 6 scanners"]
+      MemorySync["Memory Sync<br/>Every 4h · Tier 1+2"]
+      DailyReport["Daily Report<br/>2:30am · git analysis"]
+      Consolidation["Consolidation<br/>3:00am · DeepSeek R1"]
+      Briefing["Morning Briefing<br/>4:30am · DeepSeek R1"]
+      SessionIndex["Session Index<br/>5:30am · JSONL → ChromaDB"]
+      IntervalReport["Interval Reports<br/>Every 3h"]
     end
   end
 
-  subgraph "Cloud Services (optional)"
-    Supermemory["Supermemory<br/>Cloud memory sync"]
-    YourServices["Your Services<br/>Health monitored"]
+  subgraph "Cloud Services"
+    Supermemory["Supermemory<br/>21 containers<br/>3M tokens/month"]
+    Render["Render (5 services)<br/>DefaultApp · Platform<br/>Marketing · Sales · CK"]
+    Vercel["Vercel<br/>Per-tenant frontends"]
   end
 
   subgraph "Developer Tools"
@@ -89,7 +91,8 @@ graph TB
   Executor --> Ollama
 
   Memory -->|Metered sync| Supermemory
-  Monitor -->|Health checks| YourServices
+  Monitor -->|Health checks| Render
+  API -->|Tailscale tunnel| Render
 
   Prioritizer --> Ollama
   Prioritizer --> Roadmap
@@ -122,24 +125,24 @@ graph TB
 
 ### Memory System
 
-Two-layer architecture: local JSON (instant, free) + optional Supermemory cloud (persistent, metered).
+Two-layer architecture: local JSON (instant, free) + Supermemory cloud (persistent, metered).
 
 ```mermaid
 graph LR
-  subgraph "Local ($0)"
-    D[decisions.json<br/>never expires]
-    P[patterns.json<br/>never expires]
-    L[lessons.json<br/>never expires]
-    S[sessions.json<br/>90d TTL]
-    T[team.json<br/>never expires]
-    A[agents.json<br/>never expires]
-    M[meta.json<br/>180d TTL]
-    PR[project.json<br/>60d TTL]
-    W[wip.json<br/>24h TTL]
+  subgraph "Local (Mac Mini, $0)"
+    D[decisions.json<br/>58KB · never expires]
+    P[patterns.json<br/>78KB · never expires]
+    L[lessons.json<br/>68KB · never expires]
+    S[sessions.json<br/>20KB · 90d TTL]
+    T[team.json<br/>1.4KB · never expires]
+    A[agents.json<br/>1KB · never expires]
+    M[meta.json<br/>62KB · 180d TTL]
+    PR[project.json<br/>239KB · 60d TTL]
+    W[wip.json<br/>516B · 24h TTL]
   end
 
-  subgraph "Cloud (optional)"
-    SC["Supermemory<br/>AIIA + SME containers"]
+  subgraph "Cloud (Supermemory)"
+    SC["21 containers<br/>10 AIIA + 11 SME"]
   end
 
   D & P & L & S -->|"Tier 1: daily<br/>quality gate 4+/5"| SC
@@ -158,18 +161,41 @@ graph LR
 }
 ```
 
+**Current Stats (March 2026):**
+| Category | Entries | Size | Tier | Sync | Decay |
+|----------|---------|------|------|------|-------|
+| decisions | ~60 | 58KB | 1 | Daily | Never |
+| patterns | ~70 | 78KB | 1 | Daily | Never |
+| lessons | ~60 | 68KB | 1 | Daily | Never |
+| sessions | ~70 | 20KB | 1 | Daily | 90 days |
+| team | ~2 | 1.4KB | 2 | Weekly | Never |
+| agents | ~1 | 1KB | 2 | Weekly | Never |
+| meta | ~40 | 62KB | 2 | Weekly | 180 days |
+| project | ~200 | 239KB | 3 | Never | 60 days |
+| wip | ~1 | 516B | 3 | Never | 24 hours |
+| **Total** | **~500+** | **~529KB** | — | — | — |
+
 **Metered Sync Pipeline:**
-- Budget: configurable tokens/month and tokens/day caps
+- Budget: 3M tokens/month, 200K/day
 - Quality gate: local LLM scores each memory 1-5, only 4+ synced
 - Dedup: SHA256 content hash prevents re-syncing
 - Circuit breaker: halts after 5 consecutive API errors
 
 ### Knowledge Store (ChromaDB)
 
-- **Collection:** configurable via `AIIA_COLLECTION_NAME` (default: `aiia_knowledge`)
+- **Collection:** `aiia_knowledge`
+- **Documents:** 5,512 indexed
+- **Storage:** 92MB on disk (`~/aiia-local-brain/eq_data/chroma/`)
 - **Chunking:** 1,500 chars max, 200 char overlap, paragraph-aware breaks
 - **Chunk IDs:** Deterministic SHA256 hash
-- **Bootstrap:** Index your repo's docs, code, and config files
+
+**Indexed Content:**
+- CLAUDE.md, ADRs, tenants.yaml, render.yaml
+- 17 AI agents (Python source)
+- Backend routes, services, models
+- Knowledge base YAMLs (SME domain expertise)
+- Product documentation, READMEs
+- Local brain module code
 
 ### Smart Conductor (Intent Classification)
 
@@ -181,7 +207,7 @@ Query → SmartConductor → {domain, eq_level, complexity_score, recommended_pa
 
 | Complexity | Path | Handler | Cost |
 |-----------|------|---------|------|
-| 0.0-0.3 | `local` | Ollama (local) | $0 |
+| 0.0-0.3 | `local` | Ollama (Mac Mini) | $0 |
 | 0.3-0.6 | `eos` | Single Claude call | ~$0.01 |
 | 0.6-1.0 | `rlm` | Agentic loop (multi-step) | ~$0.10+ |
 
@@ -208,20 +234,43 @@ flowchart LR
 
 ### 5-Filter Priority Framework
 
-Every backlog story is scored against configurable business-impact filters (0-10 each, weighted). Default filters:
+Every backlog story is scored against these filters (0-10 each, weighted):
 
 | Filter | Weight | Question |
 |--------|--------|----------|
-| Closes Deal | 5x | Does this help close an active sales opportunity? |
-| Retains Client | 4x | Does this fix a bug, improve UX, or add a feature for a paying client? |
+| Closes Deal | 5x | Does this help close LNS, Automotive ($75K), Marketing Agency, or Fractional CFO? |
+| Retains DefaultApp | 4x | Does this fix a bug, improve UX, or add a feature for the paying client? |
 | Reduces Cost | 3x | Does this reduce token spend, infra cost, or manual overhead? |
-| Enables Platform | 2x | Does this improve the platform for all products? |
-| New Revenue | 1x | Does this create a new revenue stream? |
-
-Filters are fully customizable — edit `story_prioritizer.py` to match your business priorities.
+| Enables Tenants | 2x | Does this improve the platform for all products? |
+| New Revenue | 1x | Does this create a new revenue stream (Content Engine, new product)? |
 
 **Max Score:** 150 (all filters at 10)
 **Priority Mapping:** P0 >= 90 | P1 >= 50 | P2 >= 25 | P3 < 25
+
+### Story Model
+
+```json
+{
+  "id": "a811afa1",
+  "title": "AIIA as tenant-facing intelligence layer",
+  "product": "platform",
+  "priority": "P1",
+  "status": "backlog",
+  "description": "...",
+  "source_session": "session-id",
+  "source_type": "manual|auto-extracted",
+  "tags": ["feature", "integration"],
+  "client_impact": "All tenants benefit...",
+  "related_stories": [],
+  "priority_score": 64,
+  "priority_reasoning": "...",
+  "created_at": "2026-03-12T22:55:44Z",
+  "updated_at": "2026-03-12T22:56:08Z"
+}
+```
+
+**Valid Statuses:** backlog, active, in_progress, shipped, blocked, cancelled
+**Valid Tags:** feature, bug, tech-debt, integration, ux, security, performance, devops
 
 ---
 
@@ -237,26 +286,24 @@ Filters are fully customizable — edit `story_prioritizer.py` to match your bus
 | `security_scan` | Every 6h | No | 6-scanner security suite |
 | `repo_sync` | Every 6h | No | Re-index repo into ChromaDB |
 | `learning_loop` | Every 4h | Yes | Extract insights from recent actions |
-| `test_runner` | Every 4h | No | Run test suite |
-| `cross_tenant_analytics` | Daily 3am | Yes | Cross-project pattern analysis |
+| `test_runner` | Every 4h | No | Run platform test suite |
+| `cross_tenant_analytics` | Daily 3am | Yes | Cross-tenant pattern analysis |
 | `memory_digest` | Daily 6am | Yes | Memory consolidation digest |
 | `daily_brief` | Daily 8am | Yes | Morning briefing generation |
-| `weekly_status` | Every 7 days | Yes | Weekly client health report |
+| `weekly_default-app_status` | Every 7 days | Yes | DefaultApp client health report |
 
 ### Nightly Automation (launchd)
 
-Configure launchd agents for background automation:
-
-| Time | Purpose | What |
-|------|---------|------|
-| 12:00am | Security scan | 6 scanners: bandit, semgrep, trivy, trufflehog, shellcheck, hadolint |
-| Every 4h | Memory sync | Quality-scored sync: local memory → Supermemory cloud |
-| 2:30am | Daily report | Git log analysis grouped by product |
-| 3:00am | Consolidation | DeepSeek R1 memory consolidation (themes, contradictions, stale) |
-| 4:30am | Briefing | DeepSeek R1 alert synthesis from overnight reports |
-| 5:30am | Session index | Claude Code JSONL transcripts → ChromaDB + memory |
-| Every 3h | Interval report | Code shipping windows |
-| Always | Brain API | KeepAlive: auto-restart Brain API + Command Center |
+| Time | Agent | What |
+|------|-------|------|
+| 12:00am | `com.aiia.securityscan` | 6 scanners: bandit, semgrep, trivy, trufflehog, shellcheck, hadolint |
+| Every 4h | `com.aiia.memorysync` | Quality-scored sync: local memory → Supermemory cloud |
+| 2:30am | `com.aiia.dailyreport` | Git log analysis grouped by product |
+| 3:00am | `com.aiia.consolidate` | DeepSeek R1 memory consolidation (themes, contradictions, stale) |
+| 4:30am | `com.aiia.briefing` | DeepSeek R1 alert synthesis from overnight reports |
+| 5:30am | `com.aiia.sessionindex` | Claude Code JSONL transcripts → ChromaDB + memory |
+| Every 3h | `com.aiia.intervalreport` | 3-hour code shipping windows |
+| Always | `com.aiia.localbrain` | KeepAlive: auto-restart Brain API + Command Center |
 
 ### Action Queue
 
@@ -278,7 +325,7 @@ pending → approved → executing → completed
 | SUPERVISED | 30s delay | test_fix, tech_debt, commit |
 | GATED | Manual only | security_fix (critical/error), review |
 
-**Forbidden Files:** `.env*`, `*.pem`, `*.key`, `*/migration/*` — configurable in `execution/safety.py`
+**Forbidden Files:** `.env*`, `*.pem`, `*.key`, `*/migration/*`, `render.yaml`, `products/default-app-analyst/backend/main.py`
 
 ---
 
@@ -384,7 +431,7 @@ aiia_session_end(
     summary="Refactored auth middleware",
     key_decisions=["Switched to jose library"],
     next_steps=["Add refresh token rotation"],
-    blockers=["Need staging access"]
+    blockers=["Need DefaultApp staging access"]
 )
 # ^ Auto-extracts stories from next_steps/blockers
 ```
@@ -399,10 +446,10 @@ aiia_session_end(
 
 | View | URL | Purpose |
 |------|-----|---------|
-| Console | `/` | System status, routing stats, AIIA health, token tracking |
+| Console | `/` | Platform constellation, routing stats, AIIA status, token tracking |
 | Work | `/work` | Kanban board, check-in, activity, actions, prioritization |
 | Voice | `/voice` | Voice interface with macOS TTS |
-| Ops | `/old` | Operations view |
+| Ops | `/old` | Legacy operations view |
 
 ### Work Dashboard Tabs
 
@@ -581,16 +628,13 @@ AIIA/
 | `LOCAL_TASK_MODEL` | `llama3.1:8b-instruct-q8_0` | Task/extraction model |
 | `LOCAL_EMBED_MODEL` | `nomic-embed-text` | Embedding model |
 | `LOCAL_DEEP_MODEL` | `deepseek-r1:14b` | Nightly deep reasoning |
-| `EQ_BRAIN_DATA_DIR` | `~/.aiia/eq_data` | Data directory |
+| `EQ_BRAIN_DATA_DIR` | `~/aiia-local-brain/eq_data` | Data directory |
 | `EXECUTION_ENABLED` | `false` | Enable execution engine |
-| `SUPERMEMORY_API_KEY` | — | Supermemory cloud access (optional) |
+| `SUPERMEMORY_API_KEY` | — | Supermemory cloud access |
 | `SUPERMEMORY_ENABLED` | `true` | Cloud sync kill switch |
 | `SUPERMEMORY_TIMEOUT` | `8.0` | Per-call timeout (seconds) |
 | `ANTHROPIC_API_KEY` | — | Claude API (for Claude strategy) |
-| `GOOGLE_API_KEY` | — | Google TTS (optional) |
-| `AIIA_CONTAINER_PREFIX` | `aiia` | Supermemory container prefix |
-| `AIIA_PRODUCTS_CONFIG` | — | JSON file with product registry |
-| `AIIA_SME_CONFIG` | — | JSON file with SME domain containers |
+| `GOOGLE_API_KEY` | — | Google TTS |
 
 ### Key Limits
 
@@ -614,18 +658,14 @@ AIIA/
 
 ## Production Monitor
 
-Monitors configurable services with health checks every 30 seconds (24-hour history retention).
-
-Configure monitored services via `AIIA_PRODUCTS_CONFIG` JSON file or edit `_DEFAULT_PRODUCTS` in `command_center/server.py`.
-
-**Default services:**
+Checks 4 services every 30 seconds with 24-hour history retention:
 
 | Service | Check URL | Timeout | Category |
 |---------|-----------|---------|----------|
 | AIIA Local Brain | `localhost:8100/v1/aiia/status` | 5s | intelligence |
+| AIIA Analyst (DefaultApp) | `localhost:9000/health` | 10s | backend |
+| AIIA Platform | `localhost:9000/health` | 10s | backend |
 | Ollama | `localhost:11434/api/tags` | 3s | local |
-
-Add your own production services (backends, APIs, databases) to the products config.
 
 **Status Values:** online, degraded (slow/4xx), offline (timeout/5xx/error)
 
@@ -663,14 +703,14 @@ Add your own production services (backends, APIs, databases) to the products con
 │  AIIA EQ Brain + Memory               │
 │  Supermemory Bridge (cloud sync)       │
 └──────────┬─────────────────────────────┘
-           │ Optional: Tailscale/WireGuard tunnel
-┌──────────┼──────────────────────┐
-│          │          │           │
-│  Your Backend   Your API    Other Services
-│  (monitored)    (monitored)  (monitored)
-│
-│     Render / AWS / GCP / etc.
-└─────────────────────────────────┘
+           │ Tailscale tunnel (WireGuard)
+┌──────────┼────────────────────────────────────────┐
+│          │            │              │             │
+│  AIIA Platform  AIIA Analyst  Marketing    CK Marketing
+│  (aiia-platform) (aiia-app) (aiia-marketing) (ck-marketing)
+│          │            │
+│     Render.com    Render.com
+└───────────────────────────────────────────────────┘
 ```
 
 **Three-provider LLM stack:** LOCAL ($0) → ANTHROPIC (Claude, primary) → GOOGLE (Gemini, fallback)
@@ -681,27 +721,25 @@ Add your own production services (backends, APIs, databases) to the products con
 
 ### Prerequisites
 
-- Mac Mini M4 (or any Apple Silicon with 24GB+ RAM)
+- Mac Mini M4 (or Apple Silicon with 24GB+ RAM)
 - Ollama installed (`brew install ollama`)
 - Python 3.12+ with virtualenv
 - Tailscale for production tunnel (optional)
 
-### Quick Start
+### Setup
 
 ```bash
-# Clone
+# Clone and setup
+cd ~/aiia-local-brain
 git clone https://github.com/ericlovo/AIIA.git
-cd AIIA
-
-# Setup Python environment
 python3 -m venv venv
 source venv/bin/activate
-pip install -r requirements.txt
+pip install -r AIIA/requirements.txt
 
 # Pull models
 ollama pull llama3.1:8b-instruct-q8_0
 ollama pull nomic-embed-text
-ollama pull deepseek-r1:14b   # Optional: for nightly deep reasoning
+ollama pull deepseek-r1:14b
 
 # Configure
 cp .env.example .env  # Edit with your API keys
@@ -709,27 +747,21 @@ cp .env.example .env  # Edit with your API keys
 # Start
 brain start
 
-# Bootstrap knowledge (index your codebase)
-python -m local_brain.eq_brain.bootstrap /path/to/your/repo
-```
-
-### Docker (Alternative)
-
-```bash
-# Build and run with Docker Compose
-docker-compose up -d
+# Install nightly automation
+brain install-agents
 
 # Bootstrap knowledge
-docker exec aiia python -m local_brain.eq_brain.bootstrap /app/your-repo
+cd AIIA
+python -m local_brain.local_brain.eq_brain.bootstrap
 ```
 
 ### Verify
 
 ```bash
-brain status                      # All services green
-curl localhost:8100/health        # Brain API healthy
-curl localhost:8200/api/aiia      # AIIA status + doc count
-open http://localhost:8200        # Dashboard
+brain status           # All services green
+curl localhost:8100/health  # Brain API healthy
+curl localhost:8200/api/aiia  # AIIA status + doc count
+open http://localhost:8200    # Dashboard
 ```
 
 ---

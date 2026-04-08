@@ -231,12 +231,11 @@ def run(hours: int = 3) -> Optional[dict]:
 
     if commits > 0:
         print_report(report)
-        _notify("Code Report", summary)
+        _notify("AIIA Code Report", summary)
         _push_to_command_center(report)
-        _remember_in_aiia(summary)
     elif uncommitted:
         print(f"\n  {summary}")
-        _notify("Code Report", summary)
+        _notify("AIIA Code Report", summary)
     else:
         print(f"\n  {summary}")
 

@@ -6,7 +6,7 @@ Storage: ~/.aiia/eq_data/pipeline/deals.json
 Usage:
     from local_brain.scripts.pipeline_store import PipelineStore
     store = PipelineStore()
-    store.create(company="Acme Corp", contact="Jane Doe", stage="lead", value=75000, product="my-app")
+    store.create(company="Acme Corp", contact="Jane Doe", stage="lead", value=75000, product="default-app")
     deals = store.list(stage="qualified")
 """
 

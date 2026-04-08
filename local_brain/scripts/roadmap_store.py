@@ -6,8 +6,8 @@ Storage: ~/.aiia/eq_data/roadmap/stories.json
 Usage:
     from local_brain.scripts.roadmap_store import RoadmapStore
     store = RoadmapStore()
-    store.create(title="Dark mode", product="my-app", priority="P1")
-    stories = store.list(product="my-app", status="active")
+    store.create(title="Dark mode", product="default-app", priority="P1")
+    stories = store.list(product="default-app", status="active")
 """
 
 import json
@@ -40,6 +40,8 @@ EXTENDED_FIELDS = (
     "related_stories",
     "priority_score",
     "priority_reasoning",
+    "assignee",
+    "workstream_id",
 )
 
 # Similarity threshold for dedup (0.0 - 1.0)

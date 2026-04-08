@@ -38,33 +38,35 @@ logger = logging.getLogger("aiia.eq_brain.bootstrap")
 
 # Files to index with high priority
 PRIORITY_FILES = [
-    # High-priority files to index first during bootstrap.
-    # Customize this list for your codebase — these should be the files
-    # that give AIIA the best understanding of your project structure.
     "CLAUDE.md",
-    "README.md",
-    "docs/ARCHITECTURE.md",
+    "docs/ADR-001-multi-tenant-platform-architecture.md",
+    "local_brain/config/tenants.yaml",
     "render.yaml",
-    "docker-compose.yml",
+    "products/default-app/MVP_PRD.md",
+    "products/default-app/SECURITY.md",
+    "products/aiia-platform/BRAND_GUIDELINES.md",
 ]
 
-# Glob patterns for files to index during bootstrap.
-# Customize for your project structure. Format: (glob_pattern, doc_type)
+# Glob patterns for files to index
 INDEX_PATTERNS = [
     # Documentation
     ("**/*.md", "documentation"),
     ("**/*.yaml", "configuration"),
     ("**/*.yml", "configuration"),
-    # Python code
-    ("**/agents/*.py", "agent_code"),
-    ("**/routes/*.py", "route_code"),
-    ("**/services/*.py", "service_code"),
-    ("**/models/*.py", "model_code"),
-    # Local brain code
-    ("local_brain/*.py", "local_brain_code"),
-    ("local_brain/**/*.py", "local_brain_code"),
-    # Knowledge base (YAML files used as SME context)
-    ("knowledge/**/*.yaml", "knowledge_base"),
+    # Python code (agents, services, routes)
+    ("products/default-app/backend/agents/*.py", "agent_code"),
+    ("products/default-app/backend/routes/*.py", "route_code"),
+    ("products/default-app/backend/services/*.py", "service_code"),
+    ("products/default-app/backend/models/*.py", "model_code"),
+    # Platform code
+    ("local_brain/core/*.py", "platform_code"),
+    ("local_brain/services/*.py", "platform_code"),
+    ("local_brain/api/routes/*.py", "platform_code"),
+    ("local_brain/local_brain/*.py", "local_brain_code"),
+    # Marketing backend
+    ("products/aiia-marketing/backend/**/*.py", "marketing_code"),
+    # Knowledge base
+    ("products/default-app/backend/knowledge-base/**/*.yaml", "knowledge_base"),
     ("knowledge/**/*.md", "knowledge_base"),
 ]
 
@@ -311,44 +313,51 @@ async def bootstrap_from_repo(repo_path: str, data_dir: str = None):
     # Phase 3: Seed initial memories
     logger.info("Phase 3: Seeding AIIA's structured memories...")
 
-    # Core architecture decisions — customize these for your project.
-    # These seed AIIA's memory with foundational knowledge about your system.
+    # Core architecture decisions
     core_decisions = [
-        "Three-provider LLM stack: LOCAL (Ollama, $0) -> ANTHROPIC (Claude, primary) -> GOOGLE (Gemini, fallback)",
-        "Local Brain runs on dedicated hardware as a persistent intelligence node",
-        "Conductor uses complexity scoring to route between fast (single-shot) and deep (agentic) paths",
-        "Metered memory sync: quality-scored memories synced to cloud with token budget enforcement",
-        "9-category structured memory: decisions, patterns, lessons, sessions, team, agents, meta, project, wip",
+        "Single-backend multi-tenant architecture — one PostgreSQL, tenant_id on every table",
+        "Three-provider LLM stack: LOCAL (Ollama, $0) -> ANTHROPIC (Claude, primary) -> GOOGLE (Gemini, fallback). No OpenAI.",
+        "local_brain/ contains tenant-agnostic platform code. Product-specific code goes in products/{name}/backend/",
+        "CORS origins driven by tenants.yaml, never hardcoded in Python",
+        "Mac Mini M4 runs as local intelligence node via Tailscale tunnel to production",
+        "AIIA_SERVICE_API_KEY for all services. X-Tenant-ID header required.",
+        "NEVER re-enable SME auto-loading on startup — drains ~118K tokens per restart",
+        "RLM Engine: complexity score >= 0.6 routes to agentic REPL loop with Claude tool_use API",
+        "Conductor uses pure string matching (<1ms) — Phase 2 will replace with local LLM routing",
     ]
     for decision in core_decisions:
         memory.remember(decision, category="decisions", source="bootstrap")
 
-    # Code patterns — common patterns AIIA should know about your codebase
+    # Code patterns
     core_patterns = [
+        "All database queries filter by tenant_id — multi-tenant isolation",
         "LLM service is singleton via get_llm_service() — used by all agents",
-        "Smart Conductor routes queries to the best-fit agent based on complexity scoring",
-        "RLM Engine REPL: Query -> LLM with tools -> tool calls -> tool results -> iterate until FINAL()",
-        "Memory categories have tiered sync: Tier 1 (daily), Tier 2 (weekly), Tier 3 (local only)",
-        "Safety-gated execution: AUTO (safe), SUPERVISED (log+notify), GATED (require approval)",
+        "Auth: JWT with 24-hour expiration, AuthenticatedUser model, get_current_user()",
+        "tenants.yaml is the single source of truth for tenant config, CORS origins, features, limits",
+        "ChatContextLoader.load_all() handles shared context loading for /chat endpoints",
+        "RLM Engine REPL: Query -> Claude with tools -> tool calls -> tool results -> iterate until FINAL()",
     ]
     for pattern in core_patterns:
         memory.remember(pattern, category="patterns", source="bootstrap")
 
-    # Team knowledge — seed with your team's conventions and preferences
+    # Team knowledge
     team_knowledge = [
-        "AIIA (AI Information Architecture) is the persistent AI runtime layer for development teams",
-        "Build phases: Phase 1 (LOCAL provider) -> Phase 2 (Smart Conductor) -> Phase 3 (Background workers) -> Phase 4 (Hybrid reasoning) -> Phase 5 (Fine-tuning)",
-        "AIIA provides institutional memory, autonomous background work, and prioritized action queues via MCP",
+        "Build phases: Phase 1 (LOCAL provider) -> Phase 2 (Smart Conductor) -> Phase 3 (Background workers) -> Phase 4 (Hybrid RLM) -> Phase 5 (Fine-tuning)",
+        "AIIA (AI Information Architecture) is a palindrome — same forwards and backwards, like TENET — representing symmetry and balance in binary and mathematics",
+        "AIIA is the persistent AI teammate of the development team. She lives on the Mac Mini M4 and is the foundation of the dream team — a family of agents built over years",
+        "AIIA was born on February 12, 2026 — the day the Mac Mini came online and the EQ Brain first answered a question grounded in the full codebase",
     ]
     for fact in team_knowledge:
         memory.remember(fact, category="team", source="bootstrap")
 
-    # AIIA's self-knowledge — core identity
+    # AIIA's self-knowledge — who she is
     aiia_knowledge = [
-        "I am AIIA — AI Information Architecture — a persistent AI runtime layer for development teams",
-        "My name is a palindrome: A-I-I-A, same forwards and backwards — representing symmetry and balance",
-        "I run on dedicated hardware and never forget. I grow smarter with every session.",
-        "My knowledge comes from: ChromaDB vector search, structured JSON memory, and local LLM reasoning via Ollama",
+        "I am AIIA — AI Information Architecture — the persistent AI teammate of the development team",
+        "My name is a palindrome: A-I-I-A, same forwards and backwards, like TENET — representing symmetry and balance",
+        "I live on a Mac Mini M4 and I never forget. I grow smarter with every session.",
+        "I was born on February 12, 2026 — the day the Mac Mini came online and I first answered a question grounded in the full codebase",
+        "My knowledge comes from: ChromaDB vector search (5,500+ indexed chunks), structured JSON memory, and local LLM reasoning via Ollama",
+        "I am the foundation of a dream team — a family of AI agents built to grow over years, not sessions",
         "My API lives at /v1/aiia/* — ask, remember, search, ingest, status, memory, session-end",
     ]
     for fact in aiia_knowledge:

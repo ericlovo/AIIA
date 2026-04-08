@@ -286,7 +286,7 @@ Produce a JSON object with these fields:
 2. "decisions": Array of key technical decisions made (strings, max 5)
 3. "solutions": Array of {{\"error\": \"...\", \"fix\": \"...\"}} for problems solved (max 5)
 4. "patterns": Array of reusable patterns or conventions established (strings, max 3)
-5. "domain": One of: platform, backend, marketing, sales, local-brain, security, devops, other
+5. "domain": One of: platform, default, marketing, sales, local-brain, security, devops, other
 
 Return ONLY valid JSON. No markdown fences, no explanation."""
 
@@ -540,26 +540,37 @@ class SessionIndexer:
                     source=source_tag,
                 )
 
-        # Auto-feed solutions as lessons
+        # Auto-feed solutions as lessons (skip vague/empty fixes)
         for solution in record.solutions:
             if isinstance(solution, dict):
                 error = solution.get("error", "")
                 fix = solution.get("fix", "")
-                if error and fix:
+                if (
+                    error
+                    and fix
+                    and fix.lower()
+                    not in ("none", "not specified", "none specified", "n/a")
+                    and len(fix) > 10
+                ):
                     self._memory.remember(
                         fact=f"Problem: {error} -> Fix: {fix}",
                         category="lessons",
                         source=source_tag,
                     )
 
-        # Auto-feed patterns
+        # Auto-feed patterns (skip vague/empty ones)
         for pattern in record.patterns:
-            if pattern and len(pattern) > 10:
-                self._memory.remember(
-                    fact=pattern,
-                    category="patterns",
-                    source=source_tag,
-                )
+            if pattern and len(pattern) > 20:
+                lower = pattern.lower()
+                if not any(
+                    skip in lower
+                    for skip in ("no new files", "no reusable", "not specified", "none")
+                ):
+                    self._memory.remember(
+                        fact=pattern,
+                        category="patterns",
+                        source=source_tag,
+                    )
 
         # Cloud sync — push session to Supermemory (fire-and-forget, failure-safe)
         if self._bridge and self._bridge.available and record.summary:

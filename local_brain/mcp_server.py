@@ -18,12 +18,13 @@ Tools:
     aiia_tokens_today   — Query today's token usage and costs
     aiia_log_story      — Log a story/idea to the roadmap backlog (with dedup)
     aiia_prioritize_backlog — Score and rank backlog stories using 5-filter framework
+    aiia_ready_branches — List AIIA-prepared branches ready for human-in-the-loop coding
 
 Usage:
     Configured in .mcp.json — Claude Code launches this automatically.
 
     Or manually:
-        AIIA_URL=http://localhost:8100 python3 mcp_server.py
+        AIIA_URL=http://100.125.92.21:8100 python3 mcp_server.py
 
 Requires:
     pip install mcp httpx
@@ -44,7 +45,13 @@ logger = logging.getLogger("aiia.mcp")
 
 AIIA_URL = os.environ.get("AIIA_URL", "http://localhost:8100")
 AIIA_API_KEY = os.environ.get("AIIA_API_KEY", "")
-COMMAND_CENTER_URL = os.environ.get("COMMAND_CENTER_URL", "http://localhost:8200")
+# Derive Command Center URL from AIIA_URL (same host, port 8200) unless explicitly set
+_default_cc_url = (
+    AIIA_URL.replace(":8100", ":8200")
+    if ":8100" in AIIA_URL
+    else "http://localhost:8200"
+)
+COMMAND_CENTER_URL = os.environ.get("COMMAND_CENTER_URL", _default_cc_url)
 TIMEOUT = float(
     os.environ.get("AIIA_TIMEOUT", "120")
 )  # seconds — ask can be slow on 7B
@@ -58,7 +65,7 @@ mcp = FastMCP(
     instructions=(
         "AIIA (AI Information Architecture) is the persistent AI teammate "
         "running on a Mac Mini M4. She has a ChromaDB knowledge base with "
-        "5,500+ indexed documents from the project repo, and a "
+        "5,500+ indexed documents from the entire AIIA repo, and a "
         "structured memory system that persists across sessions. Use aiia_ask "
         "for questions that benefit from AIIA's knowledge and reasoning. Use "
         "aiia_remember to teach her facts, decisions, or lessons. Use "
@@ -104,12 +111,12 @@ async def _call_aiia(method: str, path: str, body: Optional[dict] = None) -> dic
 
 
 async def _call_command_center(
-    method: str, path: str, body: Optional[dict] = None
+    method: str, path: str, body: Optional[dict] = None, timeout: float = 30.0
 ) -> dict:
     """Make an HTTP request to the Command Center dashboard."""
     url = f"{COMMAND_CENTER_URL}{path}"
     try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
+        async with httpx.AsyncClient(timeout=timeout) as client:
             if method == "GET":
                 resp = await client.get(url)
             else:
@@ -136,8 +143,8 @@ async def aiia_ask(
     question: str, context: str = "", n_results: int = 5, depth: str = "fast"
 ) -> str:
     """Ask AIIA a question. She searches her knowledge base (5,500+ indexed
-    docs from the project repo) and her persistent memory, then reasons
-    with her local LLM (llama3.1:8b) to give a grounded answer.
+    docs from the AIIA repo) and her persistent memory, then reasons
+    with her local LLM (llama3.1:8b-instruct-q8_0) to give a grounded answer.
 
     Use this for:
     - "What does AIIA know about the conductor?"
@@ -323,7 +330,9 @@ async def aiia_session_end(
             for s in extracted:
                 deduped = s.get("_deduped", False)
                 tag = " (deduped -> existing)" if deduped else ""
-                lines.append(f"  - [{s.get('priority', 'P2')}] {s['title']} ({s.get('product', '?')}){tag}")
+                lines.append(
+                    f"  - [{s.get('priority', 'P2')}] {s['title']} ({s.get('product', '?')}){tag}"
+                )
 
     return "\n".join(lines)
 
@@ -344,7 +353,9 @@ async def _auto_extract_stories(
         "key_decisions": key_decisions or [],
         "session_id": session_id,
     }
-    result = await _call_command_center("POST", "/api/roadmap/extract", body)
+    result = await _call_command_center(
+        "POST", "/api/roadmap/extract", body, timeout=120.0
+    )
 
     if "error" in result:
         logger.warning(f"Story extraction failed: {result['error']}")
@@ -432,6 +443,24 @@ async def aiia_session_start(
         lines.append(f"\n### Work in Progress ({len(wip)} items)")
         for item in wip:
             lines.append(f"- {item.get('fact', '')}")
+
+    # Actionable stories (backlog items ready to work on)
+    stories = result.get("actionable_stories", [])
+    if stories:
+        lines.append(f"\n### Backlog ({len(stories)} actionable items)")
+        for s in stories[:10]:
+            priority = s.get("priority", "P?")
+            status = s.get("status", "?")
+            product = s.get("product", "?")
+            title = s.get("title", "untitled")
+            story_id = s.get("id", "?")
+            tags = s.get("tags", [])
+            tag_str = f" [{', '.join(tags)}]" if tags else ""
+            lines.append(
+                f"- [{priority}] ({status}) {title} — {product}{tag_str} [id: {story_id}]"
+            )
+        if len(stories) > 10:
+            lines.append(f"  ... and {len(stories) - 10} more")
 
     # Recent decisions
     decisions = result.get("recent_decisions", [])
@@ -547,13 +576,10 @@ async def aiia_session_start(
             stale_jobs = [
                 name
                 for name, info in jobs.items()
-                if isinstance(info, dict)
-                and info.get("status") in ("stale", "missing")
+                if isinstance(info, dict) and info.get("status") in ("stale", "missing")
             ]
             if stale_jobs:
-                lines.append(
-                    f"\n### Stale Nightly Jobs: {', '.join(stale_jobs)}"
-                )
+                lines.append(f"\n### Stale Nightly Jobs: {', '.join(stale_jobs)}")
     except Exception:
         pass  # Check-in enrichment is optional
 
@@ -609,6 +635,38 @@ async def _session_start_fallback(
                     text = k.get("text", "")[:200]
                     lines.append(f"- [{source}] {text}")
                 lines.append("")
+
+    # Actionable stories from roadmap
+    stories_result = await _call_command_center("GET", "/api/roadmap")
+    if "error" not in stories_result:
+        all_stories = stories_result.get("stories", [])
+        priority_order = {"P0": 0, "P1": 1, "P2": 2, "P3": 3}
+        status_order = {"blocked": 0, "in_progress": 1, "active": 2, "backlog": 3}
+        actionable = [
+            s
+            for s in all_stories
+            if s.get("status") in ("backlog", "active", "in_progress", "blocked")
+        ]
+        actionable.sort(
+            key=lambda s: (
+                priority_order.get(s.get("priority", "P3"), 9),
+                status_order.get(s.get("status", "backlog"), 9),
+            )
+        )
+        if actionable:
+            lines.append(f"### Backlog ({len(actionable)} actionable items)")
+            for s in actionable[:10]:
+                priority = s.get("priority", "P?")
+                status = s.get("status", "?")
+                product = s.get("product", "?")
+                title = s.get("title", "untitled")
+                story_id = s.get("id", "?")
+                lines.append(
+                    f"- [{priority}] ({status}) {title} — {product} [id: {story_id}]"
+                )
+            if len(actionable) > 10:
+                lines.append(f"  ... and {len(actionable) - 10} more")
+            lines.append("")
 
     # Morning briefing
     briefing_result = await _call_command_center("GET", "/api/briefing/latest")
@@ -690,7 +748,7 @@ async def aiia_what_was_i_doing() -> str:
 @mcp.tool()
 async def aiia_ops_status() -> str:
     """Production health check via Command Center — shows status of all
-    services (AIIA, Backend, Platform API, Ollama), latency,
+    services (AIIA, DefaultApp Backend, AIIA Platform, Ollama), latency,
     uptime, and recent status transitions.
 
     Use this to check if production is healthy before deploying or to
@@ -798,7 +856,9 @@ async def aiia_briefing(generate: bool = False) -> str:
         generate: If True, trigger a fresh briefing before fetching (default: False)
     """
     if generate:
-        gen_result = await _call_command_center("POST", "/api/briefing/generate")
+        gen_result = await _call_command_center(
+            "POST", "/api/briefing/generate", timeout=120.0
+        )
         if "error" in gen_result:
             return f"Failed to trigger briefing: {gen_result['error']}"
         # Wait briefly for the task to produce output
@@ -878,7 +938,7 @@ async def aiia_sync_supermemory(
     uses deterministic IDs so duplicates are skipped.
 
     Syncs decisions, lessons, patterns, sessions, and other memory categories
-    to their matching Supermemory containers.
+    to their matching Supermemory containers (aiia_*).
 
     Use this to:
     - Back up AIIA's local memories to the cloud
@@ -926,7 +986,9 @@ async def aiia_search_supermemory(
     """Search Supermemory cloud — either SME domain knowledge vaults or
     AIIA's own cloud-backed memories.
 
-    search_type="sme": Search configured SME containers for domain expertise.
+    search_type="sme": Search DefaultApp's SME containers (finance, pi_law,
+    family_law, compliance, etc.) for domain expertise. Great for legal
+    and financial questions.
 
     search_type="aiia": Search AIIA's cloud-synced memories (decisions,
     lessons, patterns). Useful for finding past knowledge that may not
@@ -934,13 +996,13 @@ async def aiia_search_supermemory(
 
     Use this for:
     - "What does the Rule of Thirds say?" (search_type="sme", domains=["finance"])
-    - "Find knowledge about damages" (search_type="sme", domains=["legal"])
+    - "Find PI law knowledge about damages" (search_type="sme", domains=["pi_law"])
     - "What decisions did we make about auth?" (search_type="aiia")
 
     Args:
         query: What to search for
         search_type: "sme" for domain knowledge, "aiia" for AIIA's memories
-        domains: SME domains to search (for sme type). Configure via AIIA_SME_CONFIG.
+        domains: SME domains to search (for sme type). Options: finance, pi_law, family_law, compliance, patent_law, estate_planning, wealth_management, eq, general
         tenant_id: Tenant for SME search (default: default)
         limit: Max results (default: 5)
     """
@@ -1168,7 +1230,7 @@ async def aiia_search_history(
     Args:
         query: Natural language search query
         project: Filter by project path substring (optional)
-        domain: Filter by domain: platform, backend, marketing, local-brain, etc. (optional)
+        domain: Filter by domain: platform, default, marketing, local-brain, etc. (optional)
         limit: Max results (1-20, default 5)
     """
     result = await _call_aiia(
@@ -1343,9 +1405,7 @@ async def aiia_execute_action(action_id: str) -> str:
     Args:
         action_id: The action ID to execute (from aiia_get_actions output)
     """
-    result = await _call_command_center(
-        "POST", f"/api/execution/execute/{action_id}"
-    )
+    result = await _call_command_center("POST", f"/api/execution/execute/{action_id}")
 
     if "error" in result:
         return f"Execute failed: {result['error']}"
@@ -1371,9 +1431,7 @@ async def aiia_execution_log(limit: int = 10) -> str:
     Args:
         limit: Max records to return (default: 10)
     """
-    result = await _call_command_center(
-        "GET", f"/api/execution/log?limit={limit}"
-    )
+    result = await _call_command_center("GET", f"/api/execution/log?limit={limit}")
 
     if "error" in result:
         return f"Execution log unavailable: {result['error']}"
@@ -1402,9 +1460,7 @@ async def aiia_execution_log(limit: int = 10) -> str:
 
 
 @mcp.tool()
-async def aiia_execute_story(
-    story_id: str, auto_approve: bool = False
-) -> str:
+async def aiia_execute_story(story_id: str, auto_approve: bool = False) -> str:
     """Decompose a kanban story into executable actions and start execution.
 
     Takes an active/backlog story, uses local LLM to break it into action steps,
@@ -1432,7 +1488,7 @@ async def aiia_execute_story(
     approved = result.get("auto_approved", False)
 
     lines = [
-        f"### Story Decomposed",
+        "### Story Decomposed",
         f"- **Story:** {story_id}",
         f"- **Steps:** {steps}",
         f"- **Auto-approved:** {approved}",
@@ -1485,9 +1541,7 @@ async def aiia_story_progress(story_id: str) -> str:
             icon = {"completed": "+", "failed": "x", "executing": "~"}.get(
                 a["status"], " "
             )
-            lines.append(
-                f"  {step}. [{icon}] {a.get('title', '?')} ({a['status']})"
-            )
+            lines.append(f"  {step}. [{icon}] {a.get('title', '?')} ({a['status']})")
 
     return "\n".join(lines)
 
@@ -1551,11 +1605,11 @@ async def aiia_log_story(
 
 @mcp.tool()
 async def aiia_prioritize_backlog(limit: int = 10) -> str:
-    """Score and rank backlog stories using a 5-filter priority framework.
+    """Score and rank backlog stories using AIIA's 5-filter priority framework.
 
     Evaluates each backlog story against:
     1. Does it close a deal? (weight 5)
-    2. Does it retain key clients? (weight 4)
+    2. Does it retain DefaultApp? (weight 4)
     3. Does it reduce cost? (weight 3)
     4. Does it enable multiple tenants? (weight 2)
     5. Does it create a new revenue stream? (weight 1)
@@ -1566,7 +1620,7 @@ async def aiia_prioritize_backlog(limit: int = 10) -> str:
         limit: Max number of stories to score (default: 10)
     """
     result = await _call_command_center(
-        "POST", "/api/roadmap/prioritize", {"limit": limit}
+        "POST", "/api/roadmap/prioritize", {"limit": limit}, timeout=120.0
     )
 
     if "error" in result:
@@ -1589,22 +1643,254 @@ async def aiia_prioritize_backlog(limit: int = 10) -> str:
         if suggested != current:
             priority_change = f" (suggest: {suggested})"
 
-        lines.append(
-            f"{i}. **{title}** [{current}{priority_change}] — score {score}"
-        )
+        lines.append(f"{i}. **{title}** [{current}{priority_change}] — score {score}")
         lines.append(f"   {product} | {reasoning}")
 
         # Show filter breakdown
         scores = s.get("filter_scores", {})
         if scores:
             parts = []
-            for key in ("closes_deal", "retains_client", "reduces_cost", "enables_tenants", "new_revenue"):
+            for key in (
+                "closes_deal",
+                "retains_client",
+                "reduces_cost",
+                "enables_tenants",
+                "new_revenue",
+            ):
                 val = scores.get(key, 0)
                 if val > 0:
                     short = key.replace("_", " ").title()
                     parts.append(f"{short}:{val}")
             if parts:
                 lines.append(f"   Filters: {', '.join(parts)}")
+        lines.append("")
+
+    return "\n".join(lines)
+
+
+@mcp.tool()
+async def aiia_ready_branches() -> str:
+    """List AIIA-prepared branches that are ready for human-in-the-loop coding.
+
+    When AIIA decomposes stories, some actions are 'branch_prep' type — too complex
+    for automated fixes. AIIA creates a branch with a .aiia-context.md file containing
+    the story details, proposed approach, and affected files. Use this tool to see
+    what branches are waiting for you to pick up.
+
+    Returns a list of ready branches with their context summaries.
+    """
+    import subprocess
+
+    repo_path = os.environ.get(
+        "AIIA_REPO_PATH",
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        ),
+    )
+
+    try:
+        result = subprocess.run(
+            ["git", "branch", "--list", "aiia/prep/*"],
+            capture_output=True,
+            text=True,
+            cwd=repo_path,
+            timeout=10,
+        )
+    except Exception as e:
+        return f"Failed to list branches: {e}"
+
+    branches = [b.strip().lstrip("* ") for b in result.stdout.splitlines() if b.strip()]
+    if not branches:
+        return "No AIIA branches ready for coding."
+
+    lines = [f"### {len(branches)} branch(es) ready for coding", ""]
+    for branch in branches:
+        lines.append(f"- `{branch}`")
+
+        # Try to read the context file from that branch
+        try:
+            ctx_result = subprocess.run(
+                ["git", "show", f"{branch}:.aiia-context.md"],
+                capture_output=True,
+                text=True,
+                cwd=repo_path,
+                timeout=10,
+            )
+            if ctx_result.returncode == 0:
+                # Extract just the "What needs to happen" section
+                content = ctx_result.stdout
+                for line in content.splitlines():
+                    if line.startswith("**") and not line.startswith("**Story"):
+                        lines.append(f"  {line}")
+                        break
+        except Exception:
+            pass
+
+        lines.append("")
+
+    lines.append("To start working on a branch: `git checkout <branch-name>`")
+    return "\n".join(lines)
+
+
+@mcp.tool()
+async def aiia_set_agent(
+    agent_name: str,
+    task_summary: str = "",
+    chain_id: str = "",
+    chain_position: int = 0,
+) -> str:
+    """Register which agent is active in this Claude Code session.
+
+    Call this at the start of every agent activation. The dashboard will
+    show which agent is running, with the agent's color and tier.
+    During chain handoffs (BUILDER -> SMOKE -> GUARDIAN), call this at
+    each transition so the dashboard tracks the chain.
+
+    Valid agents: SCOUT, BUILDER, GUARDIAN, SMOKE, SENTINEL,
+    SHIPPER, WATCHDOG, PITCH, STYLIST, CRITIC, SCRIBE
+
+    Args:
+        agent_name: UPPERCASE agent name
+        task_summary: What this agent is doing right now (1 sentence)
+        chain_id: If part of a chain, the chain execution ID
+        chain_position: Position in the chain (0-indexed)
+    """
+    import glob as globmod
+
+    session_id = None
+    session_dir = "/tmp/aiia-sessions"
+    if os.path.isdir(session_dir):
+        try:
+            files = sorted(
+                [f for f in os.listdir(session_dir) if f.isdigit()],
+                key=lambda f: os.path.getmtime(os.path.join(session_dir, f)),
+                reverse=True,
+            )
+            if files:
+                with open(os.path.join(session_dir, files[0])) as f:
+                    session_id = f.read().strip()
+        except Exception:
+            pass
+
+    if not session_id:
+        return "No active session found. Session hooks may not be configured."
+
+    result = await _call_command_center(
+        "POST",
+        f"/api/sessions/{session_id}/agent",
+        {
+            "agent_name": agent_name.upper(),
+            "task_summary": task_summary,
+            "chain_id": chain_id,
+            "chain_position": chain_position,
+        },
+    )
+
+    if "error" in result:
+        return f"Failed to set agent: {result['error']}"
+
+    return f"Agent set to {agent_name.upper()}. Dashboard updated."
+
+
+@mcp.tool()
+async def aiia_update_session(
+    description: str = "",
+    milestone: str = "",
+    stories_delta: int = 0,
+    decisions_delta: int = 0,
+) -> str:
+    """Update this Claude Code session's tracking info on the AIIA dashboard.
+
+    Call this when you understand the plan for this session — update the
+    description so AIIA's dashboard shows what this terminal is working on.
+    Also call when reaching milestones or making decisions.
+
+    Args:
+        description: What this session is working on (shown on dashboard)
+        milestone: A milestone reached (e.g., "Auth refactor complete")
+        stories_delta: Number of new stories captured this update
+        decisions_delta: Number of decisions made this update
+    """
+    import glob as globmod
+
+    # Find the session ID from the temp file
+    session_id = None
+    session_files = globmod.glob("/tmp/aiia-sessions/*")
+    for sf in session_files:
+        # Use the most recent one as a fallback
+        try:
+            with open(sf) as f:
+                session_id = f.read().strip()
+        except Exception:
+            continue
+
+    if not session_id:
+        return "No active AIIA session found. Session hooks may not be configured."
+
+    body = {}
+    if description:
+        body["description"] = description
+    if milestone:
+        body["milestone"] = milestone
+    if stories_delta:
+        body["stories_delta"] = stories_delta
+    if decisions_delta:
+        body["decisions_delta"] = decisions_delta
+
+    if not body:
+        return "Nothing to update — provide at least one field."
+
+    result = await _call_command_center(
+        "POST", f"/api/sessions/{session_id}/update", body
+    )
+
+    if "error" in result:
+        return f"Session update failed: {result['error']}"
+
+    return (
+        f"Session updated: {result.get('description', '')} [{result.get('status', '')}]"
+    )
+
+
+@mcp.tool()
+async def aiia_active_sessions() -> str:
+    """Show all active Claude Code sessions tracked by AIIA.
+
+    Returns a list of all currently active sessions across all terminals,
+    including what each is working on, how long it's been active, and
+    progress metrics (commits, stories, decisions).
+    """
+    result = await _call_command_center("GET", "/api/sessions?active_only=true")
+
+    if isinstance(result, dict) and "error" in result:
+        return f"Failed to get sessions: {result['error']}"
+
+    if not result:
+        return "No active sessions."
+
+    lines = [f"### {len(result)} active session(s)", ""]
+    for s in result:
+        sid = s.get("id", "?")[:8]
+        desc = s.get("description", "unnamed")
+        work_dir = s.get("working_directory", "")
+        commits = s.get("commits", 0)
+        stories = s.get("stories_captured", 0)
+        decisions = s.get("decisions_made", 0)
+        started = s.get("started_at", "")[:16]
+
+        dir_short = work_dir.split("/")[-1] if work_dir else ""
+        stats = []
+        if commits:
+            stats.append(f"{commits} commits")
+        if stories:
+            stats.append(f"{stories} stories")
+        if decisions:
+            stats.append(f"{decisions} decisions")
+        stats_str = f" ({', '.join(stats)})" if stats else ""
+
+        lines.append(f"- **{desc}** `{sid}`{stats_str}")
+        if dir_short:
+            lines.append(f"  {dir_short} | started {started}")
         lines.append("")
 
     return "\n".join(lines)

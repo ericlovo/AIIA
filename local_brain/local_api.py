@@ -9,7 +9,7 @@ calls this over Tailscale for:
 - PII/PHI scanning
 
 Start:
-    cd local_brain
+    cd local_brain/local_brain
     uvicorn local_api:app --host 0.0.0.0 --port 8100
 
 Or:
@@ -38,10 +38,11 @@ from local_brain.eq_brain.knowledge_store import KnowledgeStore
 from local_brain.eq_brain.memory import Memory
 from local_brain.eq_brain.brain import AIIA
 from local_brain.eq_brain.supermemory_bridge import SupermemoryBridge
+from local_brain.eq_brain.vault_writer import VaultWriter
 try:
-    from services.google_tts import GoogleTTSService
+    from local_brain.services.google_tts import GoogleTTSService
 except ImportError:
-    GoogleTTSService = None  # Optional: Google TTS not available
+    GoogleTTSService = None  # TTS is optional — install google-cloud-texttospeech
 
 logger = logging.getLogger("aiia.local_brain.api")
 
@@ -133,9 +134,9 @@ async def startup():
     else:
         logger.info("Supermemory bridge disabled by config")
 
-    # Initialize Google Cloud TTS
-    _google_tts = GoogleTTSService()
-    if _google_tts.is_available:
+    # Initialize Google Cloud TTS (optional)
+    _google_tts = GoogleTTSService() if GoogleTTSService else None
+    if _google_tts and _google_tts.is_available:
         logger.info("Google Cloud TTS available")
     else:
         logger.info(
@@ -184,9 +185,19 @@ async def _ensure_aiia() -> Optional[AIIA]:
             memory = Memory(data_dir=_config.eq_brain_data_dir)
 
             task_model = _config.models.get("task")
-            model = task_model.model_name if task_model else "llama3.1:8b"
+            model = task_model.model_name if task_model else "llama3.1:8b-instruct-q8_0"
             deep_cfg = _config.models.get("deep")
             deep_model = deep_cfg.model_name if deep_cfg else None
+            # Initialize VaultWriter for real-time Obsidian sync
+            _vault_writer = None
+            if _config.vault_dir and os.path.isdir(_config.vault_dir):
+                _vault_writer = VaultWriter(
+                    vault_dir=_config.vault_dir,
+                    auto_file_queries=_config.auto_file_queries,
+                )
+                await _vault_writer.start()
+                logger.info(f"VaultWriter started: {_config.vault_dir}")
+
             _aiia = AIIA(
                 knowledge,
                 memory,
@@ -195,6 +206,7 @@ async def _ensure_aiia() -> Optional[AIIA]:
                 supermemory_bridge=_supermemory_bridge,
                 deep_model=deep_model,
                 cloud_timeout=_config.hybrid_cloud_timeout,
+                vault_writer=_vault_writer,
             )
 
             status = await _aiia.status()
@@ -382,7 +394,7 @@ async def smart_route(request: RouteRequest):
     asyncio.create_task(
         _report_metrics(
             provider="local",
-            model=_config.models["routing"].model_name if _config else "llama3.1:8b",
+            model=_config.models["routing"].model_name if _config else "llama3.1:8b-instruct-q8_0",
             latency_ms=result.get("latency_ms", 0)
             if isinstance(result, dict)
             else getattr(result, "latency_ms", 0),
@@ -417,7 +429,7 @@ async def local_chat(request: ChatRequest):
         model_config = _config.models.get(request.model_role)
         if model_config:
             model = model_config.model_name
-    model = model or "llama3.1:8b"
+    model = model or "llama3.1:8b-instruct-q8_0"
 
     response = await _ollama.chat(
         model=model,
@@ -505,7 +517,7 @@ async def summarize(request: SummarizeRequest):
     system = style_prompts.get(request.style, style_prompts["concise"])
 
     task_model = _config.models.get("task")
-    model = task_model.model_name if task_model else "llama3.1:8b"
+    model = task_model.model_name if task_model else "llama3.1:8b-instruct-q8_0"
 
     response = await _ollama.chat(
         model=model,
@@ -569,7 +581,7 @@ async def extract_memory(request: MemoryExtractRequest):
     )
 
     task_model = _config.models.get("task")
-    model = task_model.model_name if task_model else "llama3.1:8b"
+    model = task_model.model_name if task_model else "llama3.1:8b-instruct-q8_0"
 
     response = await _ollama.chat(
         model=model,
@@ -664,7 +676,7 @@ async def scan_pii(request: PIIScanRequest):
     )
 
     pii_model = _config.models.get("pii")
-    model = pii_model.model_name if pii_model else "llama3.1:8b"
+    model = pii_model.model_name if pii_model else "llama3.1:8b-instruct-q8_0"
 
     start = time.monotonic()
     response = await _ollama.chat(
@@ -727,7 +739,7 @@ class AIIAAskRequest(BaseModel):
     include_sessions: bool = True
     n_results: int = 5
     max_tokens: int = 4096
-    num_ctx: int = 8192  # Context window: 8192 (text), 4096 (voice)
+    num_ctx: int = 32768  # Context window: 32K (text), 4096 (voice)
     depth: str = "fast"  # "fast" (local only), "hybrid" (+ cloud), "deep" (+ DeepSeek)
 
 
@@ -781,7 +793,7 @@ async def aiia_ask(request: AIIAAskRequest):
     asyncio.create_task(
         _report_metrics(
             provider="local",
-            model=_aiia._model if _aiia else "llama3.1:8b",
+            model=_aiia._model if _aiia else "llama3.1:8b-instruct-q8_0",
             latency_ms=latency,
             endpoint="aiia_ask",
         )
@@ -870,6 +882,30 @@ async def eq_remember_legacy(request: AIIARememberRequest):
     return await aiia_remember(request)
 
 
+class StoryIndexRequest(BaseModel):
+    story: Dict[str, Any]
+
+
+class StoriesBulkIndexRequest(BaseModel):
+    stories: List[Dict[str, Any]]
+
+
+@app.post("/v1/aiia/index-story", dependencies=[Depends(verify_api_key)])
+async def aiia_index_story(request: StoryIndexRequest):
+    """Index a single roadmap story into ChromaDB for semantic search."""
+    _aiia = await _require_aiia()
+    await _aiia._knowledge.index_story(request.story)
+    return {"indexed": True, "story_id": request.story.get("id", "")}
+
+
+@app.post("/v1/aiia/index-stories", dependencies=[Depends(verify_api_key)])
+async def aiia_index_stories(request: StoriesBulkIndexRequest):
+    """Bulk index all roadmap stories into ChromaDB."""
+    _aiia = await _require_aiia()
+    count = await _aiia._knowledge.index_stories(request.stories)
+    return {"indexed": count}
+
+
 @app.post("/v1/aiia/session-end", dependencies=[Depends(verify_api_key)])
 async def aiia_session_end(request: AIIASessionEndRequest):
     """
@@ -898,6 +934,47 @@ async def aiia_session_end(request: AIIASessionEndRequest):
 )
 async def eq_session_end_legacy(request: AIIASessionEndRequest):
     return await aiia_session_end(request)
+
+
+# ─── Slack Integration ─────────────────────────────────────────────
+
+
+class SlackPostRequest(BaseModel):
+    """Post a message to Slack."""
+    channel: str = "#aiia-backlog"
+    text: str
+    thread_ts: Optional[str] = None
+
+
+@app.post("/v1/aiia/slack", dependencies=[Depends(verify_api_key)])
+async def aiia_slack_post(request: SlackPostRequest):
+    """Post a message to Slack on behalf of AIIA."""
+    from local_brain.slack_client import slack, _api, _resolve_channel
+
+    token = os.getenv("SLACK_BOT_TOKEN", "")
+    if not token:
+        raise HTTPException(status_code=503, detail="Slack not configured (SLACK_BOT_TOKEN missing)")
+
+    channel_id = _resolve_channel(request.channel)
+    if not channel_id:
+        raise HTTPException(status_code=404, detail=f"Channel not found: {request.channel}")
+
+    body = {"channel": channel_id, "text": request.text}
+    if request.thread_ts:
+        body["thread_ts"] = request.thread_ts
+
+    result = _api("chat.postMessage", body=body)
+    if not result:
+        raise HTTPException(status_code=502, detail="Slack API call failed")
+
+    return {
+        "ok": True,
+        "channel": request.channel,
+        "ts": result.get("ts"),
+    }
+
+
+# ─── AIIA Status ──────────────────────────────────────────────────
 
 
 @app.get("/v1/aiia/status", dependencies=[Depends(verify_api_key)])
@@ -1282,7 +1359,7 @@ async def aiia_voice(request: VoiceAskRequest):
     asyncio.create_task(
         _report_metrics(
             provider="local",
-            model=_aiia._model if _aiia else "llama3.1:8b",
+            model=_aiia._model if _aiia else "llama3.1:8b-instruct-q8_0",
             latency_ms=ask_latency,
             endpoint="aiia_voice",
         )
@@ -1428,14 +1505,23 @@ async def aiia_session_start(request: SessionStartRequest):
     recent_insights = []
     token_summary = {}
 
+    actionable_stories = []
+
     try:
         async with httpx.AsyncClient(timeout=3.0) as client:
             # Parallel requests to Command Center
-            sec_resp, route_resp, insight_resp, token_resp = await asyncio.gather(
+            (
+                sec_resp,
+                route_resp,
+                insight_resp,
+                token_resp,
+                stories_resp,
+            ) = await asyncio.gather(
                 client.get(f"{COMMAND_CENTER_URL}/api/insights"),
                 client.get(f"{COMMAND_CENTER_URL}/api/routing/stats"),
                 client.get(f"{COMMAND_CENTER_URL}/api/insights"),
                 client.get(f"{COMMAND_CENTER_URL}/api/tokens/today"),
+                client.get(f"{COMMAND_CENTER_URL}/api/roadmap"),
                 return_exceptions=True,
             )
             if not isinstance(sec_resp, Exception) and sec_resp.status_code == 200:
@@ -1444,6 +1530,31 @@ async def aiia_session_start(request: SessionStartRequest):
                 routing_stats = route_resp.json()
             if not isinstance(token_resp, Exception) and token_resp.status_code == 200:
                 token_summary = token_resp.json()
+            if (
+                not isinstance(stories_resp, Exception)
+                and stories_resp.status_code == 200
+            ):
+                all_stories = stories_resp.json().get("stories", [])
+                # Filter to actionable statuses, sort by priority
+                priority_order = {"P0": 0, "P1": 1, "P2": 2, "P3": 3}
+                status_order = {
+                    "blocked": 0,
+                    "in_progress": 1,
+                    "active": 2,
+                    "backlog": 3,
+                }
+                actionable_stories = [
+                    s
+                    for s in all_stories
+                    if s.get("status")
+                    in ("backlog", "active", "in_progress", "blocked")
+                ]
+                actionable_stories.sort(
+                    key=lambda s: (
+                        priority_order.get(s.get("priority", "P3"), 9),
+                        status_order.get(s.get("status", "backlog"), 9),
+                    )
+                )
     except Exception:
         pass  # Command Center may not be running
 
@@ -1456,6 +1567,7 @@ async def aiia_session_start(request: SessionStartRequest):
         "recent_insights": recent_insights,
         "routing_stats": routing_stats,
         "token_summary": token_summary,
+        "actionable_stories": actionable_stories,
     }
 
 
@@ -1483,7 +1595,7 @@ async def pre_commit_check():
     - .env files staged
     - Hardcoded API keys in staged files
     - py_compile on staged .py files
-    - Product-specific code in platform layer
+    - Product-specific code in local_brain/
     - SME auto-loading re-enabled
     """
     import re
@@ -1573,10 +1685,11 @@ async def pre_commit_check():
         except Exception:
             pass
 
-    # Check 4: Product-specific code in platform layer
-    platform_dirs = ["local_brain/", "platform/"]
-    platform_files = [f for f in staged_files if any(f.startswith(d) for d in platform_dirs)]
-    product_keywords = []  # Add tenant IDs here if using multi-tenant
+    # Check 4: Product-specific code in local_brain/
+    platform_files = [f for f in staged_files if f.startswith("local_brain/")]
+    product_keywords = [
+        # Add your tenant/product keywords here for cross-contamination detection
+    ]
     for pf in platform_files:
         full_path = os.path.join(repo_path, pf)
         if not os.path.exists(full_path):
@@ -1584,6 +1697,7 @@ async def pre_commit_check():
         try:
             content = open(full_path, "r", errors="replace").read()
             for kw in product_keywords:
+                # Exclude comments, imports from local_brain references
                 if f'tenant_id = "{kw}"' in content or f'tenant_id="{kw}"' in content:
                     reasons.append(
                         f"Product-specific code ({kw}) in platform file: {pf}"
@@ -1594,7 +1708,7 @@ async def pre_commit_check():
 
     # Check 5: SME auto-loading re-enabled
     for f in staged_files:
-        if "main.py" in f:
+        if "main.py" in f and "default" in f:
             full_path = os.path.join(repo_path, f)
             if os.path.exists(full_path):
                 try:
@@ -1603,6 +1717,95 @@ async def pre_commit_check():
                         reasons.append(f"SME auto-loading may be re-enabled in {f}")
                 except Exception:
                     pass
+
+    # Check 6: Sensitive business/personal content in strategic docs
+    # Prevents committing personal names + deal sizes, MRR breakdowns,
+    # employment speculation, or negotiation strategy to docs/*.md
+    # Added after March 15, 2026 incident where Claude coded partner
+    # details, per-client MRR, and employment speculation into the repo.
+    sensitive_doc_patterns = [
+        r"docs/.*\.md$",
+        r"CLAUDE\.md$",
+        r".*ROADMAP.*\.md$",
+        r".*STRATEGIC.*\.md$",
+        r".*PIPELINE.*\.md$",
+        r".*SALES.*\.md$",
+    ]
+    sensitive_staged = [
+        f
+        for f in staged_files
+        if any(re.search(p, f, re.IGNORECASE) for p in sensitive_doc_patterns)
+    ]
+    if sensitive_staged and diff_text:
+        # Only check added lines in strategic docs
+        added_lines_text = "\n".join(
+            l[1:]  # strip the leading '+'
+            for l in diff_text.split("\n")
+            if l.startswith("+") and not l.startswith("+++")
+        )
+        if added_lines_text.strip():
+            sensitive_findings = []
+
+            # 6a: Dollar amounts near business keywords
+            dollar_pattern = r"\$[\d,]+[KkMm]?\b"
+            biz_keywords = [
+                "MRR",
+                "ARR",
+                "revenue",
+                "retainer",
+                "deal",
+                "contract",
+                "salary",
+                "comp",
+                "pricing",
+                "/mo",
+                "/month",
+                "per.month",
+            ]
+            for m in re.finditer(dollar_pattern, added_lines_text):
+                ctx_start = max(0, m.start() - 80)
+                ctx_end = min(len(added_lines_text), m.end() + 80)
+                context = added_lines_text[ctx_start:ctx_end].lower()
+                if any(re.search(kw, context, re.IGNORECASE) for kw in biz_keywords):
+                    sensitive_findings.append("Dollar amount in business context")
+                    break
+
+            # 6b: Named individuals in business context
+            name_biz_patterns = [
+                r"[A-Z][a-z]+\s*\([A-Z][a-z]+\)\s*[~$\d|]",
+                r"[A-Z][a-z]+(?:'s)?\s+(?:engagement|retainer|deal|client|network)",
+                r"(?:scoping|working)\s+with\s+[A-Z][a-z]+",
+            ]
+            for nbp in name_biz_patterns:
+                if re.search(nbp, added_lines_text):
+                    sensitive_findings.append("Named individual in business context")
+                    break
+
+            # 6c: Employment / partnership speculation
+            emp_patterns = [
+                r"\bfull.time\b",
+                r"\bFT\s+offer",
+                r"\bnon.compete\b",
+                r"\bleverage\s+either\s+way\b",
+            ]
+            for ep in emp_patterns:
+                if re.search(ep, added_lines_text, re.IGNORECASE):
+                    sensitive_findings.append("Employment/partnership speculation")
+                    break
+
+            # 6d: Tables with financial data
+            for line in added_lines_text.split("\n"):
+                if "|" in line and re.search(dollar_pattern, line):
+                    if re.search(r"MRR|revenue|retainer|salary", line, re.IGNORECASE):
+                        sensitive_findings.append("Table row with financial data")
+                        break
+
+            if sensitive_findings:
+                reasons.append(
+                    f"Sensitive content in staged docs ({', '.join(sensitive_findings)}). "
+                    f"Files: {', '.join(sensitive_staged)}. "
+                    f"Use AIIA memory or private docs for business-sensitive details."
+                )
 
     if reasons:
         return {
@@ -1723,7 +1926,7 @@ async def review_commit(request: ReviewCommitRequest):
             question=review_prompt,
             context="You are reviewing a code diff. Be brief and specific. Only flag real issues.",
             n_results=0,
-            num_ctx=8192,
+            num_ctx=32768,
         )
         review_text = result.get("answer", "")
 

@@ -711,8 +711,8 @@ Checks 4 services every 30 seconds with 24-hour history retention:
 | Service | Check URL | Timeout | Category |
 |---------|-----------|---------|----------|
 | AIIA Local Brain | `localhost:8100/v1/aiia/status` | 5s | intelligence |
-| Product Backend | `{product}.onrender.com/health` | 10s | backend |
-| Platform API | `{platform}.onrender.com/health` | 10s | backend |
+| Product Backend | `{product-backend-url}/health` | 10s | backend |
+| Platform API | `{platform-api-url}/health` | 10s | backend |
 | Ollama | `localhost:11434/api/tags` | 3s | local |
 
 **Status Values:** online, degraded (slow/4xx), offline (timeout/5xx/error)

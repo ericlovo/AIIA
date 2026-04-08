@@ -16,6 +16,7 @@ _TIER_MAP: dict[tuple[str, str | None], SafetyTier] = {
     ("verify_lint", None): SafetyTier.AUTO,
     ("verify_test", None): SafetyTier.AUTO,
     ("verify_security", None): SafetyTier.AUTO,
+    ("branch_prep", None): SafetyTier.SUPERVISED,
     ("commit", None): SafetyTier.SUPERVISED,
     ("test_fix", "warn"): SafetyTier.SUPERVISED,
     ("test_fix", "error"): SafetyTier.SUPERVISED,
@@ -28,7 +29,7 @@ _TIER_MAP: dict[tuple[str, str | None], SafetyTier] = {
 }
 
 _FORBIDDEN_PATHS = [
-    "products/my-app/backend/main.py",
+    "products/default-app/backend/main.py",
     ".env",
 ]
 

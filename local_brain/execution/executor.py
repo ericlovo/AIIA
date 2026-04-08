@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 from typing import Any, Callable
 
 from .chains import VERIFY_TYPES, apply_chain
@@ -10,6 +11,7 @@ from .git_ops import GitOps
 from .safety import SafetyGate, SafetyTier
 from .story_executor import StoryExecutor
 from .strategies import (
+    BranchPrepStrategy,
     ClaudeCodeStrategy,
     CommitStrategy,
     DirectFixStrategy,
@@ -20,7 +22,12 @@ from .verification import Verifier
 
 logger = logging.getLogger("aiia.execution.engine")
 
-REPO_PATH = os.getenv("AIIA_REPO_PATH", "/path/to/AIIA")
+REPO_PATH = os.environ.get(
+    "AIIA_REPO_PATH",
+    os.path.dirname(
+        os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    ),
+)
 
 
 class ExecutionEngine:
@@ -54,6 +61,7 @@ class ExecutionEngine:
             git_ops=self._git,
         )
         self._commit = CommitStrategy(self._git)
+        self._branch_prep = BranchPrepStrategy(self._git, repo_path)
 
         # Story execution
         self._roadmap = roadmap_store
@@ -191,12 +199,16 @@ class ExecutionEngine:
         if action_type in VERIFY_TYPES:
             return await self._handle_verify_only(action, tier_label)
 
-        strategy = select_strategy(action, self._direct, self._claude, self._commit)
+        strategy = select_strategy(
+            action, self._direct, self._claude, self._commit, self._branch_prep
+        )
         strategy_name = "direct"
         if strategy is self._claude:
             strategy_name = "claude_code"
         elif strategy is self._commit:
             strategy_name = "commit"
+        elif strategy is self._branch_prep:
+            strategy_name = "branch_prep"
 
         # Start log record
         log_record = self.execution_log.start(

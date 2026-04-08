@@ -29,7 +29,7 @@ class OllamaClient:
     Usage:
         client = OllamaClient()
         response = await client.chat(
-            model="llama3:8b",
+            model="llama3.1:8b-instruct-q8_0",
             messages=[{"role": "user", "content": "Hello"}],
             system="You are AIIA.",
         )
@@ -49,20 +49,20 @@ class OllamaClient:
         temperature: float = 0.7,
         max_tokens: int = 4096,
         stream: bool = False,
-        num_ctx: int = 8192,
+        num_ctx: int = 32768,
         timeout: Optional[float] = None,
     ) -> Dict[str, Any]:
         """
         Send a chat completion request to Ollama.
 
         Args:
-            model: Model name (e.g., "llama3:8b")
+            model: Model name (e.g., "llama3.1:8b-instruct-q8_0")
             messages: Chat messages [{"role": "user/assistant/system", "content": "..."}]
             system: System prompt (prepended as system message)
             temperature: Response randomness
             max_tokens: Max response tokens
             stream: Whether to stream the response
-            num_ctx: Context window size (8192 default, use 4096 for voice)
+            num_ctx: Context window size (32768 default, use 4096 for voice)
             timeout: Override default timeout (seconds) — use for slow models like DeepSeek R1
 
         Returns:
@@ -116,7 +116,7 @@ class OllamaClient:
         system: Optional[str] = None,
         temperature: float = 0.7,
         max_tokens: int = 4096,
-        num_ctx: int = 8192,
+        num_ctx: int = 32768,
     ) -> AsyncGenerator[str, None]:
         """
         Stream a chat completion from Ollama, yielding content chunks.
@@ -220,7 +220,7 @@ class OllamaClient:
         Pull a model from the Ollama registry.
 
         Args:
-            model: Model name to pull (e.g., "llama3:8b")
+            model: Model name to pull (e.g., "llama3.1:8b-instruct-q8_0")
 
         Returns:
             True if successful

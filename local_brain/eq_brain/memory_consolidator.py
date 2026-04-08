@@ -92,17 +92,42 @@ class MemoryConsolidator:
     def _sanitize_json(text: str) -> str:
         """Fix common LLM JSON mistakes before parsing.
 
-        DeepSeek sometimes writes:
+        DeepSeek R1 sometimes writes:
         - Math expressions like `5 / 47` instead of floats
+        - Math with trailing comparison: `4 / 40 = 0.1`
+        - Unicode approx: `4/317 ≈ 0.0126`
         - JS-style comments like `// Approximately 0.106`
         - Trailing commas before closing braces/brackets
+        - Ellipsis in arrays: `[1, 2, 3, ..., 358]`
         """
         # Strip single-line JS comments (// ...)
         text = re.sub(r"\s*//[^\n]*", "", text)
         # Strip multi-line JS comments (/* ... */)
         text = re.sub(r"/\*.*?\*/", "", text, flags=re.DOTALL)
 
-        # Replace `number / number` with the actual float
+        # Replace ellipsis ranges in arrays: [1, 2, 3, ..., 358] -> [1, 358]
+        # Keeps first and last elements, removes the filler
+        text = re.sub(
+            r"(\[\s*\d+)\s*,\s*\d+\s*,\s*\d+\s*,\s*\.{2,}\s*,\s*(\d+\s*\])",
+            r"\1, \2",
+            text,
+        )
+
+        # Replace `N / M = X.X` or `N/M = X.X` with just the float result
+        # Also handles ≈ (unicode approx-equal)
+        def _eval_division_with_result(match):
+            try:
+                return str(round(int(match.group(1)) / int(match.group(2)), 4))
+            except (ValueError, ZeroDivisionError):
+                return "0"
+
+        text = re.sub(
+            r"(\d+)\s*/\s*(\d+)\s*[=\u2248]\s*[\d.]+",
+            _eval_division_with_result,
+            text,
+        )
+
+        # Replace remaining `number / number` with the actual float
         def _eval_division(match):
             try:
                 return str(round(int(match.group(1)) / int(match.group(2)), 4))

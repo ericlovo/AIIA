@@ -3,7 +3,7 @@ Syntax checker — py_compile across all products and platform code.
 
 Usage:
     from local_brain.scripts.syntax_checker import check_syntax
-    results = check_syntax("/path/to/repo")
+    results = check_syntax("/path/to/AIIA")
 """
 
 import py_compile
@@ -68,7 +68,7 @@ def _classify_file(filepath: Path, repo: Path) -> str:
         parts = rel.split("/")
         if len(parts) >= 2:
             return parts[1]  # products/{name}/...
-    elif rel.startswith("platform/"):
+    elif rel.startswith("local_brain/"):
         return "platform"
     elif rel.startswith("shared/"):
         return "shared"
