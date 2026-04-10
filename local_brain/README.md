@@ -211,9 +211,6 @@ Query → SmartConductor → {domain, eq_level, complexity_score, recommended_pa
 | 0.3-0.6 | `eos` | Single Claude call | ~$0.01 |
 | 0.6-1.0 | `rlm` | Agentic loop (multi-step) | ~$0.10+ |
 
-**Domains:** Finance, Legal, Compliance, Document, Memory, Crisis, Estate, Marketing, Social, General
-**EQ Levels:** Fibonacci-scaled (1, 2, 3, 5, 8, 13, 21) — ANALYST through EMERGENCY
-
 ---
 
 ## Story Capture & Prioritization
