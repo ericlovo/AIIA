@@ -31,6 +31,7 @@ from pydantic import BaseModel, Field
 
 from fastapi.responses import Response as RawResponse
 
+from local_brain.__version__ import __version__
 from local_brain.config import get_config, LocalBrainConfig
 from local_brain.ollama_client import OllamaClient
 from local_brain.smart_conductor import SmartConductor
@@ -92,9 +93,9 @@ async def _report_metrics(
 # ─────────────────────────────────────────────────────────────
 
 app = FastAPI(
-    title="AIIA — AIIA Local Brain",
+    title="AIIA — Local Brain",
     description="AIIA (AI Information Architecture) — persistent AI teammate running on Mac Mini",
-    version="0.3.0",
+    version=__version__,
 )
 
 app.add_middleware(

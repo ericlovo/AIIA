@@ -2,9 +2,44 @@
 
 > Your AI coding assistant forgets everything between sessions. AIIA doesn't.
 
-**Hardware:** Mac Mini M4, 24GB unified memory
+[![Version](https://img.shields.io/badge/version-0.4.0-blue)](https://github.com/ericlovo/AIIA/releases/tag/v0.4.0)
+[![License](https://img.shields.io/badge/license-Apache%202.0-green)](./LICENSE)
+[![Python](https://img.shields.io/badge/python-3.10%2B-blue)](./pyproject.toml)
+
+**Hardware:** Mac Mini M4, 24GB unified memory (or any Apple Silicon with 24GB+)
 **License:** Apache 2.0
-**Status:** Production (since February 2026)
+**Current release:** v0.4.0 (April 2026)
+**Status:** Running in production since February 2026
+**Changelog:** [CHANGELOG.md](./CHANGELOG.md)
+**Security:** [SECURITY.md](./SECURITY.md) · **Contributing:** [CONTRIBUTING.md](./CONTRIBUTING.md) · **Conduct:** [CODE_OF_CONDUCT.md](./CODE_OF_CONDUCT.md)
+
+---
+
+## What's new in v0.4.0
+
+Quality-of-life release focused on open-source hygiene, not new features.
+The runtime you'd install today does everything it did before — this cut
+just makes the project actually safe to fork, install, and contribute to.
+
+- **Installable package.** `pyproject.toml` at the repo root. Run
+  `pip install -e .[dev]` and the whole thing works from source.
+- **Single version source of truth.** Brain API, Command Center, and
+  dashboard all read `local_brain/__version__.py`. No more drift between
+  `0.3.0` / `2.1.0` / `0.0.0` — everything is `0.4.0`.
+- **Sanitization pass.** Removed residual product/client references that
+  had leaked into the public repo from the private monorepo it was carved
+  out of. A CI sanitization guard now fails the build if any of them come
+  back.
+- **Docs that are missing stop being missing.** `CHANGELOG.md`,
+  `SECURITY.md`, `CODE_OF_CONDUCT.md`, `.github/PULL_REQUEST_TEMPLATE.md`,
+  and a GitHub Actions CI workflow that runs ruff + pytest-collect +
+  the sanitization guard.
+
+See [CHANGELOG.md](./CHANGELOG.md) for the full list, including everything
+that shipped silently between `v0.1.0` and this release (vault sync, story
+runner, execution engine, metered cloud sync, React dashboard, geometric
+story prioritization, Obsidian bridge, background task safety, expanded
+APIs).
 
 ---
 

@@ -238,11 +238,11 @@ Every backlog story is scored against these filters (0-10 each, weighted):
 
 | Filter | Weight | Question |
 |--------|--------|----------|
-| Closes Deal | 5x | Does this help close LNS, Automotive ($75K), Marketing Agency, or Fractional CFO? |
-| Retains DefaultApp | 4x | Does this fix a bug, improve UX, or add a feature for the paying client? |
+| Closes Deal | 5x | Does this directly help close a named opportunity in the current pipeline? |
+| Retains Client | 4x | Does this fix a bug, improve UX, or add a feature for a paying client? |
 | Reduces Cost | 3x | Does this reduce token spend, infra cost, or manual overhead? |
-| Enables Tenants | 2x | Does this improve the platform for all products? |
-| New Revenue | 1x | Does this create a new revenue stream (Content Engine, new product)? |
+| Enables Tenants | 2x | Does this improve the platform for all products or tenants? |
+| New Revenue | 1x | Does this create or unlock a new revenue stream? |
 
 **Max Score:** 150 (all filters at 10)
 **Priority Mapping:** P0 >= 90 | P1 >= 50 | P2 >= 25 | P3 < 25
@@ -703,14 +703,13 @@ Checks 4 services every 30 seconds with 24-hour history retention:
 │  AIIA EQ Brain + Memory               │
 │  Supermemory Bridge (cloud sync)       │
 └──────────┬─────────────────────────────┘
-           │ Tailscale tunnel (WireGuard)
-┌──────────┼────────────────────────────────────────┐
-│          │            │              │             │
-│  AIIA Platform  AIIA Analyst  Marketing    CK Marketing
-│  (aiia-platform) (aiia-app) (aiia-marketing) (ck-marketing)
-│          │            │
-│     Render.com    Render.com
-└───────────────────────────────────────────────────┘
+           │ Optional secure tunnel (e.g. WireGuard/Tailscale)
+┌──────────┼──────────────────────────────┐
+│          │                              │
+│   Your host app(s)          Your host app(s)
+│   (any framework)           (any platform)
+│
+└────────────────────────────────────────┘
 ```
 
 **Three-provider LLM stack:** LOCAL ($0) → ANTHROPIC (Claude, primary) → GOOGLE (Gemini, fallback)

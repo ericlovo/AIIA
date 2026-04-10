@@ -1,0 +1,91 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint-and-test:
+    name: Lint + test + sanitization guard
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install package + dev dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Verify __version__ is importable
+        run: |
+          python -c "from local_brain.__version__ import __version__; print('version:', __version__); assert __version__, 'empty version'"
+
+      - name: ruff lint (advisory)
+        # The inherited codebase has a large backlog of pre-existing ruff
+        # findings. We surface them in the build log but don't fail the
+        # build on them yet — incremental cleanup is tracked for a later
+        # release. New code in PRs should still be clean; reviewers can
+        # scan the log. Flip continue-on-error to false once the backlog
+        # is down to zero.
+        run: ruff check local_brain/
+        continue-on-error: true
+
+      - name: ruff format check (advisory)
+        run: ruff format --check local_brain/
+        continue-on-error: true
+
+      - name: pytest collect-only
+        # Tests in local_brain/tests are integration tests that require
+        # running Ollama + Brain API + Command Center, so CI cannot run
+        # them for real. --collect-only still verifies that imports resolve
+        # and the test files are syntactically valid.
+        run: pytest --collect-only local_brain/tests/
+        continue-on-error: true
+
+  sanitization-guard:
+    name: Sanitization guard (no proprietary refs)
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Scan for banned strings
+        # Fails the build if any of these proprietary references reappear.
+        # If a file legitimately needs to mention one of them (e.g. a
+        # CHANGELOG entry explaining what was removed), add it to the
+        # --exclude list below with a comment explaining why.
+        run: |
+          set -e
+          BANNED='cathcap|realiz|codeword|acping|modivcare|ck-marketing|aplora-sales|aplora-marketing|family-law-suite|estate-planner|content-engine|aiia-legal|traction-eos|ericlovold|xcai_intelligence|xcai-intelligence|josefsberg|pingorch|ping_orchestrator|ping-orch|retains_defaultapp|DefaultApp-Direct'
+          # Excluded files (false positives, historical docs, or the guard itself):
+          #   - CHANGELOG.md             : documents what was removed
+          #   - PULL_REQUEST_TEMPLATE.md : shows the banned list in the checklist
+          #   - ci.yml                   : this file defines the banned list
+          if grep -rniE "$BANNED" \
+               --exclude-dir=.git \
+               --exclude-dir=node_modules \
+               --exclude-dir=dist \
+               --exclude-dir=build \
+               --exclude=CHANGELOG.md \
+               --exclude=PULL_REQUEST_TEMPLATE.md \
+               --exclude=ci.yml \
+               --exclude=package-lock.json \
+               .; then
+             echo ""
+             echo "::error::Sanitization guard failed — proprietary references detected."
+             echo "See .github/workflows/ci.yml for the banned list and exclusion rules."
+             exit 1
+          fi
+          echo "Sanitization guard: clean"

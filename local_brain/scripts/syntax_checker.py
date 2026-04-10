@@ -72,7 +72,5 @@ def _classify_file(filepath: Path, repo: Path) -> str:
         return "platform"
     elif rel.startswith("shared/"):
         return "shared"
-    elif rel.startswith("codeword/"):
-        return "codeword"
 
     return "root"

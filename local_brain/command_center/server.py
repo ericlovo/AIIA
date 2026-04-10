@@ -78,34 +78,8 @@ def _load_products():
 
 PRODUCTS = _load_products()
 
-# Future products (not market-facing yet)
-FUTURE_PRODUCTS = [
-    {
-        "id": "guru",
-        "name": "GURU",
-        "subtitle": "Guided Self-Mastery — BE, DO, FAITH",
-        "client": "AC Ping",
-        "status": "future",
-        "color": "#8b5cf6",
-        "note": "Eric = user #1, co-designed",
-    },
-    {
-        "id": "liz",
-        "name": "Liz",
-        "subtitle": "Health Coaching with Liz Josefsberg",
-        "client": "ReaLIZ",
-        "status": "uncertain",
-        "color": "#10b981",
-    },
-    {
-        "id": "estate",
-        "name": "Estate Planner",
-        "subtitle": "Estate Planning AI",
-        "client": "Pipeline",
-        "status": "pipeline",
-        "color": "#f59e0b",
-    },
-]
+# Future products — populate via AIIA_FUTURE_PRODUCTS_CONFIG env var (JSON file).
+FUTURE_PRODUCTS: List[Dict[str, Any]] = []
 
 AGENTS = [
     {
@@ -113,63 +87,35 @@ AGENTS = [
         "name": "Conductor",
         "type": "router",
         "color": "#3b82f6",
-        "detail": "EQ + Thomson + Complexity",
+        "detail": "EQ + complexity routing",
     },
     {
-        "id": "ping_orchestrator",
-        "name": "PingOrchestrator",
-        "type": "router",
-        "color": "#a855f7",
-        "detail": "Ethics routing + pattern detection",
-    },
-    {
-        "id": "eos",
+        "id": "fast",
         "name": "Fast Path",
         "type": "chat",
         "color": "#3b82f6",
-        "detail": "Single-shot fast path",
+        "detail": "Single-shot inference",
     },
     {
         "id": "rlm",
         "name": "RLM Engine",
         "type": "reasoning",
         "color": "#a855f7",
-        "detail": "Recursive agentic reasoning",
-    },
-    {
-        "id": "mia",
-        "name": "MIA",
-        "type": "ethics",
-        "color": "#c084fc",
-        "detail": "Moral Intention Analyst — 19 frameworks",
-    },
-    {
-        "id": "guru",
-        "name": "GURU",
-        "type": "development",
-        "color": "#10b981",
-        "detail": "Personal Development Guide",
+        "detail": "Recursive reasoning with tool calls",
     },
     {
         "id": "finance",
         "name": "Finance Analyst",
         "type": "specialist",
         "color": "#f59e0b",
-        "detail": "Rule of Thirds, P&L",
+        "detail": "Numerical analysis example",
     },
     {
         "id": "legal",
         "name": "Legal Analyst",
         "type": "specialist",
         "color": "#64d2ff",
-        "detail": "Document analysis",
-    },
-    {
-        "id": "estate_advisor",
-        "name": "Estate Advisor",
-        "type": "specialist",
-        "color": "#f59e0b",
-        "detail": "Trust & estate guidance",
+        "detail": "Document analysis example",
     },
 ]
 
@@ -213,25 +159,14 @@ INFRASTRUCTURE = [
 
 EDGES = [
     # Products → Routers
-    {"from": "app_a", "to": "conductor", "type": "chat"},
-    {"from": "mia", "to": "ping_orchestrator", "type": "chat"},
-    {"from": "app_b", "to": "conductor", "type": "chat"},
-    {"from": "app_c", "to": "conductor", "type": "chat"},
+    {"from": "my_app", "to": "conductor", "type": "chat"},
+    {"from": "demo", "to": "conductor", "type": "chat"},
     # Routers → Agents
-    {"from": "conductor", "to": "eos", "type": "routing", "label": "< 0.6"},
+    {"from": "conductor", "to": "fast", "type": "routing", "label": "< 0.6"},
     {"from": "conductor", "to": "rlm", "type": "routing", "label": ">= 0.6"},
-    {"from": "ping_orchestrator", "to": "mia", "type": "routing", "label": "ethics"},
-    {
-        "from": "ping_orchestrator",
-        "to": "guru",
-        "type": "routing",
-        "label": "self-mastery",
-    },
     # Agents → LLMs
-    {"from": "eos", "to": "claude", "type": "inference"},
+    {"from": "fast", "to": "claude", "type": "inference"},
     {"from": "rlm", "to": "claude", "type": "inference"},
-    {"from": "mia", "to": "claude", "type": "inference"},
-    {"from": "guru", "to": "claude", "type": "inference"},
     # Data connections
     {"from": "rlm", "to": "chromadb", "type": "data"},
     {"from": "aiia", "to": "chromadb", "type": "data"},
@@ -625,7 +560,9 @@ async def production_monitor_loop():
 # FastAPI App
 # ─────────────────────────────────────────────────────────────
 
-app = FastAPI(title="AIIA Command Center", version="2.1.0")
+from local_brain.__version__ import __version__
+
+app = FastAPI(title="AIIA Command Center", version=__version__)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
