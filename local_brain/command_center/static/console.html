@@ -910,7 +910,7 @@ body {
       </div>
       <div id="add-story-form" style="display:none;background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:8px;margin-bottom:8px">
         <div style="display:flex;gap:4px;margin-bottom:4px"><input id="new-title" placeholder="Title..." style="flex:1;background:var(--bg-card);border:1px solid var(--border);border-radius:4px;padding:4px 6px;color:var(--text);font-size:11px">
-        <select id="new-product" style="background:var(--bg-card);border:1px solid var(--border);border-radius:4px;padding:4px;color:var(--text-dim);font-size:11px"><option value="aiia-analyst">Analyst</option><option value="aiia-legal">Legal</option><option value="platform">Platform</option><option value="local-brain">Local Brain</option><option value="content-engine">Content Engine</option></select>
+        <select id="new-product" style="background:var(--bg-card);border:1px solid var(--border);border-radius:4px;padding:4px;color:var(--text-dim);font-size:11px"><option value="local-brain">Local Brain</option><option value="command-center">Command Center</option><option value="mcp-server">MCP Server</option><option value="docs">Docs</option><option value="other">Other</option></select>
         <select id="new-priority" style="background:var(--bg-card);border:1px solid var(--border);border-radius:4px;padding:4px;color:var(--text-dim);font-size:11px"><option value="P0">P0</option><option value="P1">P1</option><option value="P2" selected>P2</option><option value="P3">P3</option></select></div>
         <div style="display:flex;gap:4px"><textarea id="new-desc" placeholder="Description..." style="flex:1;background:var(--bg-card);border:1px solid var(--border);border-radius:4px;padding:4px 6px;color:var(--text);font-size:11px;min-height:30px;resize:vertical;font-family:inherit"></textarea>
         <button onclick="saveStory()" style="background:rgba(5,150,105,0.1);border:1px solid rgba(5,150,105,0.25);border-radius:4px;padding:4px 10px;color:var(--green);font-size:11px;cursor:pointer;align-self:flex-end">Save</button></div>
@@ -990,22 +990,17 @@ body {
         <defs>
           <filter id="glow"><feGaussianBlur stdDeviation="4" result="blur"/><feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
         </defs>
-        <text class="col-label" x="75" y="22">Products</text>
+        <text class="col-label" x="75" y="22">Clients</text>
         <text class="col-label" x="290" y="22">Routing</text>
         <text class="col-label" x="510" y="22">Agents</text>
         <text class="col-label" x="720" y="22">Tools</text>
         <text class="col-label" x="900" y="22">Infrastructure</text>
         <g id="edges-layer">
           <path class="edge-path" d="M100,65 Q195,120 290,170"/>
-          <path class="edge-path" d="M100,140 Q195,240 290,340"/>
-          <path class="edge-path" d="M100,215 Q195,200 290,185"/>
           <path class="edge-path" d="M320,170 Q415,115 510,95"/>
           <path class="edge-path" d="M320,185 Q415,220 510,235"/>
-          <path class="edge-path" d="M320,340 Q415,340 510,345"/>
-          <path class="edge-path" d="M320,355 Q415,395 510,430"/>
           <path class="edge-path" d="M540,90 Q720,80 890,100"/>
           <path class="edge-path" d="M540,235 Q720,165 890,110"/>
-          <path class="edge-path" d="M540,345 Q720,225 890,120"/>
           <path class="edge-path" d="M535,225 Q630,190 710,170"/>
           <path class="edge-path" d="M535,235 Q630,225 710,215"/>
           <path class="edge-path" d="M535,245 Q630,260 710,260"/>
@@ -1014,15 +1009,10 @@ body {
           <path class="edge-path" d="M310,195 Q600,450 890,350" style="stroke-dasharray:2 10"/>
         </g>
         <g id="nodes-layer">
-          <g class="node"><circle class="node-circle" cx="75" cy="65" r="24" fill="rgba(59,130,246,0.15)"/><text class="node-icon" x="75" y="61" style="font-size:8px">AIIA</text><text class="node-icon" x="75" y="73" style="font-size:6px;fill:var(--text-faint)">Analyst</text><text class="node-label" x="75" y="99">AIIA</text></g>
-          <g class="node"><circle class="node-circle" cx="75" cy="140" r="22" fill="rgba(168,85,247,0.15)"/><text class="node-icon" x="75" y="136" style="font-size:9px">MIA</text><text class="node-label" x="75" y="172">MIA</text></g>
-          <g class="node"><circle class="node-circle" cx="75" cy="215" r="20" fill="rgba(239,68,68,0.15)"/><text class="node-icon" x="75" y="213" style="font-size:7px">Code</text><text class="node-label" x="75" y="245">Codeword</text></g>
+          <g class="node"><circle class="node-circle" cx="75" cy="65" r="24" fill="rgba(59,130,246,0.15)"/><text class="node-icon" x="75" y="65" style="font-size:8px">Your</text><text class="node-icon" x="75" y="77" style="font-size:6px;fill:var(--text-faint)">app</text><text class="node-label" x="75" y="99">Host App</text></g>
           <g class="node"><circle class="node-circle" cx="290" cy="180" r="28" fill="rgba(59,130,246,0.12)"/><text class="node-icon" x="290" y="176" style="font-size:9px">EQ</text><text class="node-icon" x="290" y="188" style="font-size:7px;fill:var(--text-faint)">route</text><text class="node-label" x="290" y="220">Conductor</text></g>
-          <g class="node"><circle class="node-circle" cx="290" cy="345" r="24" fill="rgba(168,85,247,0.12)"/><text class="node-icon" x="290" y="345" style="font-size:9px">P</text><text class="node-label" x="290" y="380">PingOrch</text></g>
-          <g class="node"><circle class="node-circle" cx="510" cy="90" r="24" fill="rgba(59,130,246,0.12)"/><text class="node-icon" x="510" y="84" style="font-size:7px">Strategy</text><text class="node-icon" x="510" y="96" style="font-size:9px">EOS</text><text class="node-label" x="510" y="124">Fast Path</text></g>
+          <g class="node"><circle class="node-circle" cx="510" cy="90" r="24" fill="rgba(59,130,246,0.12)"/><text class="node-icon" x="510" y="90" style="font-size:9px">Fast</text><text class="node-label" x="510" y="124">Fast Path</text></g>
           <g class="node"><circle class="node-circle" cx="510" cy="235" r="26" fill="rgba(168,85,247,0.15)"/><text class="node-icon" x="510" y="231" style="font-size:9px">RLM</text><text class="node-icon" x="510" y="243" style="font-size:6px;fill:var(--text-faint)">recursive</text><text class="node-label" x="510" y="272">RLM Engine</text></g>
-          <g class="node"><circle class="node-circle" cx="510" cy="345" r="22" fill="rgba(192,132,252,0.15)"/><text class="node-icon" x="510" y="345" style="font-size:9px">MIA</text><text class="node-label" x="510" y="377">Ethics</text></g>
-          <g class="node"><circle class="node-circle" cx="510" cy="430" r="20" fill="rgba(16,185,129,0.15)"/><text class="node-icon" x="510" y="430" style="font-size:9px">G</text><text class="node-label" x="510" y="460">GURU</text></g>
           <g class="node"><circle class="node-circle" cx="710" cy="170" r="12" fill="rgba(245,158,11,0.1)"/><text class="node-label" x="710" y="190" style="font-size:8px">finance</text></g>
           <g class="node"><circle class="node-circle" cx="710" cy="215" r="12" fill="rgba(34,211,238,0.1)"/><text class="node-label" x="710" y="235" style="font-size:8px">legal</text></g>
           <g class="node"><circle class="node-circle" cx="710" cy="260" r="12" fill="rgba(16,185,129,0.1)"/><text class="node-label" x="710" y="280" style="font-size:8px">memory</text></g>
@@ -1424,8 +1414,8 @@ async function fetchTasks() { try { tasksData=await(await fetch('/api/tasks')).j
 
 const TYPE_COLORS = {feat:'#22c55e',fix:'#f59e0b',chore:'#8888cc',refactor:'#a78bfa',docs:'#60a5fa',nuke:'#ef4444',security:'#ef4444',ops:'#64d2ff',test:'#10b981',merge:'#666'};
 
-const CAT_ORDER = ['DefaultApp-Direct','Platform','AI/Infra','Other Tenants','Other'];
-const CAT_COLORS = {'DefaultApp-Direct':'#3b82f6','Platform':'#a855f7','AI/Infra':'#22d3ee','Other Tenants':'#f59e0b','Other':'#666'};
+const CAT_ORDER = ['Platform','AI/Infra','Other'];
+const CAT_COLORS = {'Platform':'#a855f7','AI/Infra':'#22d3ee','Other':'#666'};
 
 async function loadReport() {
   const el = $('shipped-content');
@@ -1748,35 +1738,31 @@ async function rejectAction(id) {
 // ── Components + Services ──
 
 const COMPONENTS = [
-  {name:'Excel/CSV Parsing',desc:'Ingest spreadsheets, P&L data',product:'aiia',tags:['ingestion','financial']},
-  {name:'Sidechat',desc:'Contextual AI within doc review',product:'aiia',tags:['chat','UX']},
-  {name:'Scorecard Generator',desc:'EOS scorecards, KPIs, Rocks',product:'aiia',tags:['reports','EOS']},
-  {name:'Document Export',desc:'Word, PDF, Excel, PowerPoint',product:'aiia',tags:['export']},
-  {name:'Estate Planning',desc:'Trusts, wills, powers of attorney',product:'aiia',tags:['estate','legal']},
-  {name:'PI Case Analysis',desc:'Case grading A-F, liability/damages',product:'aiia',tags:['PI','grading']},
-  {name:'4-Pillar Dashboard',desc:'Case Intelligence + Pipeline + Marketing + Capacity',product:'aiia',tags:['dashboard']},
-  {name:'Family Law Tools',desc:'Communication parser, timeline generator',product:'aiia',tags:['family-law']},
-  {name:'Marketing Agent',desc:'Content calendar, brand voice, multi-platform',product:'aiia',tags:['marketing']},
-  {name:'Neutralization Detection',desc:'Cognitive distortions, ethical drift',product:'mia',tags:['ethics']},
-  {name:'Socratic Questioning',desc:'19-framework ethical reasoning',product:'mia',tags:['ethics']},
-  {name:'Crisis Coach Agent',desc:'Safety planning, crisis intervention',product:'codeword',tags:['safety']},
-  {name:'Critical Audio Alerts',desc:'Bypass DND/silent via FCM v1',product:'codeword',tags:['mobile']},
+  {name:'Structured Memory',desc:'9 categories: decisions, patterns, lessons, sessions, team, project, agents, wip, meta',product:'local-brain',tags:['memory']},
+  {name:'Metered Cloud Sync',desc:'Quality-scored push to Supermemory with budget enforcement',product:'local-brain',tags:['memory','sync']},
+  {name:'Knowledge Store',desc:'ChromaDB-backed vector search for indexed documents',product:'local-brain',tags:['rag']},
+  {name:'Vault Writer',desc:'Export memory and notes to Obsidian-compatible Markdown',product:'local-brain',tags:['export']},
+  {name:'Session Indexer',desc:'Parse and classify Claude/agent session transcripts',product:'local-brain',tags:['indexing']},
+  {name:'Story Prioritizer',desc:'Geometric-vector scoring for backlog prioritization',product:'local-brain',tags:['planning']},
+  {name:'Morning Briefing',desc:'Automated daily digest of progress, blockers, and priorities',product:'local-brain',tags:['reporting']},
+  {name:'MCP Server',desc:'stdio-transport tools exposed to Claude Code and host agents',product:'mcp-server',tags:['integration']},
+  {name:'Command Center',desc:'Dashboard + ops overlay + voice interface',product:'command-center',tags:['ui']},
 ];
 
 const SERVICES = [
-  {name:'Conductor',desc:'EQ + Thomson routing + complexity (< 1ms)'},
-  {name:'RLM Engine',desc:'Recursive agentic reasoning with tool_use loop'},
-  {name:'AIIA EQ',desc:'Fibonacci-scaled emotional intelligence (1-21)'},
-  {name:'Unified LLM',desc:'Claude primary, Gemini fallback'},
-  {name:'RAG Pipeline',desc:'ChromaDB vector search + Supermemory'},
-  {name:'Privacy Router',desc:'PHI/PII filtering at system boundaries'},
-  {name:'User Memory',desc:'PostgreSQL-backed learned user facts'},
+  {name:'Conductor',desc:'EQ + complexity-based routing (< 1ms)'},
+  {name:'RLM Engine',desc:'Recursive reasoning loop with tool calls'},
+  {name:'EQ Brain',desc:'Fibonacci-scaled emotional context (1-21)'},
+  {name:'Unified LLM',desc:'Local (Ollama) → Anthropic → Google fallback chain'},
+  {name:'RAG Pipeline',desc:'ChromaDB vector search + optional cloud memory'},
+  {name:'Privacy Router',desc:'PII/PHI filtering at system boundaries'},
+  {name:'Memory Store',desc:'Structured JSON memory with decay policies'},
   {name:'File Ingestion',desc:'PDF, DOCX, CSV, Excel, Email parsing'},
-  {name:'Token Tracker',desc:'Per-session and per-tenant usage monitoring'},
-  {name:'PingOrchestrator',desc:'Ethics routing for MIA'},
+  {name:'Token Ledger',desc:'Per-session usage monitoring + hard budget caps'},
+  {name:'Ollama Bridge',desc:'Local LLM client for scoring and routing'},
 ];
 
-const PRODUCT_COLORS = {aiia:'#3b82f6',mia:'#a855f7',codeword:'#ef4444'};
+const PRODUCT_COLORS = {'local-brain':'#3b82f6','command-center':'#a855f7','mcp-server':'#10b981','docs':'#f59e0b','other':'#64748b'};
 
 function renderTools() {
   $('tools-count').textContent = COMPONENTS.length + SERVICES.length;

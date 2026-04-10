@@ -3,7 +3,7 @@ Story Prioritizer — LLM-scored prioritization for roadmap stories.
 
 Scores stories against AIIA's 5-filter priority framework:
   1. Does it close a deal?
-  2. Does it retain DefaultApp?
+  2. Does it retain a paying client?
   3. Does it reduce cost?
   4. Does it enable multiple tenants?
   5. Does it create a new revenue stream?

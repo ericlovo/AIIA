@@ -1343,20 +1343,11 @@
     <div class="form-group">
       <label>Product</label>
       <select id="storyProductInput">
-        <option value="platform">platform</option>
-        <option value="defaultapp-analyst">defaultapp-analyst</option>
-        <option value="aiia-legal">aiia-legal</option>
-        <option value="aiia-marketing">aiia-marketing</option>
-        <option value="aiiasales">aiiasales</option>
-        <option value="ck-marketing">ck-marketing</option>
-        <option value="content-engine">content-engine</option>
-        <option value="acping-ethics-ai">acping-ethics-ai</option>
-        <option value="realiz">realiz</option>
-        <option value="codeword">codeword</option>
-        <option value="estate-planner">estate-planner</option>
-        <option value="family-law-suite">family-law-suite</option>
-        <option value="modivcare">modivcare</option>
         <option value="local-brain">local-brain</option>
+        <option value="command-center">command-center</option>
+        <option value="mcp-server">mcp-server</option>
+        <option value="docs">docs</option>
+        <option value="other">other</option>
       </select>
     </div>
     <div style="display:flex; gap:12px;">
@@ -1412,12 +1403,11 @@ let allStories = [];
 let workData = {};
 
 const PRODUCT_COLORS = {
-  'defaultapp-analyst': '#3b82f6', 'platform': '#a855f7', 'root': '#a855f7',
-  'shared': '#a855f7', 'aiia-marketing': '#f59e0b', 'aiiasales': '#f59e0b',
-  'aiia-legal': '#f59e0b', 'acping-ethics-ai': '#f59e0b', 'ck-marketing': '#22d3ee',
-  'modivcare': '#22d3ee', 'family-law-suite': '#22d3ee', 'estate-planner': '#22d3ee',
-  'content-engine': '#10b981', 'local-brain': '#22d3ee', 'realiz': '#10b981',
-  'codeword': '#ef4444',
+  'local-brain': '#3b82f6',
+  'command-center': '#a855f7',
+  'mcp-server': '#10b981',
+  'docs': '#f59e0b',
+  'other': '#64748b',
 };
 
 const STATUS_LABELS = { backlog: 'Backlog', active: 'Active', in_progress: 'In Progress', shipped: 'Shipped', blocked: 'Blocked', cancelled: 'Cancelled' };
@@ -2353,9 +2343,9 @@ function renderPriorityResults(container, stories, target) {
 
   const filterLabels = {
     closes_deal: 'Closes Deal',
-    retains_defaultapp: 'Retains DefaultApp',
+    retains_client: 'Retains Client',
     reduces_cost: 'Reduces Cost',
-    enables_tenants: 'Enables Tenants',
+    enables_platform: 'Enables Platform',
     new_revenue: 'New Revenue',
   };
 

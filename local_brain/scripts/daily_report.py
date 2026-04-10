@@ -7,6 +7,7 @@ Usage:
 """
 
 import json
+import os
 import re
 import subprocess
 import sys
@@ -77,7 +78,12 @@ def _parse_commit_type(subject: str) -> str:
 
 
 def _classify_file(filepath: str) -> str:
-    """Classify a changed file into a product."""
+    """Classify a changed file into a product.
+
+    Top-level prefixes map to canonical product names. Override or extend via the
+    AIIA_PRODUCT_MAP env var, which may point to a JSON file mapping
+    {"path-prefix": "product-name"}.
+    """
     if filepath.startswith("products/"):
         parts = filepath.split("/")
         if len(parts) >= 2:
@@ -86,36 +92,32 @@ def _classify_file(filepath: str) -> str:
         return "platform"
     elif filepath.startswith("shared/"):
         return "shared"
-    elif filepath.startswith("codeword/"):
-        return "codeword"
     return "root"
 
 
-# Business-impact categories for dashboard display
-CATEGORY_MAP = {
-    "default-app": "DefaultApp-Direct",
-    "aiiasales": "DefaultApp-Direct",
-    "aiia-sales": "DefaultApp-Direct",
-    "platform": "Platform",
-    "root": "Platform",
-    "shared": "Platform",
-    "aiia-legal": "Other Tenants",
-    "aiia-marketing": "Other Tenants",
-    "acping-ethics-ai": "Other Tenants",
-    "realiz": "Other Tenants",
-    "codeword": "Other Tenants",
-    "estate-planner": "Other Tenants",
-    "family-law-suite": "Other Tenants",
-    "ck-marketing": "Other Tenants",
-    "content-engine": "Other Tenants",
-    "modivcare": "Other Tenants",
-}
+# Business-impact categories for dashboard display.
+# Customize via the AIIA_PRODUCT_MAP env var (path to a JSON file mapping
+# product-name → category). When unset, every product falls under "Other" and
+# the "platform" / "root" / "shared" prefixes collapse into "Platform".
+def _load_category_map() -> dict[str, str]:
+    config_path = os.getenv("AIIA_PRODUCT_MAP")
+    if config_path and os.path.exists(config_path):
+        import json
+
+        with open(config_path) as f:
+            return json.load(f)
+    return {
+        "platform": "Platform",
+        "root": "Platform",
+        "shared": "Platform",
+    }
+
+
+CATEGORY_MAP = _load_category_map()
 
 CATEGORY_COLORS = {
-    "DefaultApp-Direct": "#3b82f6",
     "Platform": "#a855f7",
     "AI/Infra": "#22d3ee",
-    "Other Tenants": "#f59e0b",
     "Other": "#666",
 }
 
@@ -124,8 +126,6 @@ def _categorize_product(product: str) -> str:
     """Map a product name to a business-impact category."""
     if product in CATEGORY_MAP:
         return CATEGORY_MAP[product]
-    # AI/Infra: local_brain, llm_service, mcp, ollama
-    # These show up under "platform" product, so we detect via file paths
     return "Other"
 
 
