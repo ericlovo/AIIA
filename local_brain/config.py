@@ -63,9 +63,7 @@ class LocalBrainConfig:
 
     # AIIA — persistent AI teammate (knowledge + memory)
     eq_brain_enabled: bool = True  # Config key kept for backward compat
-    eq_brain_data_dir: str = (
-        ""  # Set from env or default to ~/.aiia/eq_data
-    )
+    eq_brain_data_dir: str = ""  # Set from env or default to ~/.aiia/eq_data
     eq_brain_collection: str = "aiia_knowledge"
 
     # Supermemory cloud sync — SDK removed (April 2026), hardcoded off
@@ -79,7 +77,9 @@ class LocalBrainConfig:
     # Metered sync tuning
     sync_quality_gate: int = 3  # env: SYNC_QUALITY_GATE (min score to sync)
     sync_daily_budget: int = 200_000  # env: SYNC_DAILY_BUDGET
-    sync_project_excluded_sources: str = "health_journal,code_health,test_run,security_scan"  # env: SYNC_PROJECT_EXCLUDED
+    sync_project_excluded_sources: str = (
+        "health_journal,code_health,test_run,security_scan"  # env: SYNC_PROJECT_EXCLUDED
+    )
 
     # Recursive inference engine (Phase 4 — RLM-inspired)
     recursive_max_iterations: int = 15  # env: RECURSIVE_MAX_ITERATIONS
@@ -88,7 +88,9 @@ class LocalBrainConfig:
     recursive_temperature: float = 0.15  # Low temp for reliable JSON output
 
     # Obsidian vault sync (VaultWriter) — optional knowledge vault export
-    vault_dir: str = ""  # Set from env OBSIDIAN_VAULT_DIR or default to ~/.aiia/vault
+    # Resolution in local_brain/vault_paths.py — set OBSIDIAN_VAULT_DIR to
+    # override the ~/Documents/AIIA → ~/.aiia/vault fallback chain.
+    vault_dir: str = ""
     auto_file_queries: bool = True  # File substantive AIIA answers to wiki/
 
     # Feature flags
@@ -113,9 +115,7 @@ class LocalBrainConfig:
 
     def __post_init__(self):
         """Load from environment variables."""
-        self.ollama_url = self.ollama_url or os.getenv(
-            "LOCAL_LLM_URL", "http://localhost:11434"
-        )
+        self.ollama_url = self.ollama_url or os.getenv("LOCAL_LLM_URL", "http://localhost:11434")
         self.api_host = os.getenv("LOCAL_BRAIN_HOST", self.api_host)
         self.api_port = int(os.getenv("LOCAL_BRAIN_PORT", str(self.api_port)))
         self.api_key = os.getenv("LOCAL_BRAIN_API_KEY", self.api_key)
@@ -126,38 +126,31 @@ class LocalBrainConfig:
             "EQ_BRAIN_DATA_DIR",
             os.path.expanduser("~/.aiia/eq_data"),
         )
-        self.eq_brain_collection = os.getenv(
-            "EQ_BRAIN_COLLECTION", self.eq_brain_collection
-        )
+        self.eq_brain_collection = os.getenv("EQ_BRAIN_COLLECTION", self.eq_brain_collection)
 
         # Supermemory cloud sync — disabled by default (optional integration)
-        self.supermemory_enabled = (
-            os.getenv("SUPERMEMORY_ENABLED", "false").lower() == "true"
-        )
+        self.supermemory_enabled = os.getenv("SUPERMEMORY_ENABLED", "false").lower() == "true"
         self.supermemory_timeout = float(
             os.getenv("SUPERMEMORY_TIMEOUT", str(self.supermemory_timeout))
         )
 
         # Hybrid cloud memory
-        self.hybrid_cloud_enabled = (
-            os.getenv("HYBRID_CLOUD_ENABLED", "false").lower() == "true"
-        )
+        self.hybrid_cloud_enabled = os.getenv("HYBRID_CLOUD_ENABLED", "false").lower() == "true"
         self.hybrid_cloud_timeout = float(
             os.getenv("HYBRID_CLOUD_TIMEOUT", str(self.hybrid_cloud_timeout))
         )
 
-        # Obsidian vault — optional knowledge export
-        _vault_default = os.path.expanduser("~/.aiia/vault")
-        self.vault_dir = os.getenv("OBSIDIAN_VAULT_DIR", _vault_default)
+        # Obsidian vault — resolution centralized in local_brain/vault_paths.py.
+        # Honors OBSIDIAN_VAULT_DIR; falls back to ~/Documents/AIIA if it
+        # exists, else ~/.aiia/vault. See vault_paths.vault_dir() for details.
+        from local_brain.vault_paths import vault_dir
+
+        self.vault_dir = str(vault_dir())
         self.auto_file_queries = os.getenv("AUTO_FILE_QUERIES", "true").lower() == "true"
 
         # Metered sync tuning
-        self.sync_quality_gate = int(
-            os.getenv("SYNC_QUALITY_GATE", str(self.sync_quality_gate))
-        )
-        self.sync_daily_budget = int(
-            os.getenv("SYNC_DAILY_BUDGET", str(self.sync_daily_budget))
-        )
+        self.sync_quality_gate = int(os.getenv("SYNC_QUALITY_GATE", str(self.sync_quality_gate)))
+        self.sync_daily_budget = int(os.getenv("SYNC_DAILY_BUDGET", str(self.sync_daily_budget)))
         self.sync_project_excluded_sources = os.getenv(
             "SYNC_PROJECT_EXCLUDED", self.sync_project_excluded_sources
         )
@@ -239,9 +232,7 @@ class LocalBrainConfig:
 
         # Default model assignments
         if not self.models:
-            routing_model = os.getenv(
-                "LOCAL_ROUTING_MODEL", "llama3.1:8b-instruct-q8_0"
-            )
+            routing_model = os.getenv("LOCAL_ROUTING_MODEL", "llama3.1:8b-instruct-q8_0")
             task_model = os.getenv("LOCAL_TASK_MODEL", "llama3.1:8b-instruct-q8_0")
             embed_model = os.getenv("LOCAL_EMBED_MODEL", "nomic-embed-text")
             deep_model = os.getenv("LOCAL_DEEP_MODEL", "deepseek-r1:14b")

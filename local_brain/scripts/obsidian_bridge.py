@@ -41,16 +41,11 @@ from typing import Dict, List, Optional
 
 # --- Paths & URLs ---
 
+from local_brain.vault_paths import vault_dir as _vault_dir
+
 BRAIN_URL = os.getenv("AIIA_URL", "http://localhost:8100")
 CC_URL = os.getenv("AIIA_CC_URL", "http://localhost:8200")
-_DEFAULT_VAULT = Path.home() / "Documents" / "Eric's AIIA"
-_FALLBACK_VAULT = Path.home() / "AIIAVault"
-VAULT_DIR = Path(
-    os.getenv(
-        "OBSIDIAN_VAULT_DIR",
-        str(_DEFAULT_VAULT if _DEFAULT_VAULT.exists() else _FALLBACK_VAULT),
-    )
-)
+VAULT_DIR = _vault_dir()
 REPORTS_DIR = Path.home() / ".aiia" / "eq_data" / "reports"
 LOG_DIR = Path.home() / ".aiia" / "logs" / "vault"
 STATE_FILE = LOG_DIR / "state.json"
@@ -153,7 +148,9 @@ class SyncState:
 # Markdown generators
 # ---------------------------------------------------------------------------
 
-_AUTOGEN_WARNING = "> **Auto-generated** by Obsidian Bridge — do not edit, changes will be overwritten."
+_AUTOGEN_WARNING = (
+    "> **Auto-generated** by Obsidian Bridge — do not edit, changes will be overwritten."
+)
 
 
 def _frontmatter(**kwargs) -> str:
@@ -285,17 +282,13 @@ def build_backlog_md(stories: List[dict]) -> str:
             continue
         label = status.replace("_", " ").title()
         lines.append(f"## {label} ({len(items)})")
-        for s in sorted(
-            items, key=lambda x: (x.get("priority", "P9"), x.get("title", ""))
-        ):
+        for s in sorted(items, key=lambda x: (x.get("priority", "P9"), x.get("title", ""))):
             priority = s.get("priority", "")
             title = (s.get("title") or "").strip()
             product = s.get("product", "")
             desc = (s.get("description") or "").strip()
             lines.append(f"### {title}")
-            meta = " | ".join(
-                filter(None, [f"**{priority}**" if priority else "", product])
-            )
+            meta = " | ".join(filter(None, [f"**{priority}**" if priority else "", product]))
             if meta:
                 lines.append(meta)
             if desc:
@@ -572,9 +565,7 @@ class ObsidianBridge:
             self._write(moc_path, moc_content)
 
     def run(self) -> dict:
-        logger.info(
-            f"Obsidian Bridge starting — vault={VAULT_DIR} dry_run={self.dry_run}"
-        )
+        logger.info(f"Obsidian Bridge starting — vault={VAULT_DIR} dry_run={self.dry_run}")
         start = datetime.utcnow()
 
         # 1-4. Memory categories → cluster files + MOC stubs
