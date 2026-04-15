@@ -7,6 +7,20 @@ All notable changes to AIIA are documented here. This project adheres to
 ## [Unreleased]
 
 ### Added
+- `GET /v1/autonomy/status` — new endpoint reporting Phase 2 autonomy
+  state. Returns the master switch level, per-loop enablement (gated on
+  `level == "phase2"` AND the per-flag attribute, so reporting can't
+  lie when the master switch is downgraded at runtime), runtime metrics
+  read from `command_center/task_data.json` (last_run, last_result,
+  run_count, fail_count), the active policy snapshot (proactive
+  business hours, gated_downgrade cutoff, self_healing service count,
+  memory_quality thresholds), and the safety boundaries
+  (forbidden_files, forbidden_actions). Degrades gracefully on a
+  malformed `task_data.json` mid-write rather than 500-ing.
+- `local_brain/tests/test_autonomy_endpoint.py` — 5 tests covering the
+  phase2 response structure, the level-gates-flags regression, runtime
+  state reads from `task_data.json`, malformed-JSON resilience, and the
+  503 response when `_config` is None.
 - `local_brain/autonomy/` — Phase 2 autonomy package with four proactive
   modules, all disabled by default and gated behind
   `AIIA_AUTONOMY_LEVEL=phase2`:
