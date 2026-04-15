@@ -192,6 +192,36 @@ graph TB
 - `num_gpu: 99` — Full GPU offload
 - VRAM headroom: ~14GB free after primary model loaded
 
+### Long-Context Support (optional)
+
+AIIA can handle context windows up to 64K tokens on a 24GB Mac via
+Ollama's 4-bit KV cache quantization plus flash attention. This is
+useful for workloads that benefit from loading a lot at once — full
+codebase context for story decomposition, multi-document RAG, morning
+briefing synthesis, or A2A agent planner workflows.
+
+Enable with three environment variables on the Ollama process:
+
+```bash
+OLLAMA_FLASH_ATTENTION=1
+OLLAMA_KV_CACHE_TYPE=q4_0
+OLLAMA_KEEP_ALIVE=24h
+```
+
+Measured on a Mac Mini M4 running Ollama HEAD-96b202d (April 2026)
+against Gemma 4 E4B-Q4_K_M:
+
+| Metric | FP16 (default) | q4_0 (enabled) |
+|--------|----------------|----------------|
+| 64K cold-load wall time | ~685s (memory-pressured) | ~8.5s |
+| KV cache memory @ 64K | ~8 GB wired | ~2 GB wired |
+| Generation speed | ~27 tok/s | ~26 tok/s |
+| Perplexity delta | baseline | ~0.5% |
+
+See [`docs/long-context.md`](./docs/long-context.md) for the full
+benchmark table, the macOS launchd plist pattern for persistence
+across reboots, Docker Compose wiring, and troubleshooting notes.
+
 ### Memory System
 
 Two-layer architecture: local JSON (instant, free) + Supermemory cloud (persistent, metered).
