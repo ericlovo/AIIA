@@ -1,0 +1,12 @@
+# Trufflehog exclusion paths
+# One path per line. Lines starting with # are ignored.
+# Used by scripts/security_scan.sh for secret scanning.
+#
+# Add files here that contain example/placeholder strings that trigger
+# false positives — NOT files that contain real secrets.
+
+# Root .env.example with placeholder connection strings
+.env.example
+
+# Security scan output directory
+security-reports

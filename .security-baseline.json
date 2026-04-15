@@ -1,0 +1,5 @@
+{
+  "description": "Accepted security findings. scripts/security_scan.sh filters new results against this baseline — only findings not matched here count as new. See docs/security.md for schema and workflow.",
+  "updated": "2026-04-12",
+  "accepted": []
+}

@@ -7,6 +7,22 @@ All notable changes to AIIA are documented here. This project adheres to
 ## [Unreleased]
 
 ### Added
+- `scripts/security_scan.sh` — seven-scanner local security suite
+  (trufflehog, trivy, bandit, semgrep, shellcheck, hadolint, pip-audit).
+  Writes per-scanner JSON + a human summary to `./security-reports/`,
+  exits non-zero on new findings, and prunes reports older than 30 days.
+  Supports `--quick` for a secrets+deps-only subset. Missing scanners
+  are skipped gracefully so the suite runs with whatever is installed.
+- `scripts/filter_security_baseline.py` — baseline filter that diffs
+  raw scanner output against `.security-baseline.json` and counts
+  only genuinely new findings. A run with all hits baselined is a PASS.
+- `.security-baseline.json` — accepted-findings list (starts empty);
+  schema and workflow documented in `docs/security.md`.
+- `.trufflehog-exclude` — path-exclusion list for the secret scanner,
+  pre-populated with `.env.example` and `security-reports/`.
+- `docs/security.md` — end-to-end guide covering the scan suite,
+  installing each scanner, the baseline schema, adding accepted
+  findings, and CI/launchd integration examples.
 - `local_brain/vault_paths.py` — centralized Obsidian vault path
   resolution. Replaces five inconsistent per-file implementations of
   `OBSIDIAN_VAULT_DIR` lookup. New three-tier fallback chain: env var
