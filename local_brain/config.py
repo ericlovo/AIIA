@@ -5,9 +5,10 @@ All settings for the Mac Mini intelligence node.
 Configured via environment variables with sensible defaults.
 """
 
+import json
 import os
 from dataclasses import dataclass, field
-from typing import Dict, Optional
+from typing import Dict, List, Optional
 
 
 @dataclass
@@ -71,6 +72,74 @@ class Gemma4Capabilities:
 
 
 @dataclass
+class AutonomyConfig:
+    """
+    Phase 2 autonomy settings. All features gated behind explicit flags.
+    Ships disabled — set AIIA_AUTONOMY_LEVEL=phase2 to enable.
+
+    Environment variables:
+        AIIA_AUTONOMY_LEVEL: "phase1" (default) or "phase2" (enables proactive features)
+        AIIA_AUTONOMY_MAX_SEVERITY: Max severity auto-downgraded from GATED (default: low)
+        AIIA_BUSINESS_HOURS_TZ: IANA timezone for business-hours check (default: UTC)
+        AIIA_PROACTIVE_HEALTH_CHECK_URL: Optional prod health probe before proactive actions
+        AIIA_SERVICES_CONFIG: Path to JSON file listing services for SelfHealingMonitor
+    """
+
+    # Master switch — "phase1" keeps current behavior, "phase2" enables proactive features
+    level: str = "phase1"
+
+    # Proactive story execution — auto-decomposes and queues P0/P1 stories outside business hours
+    proactive_story_execution: bool = False
+    proactive_priorities: List[str] = field(default_factory=lambda: ["P0", "P1"])
+    proactive_min_confidence: float = 0.85
+    proactive_business_hours_start: int = 9  # 9am local
+    proactive_business_hours_end: int = 18  # 6pm local
+    proactive_business_hours_tz: str = "UTC"
+    # Optional URL probed before proactive execution. None = skip the gate.
+    proactive_health_check_url: Optional[str] = None
+
+    # GATED auto-downgrade — promote stale low-severity GATED actions to SUPERVISED
+    gated_downgrade_enabled: bool = False
+    gated_downgrade_hours: int = 48
+    gated_downgrade_max_severity: str = "low"
+
+    # Self-healing production monitor — detects unhealthy services, attempts known fixes
+    self_healing_enabled: bool = False
+    self_healing_check_seconds: int = 300  # 5 minutes
+    self_healing_max_attempts: int = 2
+    # Services to monitor — list of {"name": str, "url": str}. Loaded from
+    # the JSON file at AIIA_SERVICES_CONFIG. Empty by default: operator
+    # must opt in to monitor anything.
+    monitored_services: List[Dict[str, str]] = field(default_factory=list)
+
+    # Memory quality loop — local consolidation + dedup + ChromaDB promotion
+    memory_quality_enabled: bool = False
+    memory_quality_interval_hours: int = 6
+    memory_quality_threshold: float = 0.80
+    memory_quality_max_promotions: int = 50
+
+    # Hard safety boundaries — never overridden by autonomy
+    forbidden_files: List[str] = field(
+        default_factory=lambda: [
+            ".env",
+            "secrets.json",
+            "*.pem",
+            "*.key",
+            "render.yaml",
+            "docker-compose.prod.yml",
+        ]
+    )
+    forbidden_actions: List[str] = field(
+        default_factory=lambda: [
+            "delete_database",
+            "modify_production_secrets",
+            "push_to_main_without_pr",
+            "disable_auth",
+        ]
+    )
+
+
+@dataclass
 class LocalBrainConfig:
     """
     Configuration for the Local Brain running on Mac Mini.
@@ -115,6 +184,9 @@ class LocalBrainConfig:
     # the routing model name). Consumers consult this instead of
     # inspecting the model name themselves.
     primary_capabilities: Gemma4Capabilities = field(default_factory=Gemma4Capabilities)
+
+    # Phase 2 autonomy configuration (gated by AIIA_AUTONOMY_LEVEL)
+    autonomy: AutonomyConfig = field(default_factory=AutonomyConfig)
 
     # AIIA — persistent AI teammate (knowledge + memory)
     eq_brain_enabled: bool = True  # Config key kept for backward compat
@@ -322,6 +394,36 @@ class LocalBrainConfig:
                     description="Deep reasoning — consolidation, code review, briefings (nightly)",
                 ),
             }
+
+        # Phase 2: Autonomy config from env
+        autonomy_level = os.getenv("AIIA_AUTONOMY_LEVEL", "phase1")
+        is_phase2 = autonomy_level == "phase2"
+
+        monitored_services: List[Dict[str, str]] = []
+        services_config_path = os.getenv("AIIA_SERVICES_CONFIG")
+        if services_config_path and os.path.exists(services_config_path):
+            try:
+                with open(services_config_path) as f:
+                    loaded = json.load(f)
+                if isinstance(loaded, list):
+                    monitored_services = [
+                        s for s in loaded if isinstance(s, dict) and "name" in s and "url" in s
+                    ]
+            except (json.JSONDecodeError, OSError):
+                # Malformed config — fall back to empty list, monitor will skip
+                pass
+
+        self.autonomy = AutonomyConfig(
+            level=autonomy_level,
+            proactive_story_execution=is_phase2,
+            gated_downgrade_enabled=is_phase2,
+            self_healing_enabled=is_phase2,
+            memory_quality_enabled=is_phase2,
+            gated_downgrade_max_severity=os.getenv("AIIA_AUTONOMY_MAX_SEVERITY", "low"),
+            proactive_business_hours_tz=os.getenv("AIIA_BUSINESS_HOURS_TZ", "UTC"),
+            proactive_health_check_url=os.getenv("AIIA_PROACTIVE_HEALTH_CHECK_URL"),
+            monitored_services=monitored_services,
+        )
 
         # Detect Gemma 4 capabilities from the routing model name.
         # If the operator uses llama3.1 (default) this returns the

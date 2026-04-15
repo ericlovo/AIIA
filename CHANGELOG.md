@@ -7,6 +7,44 @@ All notable changes to AIIA are documented here. This project adheres to
 ## [Unreleased]
 
 ### Added
+- `local_brain/autonomy/` — Phase 2 autonomy package with four proactive
+  modules, all disabled by default and gated behind
+  `AIIA_AUTONOMY_LEVEL=phase2`:
+  - `ProactiveStoryExecutor` — auto-decomposes and queues P0/P1 stories
+    at SUPERVISED tier, outside configurable business hours, behind an
+    optional production health probe (`AIIA_PROACTIVE_HEALTH_CHECK_URL`).
+    Empty health URL = gate skipped.
+  - `GatedDowngradePolicy` — promotes stale low-severity GATED actions
+    to SUPERVISED after a configurable cutoff (default 48h). Writes a
+    `tier_override` on the live action so the execution loop picks it
+    up. Dangerous action types (deploy_production, delete_data,
+    modify_secrets, review) are never auto-downgraded regardless of age.
+  - `SelfHealingMonitor` — probes services listed in
+    `AIIA_SERVICES_CONFIG` (JSON file), tracks consecutive failures
+    per service, and creates deduped tech_debt actions after 2+ failures.
+    Ships with an empty service list — operators must opt in.
+  - `MemoryQualityLoop` — consolidates, dedups, and LLM-scores memories
+    from `decisions`/`patterns`/`lessons`, promoting high-scoring entries
+    to the ChromaDB knowledge store. Budget-gated and stateful via a
+    local promoted-IDs file so re-runs are idempotent.
+- `local_brain/config.py::AutonomyConfig` — dataclass holding all
+  autonomy flags, timezones, thresholds, monitored services, and hard
+  safety boundaries (forbidden files/actions that autonomy can never
+  override).
+- `local_brain/tests/test_autonomy.py` — 32 tests covering enable/disable
+  gating, business-hours timezone handling, stale-action promotion with
+  tier_override verification, ActionQueue kwarg regression, empty
+  services-list safety, memory quality state persistence, and LLM score
+  parsing edge cases.
+
+### Changed
+- `local_brain/config.py` — `LocalBrainConfig.autonomy` now auto-populated
+  from `AIIA_AUTONOMY_LEVEL`, `AIIA_AUTONOMY_MAX_SEVERITY`,
+  `AIIA_BUSINESS_HOURS_TZ`, `AIIA_PROACTIVE_HEALTH_CHECK_URL`, and
+  `AIIA_SERVICES_CONFIG` at startup. Defaults are safe — phase1 keeps
+  the existing behavior.
+- `.env.example` — new "Phase 2 Autonomy" section documenting all env
+  vars with safe defaults and sample values.
 - `scripts/security_scan.sh` — seven-scanner local security suite
   (trufflehog, trivy, bandit, semgrep, shellcheck, hadolint, pip-audit).
   Writes per-scanner JSON + a human summary to `./security-reports/`,
