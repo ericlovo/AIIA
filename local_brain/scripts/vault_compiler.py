@@ -28,14 +28,9 @@ from typing import Dict, List, Optional
 
 # --- Vault path resolution ---
 
-_DEFAULT_VAULT = Path.home() / "Documents" / "Eric's AIIA"
-_FALLBACK_VAULT = Path.home() / "AIIAVault"
-VAULT_DIR = Path(
-    os.getenv(
-        "OBSIDIAN_VAULT_DIR",
-        str(_DEFAULT_VAULT if _DEFAULT_VAULT.exists() else _FALLBACK_VAULT),
-    )
-)
+from local_brain.vault_paths import vault_dir as _vault_dir
+
+VAULT_DIR = _vault_dir()
 INBOX_DIR = VAULT_DIR / "00-Inbox"
 PROCESSED_DIR = INBOX_DIR / "processed"
 WIKI_DIR = VAULT_DIR / "85-Wiki"
@@ -80,20 +75,24 @@ def _extract_text(path: Path) -> Optional[str]:
 def _call_ollama(prompt: str, system: str = "", max_tokens: int = 4096) -> Optional[str]:
     """Call local Ollama via HTTP (no httpx dependency)."""
     url = os.getenv("LOCAL_LLM_URL", "http://localhost:11434") + "/api/generate"
-    payload = json.dumps({
-        "model": os.getenv("LOCAL_TASK_MODEL", "llama3.1:8b-instruct-q8_0"),
-        "prompt": prompt,
-        "system": system,
-        "stream": False,
-        "options": {
-            "temperature": 0.4,
-            "num_predict": max_tokens,
-            "num_ctx": 32768,
-        },
-    }).encode()
+    payload = json.dumps(
+        {
+            "model": os.getenv("LOCAL_TASK_MODEL", "llama3.1:8b-instruct-q8_0"),
+            "prompt": prompt,
+            "system": system,
+            "stream": False,
+            "options": {
+                "temperature": 0.4,
+                "num_predict": max_tokens,
+                "num_ctx": 32768,
+            },
+        }
+    ).encode()
 
     try:
-        req = urllib.request.Request(url, data=payload, headers={"Content-Type": "application/json"})
+        req = urllib.request.Request(
+            url, data=payload, headers={"Content-Type": "application/json"}
+        )
         with urllib.request.urlopen(req, timeout=120) as resp:
             result = json.loads(resp.read().decode())
             return result.get("response", "")
@@ -105,13 +104,17 @@ def _call_ollama(prompt: str, system: str = "", max_tokens: int = 4096) -> Optio
 def _remember_fact(fact: str, category: str = "lessons", source: str = "vault-compiler"):
     """Store a fact in AIIA memory via the Brain API."""
     url = f"{BRAIN_URL}/v1/aiia/remember"
-    payload = json.dumps({
-        "fact": fact,
-        "category": category,
-        "source": source,
-    }).encode()
+    payload = json.dumps(
+        {
+            "fact": fact,
+            "category": category,
+            "source": source,
+        }
+    ).encode()
     try:
-        req = urllib.request.Request(url, data=payload, headers={"Content-Type": "application/json"})
+        req = urllib.request.Request(
+            url, data=payload, headers={"Content-Type": "application/json"}
+        )
         with urllib.request.urlopen(req, timeout=10) as resp:
             resp.read()
     except Exception:
@@ -215,26 +218,28 @@ def compile_file(path: Path, dry_run: bool = False) -> bool:
         link_lines = [f"- [[{l}]]" for l in suggested_links[:5]]
         links_section = "\n## Related\n" + "\n".join(link_lines) + "\n"
 
-    content = "\n".join([
-        "---",
-        "type: aiia-wiki",
-        f"date: {today}",
-        f"source: vault-compiler",
-        "aiia_managed: true",
-        "aiia_version: 2",
-        f"compiled_from: \"{path.name}\"",
-        f"tags: [aiia, wiki, {category}]",
-        "---",
-        "",
-        f"# {title}",
-        "",
-        "> Compiled from `{path.name}` by AIIA Vault Compiler.",
-        "",
-        summary,
-        "",
-        links_section,
-        f"*Compiled {today}*",
-    ])
+    content = "\n".join(
+        [
+            "---",
+            "type: aiia-wiki",
+            f"date: {today}",
+            f"source: vault-compiler",
+            "aiia_managed: true",
+            "aiia_version: 2",
+            f'compiled_from: "{path.name}"',
+            f"tags: [aiia, wiki, {category}]",
+            "---",
+            "",
+            f"# {title}",
+            "",
+            "> Compiled from `{path.name}` by AIIA Vault Compiler.",
+            "",
+            summary,
+            "",
+            links_section,
+            f"*Compiled {today}*",
+        ]
+    )
 
     WIKI_DIR.mkdir(parents=True, exist_ok=True)
     tmp = dest.with_suffix(".md.tmp")
@@ -271,8 +276,11 @@ def run(dry_run: bool = False) -> Dict:
 
     # Find files to process (skip processed/ subdirectory)
     files = [
-        f for f in sorted(INBOX_DIR.iterdir())
-        if f.is_file() and not f.name.startswith(".") and f.suffix.lower() in (".md", ".txt", ".pdf", ".docx", ".doc", ".rtf")
+        f
+        for f in sorted(INBOX_DIR.iterdir())
+        if f.is_file()
+        and not f.name.startswith(".")
+        and f.suffix.lower() in (".md", ".txt", ".pdf", ".docx", ".doc", ".rtf")
     ]
 
     if not files:

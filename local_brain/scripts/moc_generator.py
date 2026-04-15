@@ -23,14 +23,9 @@ from typing import Dict, List, Optional, Tuple
 
 # --- Vault path resolution ---
 
-_DEFAULT_VAULT = Path.home() / "Documents" / "Eric's AIIA"
-_FALLBACK_VAULT = Path.home() / "AIIAVault"
-VAULT_DIR = Path(
-    os.getenv(
-        "OBSIDIAN_VAULT_DIR",
-        str(_DEFAULT_VAULT if _DEFAULT_VAULT.exists() else _FALLBACK_VAULT),
-    )
-)
+from local_brain.vault_paths import vault_dir as _vault_dir
+
+VAULT_DIR = _vault_dir()
 
 # Folders to index (skip dotfiles, Templates, .obsidian)
 SKIP_FOLDERS = {".obsidian", ".trash", "Templates", ".git", "processed"}
@@ -88,7 +83,7 @@ def _first_paragraph(path: Path) -> str:
     if text.startswith("---"):
         end = text.find("---", 3)
         if end > 0:
-            text = text[end + 3:]
+            text = text[end + 3 :]
 
     for line in text.split("\n"):
         line = line.strip()

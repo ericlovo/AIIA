@@ -28,14 +28,9 @@ from typing import Dict, List, Optional, Set, Tuple
 
 # --- Vault path resolution ---
 
-_DEFAULT_VAULT = Path.home() / "Documents" / "Eric's AIIA"
-_FALLBACK_VAULT = Path.home() / "AIIAVault"
-VAULT_DIR = Path(
-    os.getenv(
-        "OBSIDIAN_VAULT_DIR",
-        str(_DEFAULT_VAULT if _DEFAULT_VAULT.exists() else _FALLBACK_VAULT),
-    )
-)
+from local_brain.vault_paths import vault_dir as _vault_dir
+
+VAULT_DIR = _vault_dir()
 
 SKIP_FOLDERS = {".obsidian", ".trash", "Templates", ".git", "processed"}
 INDEX_FILES = {"_Index.md", "_Master-Index.md", "_Wiki-Index.md", "_lint-report.md"}
@@ -106,13 +101,17 @@ def check_stale(files: List[Path]) -> List[Dict]:
             # Check file mtime as well
             mtime = datetime.fromtimestamp(f.stat().st_mtime).strftime("%Y-%m-%d")
             if mtime < cutoff:
-                findings.append({
-                    "type": "stale",
-                    "file": str(f.relative_to(f.parent.parent) if f.parent != VAULT_DIR else f.name),
-                    "date": date,
-                    "mtime": mtime,
-                    "message": f"Last updated {date}, file modified {mtime} (>{STALE_DAYS} days ago)",
-                })
+                findings.append(
+                    {
+                        "type": "stale",
+                        "file": str(
+                            f.relative_to(f.parent.parent) if f.parent != VAULT_DIR else f.name
+                        ),
+                        "date": date,
+                        "mtime": mtime,
+                        "message": f"Last updated {date}, file modified {mtime} (>{STALE_DAYS} days ago)",
+                    }
+                )
     return findings
 
 
@@ -130,15 +129,19 @@ def _call_ollama_batch(facts: List[str]) -> Optional[str]:
         "If no contradictions, say 'No contradictions found.'\n\n"
         + "\n".join(f"- {fact}" for fact in facts)
     )
-    payload = json.dumps({
-        "model": os.getenv("LOCAL_TASK_MODEL", "llama3.1:8b-instruct-q8_0"),
-        "prompt": prompt,
-        "stream": False,
-        "options": {"temperature": 0.1, "num_predict": 1024, "num_ctx": 16384},
-    }).encode()
+    payload = json.dumps(
+        {
+            "model": os.getenv("LOCAL_TASK_MODEL", "llama3.1:8b-instruct-q8_0"),
+            "prompt": prompt,
+            "stream": False,
+            "options": {"temperature": 0.1, "num_predict": 1024, "num_ctx": 16384},
+        }
+    ).encode()
 
     try:
-        req = urllib.request.Request(url, data=payload, headers={"Content-Type": "application/json"})
+        req = urllib.request.Request(
+            url, data=payload, headers={"Content-Type": "application/json"}
+        )
         with urllib.request.urlopen(req, timeout=60) as resp:
             result = json.loads(resp.read().decode())
             return result.get("response", "")
@@ -184,12 +187,14 @@ def check_contradictions(files: List[Path], batch_size: int = 10) -> List[Dict]:
                 continue
             result = _call_ollama_batch(batch)
             if result and "no contradiction" not in result.lower():
-                findings.append({
-                    "type": "contradiction",
-                    "category": category,
-                    "batch_start": i,
-                    "message": result[:500],
-                })
+                findings.append(
+                    {
+                        "type": "contradiction",
+                        "category": category,
+                        "batch_start": i,
+                        "message": result[:500],
+                    }
+                )
 
     return findings
 
@@ -227,11 +232,13 @@ def check_orphans(files: List[Path]) -> List[Dict]:
                 # Skip MOCs and indexes — they don't need incoming links
                 if fm.get("type") in ("moc", "daily-note"):
                     continue
-                findings.append({
-                    "type": "orphan",
-                    "file": matching[0].name,
-                    "message": f"No incoming wikilinks — consider linking from related pages",
-                })
+                findings.append(
+                    {
+                        "type": "orphan",
+                        "file": matching[0].name,
+                        "message": f"No incoming wikilinks — consider linking from related pages",
+                    }
+                )
     return findings
 
 
@@ -261,12 +268,14 @@ def check_missing_links(files: List[Path]) -> List[Dict]:
                 continue
             # Check if the stem appears as a word in the text
             if len(stem) > 5 and stem.lower().replace("-", " ") in text.lower():
-                findings.append({
-                    "type": "missing_link",
-                    "file": f.name,
-                    "target": stem,
-                    "message": f"Mentions '{stem}' but doesn't link to [[{stem}]]",
-                })
+                findings.append(
+                    {
+                        "type": "missing_link",
+                        "file": f.name,
+                        "target": stem,
+                        "message": f"Mentions '{stem}' but doesn't link to [[{stem}]]",
+                    }
+                )
 
     return findings
 
@@ -315,14 +324,16 @@ def check_duplicates(files: List[Path], threshold: float = 0.7) -> List[Dict]:
                     continue
                 similarity = intersection / union
                 if similarity >= threshold:
-                    findings.append({
-                        "type": "duplicate",
-                        "category": category,
-                        "similarity": round(similarity, 2),
-                        "entry_a": a_text,
-                        "entry_b": b_text,
-                        "message": f"Jaccard {similarity:.0%} similarity — may be duplicates",
-                    })
+                    findings.append(
+                        {
+                            "type": "duplicate",
+                            "category": category,
+                            "similarity": round(similarity, 2),
+                            "entry_a": a_text,
+                            "entry_b": b_text,
+                            "message": f"Jaccard {similarity:.0%} similarity — may be duplicates",
+                        }
+                    )
     return findings
 
 
@@ -345,12 +356,14 @@ def check_enhancements(files: List[Path]) -> List[Dict]:
     # Find folders with few AIIA articles
     for folder, count in folder_counts.items():
         if count < 3 and folder not in ("00-Inbox", "Templates"):
-            findings.append({
-                "type": "enhancement",
-                "folder": folder,
-                "count": count,
-                "message": f"Only {count} AIIA articles in {folder}/ — consider adding more coverage",
-            })
+            findings.append(
+                {
+                    "type": "enhancement",
+                    "folder": folder,
+                    "count": count,
+                    "message": f"Only {count} AIIA articles in {folder}/ — consider adding more coverage",
+                }
+            )
 
     return findings
 
@@ -399,7 +412,14 @@ def build_report(all_findings: List[Dict]) -> str:
         lines.append(f"**{len(all_findings)} findings** across {len(by_type)} categories.")
         lines.append("")
 
-        for type_key in ["contradiction", "duplicate", "stale", "orphan", "missing_link", "enhancement"]:
+        for type_key in [
+            "contradiction",
+            "duplicate",
+            "stale",
+            "orphan",
+            "missing_link",
+            "enhancement",
+        ]:
             items = by_type.get(type_key, [])
             if not items:
                 continue

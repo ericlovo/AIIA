@@ -4,6 +4,35 @@ All notable changes to AIIA are documented here. This project adheres to
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and uses
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- `local_brain/vault_paths.py` — centralized Obsidian vault path
+  resolution. Replaces five inconsistent per-file implementations of
+  `OBSIDIAN_VAULT_DIR` lookup. New three-tier fallback chain: env var
+  → `~/Documents/AIIA` (if exists) → `~/.aiia/vault`. Every consumer
+  (config, obsidian bridge, vault compiler, wiki linter, MOC generator)
+  now imports `vault_dir()` from this helper, so migrating the vault
+  is a one-line env change instead of a multi-file edit.
+- `local_brain/tests/test_vault_paths.py` — 10 tests covering env var
+  resolution, tilde expansion, visible-default detection, hidden
+  fallback, and path type correctness.
+
+### Changed
+- `local_brain/config.py` — `LocalBrainConfig.vault_dir` now resolves
+  via `local_brain.vault_paths.vault_dir()` instead of an inline env
+  var read.
+- `local_brain/scripts/{obsidian_bridge,vault_compiler,wiki_linter,moc_generator}.py`
+  — migrated to import `vault_dir()` from the helper. No behavior
+  change for operators who already set `OBSIDIAN_VAULT_DIR`.
+
+### Removed
+- Hardcoded `Path.home() / "Documents" / "Eric's AIIA"` personalization
+  in `obsidian_bridge.py`, `vault_compiler.py`, `wiki_linter.py`, and
+  `moc_generator.py`. The visible-default location is now the generic
+  `~/Documents/AIIA`. This was a sanitization miss from v0.4.0 that
+  slipped past the initial scrub pass.
+
 ## [0.4.0] — 2026-04-10
 
 ### Added

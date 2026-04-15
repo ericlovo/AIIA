@@ -143,7 +143,9 @@ class LocalBrainConfig:
     recursive_temperature: float = 0.15  # Low temp for reliable JSON output
 
     # Obsidian vault sync (VaultWriter) — optional knowledge vault export
-    vault_dir: str = ""  # Set from env OBSIDIAN_VAULT_DIR or default to ~/.aiia/vault
+    # Resolution in local_brain/vault_paths.py — set OBSIDIAN_VAULT_DIR to
+    # override the ~/Documents/AIIA → ~/.aiia/vault fallback chain.
+    vault_dir: str = ""
     auto_file_queries: bool = True  # File substantive AIIA answers to wiki/
 
     # Feature flags
@@ -193,9 +195,12 @@ class LocalBrainConfig:
             os.getenv("HYBRID_CLOUD_TIMEOUT", str(self.hybrid_cloud_timeout))
         )
 
-        # Obsidian vault — optional knowledge export
-        _vault_default = os.path.expanduser("~/.aiia/vault")
-        self.vault_dir = os.getenv("OBSIDIAN_VAULT_DIR", _vault_default)
+        # Obsidian vault — resolution centralized in local_brain/vault_paths.py.
+        # Honors OBSIDIAN_VAULT_DIR; falls back to ~/Documents/AIIA if it
+        # exists, else ~/.aiia/vault. See vault_paths.vault_dir() for details.
+        from local_brain.vault_paths import vault_dir
+
+        self.vault_dir = str(vault_dir())
         self.auto_file_queries = os.getenv("AUTO_FILE_QUERIES", "true").lower() == "true"
 
         # Metered sync tuning
