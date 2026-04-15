@@ -34,6 +34,13 @@ services:
       - "11434:11434"
     volumes:
       - ollama-data:/root/.ollama
+    environment:
+      # Long-context support — enables AIIA to handle up to 64K token
+      # contexts via 4-bit KV cache quantization. See docs/long-context.md
+      # for benchmarks and trade-offs.
+      - OLLAMA_FLASH_ATTENTION=1
+      - OLLAMA_KV_CACHE_TYPE=q4_0
+      - OLLAMA_KEEP_ALIVE=24h
     restart: unless-stopped
     # Uncomment for GPU support (NVIDIA):
     # deploy:
