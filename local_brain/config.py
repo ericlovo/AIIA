@@ -21,6 +21,56 @@ class ModelConfig:
 
 
 @dataclass
+class Gemma4Capabilities:
+    """Feature capabilities for Gemma 4 family models.
+
+    Populated from the routing model name at config load time. Used by
+    higher-level modules (SmartConductor, A2A executors, voice handler)
+    to decide whether to exercise Gemma 4-specific code paths or fall
+    back to the generic JSON-parsing approach.
+
+    Note on native_function_calling:
+        Gemma 4 E4B advertises native function calling support, and
+        Ollama forwards tool schemas to the model. In practice, smoke
+        tests against `gemma4:e4b` via Ollama show the model returns
+        empty content with no `tool_calls` emitted — the Modelfile
+        template for E4B tool-use appears incomplete upstream as of
+        April 2026. Until Ollama ships proper tool-use templating for
+        this model family, native_function_calling defaults to False
+        regardless of the model name. Operators can force-enable it
+        via AIIA_NATIVE_TOOLS_ENABLED=true once upstream is fixed.
+
+    The V1 JSON routing path (what SmartConductor uses today) is
+    reliable and does not depend on native tool calling, so the
+    default-off posture is safe.
+    """
+
+    native_function_calling: bool = False
+    native_audio_input: bool = False
+    thinking_mode: bool = False
+    native_system_prompt: bool = False
+
+    @staticmethod
+    def detect(model_name: str) -> "Gemma4Capabilities":
+        """Detect capabilities for a given Gemma 4 model variant.
+
+        native_function_calling additionally requires the
+        AIIA_NATIVE_TOOLS_ENABLED env var to be explicitly set to
+        "true" — see class docstring for why.
+        """
+        lower = model_name.lower()
+        is_e4b = "e4b" in lower
+        is_gemma4 = lower.startswith("gemma4") or lower.startswith("gemma-4")
+        native_tools_opt_in = os.getenv("AIIA_NATIVE_TOOLS_ENABLED", "false").lower() == "true"
+        return Gemma4Capabilities(
+            native_function_calling=is_e4b and native_tools_opt_in,
+            native_audio_input=is_e4b,
+            thinking_mode=is_gemma4,
+            native_system_prompt=is_gemma4,
+        )
+
+
+@dataclass
 class LocalBrainConfig:
     """
     Configuration for the Local Brain running on Mac Mini.
@@ -61,11 +111,14 @@ class LocalBrainConfig:
     # Model assignments — which model handles what
     models: Dict[str, ModelConfig] = field(default_factory=dict)
 
+    # Gemma 4 capability flags (populated in __post_init__ based on
+    # the routing model name). Consumers consult this instead of
+    # inspecting the model name themselves.
+    primary_capabilities: Gemma4Capabilities = field(default_factory=Gemma4Capabilities)
+
     # AIIA — persistent AI teammate (knowledge + memory)
     eq_brain_enabled: bool = True  # Config key kept for backward compat
-    eq_brain_data_dir: str = (
-        ""  # Set from env or default to ~/.aiia/eq_data
-    )
+    eq_brain_data_dir: str = ""  # Set from env or default to ~/.aiia/eq_data
     eq_brain_collection: str = "aiia_knowledge"
 
     # Supermemory cloud sync — SDK removed (April 2026), hardcoded off
@@ -79,7 +132,9 @@ class LocalBrainConfig:
     # Metered sync tuning
     sync_quality_gate: int = 3  # env: SYNC_QUALITY_GATE (min score to sync)
     sync_daily_budget: int = 200_000  # env: SYNC_DAILY_BUDGET
-    sync_project_excluded_sources: str = "health_journal,code_health,test_run,security_scan"  # env: SYNC_PROJECT_EXCLUDED
+    sync_project_excluded_sources: str = (
+        "health_journal,code_health,test_run,security_scan"  # env: SYNC_PROJECT_EXCLUDED
+    )
 
     # Recursive inference engine (Phase 4 — RLM-inspired)
     recursive_max_iterations: int = 15  # env: RECURSIVE_MAX_ITERATIONS
@@ -113,9 +168,7 @@ class LocalBrainConfig:
 
     def __post_init__(self):
         """Load from environment variables."""
-        self.ollama_url = self.ollama_url or os.getenv(
-            "LOCAL_LLM_URL", "http://localhost:11434"
-        )
+        self.ollama_url = self.ollama_url or os.getenv("LOCAL_LLM_URL", "http://localhost:11434")
         self.api_host = os.getenv("LOCAL_BRAIN_HOST", self.api_host)
         self.api_port = int(os.getenv("LOCAL_BRAIN_PORT", str(self.api_port)))
         self.api_key = os.getenv("LOCAL_BRAIN_API_KEY", self.api_key)
@@ -126,22 +179,16 @@ class LocalBrainConfig:
             "EQ_BRAIN_DATA_DIR",
             os.path.expanduser("~/.aiia/eq_data"),
         )
-        self.eq_brain_collection = os.getenv(
-            "EQ_BRAIN_COLLECTION", self.eq_brain_collection
-        )
+        self.eq_brain_collection = os.getenv("EQ_BRAIN_COLLECTION", self.eq_brain_collection)
 
         # Supermemory cloud sync — disabled by default (optional integration)
-        self.supermemory_enabled = (
-            os.getenv("SUPERMEMORY_ENABLED", "false").lower() == "true"
-        )
+        self.supermemory_enabled = os.getenv("SUPERMEMORY_ENABLED", "false").lower() == "true"
         self.supermemory_timeout = float(
             os.getenv("SUPERMEMORY_TIMEOUT", str(self.supermemory_timeout))
         )
 
         # Hybrid cloud memory
-        self.hybrid_cloud_enabled = (
-            os.getenv("HYBRID_CLOUD_ENABLED", "false").lower() == "true"
-        )
+        self.hybrid_cloud_enabled = os.getenv("HYBRID_CLOUD_ENABLED", "false").lower() == "true"
         self.hybrid_cloud_timeout = float(
             os.getenv("HYBRID_CLOUD_TIMEOUT", str(self.hybrid_cloud_timeout))
         )
@@ -152,12 +199,8 @@ class LocalBrainConfig:
         self.auto_file_queries = os.getenv("AUTO_FILE_QUERIES", "true").lower() == "true"
 
         # Metered sync tuning
-        self.sync_quality_gate = int(
-            os.getenv("SYNC_QUALITY_GATE", str(self.sync_quality_gate))
-        )
-        self.sync_daily_budget = int(
-            os.getenv("SYNC_DAILY_BUDGET", str(self.sync_daily_budget))
-        )
+        self.sync_quality_gate = int(os.getenv("SYNC_QUALITY_GATE", str(self.sync_quality_gate)))
+        self.sync_daily_budget = int(os.getenv("SYNC_DAILY_BUDGET", str(self.sync_daily_budget)))
         self.sync_project_excluded_sources = os.getenv(
             "SYNC_PROJECT_EXCLUDED", self.sync_project_excluded_sources
         )
@@ -239,9 +282,7 @@ class LocalBrainConfig:
 
         # Default model assignments
         if not self.models:
-            routing_model = os.getenv(
-                "LOCAL_ROUTING_MODEL", "llama3.1:8b-instruct-q8_0"
-            )
+            routing_model = os.getenv("LOCAL_ROUTING_MODEL", "llama3.1:8b-instruct-q8_0")
             task_model = os.getenv("LOCAL_TASK_MODEL", "llama3.1:8b-instruct-q8_0")
             embed_model = os.getenv("LOCAL_EMBED_MODEL", "nomic-embed-text")
             deep_model = os.getenv("LOCAL_DEEP_MODEL", "deepseek-r1:14b")
@@ -276,6 +317,14 @@ class LocalBrainConfig:
                     description="Deep reasoning — consolidation, code review, briefings (nightly)",
                 ),
             }
+
+        # Detect Gemma 4 capabilities from the routing model name.
+        # If the operator uses llama3.1 (default) this returns the
+        # all-False default Gemma4Capabilities and consumers behave
+        # as if no native features are available, which matches how
+        # SmartConductor already uses JSON parsing today.
+        routing_model_name = self.models.get("routing", ModelConfig("")).model_name or ""
+        self.primary_capabilities = Gemma4Capabilities.detect(routing_model_name)
 
 
 # Singleton
