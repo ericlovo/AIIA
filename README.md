@@ -753,7 +753,7 @@ Checks 4 services every 30 seconds with 24-hour history retention:
 
 ## Security
 
-### 6-Scanner Suite (Nightly)
+### 7-Scanner Suite
 
 | Scanner | What | Fail Condition |
 |---------|------|----------------|
@@ -763,6 +763,19 @@ Checks 4 services every 30 seconds with 24-hour history retention:
 | semgrep | Pattern-based security | Error-level findings |
 | shellcheck | Shell script analysis | Errors |
 | hadolint | Dockerfile best practices | Errors |
+| pip-audit | Python dep CVEs (OSV) | Any vulnerable package |
+
+Run locally:
+
+```bash
+scripts/security_scan.sh           # full suite
+scripts/security_scan.sh --quick   # secrets + deps only
+```
+
+Reports land in `./security-reports/<date>/`. Findings that have been
+reviewed and accepted are suppressed via `.security-baseline.json`, so
+the overall exit code reflects only *new* findings. Full workflow and
+baseline schema in [docs/security.md](docs/security.md).
 
 ### Execution Safety
 
