@@ -6,6 +6,8 @@ All notable changes to AIIA are documented here. This project adheres to
 
 ## [Unreleased]
 
+## [0.5.0] — 2026-04-15
+
 ### Added
 - `GET /v1/autonomy/status` — new endpoint reporting Phase 2 autonomy
   state. Returns the master switch level, per-loop enablement (gated on
