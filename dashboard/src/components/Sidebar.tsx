@@ -2,6 +2,7 @@ import type { Page } from '../App'
 
 const NAV: { id: Page; label: string; icon: string }[] = [
   { id: 'today', label: 'Today', icon: '◉' },
+  { id: 'chat', label: 'Chat', icon: '✦' },
   { id: 'stories', label: 'Stories', icon: '▦' },
   { id: 'ops', label: 'Ops', icon: '⚙' },
 ]

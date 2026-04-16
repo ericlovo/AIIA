@@ -48,7 +48,19 @@ export function TodayPage() {
     : []
   // Dedupe commits by hash
   const uniqueCommits = [...new Map(commits.map(c => [c.hash, c])).values()]
-  const pendingActions = (actionData?.actions ?? []).filter((a: Action) => a.status === 'pending').slice(0, 8)
+  // Filter pending actions: skip noise from non-main branches (claude/*, dependabot/*, fix/*, feat/*)
+  // and dedup by title prefix (same workflow failing twice gets one entry)
+  const allPending = (actionData?.actions ?? []).filter((a: Action) => a.status === 'pending')
+  const NOISE_BRANCHES = /\bon (claude|dependabot|fix|feat|security|chore)\//i
+  const mainPending = allPending.filter(a => !NOISE_BRANCHES.test(a.title))
+  const seen = new Set<string>()
+  const pendingActions = mainPending.filter(a => {
+    // Dedup key: title with trailing hash/ID stripped
+    const key = a.title.replace(/[a-f0-9]{7,}.*$/, '').trim()
+    if (seen.has(key)) return false
+    seen.add(key)
+    return true
+  }).slice(0, 8)
   const summary = work?.today?.summary
 
   return (

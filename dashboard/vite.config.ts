@@ -9,6 +9,13 @@ export default defineConfig({
     proxy: {
       '/api': 'http://localhost:8200',
       '/ws': { target: 'ws://localhost:8200', ws: true },
+      // Direct Ollama proxy for the chat page — bypasses the heavy
+      // AIIA RAG pipeline so the user gets tokens in seconds, not minutes.
+      '/ollama': {
+        target: 'http://localhost:11434',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/ollama/, ''),
+      },
     },
   },
 })
