@@ -16,6 +16,22 @@ async function post<T>(path: string, body?: unknown): Promise<T> {
   return res.json();
 }
 
+async function put<T>(path: string, body?: unknown): Promise<T> {
+  const res = await fetch(`${BASE}${path}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+  return res.json();
+}
+
+async function del<T>(path: string): Promise<T> {
+  const res = await fetch(`${BASE}${path}`, { method: 'DELETE' });
+  if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+  return res.json();
+}
+
 // Types
 export interface Service {
   id: string;
@@ -164,8 +180,12 @@ export const api = {
     return get<{ stories: Story[]; count: number }>(`/api/roadmap${q}`);
   },
   storySummary: () => get<{ total: number; by_priority: Record<string, number>; by_status: Record<string, number>; by_product: Record<string, number> }>('/api/roadmap/summary'),
+  createStory: (data: { title: string; product?: string; priority?: string; status?: string; description?: string; tags?: string[]; client_impact?: string; source_type?: string }) =>
+    post<{ story: Story }>('/api/roadmap', data),
   updateStory: (id: string, data: Partial<Story>) =>
-    fetch(`/api/roadmap/${id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) }).then(r => r.json()),
+    put<{ story: Story }>(`/api/roadmap/${id}`, data),
+  deleteStory: (id: string) =>
+    del<{ deleted: boolean }>(`/api/roadmap/${id}`),
   prioritize: (limit = 10) => post<{ stories: Story[]; count: number }>('/api/roadmap/prioritize', { limit }),
 
   tasks: () => get<TaskInfo[]>('/api/tasks'),

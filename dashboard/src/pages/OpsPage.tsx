@@ -179,12 +179,49 @@ function TokenPanel() {
 
   if (!data) return null
 
+  const total = (data as Record<string, unknown>).total_tokens as number | undefined
+  const cost = (data as Record<string, unknown>).total_cost as number | undefined
+  const requests = (data as Record<string, unknown>).total_requests as number | undefined
+  const providers = (data as Record<string, unknown>).by_provider as Record<string, unknown> | undefined
+  const hasData = typeof total === 'number' && total > 0
+
   return (
     <div className="bg-[#141414] border border-[#222] rounded-xl p-5">
       <span className="text-amber-400 text-sm font-medium block mb-4">Token Usage</span>
-      <pre className="text-xs text-[#888] font-mono whitespace-pre-wrap overflow-auto max-h-[300px]">
-        {JSON.stringify(data, null, 2)}
-      </pre>
+      {hasData ? (
+        <div className="space-y-3">
+          <div className="grid grid-cols-3 gap-4">
+            <div className="text-center">
+              <div className="text-lg font-mono text-white">{total.toLocaleString()}</div>
+              <div className="text-[10px] text-[#555] uppercase">Tokens</div>
+            </div>
+            <div className="text-center">
+              <div className="text-lg font-mono text-white">{requests ?? 0}</div>
+              <div className="text-[10px] text-[#555] uppercase">Requests</div>
+            </div>
+            <div className="text-center">
+              <div className="text-lg font-mono text-green-400">${(cost ?? 0).toFixed(2)}</div>
+              <div className="text-[10px] text-[#555] uppercase">Cost</div>
+            </div>
+          </div>
+          {providers && Object.keys(providers).length > 0 && (
+            <div className="pt-2 border-t border-[#1e1e1e]">
+              <div className="text-xs text-[#666] mb-2">By provider</div>
+              {Object.entries(providers).map(([k, v]) => (
+                <div key={k} className="flex justify-between text-xs py-1">
+                  <span className="text-[#888]">{k}</span>
+                  <span className="text-[#ccc] font-mono">{typeof v === 'number' ? v.toLocaleString() : String(v)}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      ) : (
+        <div className="text-center py-4">
+          <p className="text-sm text-[#555]">No token data collected today.</p>
+          <p className="text-xs text-[#444] mt-1">Token tracking may not be configured.</p>
+        </div>
+      )}
     </div>
   )
 }
