@@ -126,14 +126,16 @@ export interface WorkContext {
 }
 
 export interface TaskInfo {
-  id: string;
+  task_id: string;
   name: string;
   description: string;
   interval_seconds: number;
   last_run: string | null;
   next_run: string | null;
   last_status: string | null;
+  last_result?: string | null;
   run_count: number;
+  fail_count: number;
   enabled: boolean;
 }
 
