@@ -6,6 +6,30 @@ All notable changes to AIIA are documented here. This project adheres to
 
 ## [Unreleased]
 
+### Added
+- `local_brain/a2a/` — Agent-to-Agent protocol module (Google A2A spec,
+  April 2025+ subset). Exposes AIIA's capabilities as A2A-compliant
+  endpoints that any A2A client can discover and invoke.
+  - `schema.py` — spec-compliant AgentCard, Message, Part, Task,
+    TaskStatus, TaskState, Artifact, plus JsonRpc envelope types.
+  - `registry.py` — tag-based agent discovery (AND/OR tag queries).
+  - `executors/` — AgentExecutor base + SubprocessExecutor (for CLI
+    tools), AIIAExecutor (AIIA.ask over A2A), AIIAMemoryExecutor
+    (remember / search / recent), AIIAStatusExecutor (live status).
+  - `router.py` — FastAPI router mounting `/.well-known/agent.json`
+    per-agent discovery cards plus JSONRPC `message/send` method on
+    `/a2a/{agent_id}` endpoints.
+  - `bootstrap.py` — `register_default_agents()` wires up the
+    built-in AIIA + brain-status + subprocess-backed dev agents at
+    Local Brain startup.
+  - `client.py` — outbound `A2AClient` with agent discovery, tag
+    querying, and `send_text()` helper for programmatic A2A calls.
+- `local_brain/tests/test_a2a_client.py` + `test_a2a_dev_tools.py` —
+  36 tests covering client discovery, JSONRPC wire format, tag
+  filtering, subprocess executor safety (arg whitelist, timeout,
+  exit handling), memory executor round-trip, and status executor
+  response shape.
+
 ## [0.5.0] — 2026-04-15
 
 ### Added
