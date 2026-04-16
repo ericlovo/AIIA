@@ -5,4 +5,4 @@ pyproject.toml read their version from this module. Bump here on release
 and update CHANGELOG.md + git tag.
 """
 
-__version__ = "0.4.0"
+__version__ = "0.5.0"
