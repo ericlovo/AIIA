@@ -115,9 +115,7 @@ class AIIA:
         memory: Memory,
         ollama_client: Any,  # OllamaClient from local_brain
         model: str = "llama3.1:8b-instruct-q8_0",
-        supermemory_bridge: Any = None,  # Optional SupermemoryBridge
         deep_model: Optional[str] = None,
-        cloud_timeout: float = 3.0,
         vault_writer: Optional[VaultWriter] = None,
     ):
         self._knowledge = knowledge_store
@@ -125,8 +123,6 @@ class AIIA:
         self._ollama = ollama_client
         self._model = model
         self._deep_model = deep_model  # DeepSeek R1 for nightly workers
-        self._supermemory = supermemory_bridge
-        self._cloud_timeout = cloud_timeout  # Hybrid cloud search timeout
         self._vault_writer = vault_writer  # Real-time Obsidian vault sync
 
         # Prompt cache — identity + memory export rebuilt only when memory changes
@@ -187,7 +183,6 @@ class AIIA:
         memory_results: List[Dict],
         session_results: List[Dict],
         context: Optional[str] = None,
-        cloud_results: Optional[List[Dict]] = None,
     ) -> str:
         """Build the full system prompt from cached base + per-query search results."""
         context_parts = [self._get_base_prompt()]
@@ -215,14 +210,6 @@ class AIIA:
                 summary = sess.get("summary", "")[:1000]
                 context_parts.append(f"- {summary}")
 
-        if cloud_results:
-            context_parts.append("\n## Cloud Memory (cross-session recall)")
-            for cr in cloud_results[:5]:
-                cat = cr.get("category", "general")
-                score = cr.get("score", 0)
-                content = cr.get("content", "")[:500]
-                context_parts.append(f"- [{cat}] (relevance: {score:.2f}) {content}")
-
         if context:
             context_parts.append(f"\n## Current Context\n{context}")
 
@@ -233,7 +220,6 @@ class AIIA:
         knowledge_results: List[Dict],
         memory_results: List[Dict],
         session_results: List[Dict],
-        cloud_results: Optional[List[Dict]] = None,
     ) -> List[Dict[str, Any]]:
         """Build the source list from search results."""
         sources: List[Dict[str, Any]] = []
@@ -260,15 +246,6 @@ class AIIA:
                     "session_id": sess.get("session_id", "unknown"),
                 }
             )
-        if cloud_results:
-            for cr in cloud_results[:5]:
-                sources.append(
-                    {
-                        "type": "cloud_memory",
-                        "category": cr.get("category", "general"),
-                        "score": cr.get("score", 0),
-                    }
-                )
         return sources
 
     async def _gather_context(
@@ -276,20 +253,19 @@ class AIIA:
         question: str,
         include_sessions: bool = True,
         n_results: int = 5,
-        include_cloud: bool = False,
     ):
-        """Search knowledge, memory, sessions, and optionally cloud. Returns four result lists.
+        """Search knowledge, memory, and sessions. Returns three result lists.
 
         Uses a 60s TTL cache for ChromaDB searches to avoid repeated vector queries
         for similar questions within a conversation.
         """
         now = time.monotonic()
-        cache_key = f"{question[:100]}:{n_results}:{include_sessions}:{include_cloud}"
+        cache_key = f"{question[:100]}:{n_results}:{include_sessions}"
 
         cached = self._knowledge_cache.get(cache_key)
         if cached and (now - cached[0]) < self._knowledge_cache_ttl:
             logger.debug(f"Knowledge cache hit for: {question[:50]}")
-            return cached[1], cached[2], cached[3], cached[4]
+            return cached[1], cached[2], cached[3]
 
         # Build coroutines for parallel execution
         async def _search_knowledge():
@@ -302,48 +278,11 @@ class AIIA:
                 return await self._knowledge.search_sessions(question, n_results=3)
             return []
 
-        async def _search_cloud():
-            if (
-                not include_cloud
-                or not self._supermemory
-                or not self._supermemory.available
-            ):
-                return []
-            try:
-                cloud_timeout = self._cloud_timeout
-                # Search only high-value categories to stay within timeout
-                # (searching all 10 containers takes ~15s sequentially)
-                return await asyncio.wait_for(
-                    self._supermemory.search_aiia_memories(
-                        query=question,
-                        categories=["decisions", "patterns", "lessons", "sessions"],
-                        limit=5,
-                    ),
-                    timeout=cloud_timeout,
-                )
-            except asyncio.TimeoutError:
-                logger.warning(f"Cloud search timed out ({cloud_timeout}s)")
-                return []
-            except Exception as e:
-                logger.warning(f"Cloud search failed: {e}")
-                return []
-
-        # Run all searches in parallel
-        knowledge_results, session_results, cloud_results = await asyncio.gather(
-            _search_knowledge(), _search_sessions(), _search_cloud()
+        # Run searches in parallel
+        knowledge_results, session_results = await asyncio.gather(
+            _search_knowledge(), _search_sessions()
         )
         memory_results = self._memory.search(question, limit=5)
-
-        # Deduplicate cloud results against local memory (substring match on first 80 chars)
-        if cloud_results and memory_results:
-            local_prefixes = {
-                m.get("fact", "")[:80] for m in memory_results if m.get("fact")
-            }
-            cloud_results = [
-                cr
-                for cr in cloud_results
-                if cr.get("content", "")[:80] not in local_prefixes
-            ]
 
         # Cache results (evict old entries if cache grows too large)
         if len(self._knowledge_cache) > 50:
@@ -355,10 +294,9 @@ class AIIA:
             knowledge_results,
             memory_results,
             session_results,
-            cloud_results,
         )
 
-        return knowledge_results, memory_results, session_results, cloud_results
+        return knowledge_results, memory_results, session_results
 
     async def _extract_and_remember(self, question: str, answer: str) -> None:
         """Extract 0-2 learnable facts from a Q&A pair and store as memories.
@@ -463,13 +401,12 @@ class AIIA:
             context: Optional additional context (e.g., current task)
             include_sessions: Whether to search past sessions too
             n_results: How many knowledge docs to retrieve
-            depth: "fast" (local only), "hybrid" (local + cloud), "deep" (+ DeepSeek R1)
+            depth: "fast" (local), "deep" (+ DeepSeek R1), "recursive" (REPL engine)
 
         Returns:
             answer: The brain's response
             sources: What it based its answer on
             latency_ms: How long it took
-            cloud_hits: Number of cloud memory results used
             reasoning: (deep only) DeepSeek's chain-of-thought
         """
         start = time.monotonic()
@@ -495,23 +432,17 @@ class AIIA:
             max_tokens = 4096
             timeout = None  # Use default
 
-        include_cloud = depth in ("hybrid", "deep")
-
         (
             knowledge_results,
             memory_results,
             session_results,
-            cloud_results,
-        ) = await self._gather_context(
-            question, include_sessions, n_results, include_cloud=include_cloud
-        )
+        ) = await self._gather_context(question, include_sessions, n_results)
 
         system_prompt = self._build_system_prompt(
             knowledge_results,
             memory_results,
             session_results,
             context,
-            cloud_results=cloud_results,
         )
 
         response = await self._ollama.chat(
@@ -543,7 +474,6 @@ class AIIA:
             knowledge_results,
             memory_results,
             session_results,
-            cloud_results=cloud_results,
         )
 
         result = {
@@ -554,7 +484,6 @@ class AIIA:
             "knowledge_hits": len(knowledge_results),
             "memory_hits": len(memory_results),
             "session_hits": len(session_results),
-            "cloud_hits": len(cloud_results) if cloud_results else 0,
         }
         if reasoning:
             result["reasoning"] = reasoning
@@ -599,30 +528,23 @@ class AIIA:
             model = self._model
             temperature = 0.3
 
-        include_cloud = depth in ("hybrid", "deep")
-
         (
             knowledge_results,
             memory_results,
             session_results,
-            cloud_results,
-        ) = await self._gather_context(
-            question, include_sessions, n_results, include_cloud=include_cloud
-        )
+        ) = await self._gather_context(question, include_sessions, n_results)
 
         system_prompt = self._build_system_prompt(
             knowledge_results,
             memory_results,
             session_results,
             context,
-            cloud_results=cloud_results,
         )
 
         sources = self._build_sources(
             knowledge_results,
             memory_results,
             session_results,
-            cloud_results=cloud_results,
         )
 
         # Yield metadata before LLM starts generating
@@ -632,7 +554,6 @@ class AIIA:
             "knowledge_hits": len(knowledge_results),
             "memory_hits": len(memory_results),
             "session_hits": len(session_results),
-            "cloud_hits": len(cloud_results) if cloud_results else 0,
             "model": model,
         }
 
@@ -751,7 +672,6 @@ class AIIA:
             knowledge_results,
             memory_results,
             session_results,
-            cloud_results,
         ) = await self._gather_context(question, include_sessions, n_results)
 
         env, engine = await self._build_recursive_env(
@@ -793,7 +713,6 @@ class AIIA:
             "knowledge_hits": len(knowledge_results),
             "memory_hits": len(memory_results),
             "session_hits": len(session_results),
-            "cloud_hits": 0,
             "recursive": recursive_meta,
         }
 
@@ -816,7 +735,6 @@ class AIIA:
             knowledge_results,
             memory_results,
             session_results,
-            cloud_results,
         ) = await self._gather_context(question, include_sessions, n_results)
 
         sources = self._build_sources(
@@ -834,7 +752,6 @@ class AIIA:
             "knowledge_hits": len(knowledge_results),
             "memory_hits": len(memory_results),
             "session_hits": len(session_results),
-            "cloud_hits": 0,
             "model": self._model,
         }
 
@@ -869,19 +786,6 @@ class AIIA:
             doc_type="memory",
             metadata={"category": category, "source": source},
         )
-
-        # Sync to Supermemory cloud backup (tracked to prevent GC cancellation)
-        if self._supermemory and self._supermemory.available:
-            task = asyncio.create_task(
-                self._supermemory.sync_memory(
-                    fact=fact,
-                    category=category,
-                    source=source,
-                    metadata=metadata,
-                )
-            )
-            self._background_tasks.add(task)
-            task.add_done_callback(self._background_tasks.discard)
 
         # Sync to Obsidian vault (fire-and-forget via queue)
         if self._vault_writer and entry:
@@ -943,19 +847,6 @@ class AIIA:
             source=f"session:{session_id}",
         )
 
-        # Sync full session to Supermemory cloud backup (tracked to prevent GC cancellation)
-        if self._supermemory and self._supermemory.available:
-            task = asyncio.create_task(
-                self._supermemory.sync_session(
-                    session_id=session_id,
-                    summary=summary,
-                    decisions=key_decisions,
-                    lessons=lessons_learned,
-                )
-            )
-            self._background_tasks.add(task)
-            task.add_done_callback(self._background_tasks.discard)
-
         return {
             "session_id": session_id,
             "summary_stored": True,
@@ -963,49 +854,10 @@ class AIIA:
             "lessons_stored": len(stored_lessons),
         }
 
-    async def search_supermemory(
-        self,
-        query: str,
-        search_type: str = "sme",
-        domains: Optional[List[str]] = None,
-        categories: Optional[List[str]] = None,
-        tenant_id: str = "default",
-        limit: int = 5,
-    ) -> Dict[str, Any]:
-        """
-        Search Supermemory cloud — either SME domain knowledge or AIIA's own memories.
-
-        Args:
-            query: What to search for
-            search_type: "sme" for domain knowledge, "aiia" for AIIA's cloud memories
-            domains: SME domains to search (for search_type="sme")
-            categories: AIIA memory categories to search (for search_type="aiia")
-            tenant_id: Tenant for SME search
-            limit: Max results
-        """
-        if not self._supermemory or not self._supermemory.available:
-            return {"results": [], "error": "supermemory_bridge_unavailable"}
-
-        if search_type == "sme":
-            results = await self._supermemory.search_sme(
-                query=query,
-                domains=domains,
-                tenant_id=tenant_id,
-                limit=limit,
-            )
-        else:
-            results = await self._supermemory.search_aiia_memories(
-                query=query,
-                categories=categories,
-                limit=limit,
-            )
-
-        return {"results": results, "count": len(results), "search_type": search_type}
-
     async def status(self) -> Dict[str, Any]:
         """Full status of AIIA."""
         knowledge_stats = await self._knowledge.stats()
-        status = {
+        return {
             "identity": "AIIA",
             "name": "AI Information Architecture",
             "team": "AIIA",
@@ -1014,6 +866,3 @@ class AIIA:
             "knowledge": knowledge_stats,
             "memory": self._memory.stats(),
         }
-        if self._supermemory:
-            status["supermemory"] = self._supermemory.status()
-        return status

@@ -395,13 +395,11 @@ class SessionIndexer:
         ollama_client=None,
         data_dir: str = "",
         enrichment_model: str = "qwen2.5:7b",
-        supermemory_bridge=None,
     ):
         self._knowledge = knowledge_store
         self._memory = memory
         self._ollama = ollama_client
         self._enrichment_model = enrichment_model
-        self._bridge = supermemory_bridge
 
         self._state_dir = os.path.join(data_dir, "session_index")
         os.makedirs(self._state_dir, exist_ok=True)
@@ -571,25 +569,6 @@ class SessionIndexer:
                         category="patterns",
                         source=source_tag,
                     )
-
-        # Cloud sync — push session to Supermemory (fire-and-forget, failure-safe)
-        if self._bridge and self._bridge.available and record.summary:
-            try:
-                await self._bridge.sync_session(
-                    session_id=record.session_id,
-                    summary=record.summary,
-                    decisions=record.decisions,
-                    lessons=[
-                        f"Problem: {s.get('error', '')} -> Fix: {s.get('fix', '')}"
-                        for s in record.solutions
-                        if isinstance(s, dict) and s.get("error") and s.get("fix")
-                    ],
-                )
-                logger.info(f"Cloud synced session {record.session_id}")
-            except Exception as e:
-                logger.warning(
-                    f"Cloud sync failed for session {record.session_id}: {e}"
-                )
 
     # ─── Pipeline Orchestrator ─────────────────────────────────
 

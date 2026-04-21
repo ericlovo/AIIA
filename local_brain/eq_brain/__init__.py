@@ -20,6 +20,5 @@ AIIA grows smarter over time. Every session teaches her something new.
 from local_brain.eq_brain.knowledge_store import KnowledgeStore
 from local_brain.eq_brain.memory import Memory
 from local_brain.eq_brain.brain import AIIA
-from local_brain.eq_brain.supermemory_bridge import SupermemoryBridge
 
-__all__ = ["KnowledgeStore", "Memory", "AIIA", "SupermemoryBridge"]
+__all__ = ["KnowledgeStore", "Memory", "AIIA"]

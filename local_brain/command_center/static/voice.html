@@ -671,10 +671,6 @@ select.setting-select {
             <span class="stat-label">Memories</span>
           </div>
           <div class="stat-item">
-            <span class="stat-value" id="statSupermemory">--</span>
-            <span class="stat-label">Supermemory</span>
-          </div>
-          <div class="stat-item">
             <span class="stat-value" id="statCtx">--</span>
             <span class="stat-label">Context</span>
           </div>
@@ -1641,10 +1637,6 @@ const SidebarManager = {
       const memory = data.memory || {};
       $('statDocs').textContent = (knowledge.knowledge_docs || 0).toLocaleString();
       $('statMemories').textContent = memory.total_memories || 0;
-
-      // Supermemory status
-      const sm = data.supermemory || {};
-      $('statSupermemory').textContent = sm.status === 'connected' ? 'OK' : (sm.status || '--');
 
       // Context
       const ctx = data.config || {};

@@ -2520,9 +2520,6 @@ async def checkin():
     nightly["security_scan"] = _check_job_file(
         home / ".aiia" / "logs" / "security" / "latest.txt"
     )
-    nightly["memory_sync"] = _check_job_file(
-        home / ".aiia" / "logs" / "sync" / "latest.txt"
-    )
 
     # Daily report — find latest file in reports dir
     reports_dir = home / ".aiia" / "eq_data" / "reports"
