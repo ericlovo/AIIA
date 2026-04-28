@@ -144,7 +144,7 @@ When opening an issue, please include:
 Major architectural changes should be discussed in an issue before implementation. The project follows these principles:
 
 - **Local-first:** Ollama handles as much as possible for $0
-- **Graceful degradation:** Cloud services (Supermemory, Anthropic, Google) are optional — AIIA works without them
+- **Graceful degradation:** Cloud services (Anthropic, Google) are optional — AIIA works without them
 - **Configuration over code:** Use env vars and config files, not hardcoded values
 - **Safety by default:** Execution engine defaults to requiring approval
 

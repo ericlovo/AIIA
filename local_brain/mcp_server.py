@@ -156,7 +156,7 @@ async def aiia_ask(
         question: The question to ask AIIA
         context: Optional additional context to help AIIA answer
         n_results: Number of knowledge docs to search (default 5)
-        depth: Search depth — "fast" (local only), "hybrid" (local + Supermemory cloud), "deep" (+ DeepSeek R1)
+        depth: Search depth — "fast" (local), "deep" (+ DeepSeek R1), "recursive" (REPL engine)
     """
     body = {"question": question, "n_results": n_results, "depth": depth}
     if context:
@@ -922,119 +922,6 @@ async def aiia_speak(text: str, voice: str = "aiia") -> str:
         return f"AIIA speak failed: {result['error']}"
 
     return f"AIIA is speaking ({len(text)} chars, voice: {voice})"
-
-
-# ─────────────────────────────────────────────────────────────
-# Supermemory Cloud Sync & Search Tools
-# ─────────────────────────────────────────────────────────────
-
-
-@mcp.tool()
-async def aiia_sync_supermemory(
-    categories: list[str] | None = None,
-    limit_per_category: int = 50,
-) -> str:
-    """Push AIIA's local memories to Supermemory cloud backup. Safe to re-run —
-    uses deterministic IDs so duplicates are skipped.
-
-    Syncs decisions, lessons, patterns, sessions, and other memory categories
-    to their matching Supermemory containers (aiia_*).
-
-    Use this to:
-    - Back up AIIA's local memories to the cloud
-    - Ensure cloud and local are in sync after significant sessions
-    - Backfill after AIIA learns many new things
-
-    Args:
-        categories: Which categories to sync (default: all). Options: decisions, lessons, patterns, sessions, team, project, agents, wip, meta
-        limit_per_category: Max memories per category to sync (default: 50)
-    """
-    body: dict = {"limit_per_category": limit_per_category}
-    if categories:
-        body["categories"] = categories
-
-    result = await _call_aiia("POST", "/v1/aiia/supermemory/sync", body)
-
-    if "error" in result:
-        return f"Sync failed: {result['error']}"
-
-    total_synced = result.get("total_synced", 0)
-    total_errors = result.get("total_errors", 0)
-    by_cat = result.get("by_category", {})
-
-    lines = [f"Synced {total_synced} memories to Supermemory cloud"]
-    if total_errors:
-        lines[0] += f" ({total_errors} errors)"
-
-    for cat, stats in by_cat.items():
-        synced = stats.get("synced", 0)
-        total = stats.get("total", 0)
-        if total > 0:
-            lines.append(f"  {cat}: {synced}/{total} synced")
-
-    return "\n".join(lines)
-
-
-@mcp.tool()
-async def aiia_search_supermemory(
-    query: str,
-    search_type: str = "sme",
-    domains: list[str] | None = None,
-    tenant_id: str = "default",
-    limit: int = 5,
-) -> str:
-    """Search Supermemory cloud — either SME domain knowledge vaults or
-    AIIA's own cloud-backed memories.
-
-    search_type="sme": Search DefaultApp's SME containers (finance, pi_law,
-    family_law, compliance, etc.) for domain expertise. Great for legal
-    and financial questions.
-
-    search_type="aiia": Search AIIA's cloud-synced memories (decisions,
-    lessons, patterns). Useful for finding past knowledge that may not
-    be in local search.
-
-    Use this for:
-    - "What does the Rule of Thirds say?" (search_type="sme", domains=["finance"])
-    - "Find PI law knowledge about damages" (search_type="sme", domains=["pi_law"])
-    - "What decisions did we make about auth?" (search_type="aiia")
-
-    Args:
-        query: What to search for
-        search_type: "sme" for domain knowledge, "aiia" for AIIA's memories
-        domains: SME domains to search (for sme type). Options: finance, pi_law, family_law, compliance, patent_law, estate_planning, wealth_management, eq, general
-        tenant_id: Tenant for SME search (default: default)
-        limit: Max results (default: 5)
-    """
-    body: dict = {
-        "query": query,
-        "search_type": search_type,
-        "tenant_id": tenant_id,
-        "limit": limit,
-    }
-    if domains:
-        body["domains"] = domains
-
-    result = await _call_aiia("POST", "/v1/aiia/supermemory/search", body)
-
-    if "error" in result:
-        return f"Search failed: {result['error']}"
-
-    results = result.get("results", [])
-    if not results:
-        return f"No results found for '{query}' (search_type={search_type})"
-
-    count = result.get("count", len(results))
-    lines = [f"Found {count} results (search_type={search_type}):\n"]
-
-    for i, r in enumerate(results, 1):
-        content = r.get("content", "")[:400]
-        score = r.get("score", 0)
-        # Show domain for SME, category for AIIA
-        label = r.get("domain", r.get("category", ""))
-        lines.append(f"[{i}] {label} (score: {score:.3f})\n{content}\n")
-
-    return "\n".join(lines)
 
 
 # ─────────────────────────────────────────────────────────────

@@ -51,7 +51,6 @@ graph TB
 
     subgraph "Nightly Automation (launchd)"
       SecurityScan["Security Scan<br/>12:00am · 6 scanners"]
-      MemorySync["Memory Sync<br/>Every 4h · Tier 1+2"]
       DailyReport["Daily Report<br/>2:30am · git analysis"]
       Consolidation["Consolidation<br/>3:00am · DeepSeek R1"]
       Briefing["Morning Briefing<br/>4:30am · DeepSeek R1"]
@@ -61,7 +60,6 @@ graph TB
   end
 
   subgraph "Cloud Services"
-    Supermemory["Supermemory<br/>21 containers<br/>3M tokens/month"]
     Render["Render (5 services)<br/>DefaultApp · Platform<br/>Marketing · Sales · CK"]
     Vercel["Vercel<br/>Per-tenant frontends"]
   end
@@ -90,7 +88,6 @@ graph TB
   Actions --> Executor
   Executor --> Ollama
 
-  Memory -->|Metered sync| Supermemory
   Monitor -->|Health checks| Render
   API -->|Tailscale tunnel| Render
 
@@ -102,7 +99,6 @@ graph TB
   SecurityScan --> Actions
   Briefing --> Actions
   Consolidation --> Memory
-  MemorySync --> Supermemory
 ```
 
 ---
@@ -125,29 +121,21 @@ graph TB
 
 ### Memory System
 
-Two-layer architecture: local JSON (instant, free) + Supermemory cloud (persistent, metered).
+Local JSON storage — instant, free, on-device.
 
 ```mermaid
 graph LR
   subgraph "Local (Mac Mini, $0)"
-    D[decisions.json<br/>58KB · never expires]
-    P[patterns.json<br/>78KB · never expires]
-    L[lessons.json<br/>68KB · never expires]
-    S[sessions.json<br/>20KB · 90d TTL]
-    T[team.json<br/>1.4KB · never expires]
-    A[agents.json<br/>1KB · never expires]
-    M[meta.json<br/>62KB · 180d TTL]
-    PR[project.json<br/>239KB · 60d TTL]
-    W[wip.json<br/>516B · 24h TTL]
+    D[decisions.json<br/>never expires]
+    P[patterns.json<br/>never expires]
+    L[lessons.json<br/>never expires]
+    S[sessions.json<br/>90d TTL]
+    T[team.json<br/>never expires]
+    A[agents.json<br/>never expires]
+    M[meta.json<br/>180d TTL]
+    PR[project.json<br/>60d TTL]
+    W[wip.json<br/>24h TTL]
   end
-
-  subgraph "Cloud (Supermemory)"
-    SC["21 containers<br/>10 AIIA + 11 SME"]
-  end
-
-  D & P & L & S -->|"Tier 1: daily<br/>quality gate 4+/5"| SC
-  T & A & M -->|"Tier 2: weekly<br/>no scoring"| SC
-  PR & W -.-x|"Tier 3: never synced"| SC
 ```
 
 **Memory Entry Structure:**
@@ -161,25 +149,18 @@ graph LR
 }
 ```
 
-**Current Stats (March 2026):**
-| Category | Entries | Size | Tier | Sync | Decay |
-|----------|---------|------|------|------|-------|
-| decisions | ~60 | 58KB | 1 | Daily | Never |
-| patterns | ~70 | 78KB | 1 | Daily | Never |
-| lessons | ~60 | 68KB | 1 | Daily | Never |
-| sessions | ~70 | 20KB | 1 | Daily | 90 days |
-| team | ~2 | 1.4KB | 2 | Weekly | Never |
-| agents | ~1 | 1KB | 2 | Weekly | Never |
-| meta | ~40 | 62KB | 2 | Weekly | 180 days |
-| project | ~200 | 239KB | 3 | Never | 60 days |
-| wip | ~1 | 516B | 3 | Never | 24 hours |
-| **Total** | **~500+** | **~529KB** | — | — | — |
-
-**Metered Sync Pipeline:**
-- Budget: 3M tokens/month, 200K/day
-- Quality gate: local LLM scores each memory 1-5, only 4+ synced
-- Dedup: SHA256 content hash prevents re-syncing
-- Circuit breaker: halts after 5 consecutive API errors
+**Categories & Decay:**
+| Category | Decay |
+|----------|-------|
+| decisions | Never |
+| patterns | Never |
+| lessons | Never |
+| sessions | 90 days |
+| team | Never |
+| agents | Never |
+| meta | 180 days |
+| project | 60 days |
+| wip | 24 hours |
 
 ### Knowledge Store (ChromaDB)
 
@@ -294,7 +275,6 @@ Every backlog story is scored against these filters (0-10 each, weighted):
 | Time | Agent | What |
 |------|-------|------|
 | 12:00am | `com.aiia.securityscan` | 6 scanners: bandit, semgrep, trivy, trufflehog, shellcheck, hadolint |
-| Every 4h | `com.aiia.memorysync` | Quality-scored sync: local memory → Supermemory cloud |
 | 2:30am | `com.aiia.dailyreport` | Git log analysis grouped by product |
 | 3:00am | `com.aiia.consolidate` | DeepSeek R1 memory consolidation (themes, contradictions, stale) |
 | 4:30am | `com.aiia.briefing` | DeepSeek R1 alert synthesis from overnight reports |
@@ -503,9 +483,6 @@ brain report --interval  # 3-hour interval report
 brain scan           # Full 6-scanner security suite
 brain scan -q        # Quick scan (secrets + deps only)
 
-brain sync           # Metered memory sync (local → cloud)
-brain sync -w        # Weekly mode (includes Tier 2)
-
 brain consolidate    # Deep memory consolidation (DeepSeek R1)
 brain briefing       # Morning briefing (alert synthesis)
 brain morning        # One-shot catch-up (nightly jobs + WIP + stories)
@@ -547,8 +524,6 @@ AIIA/
 │   │   ├── brain.py                # AIIA class (main brain)
 │   │   ├── memory.py               # Structured JSON memory
 │   │   ├── knowledge_store.py      # ChromaDB wrapper
-│   │   ├── supermemory_bridge.py   # Cloud sync (Supermemory SDK)
-│   │   ├── memory_sync.py          # Metered sync + TokenLedger
 │   │   ├── memory_consolidator.py  # Deep reasoning consolidation
 │   │   ├── story_prioritizer.py    # 5-filter scoring engine
 │   │   ├── session_indexer.py      # Claude Code transcript → ChromaDB
@@ -580,8 +555,7 @@ AIIA/
 │   ├── scripts/                    # Utilities
 │   │   ├── roadmap_store.py        # Story CRUD + dedup
 │   │   ├── pipeline_store.py       # Deal pipeline CRUD
-│   │   ├── daily_report.py         # Git report generator
-│   │   └── memory_sync_runner.py   # CLI for brain sync
+│   │   └── daily_report.py         # Git report generator
 │   │
 │   └── pilot/                      # Setup scripts
 │       └── start_brain.sh          # Startup script
@@ -627,9 +601,6 @@ AIIA/
 | `LOCAL_DEEP_MODEL` | `deepseek-r1:14b` | Nightly deep reasoning |
 | `EQ_BRAIN_DATA_DIR` | `~/aiia-local-brain/eq_data` | Data directory |
 | `EXECUTION_ENABLED` | `false` | Enable execution engine |
-| `SUPERMEMORY_API_KEY` | — | Supermemory cloud access |
-| `SUPERMEMORY_ENABLED` | `true` | Cloud sync kill switch |
-| `SUPERMEMORY_TIMEOUT` | `8.0` | Per-call timeout (seconds) |
 | `ANTHROPIC_API_KEY` | — | Claude API (for Claude strategy) |
 | `GOOGLE_API_KEY` | — | Google TTS |
 
@@ -641,8 +612,6 @@ AIIA/
 | Output tokens | 3,072 | Max generation per request |
 | Recursive iterations | 15 | RLM max loop count |
 | Recursive token budget | 50,000 | RLM session cap |
-| Sync daily budget | 200,000 tokens | Supermemory daily cap |
-| Sync monthly budget | 3,000,000 tokens | Supermemory monthly cap |
 | Execution timeout | 600s | Max per-action execution |
 | Execution max retries | 2 | Retry count before failing |
 | Execution concurrency | 1 | Max simultaneous actions |
@@ -698,7 +667,6 @@ Checks 4 services every 30 seconds with 24-hour history retention:
 │  Local Brain API   :8100               │
 │  Command Center    :8200               │
 │  AIIA EQ Brain + Memory               │
-│  Supermemory Bridge (cloud sync)       │
 └──────────┬─────────────────────────────┘
            │ Optional secure tunnel (e.g. WireGuard/Tailscale)
 ┌──────────┼──────────────────────────────┐

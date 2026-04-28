@@ -74,9 +74,6 @@ async def _run_indexer(force: bool) -> dict:
     from local_brain.eq_brain.knowledge_store import KnowledgeStore
     from local_brain.eq_brain.memory import Memory
     from local_brain.eq_brain.session_indexer import SessionIndexer
-    from local_brain.eq_brain.supermemory_bridge import (
-        SupermemoryBridge,
-    )
     from local_brain.ollama_client import OllamaClient
 
     config = get_config()
@@ -104,14 +101,6 @@ async def _run_indexer(force: bool) -> dict:
     task_model = config.models.get("task")
     enrichment_model = task_model.model_name if task_model else "qwen2.5:7b"
 
-    # Initialize Supermemory bridge for cloud sync
-    bridge = SupermemoryBridge(timeout=config.supermemory_timeout)
-    bridge_available = bridge.available
-    if bridge_available:
-        logger.info("Supermemory bridge available — sessions will sync to cloud")
-    else:
-        logger.info("Supermemory bridge unavailable — local-only indexing")
-
     # Create indexer
     indexer = SessionIndexer(
         knowledge_store=knowledge,
@@ -119,7 +108,6 @@ async def _run_indexer(force: bool) -> dict:
         ollama_client=ollama if ollama_available else None,
         data_dir=config.eq_brain_data_dir,
         enrichment_model=enrichment_model,
-        supermemory_bridge=bridge if bridge_available else None,
     )
 
     # Log pre-run state

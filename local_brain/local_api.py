@@ -20,7 +20,6 @@ import asyncio
 import logging
 import os
 import time
-from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 import httpx
@@ -32,16 +31,13 @@ from pydantic import BaseModel, Field
 
 from fastapi.responses import Response as RawResponse
 
-from local_brain.__version__ import __version__
 from local_brain.config import get_config, LocalBrainConfig
 from local_brain.ollama_client import OllamaClient
 from local_brain.smart_conductor import SmartConductor
 from local_brain.eq_brain.knowledge_store import KnowledgeStore
 from local_brain.eq_brain.memory import Memory
 from local_brain.eq_brain.brain import AIIA
-from local_brain.eq_brain.supermemory_bridge import SupermemoryBridge
 from local_brain.eq_brain.vault_writer import VaultWriter
-
 try:
     from local_brain.services.google_tts import GoogleTTSService
 except ImportError:
@@ -95,9 +91,9 @@ async def _report_metrics(
 # ─────────────────────────────────────────────────────────────
 
 app = FastAPI(
-    title="AIIA — Local Brain",
+    title="AIIA — AIIA Local Brain",
     description="AIIA (AI Information Architecture) — persistent AI teammate running on Mac Mini",
-    version=__version__,
+    version="0.3.0",
 )
 
 app.add_middleware(
@@ -113,34 +109,25 @@ _ollama: Optional[OllamaClient] = None
 _conductor: Optional[SmartConductor] = None
 _config: Optional[LocalBrainConfig] = None
 _aiia: Optional[AIIA] = None
-_supermemory_bridge: Optional[SupermemoryBridge] = None
 _google_tts: Optional[GoogleTTSService] = None
 _active_sessions: Dict[str, Dict[str, Any]] = {}  # Active session tracking
 
 
 @app.on_event("startup")
 async def startup():
-    global _ollama, _conductor, _config, _aiia, _supermemory_bridge, _google_tts
+    global _ollama, _conductor, _config, _aiia, _google_tts
     _config = get_config()
     _ollama = OllamaClient(_config)
     _conductor = SmartConductor(_ollama, _config)
-
-    # Initialize Supermemory bridge
-    if _config.supermemory_enabled:
-        _supermemory_bridge = SupermemoryBridge(timeout=_config.supermemory_timeout)
-        if _supermemory_bridge.available:
-            logger.info("Supermemory bridge online")
-        else:
-            logger.info("Supermemory bridge disabled (no API key or SUPERMEMORY_ENABLED=false)")
-    else:
-        logger.info("Supermemory bridge disabled by config")
 
     # Initialize Google Cloud TTS (optional)
     _google_tts = GoogleTTSService() if GoogleTTSService else None
     if _google_tts and _google_tts.is_available:
         logger.info("Google Cloud TTS available")
     else:
-        logger.info("Google Cloud TTS not configured (no GOOGLE_API_KEY or GOOGLE_TTS_API_KEY)")
+        logger.info(
+            "Google Cloud TTS not configured (no GOOGLE_API_KEY or GOOGLE_TTS_API_KEY)"
+        )
 
     # Check Ollama health on startup
     health = await _ollama.health()
@@ -202,9 +189,7 @@ async def _ensure_aiia() -> Optional[AIIA]:
                 memory,
                 _ollama,
                 model=model,
-                supermemory_bridge=_supermemory_bridge,
                 deep_model=deep_model,
-                cloud_timeout=_config.hybrid_cloud_timeout,
                 vault_writer=_vault_writer,
             )
 
@@ -349,108 +334,15 @@ async def health_check():
         "status": "online",
         "ollama": ollama_health,
         "aiia": (await _aiia.status()) if _aiia else {"status": "not_initialized"},
-        "supermemory": _supermemory_bridge.status()
-        if _supermemory_bridge
-        else {"available": False},
         "features": {
             "smart_routing": _config.smart_routing_enabled if _config else False,
             "summarization": _config.summarization_enabled if _config else False,
-            "memory_extraction": _config.memory_extraction_enabled if _config else False,
+            "memory_extraction": _config.memory_extraction_enabled
+            if _config
+            else False,
             "pii_scanning": _config.pii_scanning_enabled if _config else False,
             "embeddings": _config.embeddings_enabled if _config else False,
         },
-    }
-
-
-# ─────────────────────────────────────────────────────────────
-# Phase 2 Autonomy status
-# ─────────────────────────────────────────────────────────────
-
-# Loop key → (task_id in command_center/task_data.json, AutonomyConfig flag attr).
-# A loop is "enabled" only if BOTH the master switch (level=phase2) AND
-# its individual flag are on. Reporting the flag alone would lie when
-# AIIA_AUTONOMY_LEVEL=phase1 downgrades everything at runtime.
-_AUTONOMY_LOOPS = [
-    ("proactive_story_eval", "proactive_story_execution"),
-    ("gated_downgrade_check", "gated_downgrade_enabled"),
-    ("self_healing_monitor", "self_healing_enabled"),
-    ("memory_quality_loop", "memory_quality_enabled"),
-]
-
-# Path is monkeypatched in tests; do not inline.
-_TASK_DATA_FILE = Path(__file__).parent / "command_center" / "task_data.json"
-
-
-@app.get("/v1/autonomy/status")
-async def autonomy_status():
-    """
-    Report Phase 2 autonomy state — master switch, per-loop enablement,
-    runtime metrics from the task scheduler, and the active policy.
-
-    Used by the dashboard and the `aiia` CLI to visualize what AIIA is
-    allowed to do on its own and what it has actually done recently.
-    """
-    if _config is None:
-        raise HTTPException(status_code=503, detail="Local Brain not initialized")
-
-    autonomy = _config.autonomy
-    task_state: Dict[str, Any] = {}
-    task_data_available = False
-    try:
-        if _TASK_DATA_FILE.exists():
-            task_state = json_module.loads(_TASK_DATA_FILE.read_text()).get("tasks", {})
-            task_data_available = True
-    except Exception as e:
-        logger.warning(f"autonomy_status: failed reading task_data.json: {e}")
-
-    phase2 = autonomy.level == "phase2"
-    loops = {}
-    for task_id, flag_attr in _AUTONOMY_LOOPS:
-        st = task_state.get(task_id, {})
-        loops[task_id] = {
-            "enabled": phase2 and bool(getattr(autonomy, flag_attr, False)),
-            "last_run": st.get("last_run"),
-            "last_result": st.get("last_result"),
-            "last_duration_ms": st.get("last_duration_ms"),
-            "run_count": st.get("run_count", 0),
-            "fail_count": st.get("fail_count", 0),
-        }
-
-    return {
-        "level": autonomy.level,
-        "phase2_active": phase2,
-        "loops": loops,
-        "policy": {
-            "proactive": {
-                "priorities": autonomy.proactive_priorities,
-                "min_confidence": autonomy.proactive_min_confidence,
-                "business_hours": [
-                    autonomy.proactive_business_hours_start,
-                    autonomy.proactive_business_hours_end,
-                ],
-                "business_hours_tz": autonomy.proactive_business_hours_tz,
-                "health_check_url": autonomy.proactive_health_check_url,
-            },
-            "gated_downgrade": {
-                "hours": autonomy.gated_downgrade_hours,
-                "max_severity": autonomy.gated_downgrade_max_severity,
-            },
-            "self_healing": {
-                "check_seconds": autonomy.self_healing_check_seconds,
-                "max_attempts": autonomy.self_healing_max_attempts,
-                "monitored_service_count": len(autonomy.monitored_services),
-            },
-            "memory_quality": {
-                "interval_hours": autonomy.memory_quality_interval_hours,
-                "threshold": autonomy.memory_quality_threshold,
-                "max_promotions": autonomy.memory_quality_max_promotions,
-            },
-        },
-        "safety": {
-            "forbidden_files": autonomy.forbidden_files,
-            "forbidden_actions": autonomy.forbidden_actions,
-        },
-        "runtime_state_available": task_data_available,
     }
 
 
@@ -459,7 +351,9 @@ async def autonomy_status():
 # ─────────────────────────────────────────────────────────────
 
 
-@app.post("/v1/route", response_model=RouteResponse, dependencies=[Depends(verify_api_key)])
+@app.post(
+    "/v1/route", response_model=RouteResponse, dependencies=[Depends(verify_api_key)]
+)
 async def smart_route(request: RouteRequest):
     """
     Classify a user query using local LLM — replaces keyword matching.
@@ -497,7 +391,9 @@ async def smart_route(request: RouteRequest):
 # ─────────────────────────────────────────────────────────────
 
 
-@app.post("/v1/chat", response_model=ChatResponse, dependencies=[Depends(verify_api_key)])
+@app.post(
+    "/v1/chat", response_model=ChatResponse, dependencies=[Depends(verify_api_key)]
+)
 async def local_chat(request: ChatRequest):
     """
     Local chat completion via Ollama.
@@ -556,7 +452,9 @@ async def local_chat(request: ChatRequest):
 # ─────────────────────────────────────────────────────────────
 
 
-@app.post("/v1/embed", response_model=EmbedResponse, dependencies=[Depends(verify_api_key)])
+@app.post(
+    "/v1/embed", response_model=EmbedResponse, dependencies=[Depends(verify_api_key)]
+)
 async def generate_embeddings(request: EmbedRequest):
     """Generate embeddings locally using nomic-embed-text or similar."""
     if not _ollama:
@@ -644,7 +542,9 @@ async def extract_memory(request: MemoryExtractRequest):
         raise HTTPException(status_code=503, detail="Not initialized")
 
     # Build conversation text
-    conversation = "\n".join(f"{m['role'].upper()}: {m['content']}" for m in request.messages)
+    conversation = "\n".join(
+        f"{m['role'].upper()}: {m['content']}" for m in request.messages
+    )
 
     existing = ""
     if request.existing_memories:
@@ -956,7 +856,9 @@ async def aiia_remember(request: AIIARememberRequest):
     return result
 
 
-@app.post("/v1/eq/remember", dependencies=[Depends(verify_api_key)], include_in_schema=False)
+@app.post(
+    "/v1/eq/remember", dependencies=[Depends(verify_api_key)], include_in_schema=False
+)
 async def eq_remember_legacy(request: AIIARememberRequest):
     return await aiia_remember(request)
 
@@ -1020,7 +922,6 @@ async def eq_session_end_legacy(request: AIIASessionEndRequest):
 
 class SlackPostRequest(BaseModel):
     """Post a message to Slack."""
-
     channel: str = "#aiia-backlog"
     text: str
     thread_ts: Optional[str] = None
@@ -1033,9 +934,7 @@ async def aiia_slack_post(request: SlackPostRequest):
 
     token = os.getenv("SLACK_BOT_TOKEN", "")
     if not token:
-        raise HTTPException(
-            status_code=503, detail="Slack not configured (SLACK_BOT_TOKEN missing)"
-        )
+        raise HTTPException(status_code=503, detail="Slack not configured (SLACK_BOT_TOKEN missing)")
 
     channel_id = _resolve_channel(request.channel)
     if not channel_id:
@@ -1072,7 +971,9 @@ async def aiia_status():
     return await aiia.status()
 
 
-@app.get("/v1/eq/status", dependencies=[Depends(verify_api_key)], include_in_schema=False)
+@app.get(
+    "/v1/eq/status", dependencies=[Depends(verify_api_key)], include_in_schema=False
+)
 async def eq_status_legacy():
     return await aiia_status()
 
@@ -1095,7 +996,9 @@ async def aiia_ingest(request: AIIAIngestRequest):
     }
 
 
-@app.post("/v1/eq/ingest", dependencies=[Depends(verify_api_key)], include_in_schema=False)
+@app.post(
+    "/v1/eq/ingest", dependencies=[Depends(verify_api_key)], include_in_schema=False
+)
 async def eq_ingest_legacy(request: AIIAIngestRequest):
     return await aiia_ingest(request)
 
@@ -1115,7 +1018,9 @@ async def aiia_search(request: AIIAAskRequest):
     return {"results": results, "count": len(results)}
 
 
-@app.post("/v1/eq/search", dependencies=[Depends(verify_api_key)], include_in_schema=False)
+@app.post(
+    "/v1/eq/search", dependencies=[Depends(verify_api_key)], include_in_schema=False
+)
 async def eq_search_legacy(request: AIIAAskRequest):
     return await aiia_search(request)
 
@@ -1133,85 +1038,11 @@ async def aiia_memory(category: Optional[str] = None, limit: int = 50):
     }
 
 
-@app.get("/v1/eq/memory", dependencies=[Depends(verify_api_key)], include_in_schema=False)
+@app.get(
+    "/v1/eq/memory", dependencies=[Depends(verify_api_key)], include_in_schema=False
+)
 async def eq_memory_legacy(category: Optional[str] = None, limit: int = 50):
     return await aiia_memory(category, limit)
-
-
-# ─────────────────────────────────────────────────────────────
-# Supermemory Bridge — Cloud Sync & Search
-# ─────────────────────────────────────────────────────────────
-
-
-class SupermemorySyncRequest(BaseModel):
-    """Request to sync local memories to Supermemory cloud."""
-
-    categories: Optional[List[str]] = None
-    limit_per_category: int = 50
-
-
-class SupermemorySearchRequest(BaseModel):
-    """Request to search Supermemory cloud."""
-
-    query: str
-    search_type: str = "sme"  # "sme" or "aiia"
-    domains: Optional[List[str]] = None
-    categories: Optional[List[str]] = None
-    tenant_id: str = "default"
-    limit: int = 5
-
-
-@app.post("/v1/aiia/supermemory/sync", dependencies=[Depends(verify_api_key)])
-async def aiia_supermemory_sync(request: SupermemorySyncRequest):
-    """
-    Bulk sync local memories to Supermemory cloud backup.
-    Safe to re-run — dedup via deterministic custom_id.
-    """
-    _aiia = await _require_aiia()
-    if not _supermemory_bridge or not _supermemory_bridge.available:
-        raise HTTPException(status_code=503, detail="Supermemory bridge not available")
-
-    categories = request.categories or list(_aiia._memory.CATEGORIES)
-    results = {}
-
-    for category in categories:
-        memories = _aiia._memory.recall(category=category, limit=request.limit_per_category)
-        if not memories:
-            results[category] = {"synced": 0, "total": 0, "errors": 0}
-            continue
-
-        r = await _supermemory_bridge.sync_bulk(memories, category=category)
-        results[category] = r
-
-    total_synced = sum(r.get("synced", 0) for r in results.values())
-    total_errors = sum(r.get("errors", 0) for r in results.values())
-
-    return {
-        "status": "completed",
-        "total_synced": total_synced,
-        "total_errors": total_errors,
-        "by_category": results,
-    }
-
-
-@app.post("/v1/aiia/supermemory/search", dependencies=[Depends(verify_api_key)])
-async def aiia_supermemory_search(request: SupermemorySearchRequest):
-    """
-    Search Supermemory cloud — SME domain knowledge or AIIA's cloud memories.
-    """
-    _aiia = await _require_aiia()
-    if not _supermemory_bridge or not _supermemory_bridge.available:
-        raise HTTPException(status_code=503, detail="Supermemory bridge not available")
-
-    result = await _aiia.search_supermemory(
-        query=request.query,
-        search_type=request.search_type,
-        domains=request.domains,
-        categories=request.categories,
-        tenant_id=request.tenant_id,
-        limit=request.limit,
-    )
-    return result
 
 
 @app.delete("/v1/aiia/memory/{memory_id}", dependencies=[Depends(verify_api_key)])
@@ -1602,7 +1433,10 @@ async def aiia_session_start(request: SessionStartRequest):
                 routing_stats = route_resp.json()
             if not isinstance(token_resp, Exception) and token_resp.status_code == 200:
                 token_summary = token_resp.json()
-            if not isinstance(stories_resp, Exception) and stories_resp.status_code == 200:
+            if (
+                not isinstance(stories_resp, Exception)
+                and stories_resp.status_code == 200
+            ):
                 all_stories = stories_resp.json().get("stories", [])
                 # Filter to actionable statuses, sort by priority
                 priority_order = {"P0": 0, "P1": 1, "P2": 2, "P3": 3}
@@ -1615,7 +1449,8 @@ async def aiia_session_start(request: SessionStartRequest):
                 actionable_stories = [
                     s
                     for s in all_stories
-                    if s.get("status") in ("backlog", "active", "in_progress", "blocked")
+                    if s.get("status")
+                    in ("backlog", "active", "in_progress", "blocked")
                 ]
                 actionable_stories.sort(
                     key=lambda s: (
@@ -1669,7 +1504,9 @@ async def pre_commit_check():
     import re
     import subprocess
 
-    repo_path = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    repo_path = os.path.dirname(
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    )
     reasons = []
 
     try:
@@ -1681,7 +1518,9 @@ async def pre_commit_check():
             text=True,
             timeout=10,
         )
-        staged_files = [f.strip() for f in result.stdout.strip().split("\n") if f.strip()]
+        staged_files = [
+            f.strip() for f in result.stdout.strip().split("\n") if f.strip()
+        ]
     except Exception as e:
         return {"block": False, "reason": f"Could not read staged files: {e}"}
 
@@ -1690,7 +1529,9 @@ async def pre_commit_check():
 
     # Check 1: .env files staged
     env_files = [
-        f for f in staged_files if f.endswith(".env") or "/.env" in f or f.startswith(".env")
+        f
+        for f in staged_files
+        if f.endswith(".env") or "/.env" in f or f.startswith(".env")
     ]
     if env_files:
         reasons.append(f"Staged .env file(s): {', '.join(env_files)}")
@@ -1707,7 +1548,9 @@ async def pre_commit_check():
         diff_text = diff_result.stdout
         # Only check added lines (starting with +)
         added_lines = [
-            l for l in diff_text.split("\n") if l.startswith("+") and not l.startswith("+++")
+            l
+            for l in diff_text.split("\n")
+            if l.startswith("+") and not l.startswith("+++")
         ]
         key_patterns = [
             r"sk-ant-[a-zA-Z0-9\-_]{20,}",
@@ -1759,7 +1602,9 @@ async def pre_commit_check():
             for kw in product_keywords:
                 # Exclude comments, imports from local_brain references
                 if f'tenant_id = "{kw}"' in content or f'tenant_id="{kw}"' in content:
-                    reasons.append(f"Product-specific code ({kw}) in platform file: {pf}")
+                    reasons.append(
+                        f"Product-specific code ({kw}) in platform file: {pf}"
+                    )
                     break
         except Exception:
             pass
@@ -1895,7 +1740,9 @@ async def review_commit(request: ReviewCommitRequest):
     if not _aiia:
         return {"status": "skipped", "reason": "AIIA not initialized"}
 
-    repo_path = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    repo_path = os.path.dirname(
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    )
 
     try:
         # Get the diff
@@ -1940,7 +1787,9 @@ async def review_commit(request: ReviewCommitRequest):
             stderr=asyncio.subprocess.PIPE,
         )
         stdout3, _ = await asyncio.wait_for(proc3.communicate(), timeout=5)
-        changed_py = [f.strip() for f in stdout3.decode().strip().split("\n") if f.strip()]
+        changed_py = [
+            f.strip() for f in stdout3.decode().strip().split("\n") if f.strip()
+        ]
 
     except Exception as e:
         return {"status": "error", "reason": str(e)[:200]}
@@ -2119,5 +1968,7 @@ if __name__ == "__main__":
 
     config = get_config()
     logging.basicConfig(level=logging.INFO)
-    logger.info(f"Starting AIIA (AIIA Local Brain) on {config.api_host}:{config.api_port}")
+    logger.info(
+        f"Starting AIIA (AIIA Local Brain) on {config.api_host}:{config.api_port}"
+    )
     uvicorn.run(app, host=config.api_host, port=config.api_port)
