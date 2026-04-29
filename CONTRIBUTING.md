@@ -1,4 +1,4 @@
-# Contributing to AIIA
+# ⌬ Contributing to AIIA
 
 Thank you for your interest in contributing to AIIA! This document provides guidelines and information for contributors.
 
