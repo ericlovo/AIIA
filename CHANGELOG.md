@@ -7,6 +7,21 @@ All notable changes to AIIA are documented here. This project adheres to
 ## [Unreleased]
 
 ### Added
+- **Unified `aiia` CLI** — single command entry point for all AIIA workflows.
+  Installs as `aiia` on PATH after `pip install aiia`. Subcommands:
+  - `aiia` — show wordmark + quick-start tips
+  - `aiia next [--pull] [-n LIMIT]` — surface top stories from Command Center
+    ranked by priority × freshness
+  - `aiia ask "..."` — one-shot query against Brain API with memory + project
+    context auto-loaded
+  - `aiia memory list|search|add` — memory CRUD
+  - `aiia briefing [--fresh]` — wraps existing `briefing_cli.py` script;
+    works alongside the existing `briefing` shell alias
+  - `aiia status` — health of Brain API + Command Center
+  - `aiia --version` / `aiia --help` — standard CLI behavior
+  - Dependencies added: `typer>=0.12`, `rich>=13.0`
+  - `[project.scripts]` entry registers the `aiia` command on install
+  - Resolves issue #14
 - `local_brain/a2a/` — Agent-to-Agent protocol module (Google A2A spec,
   April 2025+ subset). Exposes AIIA's capabilities as A2A-compliant
   endpoints that any A2A client can discover and invoke.
