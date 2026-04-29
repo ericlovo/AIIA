@@ -1,4 +1,4 @@
-# Security Policy
+# ⌬ AIIA — Security Policy
 
 ## Supported versions
 

@@ -1,4 +1,4 @@
-# Changelog
+# ⌬ AIIA — Changelog
 
 All notable changes to AIIA are documented here. This project adheres to
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and uses
