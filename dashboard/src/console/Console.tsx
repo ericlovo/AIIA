@@ -22,14 +22,14 @@ export function Console() {
   }
 
   return (
-    <div className="h-screen flex flex-col bg-[#0a0a0a] text-[#ddd] overflow-hidden">
+    <div className="h-screen flex flex-col bg-neutral-950 text-neutral-300 overflow-hidden">
       {/* Top: system vitals + identity */}
       <PanelBoundary name="top bar">
         <TopBar user={user} onSwitchUser={() => setUser(null)} />
       </PanelBoundary>
 
       {/* Three lanes — the heart of the console */}
-      <div className="flex-1 min-h-0 grid grid-cols-[320px_1fr_440px] gap-px bg-[#181818]">
+      <div className="flex-1 min-h-0 grid grid-cols-[320px_1fr_440px] gap-px bg-neutral-900">
         <PanelBoundary name="mind"><Mind /></PanelBoundary>
         <PanelBoundary name="right now"><RightNow user={user} /></PanelBoundary>
         <PanelBoundary name="direct"><Direct user={user} /></PanelBoundary>

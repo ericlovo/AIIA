@@ -30,12 +30,12 @@ export function TopBar({ user, onSwitchUser }: { user: TeamUser; onSwitchUser: (
   const phase2 = phase === 'phase2'
 
   return (
-    <header className="h-14 shrink-0 border-b border-[#181818] flex items-center justify-between px-6 bg-[#0a0a0a]">
+    <header className="h-14 shrink-0 border-b border-neutral-900 flex items-center justify-between px-6 bg-neutral-950">
       <div className="flex items-center gap-8">
         {/* Brand */}
         <div className="flex items-baseline gap-2">
           <span className="text-xs font-bold text-purple-400 tracking-[0.3em]">AIIA</span>
-          <span className="text-[10px] text-[#444]">console</span>
+          <span className="text-[10px] text-neutral-700">console</span>
         </div>
 
         {/* Status pills */}
@@ -62,7 +62,7 @@ export function TopBar({ user, onSwitchUser }: { user: TeamUser; onSwitchUser: (
       {/* Identity */}
       <button
         onClick={onSwitchUser}
-        className="flex items-center gap-2 text-xs text-[#888] hover:text-white cursor-pointer"
+        className="flex items-center gap-2 text-xs text-neutral-500 hover:text-white cursor-pointer"
         title="Switch user"
       >
         <div className="w-6 h-6 rounded-full bg-purple-500/20 border border-purple-500/50 flex items-center justify-center text-purple-300 font-medium">
@@ -80,10 +80,10 @@ function Pill({ dot, label }: { dot: 'green' | 'amber' | 'red' | 'purple' | 'gra
     amber: 'bg-amber-500',
     red: 'bg-red-500',
     purple: 'bg-purple-500',
-    gray: 'bg-[#444]',
+    gray: 'bg-neutral-700',
   }[dot]
   return (
-    <div className="flex items-center gap-1.5 text-[#888]">
+    <div className="flex items-center gap-1.5 text-neutral-500">
       <span className={`w-1.5 h-1.5 rounded-full ${dotColor}`} />
       <span>{label}</span>
     </div>

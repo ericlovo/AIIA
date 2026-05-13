@@ -8,11 +8,11 @@ export function IdentityModal({
   teamUsers: readonly TeamUser[]
 }) {
   return (
-    <div className="h-screen bg-[#0a0a0a] flex items-center justify-center">
+    <div className="h-screen bg-neutral-950 flex items-center justify-center">
       <div className="text-center max-w-sm">
         <div className="text-xs font-bold text-purple-400 tracking-[0.4em] mb-4">AIIA</div>
         <h1 className="text-3xl font-light text-white mb-2">Who are you?</h1>
-        <p className="text-sm text-[#666] mb-8">
+        <p className="text-sm text-neutral-500 mb-8">
           So I know who I'm working with.
         </p>
         <div className="flex gap-3 justify-center">
@@ -20,7 +20,7 @@ export function IdentityModal({
             <button
               key={u}
               onClick={() => onSelect(u)}
-              className="px-8 py-3 rounded-full border border-[#2a2a2a] text-[#ddd] hover:border-purple-500 hover:bg-purple-500/10 hover:text-white transition-all cursor-pointer"
+              className="px-8 py-3 rounded-full border border-neutral-800 text-neutral-300 hover:border-purple-500 hover:bg-purple-500/10 hover:text-white transition-all cursor-pointer"
             >
               {u}
             </button>
