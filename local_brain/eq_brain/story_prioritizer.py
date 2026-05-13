@@ -14,7 +14,7 @@ Also extracts candidate stories from session end data (next_steps, blockers).
 import json
 import logging
 import math
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 logger = logging.getLogger("aiia.story_prioritizer")
 
@@ -40,15 +40,15 @@ ADDITIVE_WEIGHT = 0.7
 GEOMETRIC_WEIGHT = 0.3
 
 
-def _dot(a: List[float], b: List[float]) -> float:
+def _dot(a: list[float], b: list[float]) -> float:
     return sum(x * y for x, y in zip(a, b))
 
 
-def _magnitude(v: List[float]) -> float:
+def _magnitude(v: list[float]) -> float:
     return math.sqrt(sum(x * x for x in v))
 
 
-def geometric_score(filter_scores: Dict[str, int]) -> Dict[str, float]:
+def geometric_score(filter_scores: dict[str, int]) -> dict[str, float]:
     """Compute vector-based priority metrics from filter scores.
 
     Returns alignment (cosine similarity to ideal), magnitude, and
@@ -77,7 +77,7 @@ def geometric_score(filter_scores: Dict[str, int]) -> Dict[str, float]:
     }
 
 
-def composite_score(weighted_total: float, geo: Dict[str, float]) -> float:
+def composite_score(weighted_total: float, geo: dict[str, float]) -> float:
     """Blend additive and geometric scores into a single 0-100 composite.
 
     70% additive (interpretable, max 150) + 30% geometric (interaction-aware).
@@ -183,7 +183,7 @@ class StoryPrioritizer:
         self._ollama = ollama_client
         self._model = model or "llama3.1:8b-instruct-q8_0"
 
-    async def score_story(self, story: Dict) -> Dict[str, Any]:
+    async def score_story(self, story: dict) -> dict[str, Any]:
         """Score a single story against the priority framework."""
         if not self._ollama:
             return {"error": "No LLM available for scoring"}
@@ -213,13 +213,9 @@ class StoryPrioritizer:
         content = response.get("message", {}).get("content", "")
         return self._parse_score(content)
 
-    async def prioritize_backlog(
-        self, stories: List[Dict], limit: int = 10
-    ) -> List[Dict]:
+    async def prioritize_backlog(self, stories: list[dict], limit: int = 10) -> list[dict]:
         """Score and rank a list of backlog stories. Returns sorted by weighted score."""
-        scorable = [s for s in stories if s.get("status") in ("backlog", "active")][
-            :limit
-        ]
+        scorable = [s for s in stories if s.get("status") in ("backlog", "active")][:limit]
 
         results = []
         for story in scorable:
@@ -252,11 +248,11 @@ class StoryPrioritizer:
     async def extract_stories_from_session(
         self,
         summary: str,
-        next_steps: Optional[List[str]] = None,
-        blockers: Optional[List[str]] = None,
-        key_decisions: Optional[List[str]] = None,
+        next_steps: list[str] | None = None,
+        blockers: list[str] | None = None,
+        key_decisions: list[str] | None = None,
         session_id: str = "",
-    ) -> List[Dict]:
+    ) -> list[dict]:
         """Extract candidate stories from session end data."""
         if not self._ollama:
             return []
@@ -299,7 +295,7 @@ class StoryPrioritizer:
 
         return candidates
 
-    def _parse_score(self, content: str) -> Dict:
+    def _parse_score(self, content: str) -> dict:
         """Parse LLM scoring output."""
         content = content.strip()
         if "```" in content:
@@ -334,9 +330,7 @@ class StoryPrioritizer:
             # Clamp each score to 0-10
             for key in scores:
                 scores[key] = max(0, min(10, scores.get(key, 0)))
-            total = sum(
-                scores.get(f["name"], 0) * f["weight"] for f in PRIORITY_FILTERS
-            )
+            total = sum(scores.get(f["name"], 0) * f["weight"] for f in PRIORITY_FILTERS)
             result["weighted_total"] = total
 
             # Geometric scoring — vector analysis of filter scores
@@ -360,7 +354,7 @@ class StoryPrioritizer:
 
         return result
 
-    def _parse_candidates(self, content: str) -> List[Dict]:
+    def _parse_candidates(self, content: str) -> list[dict]:
         """Parse LLM candidate story output."""
         content = content.strip()
         if "```" in content:

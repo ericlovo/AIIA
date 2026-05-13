@@ -11,9 +11,9 @@ itself lives in recursive_engine.py.
 """
 
 import logging
-import re
-from dataclasses import dataclass, field
-from typing import Any, Callable, Coroutine, Dict, List, Optional
+from collections.abc import Callable, Coroutine
+from dataclasses import dataclass
+from typing import Any
 
 logger = logging.getLogger("aiia.eq_brain.repl_env")
 
@@ -46,7 +46,7 @@ class REPLVariable:
     def preview(self) -> str:
         return self.content[:PREVIEW_CHARS].replace("\n", " ")
 
-    def handle(self) -> Dict[str, Any]:
+    def handle(self) -> dict[str, Any]:
         """Compact descriptor the model sees instead of full content."""
         return {
             "name": self.name,
@@ -65,8 +65,8 @@ class REPLEnvironment:
     string that gets fed back as the next user message.
     """
 
-    def __init__(self, llm_callback: Optional[LLMCallback] = None, max_depth: int = 3):
-        self._vars: Dict[str, REPLVariable] = {}
+    def __init__(self, llm_callback: LLMCallback | None = None, max_depth: int = 3):
+        self._vars: dict[str, REPLVariable] = {}
         self._llm_callback = llm_callback
         self._max_depth = max_depth
         self._current_depth = 0
@@ -80,11 +80,11 @@ class REPLEnvironment:
         )
         logger.debug(f"REPL loaded ${name} ({var_type}, {len(content)} chars)")
 
-    def handles(self) -> List[Dict[str, Any]]:
+    def handles(self) -> list[dict[str, Any]]:
         """Return compact handles for all variables (what the model sees)."""
         return [v.handle() for v in self._vars.values()]
 
-    async def execute(self, action: Dict[str, Any]) -> Dict[str, Any]:
+    async def execute(self, action: dict[str, Any]) -> dict[str, Any]:
         """
         Execute a model-requested action.
 
@@ -110,8 +110,7 @@ class REPLEnvironment:
             return {
                 "ok": False,
                 "action": action_type,
-                "result": f"Unknown action: {action_type}. "
-                f"Valid: {', '.join(dispatch.keys())}",
+                "result": f"Unknown action: {action_type}. Valid: {', '.join(dispatch.keys())}",
             }
 
         try:
@@ -121,21 +120,20 @@ class REPLEnvironment:
             logger.warning(f"REPL action {action_type} failed: {e}")
             return {"ok": False, "action": action_type, "result": str(e)}
 
-    def _get_var(self, action: Dict[str, Any], key: str = "var") -> REPLVariable:
+    def _get_var(self, action: dict[str, Any], key: str = "var") -> REPLVariable:
         """Get a variable by name from the action dict. Raises KeyError."""
         name = action.get(key, "")
         if name.startswith("$"):
             name = name[1:]
         if name not in self._vars:
             raise KeyError(
-                f"Variable ${name} not found. "
-                f"Available: {', '.join('$' + n for n in self._vars)}"
+                f"Variable ${name} not found. Available: {', '.join('$' + n for n in self._vars)}"
             )
         return self._vars[name]
 
     # ── Actions ──────────────────────────────────────────────────
 
-    async def _action_peek(self, action: Dict[str, Any]) -> str:
+    async def _action_peek(self, action: dict[str, Any]) -> str:
         """Return a character slice of a variable."""
         var = self._get_var(action)
         start = max(0, int(action.get("start", 0)))
@@ -145,7 +143,7 @@ class REPLEnvironment:
         chunk = var.content[start:end]
         return f"[${var.name} chars {start}-{end} of {var.size}]\n{chunk}"
 
-    async def _action_search(self, action: Dict[str, Any]) -> str:
+    async def _action_search(self, action: dict[str, Any]) -> str:
         """Keyword search within a variable. Returns up to 5 matches with context windows."""
         var = self._get_var(action)
         query = action.get("query", "")
@@ -157,7 +155,7 @@ class REPLEnvironment:
 
         # Split query into terms for broader matching
         terms = query_lower.split()
-        matches: List[Dict[str, Any]] = []
+        matches: list[dict[str, Any]] = []
         seen_positions: set = set()
 
         for term in terms:
@@ -197,7 +195,7 @@ class REPLEnvironment:
             )
         return "\n".join(parts)
 
-    async def _action_chunk_summarize(self, action: Dict[str, Any]) -> str:
+    async def _action_chunk_summarize(self, action: dict[str, Any]) -> str:
         """Summarize a slice of a variable using the LLM."""
         if not self._llm_callback:
             return "Error: LLM callback not configured for chunk_summarize."
@@ -220,7 +218,7 @@ class REPLEnvironment:
         )
         return f"[Summary of ${var.name} chars {start}-{end}]\n{summary}"
 
-    async def _action_store(self, action: Dict[str, Any]) -> str:
+    async def _action_store(self, action: dict[str, Any]) -> str:
         """Store a derived value as a new variable."""
         name = action.get("name", "")
         value = action.get("value", "")
@@ -242,7 +240,7 @@ class REPLEnvironment:
         )
         return f"Stored ${name} ({len(value)} chars)."
 
-    async def _action_sub_ask(self, action: Dict[str, Any]) -> str:
+    async def _action_sub_ask(self, action: dict[str, Any]) -> str:
         """Ask a sub-question using a variable as context. Depth-limited."""
         if not self._llm_callback:
             return "Error: LLM callback not configured for sub_ask."
@@ -281,7 +279,7 @@ class REPLEnvironment:
         finally:
             self._current_depth -= 1
 
-    async def _action_final(self, action: Dict[str, Any]) -> str:
+    async def _action_final(self, action: dict[str, Any]) -> str:
         """Model's final synthesized answer. Terminates the REPL loop."""
         answer = action.get("answer", "")
         if not answer:

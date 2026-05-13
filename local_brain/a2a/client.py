@@ -27,8 +27,9 @@ Usage:
 from __future__ import annotations
 
 import logging
+from collections.abc import Iterable
 from dataclasses import dataclass
-from typing import Any, Dict, Iterable, List, Optional
+from typing import Any
 from uuid import uuid4
 
 import httpx
@@ -52,8 +53,8 @@ class A2AClientError(RuntimeError):
         self,
         message: str,
         *,
-        code: Optional[int] = None,
-        status_code: Optional[int] = None,
+        code: int | None = None,
+        status_code: int | None = None,
     ) -> None:
         super().__init__(message)
         self.code = code
@@ -67,12 +68,12 @@ class AgentSummary:
     agent_id: str
     name: str
     description: str
-    tags: List[str]
+    tags: list[str]
     card_url: str
     rpc_url: str
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "AgentSummary":
+    def from_dict(cls, data: dict[str, Any]) -> AgentSummary:
         return cls(
             agent_id=data["agent_id"],
             name=data.get("name", ""),
@@ -104,7 +105,7 @@ class TaskResult:
         Most agents return a single text artifact, but the spec allows
         multiple — this gives callers a single string regardless.
         """
-        chunks: List[str] = []
+        chunks: list[str] = []
         for artifact in self.task.artifacts:
             for part in artifact.parts:
                 text = getattr(part, "text", None)
@@ -124,14 +125,14 @@ class A2AClient:
         base_url: str,
         *,
         timeout_seconds: float = DEFAULT_TIMEOUT_SECONDS,
-        http_client: Optional[httpx.AsyncClient] = None,
+        http_client: httpx.AsyncClient | None = None,
     ) -> None:
         self._base_url = base_url.rstrip("/")
         self._timeout = timeout_seconds
-        self._http: Optional[httpx.AsyncClient] = http_client
+        self._http: httpx.AsyncClient | None = http_client
         self._owns_http = http_client is None
 
-    async def __aenter__(self) -> "A2AClient":
+    async def __aenter__(self) -> A2AClient:
         if self._http is None:
             self._http = httpx.AsyncClient(timeout=self._timeout)
         return self
@@ -148,24 +149,22 @@ class A2AClient:
 
     # ─── Discovery ────────────────────────────────────────────────────
 
-    async def health(self) -> Dict[str, Any]:
+    async def health(self) -> dict[str, Any]:
         """GET /a2a/health — server-side liveness + agent count."""
         client = await self._client()
         try:
             resp = await client.get(f"{self._base_url}/a2a/health")
         except httpx.RequestError as exc:
-            raise A2AClientError(
-                f"network error contacting {self._base_url}: {exc}"
-            ) from exc
+            raise A2AClientError(f"network error contacting {self._base_url}: {exc}") from exc
         self._raise_for_http(resp)
         return resp.json()
 
     async def list_agents(
         self,
         *,
-        tags: Optional[Iterable[str]] = None,
+        tags: Iterable[str] | None = None,
         require_all: bool = False,
-    ) -> List[AgentSummary]:
+    ) -> list[AgentSummary]:
         """
         GET /a2a/registry/agents — discover agents, optionally filtered by tag.
 
@@ -173,7 +172,7 @@ class A2AClient:
         - require_all=False (default): match any of the requested tags (OR)
         - require_all=True: agent must carry every tag (AND)
         """
-        params: List[tuple[str, str]] = []
+        params: list[tuple[str, str]] = []
         if tags:
             for tag in tags:
                 params.append(("tag", tag))
@@ -187,9 +186,7 @@ class A2AClient:
                 params=params,
             )
         except httpx.RequestError as exc:
-            raise A2AClientError(
-                f"network error contacting {self._base_url}: {exc}"
-            ) from exc
+            raise A2AClientError(f"network error contacting {self._base_url}: {exc}") from exc
         self._raise_for_http(resp)
         body = resp.json()
         return [AgentSummary.from_dict(a) for a in body.get("agents", [])]
@@ -204,9 +201,7 @@ class A2AClient:
                 f"{self._base_url}/a2a/agents/{agent_id}/.well-known/agent.json"
             )
         except httpx.RequestError as exc:
-            raise A2AClientError(
-                f"network error contacting {self._base_url}: {exc}"
-            ) from exc
+            raise A2AClientError(f"network error contacting {self._base_url}: {exc}") from exc
         self._raise_for_http(resp)
         return AgentCard.model_validate(resp.json())
 
@@ -218,7 +213,7 @@ class A2AClient:
         agent_id: str,
         text: str,
         role: str = "user",
-        request_id: Optional[str] = None,
+        request_id: str | None = None,
         method: str = "SendMessage",
     ) -> TaskResult:
         """
@@ -258,9 +253,7 @@ class A2AClient:
                 json=rpc_req.model_dump(by_alias=True, exclude_none=True),
             )
         except httpx.RequestError as exc:
-            raise A2AClientError(
-                f"network error contacting {self._base_url}: {exc}"
-            ) from exc
+            raise A2AClientError(f"network error contacting {self._base_url}: {exc}") from exc
 
         # 4xx still carries a JSON-RPC error envelope; let _parse_rpc handle it
         if resp.status_code >= 500:
@@ -291,7 +284,7 @@ class A2AClient:
             )
 
     @staticmethod
-    def _parse_rpc_response(body: Dict[str, Any], *, status_code: int) -> TaskResult:
+    def _parse_rpc_response(body: dict[str, Any], *, status_code: int) -> TaskResult:
         try:
             rpc_resp = JsonRpcResponse.model_validate(body)
         except Exception as exc:

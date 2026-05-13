@@ -10,13 +10,13 @@ Usage:
     stories = store.list(product="default-app", status="active")
 """
 
+import builtins
 import json
 import logging
 import uuid
 from datetime import datetime, timezone
 from difflib import SequenceMatcher
 from pathlib import Path
-from typing import Dict, List, Optional
 
 logger = logging.getLogger("aiia.roadmap")
 
@@ -49,13 +49,13 @@ DEDUP_THRESHOLD = 0.7
 
 
 class RoadmapStore:
-    def __init__(self, data_dir: Optional[str] = None):
+    def __init__(self, data_dir: str | None = None):
         self._dir = Path(data_dir) if data_dir else DATA_DIR
         self._file = self._dir / "stories.json"
         self._dir.mkdir(parents=True, exist_ok=True)
-        self._stories: List[Dict] = self._load()
+        self._stories: list[dict] = self._load()
 
-    def _load(self) -> List[Dict]:
+    def _load(self) -> list[dict]:
         if self._file.exists():
             try:
                 return json.loads(self._file.read_text())
@@ -68,10 +68,10 @@ class RoadmapStore:
 
     def list(
         self,
-        product: Optional[str] = None,
-        status: Optional[str] = None,
-        tags: Optional[List[str]] = None,
-    ) -> List[Dict]:
+        product: str | None = None,
+        status: str | None = None,
+        tags: list[str] | None = None,
+    ) -> list[dict]:
         results = self._stories
         if product:
             results = [s for s in results if s.get("product") == product]
@@ -81,7 +81,7 @@ class RoadmapStore:
             results = [s for s in results if any(t in s.get("tags", []) for t in tags)]
         return results
 
-    def get(self, story_id: str) -> Optional[Dict]:
+    def get(self, story_id: str) -> dict | None:
         for s in self._stories:
             if s["id"] == story_id:
                 return s
@@ -91,8 +91,8 @@ class RoadmapStore:
         self,
         title: str,
         threshold: float = DEDUP_THRESHOLD,
-        exclude_statuses: Optional[List[str]] = None,
-    ) -> List[Dict]:
+        exclude_statuses: builtins.list[str] | None = None,
+    ) -> builtins.list[dict]:
         """Find stories with similar titles. Returns matches above threshold."""
         exclude = set(exclude_statuses or ["shipped", "cancelled"])
         title_lower = title.lower().strip()
@@ -100,9 +100,7 @@ class RoadmapStore:
         for s in self._stories:
             if s.get("status") in exclude:
                 continue
-            ratio = SequenceMatcher(
-                None, title_lower, s.get("title", "").lower().strip()
-            ).ratio()
+            ratio = SequenceMatcher(None, title_lower, s.get("title", "").lower().strip()).ratio()
             if ratio >= threshold:
                 matches.append({**s, "_similarity": round(ratio, 2)})
         matches.sort(key=lambda x: x["_similarity"], reverse=True)
@@ -117,11 +115,11 @@ class RoadmapStore:
         description: str = "",
         source_session: str = "",
         source_type: str = "manual",
-        tags: Optional[List[str]] = None,
+        tags: builtins.list[str] | None = None,
         client_impact: str = "",
-        related_stories: Optional[List[str]] = None,
+        related_stories: builtins.list[str] | None = None,
         dedup: bool = True,
-    ) -> Dict:
+    ) -> dict:
         if priority not in VALID_PRIORITIES:
             raise ValueError(f"Invalid priority: {priority}. Use {VALID_PRIORITIES}")
         if status not in VALID_STATUSES:
@@ -161,7 +159,7 @@ class RoadmapStore:
         self._save()
         return story
 
-    def update(self, story_id: str, **fields) -> Optional[Dict]:
+    def update(self, story_id: str, **fields) -> dict | None:
         for s in self._stories:
             if s["id"] == story_id:
                 if "priority" in fields and fields["priority"] not in VALID_PRIORITIES:
@@ -184,7 +182,7 @@ class RoadmapStore:
             return True
         return False
 
-    def backlog_summary(self) -> Dict:
+    def backlog_summary(self) -> dict:
         """Summary stats for prioritization views."""
         by_priority = {}
         by_product = {}

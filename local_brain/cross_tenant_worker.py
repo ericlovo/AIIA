@@ -18,15 +18,14 @@ Or run directly:
 import asyncio
 import logging
 import os
-import sys
 from collections import Counter, defaultdict
 from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 logger = logging.getLogger("aiia.cross_tenant_worker")
 
 
-def _get_readonly_connection_string() -> Optional[str]:
+def _get_readonly_connection_string() -> str | None:
     """
     Get a read-only database connection string.
     Uses CROSS_TENANT_DB_URL (preferred) or DATABASE_URL with read-only intent.
@@ -41,7 +40,7 @@ def _get_readonly_connection_string() -> Optional[str]:
 async def _fetch_conversation_summaries(
     db_url: str,
     lookback_days: int = 7,
-) -> List[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     """
     Fetch recent conversation metadata from PostgreSQL.
 
@@ -49,7 +48,6 @@ async def _fetch_conversation_summaries(
     eq_level, created_at. Never reads message content.
     """
     try:
-        import sqlalchemy
         from sqlalchemy import create_engine, text
 
         # Use synchronous engine for simplicity in cron job
@@ -109,7 +107,7 @@ async def _fetch_conversation_summaries(
         return []
 
 
-def _analyze_patterns(summaries: List[Dict[str, Any]]) -> Dict[str, Any]:
+def _analyze_patterns(summaries: list[dict[str, Any]]) -> dict[str, Any]:
     """
     Extract aggregated patterns from conversation metadata.
 
@@ -123,7 +121,7 @@ def _analyze_patterns(summaries: List[Dict[str, Any]]) -> Dict[str, Any]:
     if not summaries:
         return {"patterns": [], "summary": "No data to analyze"}
 
-    tenant_data: Dict[str, Dict] = defaultdict(
+    tenant_data: dict[str, dict] = defaultdict(
         lambda: {
             "domains": Counter(),
             "routing_modes": Counter(),
@@ -163,9 +161,7 @@ def _analyze_patterns(summaries: List[Dict[str, Any]]) -> Dict[str, Any]:
             "top_domains": data["domains"].most_common(5),
             "routing_split": dict(data["routing_modes"]),
             "avg_complexity": (
-                round(
-                    sum(data["complexity_scores"]) / len(data["complexity_scores"]), 3
-                )
+                round(sum(data["complexity_scores"]) / len(data["complexity_scores"]), 3)
                 if data["complexity_scores"]
                 else None
             ),
@@ -194,9 +190,9 @@ def _analyze_patterns(summaries: List[Dict[str, Any]]) -> Dict[str, Any]:
 
 
 async def _store_patterns_in_aiia(
-    patterns: Dict[str, Any],
-    aiia_url: Optional[str] = None,
-    api_key: Optional[str] = None,
+    patterns: dict[str, Any],
+    aiia_url: str | None = None,
+    api_key: str | None = None,
 ) -> bool:
     """
     Store aggregated patterns in AIIA's memory system via the local API.
@@ -247,9 +243,7 @@ async def _store_patterns_in_aiia(
                     "metadata": {
                         "generated_at": patterns.get("generated_at"),
                         "tenant_count": patterns["cross_tenant"]["tenant_count"],
-                        "total_conversations": patterns["cross_tenant"][
-                            "total_conversations"
-                        ],
+                        "total_conversations": patterns["cross_tenant"]["total_conversations"],
                     },
                 },
             )

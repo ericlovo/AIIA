@@ -14,8 +14,8 @@ Shell alias (add to Mini's .zshrc):
 import json
 import sys
 import time
-import urllib.request
 import urllib.error
+import urllib.request
 
 CC_URL = "http://localhost:8200"
 

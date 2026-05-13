@@ -17,7 +17,7 @@ import os
 import re
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 logger = logging.getLogger("aiia.vault_writer")
 
@@ -96,7 +96,7 @@ def _parse_existing_cluster(path: Path) -> tuple:
 
     # Parse body into date sections
     header_lines = []
-    entries_by_date: Dict[str, List[str]] = {}
+    entries_by_date: dict[str, list[str]] = {}
     current_date = None
     footer_lines = []
     in_footer = False
@@ -125,7 +125,7 @@ class VaultWriter:
         self._vault_dir = Path(vault_dir)
         self._auto_file_queries = auto_file_queries
         self._queue: asyncio.Queue = asyncio.Queue(maxsize=1000)
-        self._worker_task: Optional[asyncio.Task] = None
+        self._worker_task: asyncio.Task | None = None
         self._running = False
 
     async def start(self):
@@ -164,15 +164,13 @@ class VaultWriter:
                 if op == "memory":
                     self._do_write_memory(item["entry"], item["category"])
                 elif op == "query":
-                    self._do_file_query(
-                        item["question"], item["answer"], item.get("sources", [])
-                    )
+                    self._do_file_query(item["question"], item["answer"], item.get("sources", []))
             except Exception as e:
                 logger.warning(f"VaultWriter error: {e}")
 
             self._queue.task_done()
 
-    async def write_memory(self, entry: Dict[str, Any], category: str):
+    async def write_memory(self, entry: dict[str, Any], category: str):
         """Enqueue a memory entry for vault write. Non-blocking."""
         if category in SKIP_CATEGORIES:
             return
@@ -180,15 +178,17 @@ class VaultWriter:
             return
 
         try:
-            self._queue.put_nowait({
-                "op": "memory",
-                "entry": entry,
-                "category": category,
-            })
+            self._queue.put_nowait(
+                {
+                    "op": "memory",
+                    "entry": entry,
+                    "category": category,
+                }
+            )
         except asyncio.QueueFull:
             logger.warning("VaultWriter queue full — dropping vault write")
 
-    async def file_query(self, question: str, answer: str, sources: List[Dict] = None):
+    async def file_query(self, question: str, answer: str, sources: list[dict] = None):
         """Enqueue a substantive AIIA answer to be filed as a wiki article."""
         if not self._auto_file_queries:
             return
@@ -196,16 +196,18 @@ class VaultWriter:
             return
 
         try:
-            self._queue.put_nowait({
-                "op": "query",
-                "question": question,
-                "answer": answer,
-                "sources": sources or [],
-            })
+            self._queue.put_nowait(
+                {
+                    "op": "query",
+                    "question": question,
+                    "answer": answer,
+                    "sources": sources or [],
+                }
+            )
         except asyncio.QueueFull:
             logger.warning("VaultWriter queue full — dropping query file")
 
-    def _do_write_memory(self, entry: Dict[str, Any], category: str):
+    def _do_write_memory(self, entry: dict[str, Any], category: str):
         """Synchronous: write/append a memory entry to its cluster file."""
         folder = CATEGORY_FOLDERS.get(category)
         if not folder:
@@ -222,7 +224,9 @@ class VaultWriter:
         source = entry.get("source", "")
 
         # Format the entry line
-        source_tag = f" *({source})*" if source and source not in {"session", "bootstrap", ""} else ""
+        source_tag = (
+            f" *({source})*" if source and source not in {"session", "bootstrap", ""} else ""
+        )
         entry_line = f"- **{memory_id}** — {fact}{source_tag}"
 
         if cluster_path.exists():
@@ -233,15 +237,11 @@ class VaultWriter:
             entries_by_date[date].append(entry_line)
 
             # Rebuild file
-            content = self._build_cluster_content(
-                category, cluster_name, entries_by_date, fm_str
-            )
+            content = self._build_cluster_content(category, cluster_name, entries_by_date, fm_str)
         else:
             # Create new cluster
             entries_by_date = {date: [entry_line]}
-            content = self._build_cluster_content(
-                category, cluster_name, entries_by_date
-            )
+            content = self._build_cluster_content(category, cluster_name, entries_by_date)
 
         _atomic_write(cluster_path, content)
         logger.info(f"Vault: wrote {cluster_path.name} ({len(content)} chars)")
@@ -250,17 +250,14 @@ class VaultWriter:
         self,
         category: str,
         cluster_name: str,
-        entries_by_date: Dict[str, List[str]],
-        existing_fm: Optional[str] = None,
+        entries_by_date: dict[str, list[str]],
+        existing_fm: str | None = None,
     ) -> str:
         """Build complete cluster file content."""
         today = datetime.utcnow().strftime("%Y-%m-%d")
 
         # Count total entries
-        total = sum(
-            len([e for e in entries if e.strip()])
-            for entries in entries_by_date.values()
-        )
+        total = sum(len([e for e in entries if e.strip()]) for entries in entries_by_date.values())
 
         if existing_fm:
             fm = existing_fm
@@ -298,7 +295,7 @@ class VaultWriter:
         lines.append(f"*{total} entries · last sync {today}*")
         return "\n".join(lines)
 
-    def _do_file_query(self, question: str, answer: str, sources: List[Dict]):
+    def _do_file_query(self, question: str, answer: str, sources: list[dict]):
         """Synchronous: file a substantive answer as a wiki article."""
         today = datetime.utcnow().strftime("%Y-%m-%d")
         slug = _slugify(question)

@@ -21,7 +21,7 @@ import os
 import re
 import time
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from local_brain.eq_brain.brain import AIIA
 from local_brain.eq_brain.memory import Memory
@@ -58,7 +58,7 @@ class MemoryConsolidator:
         self._state_path = os.path.join(self._state_dir, "consolidation_state.json")
         os.makedirs(self._state_dir, exist_ok=True)
 
-    def _load_state(self) -> Dict[str, Any]:
+    def _load_state(self) -> dict[str, Any]:
         if os.path.exists(self._state_path):
             try:
                 with open(self._state_path) as f:
@@ -67,7 +67,7 @@ class MemoryConsolidator:
                 pass
         return {"last_run": None, "category_counts": {}}
 
-    def _save_state(self, state: Dict[str, Any]):
+    def _save_state(self, state: dict[str, Any]):
         with open(self._state_path, "w") as f:
             json.dump(state, f, indent=2, default=str)
 
@@ -78,7 +78,7 @@ class MemoryConsolidator:
         current = self._memory._read_category(category)
         return len(current) - prev_count >= 3
 
-    def _format_memories(self, memories: List[Dict[str, Any]]) -> str:
+    def _format_memories(self, memories: list[dict[str, Any]]) -> str:
         lines = []
         for m in memories:
             mid = m.get("id", "?")
@@ -140,7 +140,7 @@ class MemoryConsolidator:
         return text
 
     @staticmethod
-    def _parse_json_response(raw: str) -> Optional[Dict[str, Any]]:
+    def _parse_json_response(raw: str) -> dict[str, Any] | None:
         """3-level fallback JSON parser for LLM output.
 
         1. Direct parse
@@ -179,7 +179,7 @@ class MemoryConsolidator:
 
         return None
 
-    async def consolidate_category(self, category: str) -> Dict[str, Any]:
+    async def consolidate_category(self, category: str) -> dict[str, Any]:
         """Consolidate a single memory category using deep reasoning."""
         memories = self._memory._read_category(category)
         if not memories:
@@ -267,9 +267,9 @@ class MemoryConsolidator:
 
     async def run_all(
         self,
-        categories: Optional[List[str]] = None,
+        categories: list[str] | None = None,
         force: bool = False,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Consolidate all target categories.
 
         Args:

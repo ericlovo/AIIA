@@ -29,7 +29,6 @@ import logging
 import os
 import time
 from pathlib import Path
-from typing import List, Tuple
 
 from local_brain.eq_brain.knowledge_store import KnowledgeStore
 from local_brain.eq_brain.memory import Memory
@@ -144,7 +143,7 @@ def _should_index(filepath: str) -> bool:
     return True
 
 
-def _chunk_text(text: str, source: str) -> List[Tuple[str, int]]:
+def _chunk_text(text: str, source: str) -> list[tuple[str, int]]:
     """Split text into overlapping chunks for better retrieval."""
     if len(text) <= CHUNK_SIZE:
         return [(text, 0)]

@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
-from typing import Optional
 
 from .subprocess_pool import SubprocessPool
 
@@ -39,9 +38,7 @@ class GitOps:
     async def _git(self, args: list[str], timeout: float = 30) -> tuple[int, str, str]:
         """Run a git command. Returns (returncode, stdout, stderr)."""
         try:
-            result = await self._pool.run(
-                ["git"] + args, cwd=self._repo_path, timeout=timeout
-            )
+            result = await self._pool.run(["git"] + args, cwd=self._repo_path, timeout=timeout)
             return result.returncode, result.stdout.strip(), result.stderr.strip()
         except Exception as e:
             logger.error(f"git {args[0]} failed: {e}")
@@ -56,9 +53,7 @@ class GitOps:
 
     async def create_branch(self, name: str) -> bool:
         """Create and checkout a new aiia/ prefixed branch."""
-        branch = (
-            f"{BRANCH_PREFIX}{name}" if not name.startswith(BRANCH_PREFIX) else name
-        )
+        branch = f"{BRANCH_PREFIX}{name}" if not name.startswith(BRANCH_PREFIX) else name
         rc, _, err = await self._git(["checkout", "-b", branch])
         if rc != 0:
             logger.error(f"Failed to create branch {branch}: {err}")
@@ -157,7 +152,7 @@ class GitOps:
 
     # ── Commit ─────────────────────────────────────────────────────
 
-    async def commit(self, message: str) -> Optional[str]:
+    async def commit(self, message: str) -> str | None:
         """Create a commit. Returns the short SHA on success, None on failure."""
         rc, _, err = await self._git(["commit", "-m", message])
         if rc != 0:
@@ -210,7 +205,7 @@ class GitOps:
 
     # ── Read-only queries ──────────────────────────────────────────
 
-    async def log(self, n: int = 10, since: Optional[str] = None) -> list[dict]:
+    async def log(self, n: int = 10, since: str | None = None) -> list[dict]:
         """Get recent commit log entries."""
         args = ["log", f"-{n}", "--format=%H|%s|%an|%ai", "--no-merges"]
         if since:

@@ -29,7 +29,7 @@ from local_brain.a2a.client import (
 )
 
 
-def _ok_task_response(answer_text: str = "hello back") -> Dict[str, Any]:
+def _ok_task_response(answer_text: str = "hello back") -> dict[str, Any]:
     """Build a JSON-RPC success envelope with a completed Task carrying one text artifact."""
     return {
         "jsonrpc": "2.0",
@@ -52,7 +52,7 @@ def _ok_task_response(answer_text: str = "hello back") -> Dict[str, Any]:
     }
 
 
-def _err_response(code: int, message: str) -> Dict[str, Any]:
+def _err_response(code: int, message: str) -> dict[str, Any]:
     return {
         "jsonrpc": "2.0",
         "id": "req-test",
@@ -81,9 +81,7 @@ async def test_health_returns_server_payload():
             },
         )
 
-    async with A2AClient(
-        "http://mini.test:8100", http_client=_mock_client(handler)
-    ) as c:
+    async with A2AClient("http://mini.test:8100", http_client=_mock_client(handler)) as c:
         result = await c.health()
 
     assert result["status"] == "online"
@@ -95,7 +93,7 @@ async def test_health_returns_server_payload():
 
 @pytest.mark.asyncio
 async def test_list_agents_no_filter_returns_all():
-    captured_params: List[List[tuple]] = []
+    captured_params: list[list[tuple]] = []
 
     def handler(request: httpx.Request) -> httpx.Response:
         captured_params.append(list(request.url.params.multi_items()))
@@ -124,9 +122,7 @@ async def test_list_agents_no_filter_returns_all():
             },
         )
 
-    async with A2AClient(
-        "http://mini.test:8100", http_client=_mock_client(handler)
-    ) as c:
+    async with A2AClient("http://mini.test:8100", http_client=_mock_client(handler)) as c:
         agents = await c.list_agents()
 
     assert len(agents) == 2
@@ -137,15 +133,13 @@ async def test_list_agents_no_filter_returns_all():
 
 @pytest.mark.asyncio
 async def test_list_agents_with_tags_sends_repeated_query_params():
-    captured_params: List[List[tuple]] = []
+    captured_params: list[list[tuple]] = []
 
     def handler(request: httpx.Request) -> httpx.Response:
         captured_params.append(list(request.url.params.multi_items()))
         return httpx.Response(200, json={"count": 0, "agents": []})
 
-    async with A2AClient(
-        "http://mini.test:8100", http_client=_mock_client(handler)
-    ) as c:
+    async with A2AClient("http://mini.test:8100", http_client=_mock_client(handler)) as c:
         await c.list_agents(tags=["scope:global", "layer:aiia"], require_all=True)
 
     params = captured_params[0]
@@ -159,9 +153,7 @@ async def test_list_agents_http_error_raises():
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(500, text="boom")
 
-    async with A2AClient(
-        "http://mini.test:8100", http_client=_mock_client(handler)
-    ) as c:
+    async with A2AClient("http://mini.test:8100", http_client=_mock_client(handler)) as c:
         with pytest.raises(A2AClientError) as exc_info:
             await c.list_agents()
     assert exc_info.value.status_code == 500
@@ -191,9 +183,7 @@ async def test_get_agent_card_parses_camelcase_payload():
             },
         )
 
-    async with A2AClient(
-        "http://mini.test:8100", http_client=_mock_client(handler)
-    ) as c:
+    async with A2AClient("http://mini.test:8100", http_client=_mock_client(handler)) as c:
         card = await c.get_agent_card("aiia-ask")
 
     assert card.name == "AIIA"
@@ -206,9 +196,7 @@ async def test_get_agent_card_unknown_agent_raises():
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(404, json={"detail": "unknown agent: nope"})
 
-    async with A2AClient(
-        "http://mini.test:8100", http_client=_mock_client(handler)
-    ) as c:
+    async with A2AClient("http://mini.test:8100", http_client=_mock_client(handler)) as c:
         with pytest.raises(A2AClientError) as exc_info:
             await c.get_agent_card("nope")
     assert exc_info.value.status_code == 404
@@ -219,7 +207,7 @@ async def test_get_agent_card_unknown_agent_raises():
 
 @pytest.mark.asyncio
 async def test_send_message_constructs_jsonrpc_envelope():
-    captured_payload: Dict[str, Any] = {}
+    captured_payload: dict[str, Any] = {}
 
     def handler(request: httpx.Request) -> httpx.Response:
         nonlocal captured_payload
@@ -227,9 +215,7 @@ async def test_send_message_constructs_jsonrpc_envelope():
         assert request.url.path == "/a2a/agents/aiia-ask/rpc"
         return httpx.Response(200, json=_ok_task_response("hello back"))
 
-    async with A2AClient(
-        "http://mini.test:8100", http_client=_mock_client(handler)
-    ) as c:
+    async with A2AClient("http://mini.test:8100", http_client=_mock_client(handler)) as c:
         result = await c.send_message(
             agent_id="aiia-ask",
             text="hello",
@@ -264,9 +250,7 @@ async def test_send_message_maps_jsonrpc_error_to_client_error():
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(200, json=_err_response(-32601, "unsupported method"))
 
-    async with A2AClient(
-        "http://mini.test:8100", http_client=_mock_client(handler)
-    ) as c:
+    async with A2AClient("http://mini.test:8100", http_client=_mock_client(handler)) as c:
         with pytest.raises(A2AClientError) as exc_info:
             await c.send_message(agent_id="aiia-ask", text="hi")
 
@@ -281,9 +265,7 @@ async def test_send_message_maps_4xx_jsonrpc_error_envelope():
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(404, json=_err_response(-32601, "unknown agent: ghost"))
 
-    async with A2AClient(
-        "http://mini.test:8100", http_client=_mock_client(handler)
-    ) as c:
+    async with A2AClient("http://mini.test:8100", http_client=_mock_client(handler)) as c:
         with pytest.raises(A2AClientError) as exc_info:
             await c.send_message(agent_id="ghost", text="hi")
     assert exc_info.value.code == -32601
@@ -295,9 +277,7 @@ async def test_send_message_5xx_raises_http_error():
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(503, text="server overloaded")
 
-    async with A2AClient(
-        "http://mini.test:8100", http_client=_mock_client(handler)
-    ) as c:
+    async with A2AClient("http://mini.test:8100", http_client=_mock_client(handler)) as c:
         with pytest.raises(A2AClientError) as exc_info:
             await c.send_message(agent_id="aiia-ask", text="hi")
     assert exc_info.value.status_code == 503
@@ -308,9 +288,7 @@ async def test_send_message_network_error_wrapped():
     def handler(request: httpx.Request) -> httpx.Response:
         raise httpx.ConnectError("connection refused")
 
-    async with A2AClient(
-        "http://mini.test:8100", http_client=_mock_client(handler)
-    ) as c:
+    async with A2AClient("http://mini.test:8100", http_client=_mock_client(handler)) as c:
         with pytest.raises(A2AClientError) as exc_info:
             await c.send_message(agent_id="aiia-ask", text="hi")
     assert "network error" in str(exc_info.value)
@@ -324,9 +302,7 @@ async def test_send_message_malformed_task_payload_raises():
             json={"jsonrpc": "2.0", "id": "x", "result": {}},  # missing 'task'
         )
 
-    async with A2AClient(
-        "http://mini.test:8100", http_client=_mock_client(handler)
-    ) as c:
+    async with A2AClient("http://mini.test:8100", http_client=_mock_client(handler)) as c:
         with pytest.raises(A2AClientError) as exc_info:
             await c.send_message(agent_id="aiia-ask", text="hi")
     assert "missing result.task" in str(exc_info.value)
@@ -349,9 +325,7 @@ async def test_task_result_concatenates_multi_artifact_text():
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(200, json=payload)
 
-    async with A2AClient(
-        "http://mini.test:8100", http_client=_mock_client(handler)
-    ) as c:
+    async with A2AClient("http://mini.test:8100", http_client=_mock_client(handler)) as c:
         result = await c.send_message(agent_id="aiia-ask", text="hi")
 
     assert result.answer_text() == "first\n\nsecond"

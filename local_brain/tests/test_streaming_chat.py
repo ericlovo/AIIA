@@ -39,12 +39,8 @@ def cc_healthy() -> bool:
         return False
 
 
-requires_brain = pytest.mark.skipif(
-    not brain_healthy(), reason="Brain API not running on :8100"
-)
-requires_cc = pytest.mark.skipif(
-    not cc_healthy(), reason="Command Center not running on :8200"
-)
+requires_brain = pytest.mark.skipif(not brain_healthy(), reason="Brain API not running on :8100")
+requires_cc = pytest.mark.skipif(not cc_healthy(), reason="Command Center not running on :8200")
 
 
 # ──────────────────────────────────────────────
@@ -78,8 +74,9 @@ class TestBrainAPI:
     def test_ask_stream_returns_sse_events(self):
         """Streaming ask should return meta, chunk, and done SSE events."""
         events = {"meta": 0, "chunk": 0, "done": 0}
-        with httpx.Client(timeout=60) as client:
-            with client.stream(
+        with (
+            httpx.Client(timeout=60) as client,
+            client.stream(
                 "POST",
                 f"{BRAIN_URL}/v1/aiia/ask/stream",
                 json={
@@ -88,15 +85,16 @@ class TestBrainAPI:
                     "n_results": 1,
                     "max_tokens": 128,
                 },
-            ) as resp:
-                assert resp.status_code == 200
-                for line in resp.iter_lines():
-                    if not line.startswith("data: "):
-                        continue
-                    evt = json.loads(line[6:])
-                    evt_type = evt.get("type")
-                    if evt_type in events:
-                        events[evt_type] += 1
+            ) as resp,
+        ):
+            assert resp.status_code == 200
+            for line in resp.iter_lines():
+                if not line.startswith("data: "):
+                    continue
+                evt = json.loads(line[6:])
+                evt_type = evt.get("type")
+                if evt_type in events:
+                    events[evt_type] += 1
 
         assert events["meta"] >= 1, "Should get at least one meta event"
         assert events["chunk"] >= 1, "Should get at least one chunk"
@@ -104,8 +102,9 @@ class TestBrainAPI:
 
     def test_ask_stream_num_ctx_respected(self):
         """Streaming ask with small num_ctx should still work (8192 default)."""
-        with httpx.Client(timeout=60) as client:
-            with client.stream(
+        with (
+            httpx.Client(timeout=60) as client,
+            client.stream(
                 "POST",
                 f"{BRAIN_URL}/v1/aiia/ask/stream",
                 json={
@@ -115,15 +114,16 @@ class TestBrainAPI:
                     "max_tokens": 64,
                     "num_ctx": 4096,
                 },
-            ) as resp:
-                assert resp.status_code == 200
-                chunks = []
-                for line in resp.iter_lines():
-                    if line.startswith("data: "):
-                        evt = json.loads(line[6:])
-                        if evt.get("type") == "chunk":
-                            chunks.append(evt["content"])
-                assert len(chunks) > 0, "Should get chunks even with small ctx"
+            ) as resp,
+        ):
+            assert resp.status_code == 200
+            chunks = []
+            for line in resp.iter_lines():
+                if line.startswith("data: "):
+                    evt = json.loads(line[6:])
+                    if evt.get("type") == "chunk":
+                        chunks.append(evt["content"])
+            assert len(chunks) > 0, "Should get chunks even with small ctx"
 
     def test_search_is_non_blocking(self):
         """Search endpoint (uses asyncio.to_thread for ChromaDB) should respond fast."""
@@ -169,16 +169,18 @@ class TestCommandCenterChat:
     def test_stream_endpoint_returns_sse(self):
         """CC /api/chat/stream should proxy to Brain and return SSE events."""
         events = []
-        with httpx.Client(timeout=60) as client:
-            with client.stream(
+        with (
+            httpx.Client(timeout=60) as client,
+            client.stream(
                 "POST",
                 f"{CC_URL}/api/chat/stream",
                 json={"message": "hello", "mode": "text"},
-            ) as resp:
-                assert resp.status_code == 200
-                for line in resp.iter_lines():
-                    if line.startswith("data: "):
-                        events.append(json.loads(line[6:]))
+            ) as resp,
+        ):
+            assert resp.status_code == 200
+            for line in resp.iter_lines():
+                if line.startswith("data: "):
+                    events.append(json.loads(line[6:]))
 
         types = [e["type"] for e in events]
         assert "meta" in types, "Should have meta event"
@@ -192,15 +194,17 @@ class TestCommandCenterChat:
         unique_msg = f"test-{int(time.time())}"
 
         # Send via stream
-        with httpx.Client(timeout=60) as client:
-            with client.stream(
+        with (
+            httpx.Client(timeout=60) as client,
+            client.stream(
                 "POST",
                 f"{CC_URL}/api/chat/stream",
                 json={"message": unique_msg, "mode": "text"},
-            ) as resp:
-                # Consume the stream
-                for _ in resp.iter_lines():
-                    pass
+            ) as resp,
+        ):
+            # Consume the stream
+            for _ in resp.iter_lines():
+                pass
 
         # Check history
         r = httpx.get(f"{CC_URL}/api/chat/history", timeout=5)
@@ -215,6 +219,4 @@ class TestCommandCenterChat:
         assert r.status_code == 200
         html = r.text
         assert "/api/chat/stream" in html, "Dashboard JS should use streaming endpoint"
-        assert "stream-content" in html, (
-            "Dashboard should have stream content container"
-        )
+        assert "stream-content" in html, "Dashboard should have stream content container"

@@ -17,10 +17,10 @@ import logging
 import os
 import time
 from collections import deque
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 import httpx
 from fastapi import Body, FastAPI, WebSocket, WebSocketDisconnect
@@ -67,19 +67,22 @@ _DEFAULT_PRODUCTS = [
     },
 ]
 
+
 def _load_products():
     """Load product config from env var JSON file, or use defaults."""
     config_path = os.getenv("AIIA_PRODUCTS_CONFIG")
     if config_path and os.path.exists(config_path):
         import json
+
         with open(config_path) as f:
             return json.load(f)
     return _DEFAULT_PRODUCTS
 
+
 PRODUCTS = _load_products()
 
 # Future products — populate via AIIA_FUTURE_PRODUCTS_CONFIG env var (JSON file).
-FUTURE_PRODUCTS: List[Dict[str, Any]] = []
+FUTURE_PRODUCTS: list[dict[str, Any]] = []
 
 AGENTS = [
     {
@@ -191,23 +194,14 @@ MONITORED_SERVICES = {
     },
     "default": {
         "name": "App Analyst",
-        "url": os.getenv(
-            "APP_BACKEND_URL", "https://localhost:9000"
-        )
-        + "/health",
-        "metrics_url": os.getenv(
-            "APP_BACKEND_URL", "https://localhost:9000"
-        )
-        + "/metrics",
+        "url": os.getenv("APP_BACKEND_URL", "https://localhost:9000") + "/health",
+        "metrics_url": os.getenv("APP_BACKEND_URL", "https://localhost:9000") + "/metrics",
         "timeout": 10.0,
         "category": "backend",
     },
     "platform": {
         "name": "AIIA Platform",
-        "url": os.getenv(
-            "AIIA_PLATFORM_URL", "http://localhost:9000"
-        )
-        + "/health",
+        "url": os.getenv("AIIA_PLATFORM_URL", "http://localhost:9000") + "/health",
         "timeout": 10.0,
         "category": "backend",
     },
@@ -226,22 +220,22 @@ class ServiceHealth:
     status: str  # "online", "degraded", "offline"
     response_time_ms: float
     checked_at: str
-    error: Optional[str] = None
-    meta: Optional[Dict[str, Any]] = None
+    error: str | None = None
+    meta: dict[str, Any] | None = None
 
 
 class MonitorState:
     def __init__(self):
-        self.response_times: Dict[str, deque] = {
+        self.response_times: dict[str, deque] = {
             sid: deque(maxlen=MAX_HISTORY) for sid in MONITORED_SERVICES
         }
-        self.statuses: Dict[str, str] = {sid: "unknown" for sid in MONITORED_SERVICES}
-        self.error_counts: Dict[str, int] = {sid: 0 for sid in MONITORED_SERVICES}
-        self.consecutive_up: Dict[str, int] = {sid: 0 for sid in MONITORED_SERVICES}
-        self.total_checks: Dict[str, int] = {sid: 0 for sid in MONITORED_SERVICES}
-        self.online_checks: Dict[str, int] = {sid: 0 for sid in MONITORED_SERVICES}
+        self.statuses: dict[str, str] = {sid: "unknown" for sid in MONITORED_SERVICES}
+        self.error_counts: dict[str, int] = {sid: 0 for sid in MONITORED_SERVICES}
+        self.consecutive_up: dict[str, int] = {sid: 0 for sid in MONITORED_SERVICES}
+        self.total_checks: dict[str, int] = {sid: 0 for sid in MONITORED_SERVICES}
+        self.online_checks: dict[str, int] = {sid: 0 for sid in MONITORED_SERVICES}
         self.transitions: deque = deque(maxlen=50)
-        self.meta: Dict[str, Dict[str, Any]] = {sid: {} for sid in MONITORED_SERVICES}
+        self.meta: dict[str, dict[str, Any]] = {sid: {} for sid in MONITORED_SERVICES}
         self.cycle_count: int = 0
 
     def record(self, health: ServiceHealth):
@@ -282,7 +276,7 @@ class MonitorState:
         if health.meta:
             self.meta[sid] = health.meta
 
-    def get_service_snapshot(self, sid: str) -> Dict[str, Any]:
+    def get_service_snapshot(self, sid: str) -> dict[str, Any]:
         cfg = MONITORED_SERVICES[sid]
         times = list(self.response_times[sid])
         recent = times[-40:] if times else []
@@ -310,21 +304,17 @@ class MonitorState:
             "meta": self.meta.get(sid, {}),
         }
 
-    def get_full_snapshot(self) -> Dict[str, Any]:
+    def get_full_snapshot(self) -> dict[str, Any]:
         return {
-            "services": {
-                sid: self.get_service_snapshot(sid) for sid in MONITORED_SERVICES
-            },
+            "services": {sid: self.get_service_snapshot(sid) for sid in MONITORED_SERVICES},
             "transitions": list(self.transitions),
             "cycle_count": self.cycle_count,
             "checked_at": datetime.now(timezone.utc).isoformat(),
         }
 
-    def to_persist(self) -> Dict[str, Any]:
+    def to_persist(self) -> dict[str, Any]:
         return {
-            "response_times": {
-                sid: list(dq) for sid, dq in self.response_times.items()
-            },
+            "response_times": {sid: list(dq) for sid, dq in self.response_times.items()},
             "statuses": self.statuses,
             "error_counts": self.error_counts,
             "consecutive_up": self.consecutive_up,
@@ -335,7 +325,7 @@ class MonitorState:
             "cycle_count": self.cycle_count,
         }
 
-    def load_persisted(self, data: Dict[str, Any]):
+    def load_persisted(self, data: dict[str, Any]):
         for sid in MONITORED_SERVICES:
             if sid in data.get("response_times", {}):
                 for entry in data["response_times"][sid]:
@@ -361,8 +351,8 @@ class PlatformState:
 
     def __init__(self):
         self.start_time = time.time()
-        self.health: Dict[str, Any] = {}
-        self.aiia_status: Dict[str, Any] = {}
+        self.health: dict[str, Any] = {}
+        self.aiia_status: dict[str, Any] = {}
 
     def get_platform(self):
         return {
@@ -388,7 +378,7 @@ class PlatformState:
 
 class ConnectionManager:
     def __init__(self):
-        self.connections: List[WebSocket] = []
+        self.connections: list[WebSocket] = []
 
     async def connect(self, ws: WebSocket):
         await ws.accept()
@@ -536,16 +526,12 @@ async def production_monitor_loop():
             await manager.broadcast("monitor_update", snapshot)
 
             # Also update legacy health dict
-            state.health = {
-                sid: {"status": monitor.statuses[sid]} for sid in MONITORED_SERVICES
-            }
+            state.health = {sid: {"status": monitor.statuses[sid]} for sid in MONITORED_SERVICES}
 
             # Persist every 5 cycles (~2.5 min)
             if monitor.cycle_count % 5 == 0:
                 try:
-                    MONITOR_DATA_FILE.write_text(
-                        json.dumps(monitor.to_persist(), default=str)
-                    )
+                    MONITOR_DATA_FILE.write_text(json.dumps(monitor.to_persist(), default=str))
                     token_tracker.save()
                 except Exception as e:
                     logger.error(f"Failed to persist data: {e}")
@@ -578,9 +564,7 @@ app.add_middleware(
 STATIC_DIR = Path(__file__).parent / "static"
 
 # React dashboard (built assets from products/command-center/frontend/dist)
-REACT_DIST = (
-    Path(__file__).parents[3] / "products" / "command-center" / "frontend" / "dist"
-)
+REACT_DIST = Path(__file__).parents[3] / "products" / "command-center" / "frontend" / "dist"
 if REACT_DIST.exists():
     app.mount(
         "/assets",
@@ -629,7 +613,7 @@ class TokenTrackingState:
     """Tracks token usage and costs, aggregated by day and provider."""
 
     def __init__(self):
-        self.daily: Dict[str, Dict[str, Any]] = {}  # date -> provider -> stats
+        self.daily: dict[str, dict[str, Any]] = {}  # date -> provider -> stats
         self._data_file = Path(__file__).parent / "token_data.json"
         self._load()
 
@@ -670,7 +654,7 @@ class TokenTrackingState:
         entry["requests"] += 1
         entry["cost"] += self._calc_cost(model, input_tokens, output_tokens)
 
-    def get_today(self) -> Dict[str, Any]:
+    def get_today(self) -> dict[str, Any]:
         date = self._today()
         self._ensure_day(date)
 
@@ -700,7 +684,7 @@ class TokenTrackingState:
             "by_provider": by_provider,
         }
 
-    def get_recent(self, days: int = 7) -> List[Dict[str, Any]]:
+    def get_recent(self, days: int = 7) -> list[dict[str, Any]]:
         from datetime import timedelta
 
         result = []
@@ -709,13 +693,10 @@ class TokenTrackingState:
             date = (today - timedelta(days=i)).isoformat()
             self._ensure_day(date)
             total_tokens = sum(
-                s["input_tokens"] + s["output_tokens"]
-                for s in self.daily.get(date, {}).values()
+                s["input_tokens"] + s["output_tokens"] for s in self.daily.get(date, {}).values()
             )
             total_cost = sum(s["cost"] for s in self.daily.get(date, {}).values())
-            total_requests = sum(
-                s["requests"] for s in self.daily.get(date, {}).values()
-            )
+            total_requests = sum(s["requests"] for s in self.daily.get(date, {}).values())
             result.append(
                 {
                     "date": date,
@@ -760,7 +741,7 @@ class RoutingHistoryState:
 
     def __init__(self):
         self.history: deque = deque(maxlen=100)  # last 100 decisions
-        self.stats: Dict[str, Any] = {
+        self.stats: dict[str, Any] = {
             "total_requests": 0,
             "eos_count": 0,
             "rlm_count": 0,
@@ -770,7 +751,7 @@ class RoutingHistoryState:
             "complexity_scores": [],
         }
 
-    def record(self, decision: Dict[str, Any]):
+    def record(self, decision: dict[str, Any]):
         """Record a routing decision."""
         decision["timestamp"] = datetime.now(timezone.utc).isoformat()
         self.history.appendleft(decision)
@@ -786,9 +767,7 @@ class RoutingHistoryState:
 
         # Provider distribution
         provider = decision.get("recommended_path", "unknown")
-        self.stats["by_provider"][provider] = (
-            self.stats["by_provider"].get(provider, 0) + 1
-        )
+        self.stats["by_provider"][provider] = self.stats["by_provider"].get(provider, 0) + 1
 
         # Domain distribution
         domain = decision.get("domain", "general")
@@ -805,20 +784,10 @@ class RoutingHistoryState:
         # EQ level distribution
         eq = decision.get("eq_level")
         if eq is not None:
-            bucket = (
-                "1-2"
-                if eq <= 2
-                else "3-5"
-                if eq <= 5
-                else "8-12"
-                if eq <= 12
-                else "13+"
-            )
-            self.stats["by_eq_level"][bucket] = (
-                self.stats["by_eq_level"].get(bucket, 0) + 1
-            )
+            bucket = "1-2" if eq <= 2 else "3-5" if eq <= 5 else "8-12" if eq <= 12 else "13+"
+            self.stats["by_eq_level"][bucket] = self.stats["by_eq_level"].get(bucket, 0) + 1
 
-    def get_stats(self) -> Dict[str, Any]:
+    def get_stats(self) -> dict[str, Any]:
         """Return routing stats for dashboard."""
         return {
             **self.stats,
@@ -831,7 +800,7 @@ class RoutingHistoryState:
             ),
         }
 
-    def get_recent(self, limit: int = 20) -> List[Dict[str, Any]]:
+    def get_recent(self, limit: int = 20) -> list[dict[str, Any]]:
         return list(self.history)[:limit]
 
 
@@ -851,8 +820,8 @@ task_runner = TaskRunner(
 )
 
 # ─── Execution Engine ────────────────────────────────────
-from local_brain.execution.executor import ExecutionEngine
 from local_brain.config import LocalBrainConfig
+from local_brain.execution.executor import ExecutionEngine
 
 _execution_engine: ExecutionEngine | None = None
 
@@ -866,7 +835,7 @@ CHAT_HISTORY_MAX = 200
 _stream_cancel: asyncio.Event = asyncio.Event()
 
 
-def _load_chat_history() -> List[Dict[str, str]]:
+def _load_chat_history() -> list[dict[str, str]]:
     """Load persisted chat history from disk."""
     if CHAT_HISTORY_FILE.exists():
         try:
@@ -882,15 +851,13 @@ def _save_chat_history():
     """Persist chat history to disk (atomic write)."""
     try:
         tmp = CHAT_HISTORY_FILE.with_suffix(".tmp")
-        tmp.write_text(
-            json.dumps(chat_history[-CHAT_HISTORY_MAX:], indent=2, default=str)
-        )
+        tmp.write_text(json.dumps(chat_history[-CHAT_HISTORY_MAX:], indent=2, default=str))
         tmp.rename(CHAT_HISTORY_FILE)
     except Exception as e:
         logger.warning(f"Could not save chat history: {e}")
 
 
-chat_history: List[Dict[str, str]] = _load_chat_history()
+chat_history: list[dict[str, str]] = _load_chat_history()
 
 
 class ChatMessage(BaseModel):
@@ -916,9 +883,7 @@ async def serve_console():
     html_path = STATIC_DIR / "dashboard.html"
     if html_path.exists():
         return HTMLResponse(content=html_path.read_text())
-    return HTMLResponse(
-        content="<h1>AIIA Command Center</h1><p>No dashboard found.</p>"
-    )
+    return HTMLResponse(content="<h1>AIIA Command Center</h1><p>No dashboard found.</p>")
 
 
 @app.get("/old", response_class=HTMLResponse)
@@ -963,22 +928,14 @@ async def websocket_endpoint(ws: WebSocket):
                         "tasks": task_runner.get_all_tasks(),
                         "insights": task_runner._extra.get("insights", []),
                         "task_extra": {
-                            "code_health_trends": task_runner._extra.get(
-                                "code_health_trends", []
-                            ),
+                            "code_health_trends": task_runner._extra.get("code_health_trends", []),
                             "test_trends": task_runner._extra.get("test_trends", []),
-                            "security_snapshot": task_runner._extra.get(
-                                "security_snapshot", {}
-                            ),
-                            "security_trends": task_runner._extra.get(
-                                "security_trends", []
-                            ),
+                            "security_snapshot": task_runner._extra.get("security_snapshot", {}),
+                            "security_trends": task_runner._extra.get("security_trends", []),
                         },
                         "routing": routing_history.get_stats(),
                         "tokens": token_tracker.get_today(),
-                        "actions": action_queue.list_actions(
-                            status="pending", limit=20
-                        ),
+                        "actions": action_queue.list_actions(status="pending", limit=20),
                         "action_summary": action_queue.summary(),
                         "sessions": session_registry.summary(),
                         "workstreams": workstream_registry.summary(),
@@ -1073,14 +1030,10 @@ async def get_task_history():
 
 
 @app.get("/api/actions")
-async def get_actions(
-    status: Optional[str] = None, action_type: Optional[str] = None, limit: int = 50
-):
+async def get_actions(status: str | None = None, action_type: str | None = None, limit: int = 50):
     """List action items, optionally filtered."""
     return {
-        "actions": action_queue.list_actions(
-            status=status, action_type=action_type, limit=limit
-        ),
+        "actions": action_queue.list_actions(status=status, action_type=action_type, limit=limit),
         "summary": action_queue.summary(),
     }
 
@@ -1101,20 +1054,14 @@ async def create_action(body: dict = Body(...)):
     if action_type not in action_queue.VALID_TYPES:
         return JSONResponse(
             status_code=400,
-            content={
-                "error": (
-                    f"Invalid action_type. Valid: {sorted(action_queue.VALID_TYPES)}"
-                )
-            },
+            content={"error": (f"Invalid action_type. Valid: {sorted(action_queue.VALID_TYPES)}")},
         )
 
     if severity not in action_queue.VALID_SEVERITIES:
         return JSONResponse(
             status_code=400,
             content={
-                "error": (
-                    f"Invalid severity. Valid: {sorted(action_queue.VALID_SEVERITIES)}"
-                )
+                "error": (f"Invalid severity. Valid: {sorted(action_queue.VALID_SEVERITIES)}")
             },
         )
 
@@ -1163,9 +1110,7 @@ async def approve_action(action_id: str):
         gate = SafetyGate()
         tier = gate.get_tier(action)
         if tier == SafetyTier.AUTO:
-            logger.info(
-                f"Auto-executing AUTO-tier action: {action_id} ({action.get('type')})"
-            )
+            logger.info(f"Auto-executing AUTO-tier action: {action_id} ({action.get('type')})")
             try:
                 result = await _execution_engine.execute_now(action_id)
                 action = action_queue.get_action(action_id)
@@ -1179,7 +1124,7 @@ async def approve_action(action_id: str):
 
 
 @app.post("/api/actions/{action_id}/reject")
-async def reject_action(action_id: str, body: Dict[str, Any] = {}):
+async def reject_action(action_id: str, body: dict[str, Any] = {}):
     """Reject an action with optional reason."""
     reason = body.get("reason", "")
     action = action_queue.reject(action_id, reason=reason)
@@ -1190,7 +1135,7 @@ async def reject_action(action_id: str, body: Dict[str, Any] = {}):
 
 
 @app.post("/api/actions/{action_id}/complete")
-async def complete_action(action_id: str, body: Dict[str, Any] = {}):
+async def complete_action(action_id: str, body: dict[str, Any] = {}):
     """Mark an approved action as completed."""
     result = body.get("result", "")
     action = action_queue.complete(action_id, result=result)
@@ -1267,7 +1212,7 @@ async def update_session(session_id: str, body: SessionUpdateRequest):
 
 
 @app.post("/api/sessions/{session_id}/close")
-async def close_session(session_id: str, body: Dict[str, Any] = {}):
+async def close_session(session_id: str, body: dict[str, Any] = {}):
     """Close a session when Claude Code stops."""
     summary = body.get("summary", "")
     session = session_registry.close(session_id, summary=summary)
@@ -1376,20 +1321,16 @@ async def create_workstream(body: WorkstreamCreateRequest):
         story_ids=body.story_ids,
         color=body.color,
     )
-    await manager.broadcast(
-        "workstream_update", {"event": "created", "workstream": ws.to_dict()}
-    )
+    await manager.broadcast("workstream_update", {"event": "created", "workstream": ws.to_dict()})
     return ws.to_dict()
 
 
 @app.put("/api/workstreams/{workstream_id}")
-async def update_workstream(workstream_id: str, body: Dict[str, Any]):
+async def update_workstream(workstream_id: str, body: dict[str, Any]):
     ws = workstream_registry.update(workstream_id, **body)
     if not ws:
         return {"error": f"Workstream {workstream_id} not found"}
-    await manager.broadcast(
-        "workstream_update", {"event": "updated", "workstream": ws.to_dict()}
-    )
+    await manager.broadcast("workstream_update", {"event": "updated", "workstream": ws.to_dict()})
     return ws.to_dict()
 
 
@@ -1397,14 +1338,12 @@ async def update_workstream(workstream_id: str, body: Dict[str, Any]):
 async def delete_workstream(workstream_id: str):
     deleted = workstream_registry.delete(workstream_id)
     if deleted:
-        await manager.broadcast(
-            "workstream_update", {"event": "deleted", "id": workstream_id}
-        )
+        await manager.broadcast("workstream_update", {"event": "deleted", "id": workstream_id})
     return {"deleted": deleted}
 
 
 @app.post("/api/workstreams/{workstream_id}/attach")
-async def attach_session_to_workstream(workstream_id: str, body: Dict[str, Any] = {}):
+async def attach_session_to_workstream(workstream_id: str, body: dict[str, Any] = {}):
     session_id = body.get("session_id", "")
     description = body.get("description", "")
     ok = workstream_registry.attach_session(workstream_id, session_id, description)
@@ -1418,7 +1357,7 @@ async def attach_session_to_workstream(workstream_id: str, body: Dict[str, Any] 
 
 
 @app.post("/api/workstreams/{workstream_id}/stories")
-async def add_stories_to_workstream(workstream_id: str, body: Dict[str, Any]):
+async def add_stories_to_workstream(workstream_id: str, body: dict[str, Any]):
     story_ids = body.get("story_ids", [])
     ok = workstream_registry.add_stories(workstream_id, story_ids)
     if not ok:
@@ -1428,9 +1367,7 @@ async def add_stories_to_workstream(workstream_id: str, body: Dict[str, Any]):
 
 
 @app.get("/api/workstreams/suggest")
-async def suggest_workstream(
-    directory: str = "", branch: str = "", description: str = ""
-):
+async def suggest_workstream(directory: str = "", branch: str = "", description: str = ""):
     ws = workstream_registry.suggest_workstream(directory, branch, description)
     if ws:
         return {"suggested": ws.to_dict()}
@@ -1464,11 +1401,11 @@ async def get_latest_briefing():
 # ─── Interval Reports ───────────────────────────────────────
 
 
-_latest_interval_report: Dict[str, Any] = {}
+_latest_interval_report: dict[str, Any] = {}
 
 
 @app.post("/api/reports/interval")
-async def receive_interval_report(payload: Dict[str, Any] = Body(...)):
+async def receive_interval_report(payload: dict[str, Any] = Body(...)):
     """Receive an interval code report and broadcast to dashboard."""
     global _latest_interval_report
     report = payload.get("report", {})
@@ -1504,7 +1441,7 @@ class RoutingReport(BaseModel):
     recommended_path: str = ""
     domain: str = ""
     model: str = ""
-    usage: Dict[str, Any] = {}
+    usage: dict[str, Any] = {}
 
 
 @app.post("/ops/record-token-usage")
@@ -1621,7 +1558,7 @@ async def get_aiia_client() -> httpx.AsyncClient:
 
 
 @app.get("/api/memories")
-async def get_memories(category: Optional[str] = None, limit: int = 50):
+async def get_memories(category: str | None = None, limit: int = 50):
     """Proxy to AIIA memory API for dashboard memory browser."""
     params = f"?limit={limit}"
     if category:
@@ -1673,17 +1610,13 @@ async def chat_with_aiia(msg: ChatMessage):
             f"\n## Recent Conversation\n{context}" if context else ""
         )
 
-    chat_history.append(
-        {"role": "user", "content": msg.message, "ts": now, "mode": msg.mode}
-    )
+    chat_history.append({"role": "user", "content": msg.message, "ts": now, "mode": msg.mode})
 
     reply = "No response"
     model = "unknown"
     sources = 0
     try:
-        async with httpx.AsyncClient(
-            timeout=httpx.Timeout(90.0, connect=10.0)
-        ) as client:
+        async with httpx.AsyncClient(timeout=httpx.Timeout(90.0, connect=10.0)) as client:
             resp = await client.post(
                 AIIA_ASK_URL,
                 json={"question": msg.message, "context": context, "n_results": 5},
@@ -1748,9 +1681,7 @@ async def chat_with_aiia_stream(msg: ChatMessage):
         max_tokens = 4096
         n_results = 5
 
-    chat_history.append(
-        {"role": "user", "content": msg.message, "ts": now, "mode": msg.mode}
-    )
+    chat_history.append({"role": "user", "content": msg.message, "ts": now, "mode": msg.mode})
     _save_chat_history()
 
     async def proxy_stream():
@@ -1758,8 +1689,9 @@ async def chat_with_aiia_stream(msg: ChatMessage):
         cancelled = False
         got_done = False
         try:
-            async with httpx.AsyncClient(timeout=120.0) as client:
-                async with client.stream(
+            async with (
+                httpx.AsyncClient(timeout=120.0) as client,
+                client.stream(
                     "POST",
                     AIIA_ASK_URL + "/stream",
                     json={
@@ -1769,18 +1701,19 @@ async def chat_with_aiia_stream(msg: ChatMessage):
                         "max_tokens": max_tokens,
                         "num_ctx": 32768,
                     },
-                ) as resp:
-                    async for line in resp.aiter_lines():
-                        if _stream_cancel.is_set():
-                            cancelled = True
-                            break
-                        if line.startswith("data: "):
-                            data = json.loads(line[6:])
-                            if data.get("type") == "chunk":
-                                full_answer.append(data["content"])
-                            elif data.get("type") == "done":
-                                got_done = True
-                            yield line + "\n\n"
+                ) as resp,
+            ):
+                async for line in resp.aiter_lines():
+                    if _stream_cancel.is_set():
+                        cancelled = True
+                        break
+                    if line.startswith("data: "):
+                        data = json.loads(line[6:])
+                        if data.get("type") == "chunk":
+                            full_answer.append(data["content"])
+                        elif data.get("type") == "done":
+                            got_done = True
+                        yield line + "\n\n"
         except Exception as e:
             err = json.dumps({"type": "error", "message": str(e)[:200]})
             yield f"data: {err}\n\n"
@@ -1815,7 +1748,7 @@ async def chat_with_aiia_stream(msg: ChatMessage):
 
 
 @app.post("/api/tts")
-async def tts_proxy(body: Dict[str, Any] = {}):
+async def tts_proxy(body: dict[str, Any] = {}):
     """Proxy TTS request to AIIA Local Brain's Google Cloud TTS endpoint. Returns audio bytes."""
     text = body.get("text", "")
     voice = body.get("voice", "aiia")
@@ -1840,7 +1773,7 @@ async def tts_proxy(body: Dict[str, Any] = {}):
 
 
 @app.post("/api/voice")
-async def voice_proxy(body: Dict[str, Any] = {}):
+async def voice_proxy(body: dict[str, Any] = {}):
     """Proxy to AIIA combined ask+TTS endpoint. Returns MP3 audio of AIIA's spoken answer."""
     question = body.get("question", "")
     voice = body.get("voice", "aiia")
@@ -1864,7 +1797,7 @@ async def voice_proxy(body: Dict[str, Any] = {}):
 
 
 @app.post("/api/speak")
-async def speak_proxy(body: Dict[str, Any] = {}):
+async def speak_proxy(body: dict[str, Any] = {}):
     """Proxy speak request to AIIA Local Brain."""
     text = body.get("text", "")
     voice = body.get("voice", "aiia")
@@ -1918,7 +1851,7 @@ async def clear_chat_history():
 
 
 @app.put("/api/chat/history/{index}")
-async def edit_chat_message(index: int, body: Dict[str, Any]):
+async def edit_chat_message(index: int, body: dict[str, Any]):
     """Edit a user message and truncate all subsequent messages."""
     if index < 0 or index >= len(chat_history):
         return {"error": "Index out of range"}
@@ -1956,7 +1889,7 @@ async def stop_chat_stream():
 
 
 @app.post("/api/aiia/session-start")
-async def aiia_session_start(body: Dict[str, Any] = {}):
+async def aiia_session_start(body: dict[str, Any] = {}):
     """Proxy to AIIA session-start (load WIP, decisions, knowledge)."""
     try:
         async with httpx.AsyncClient(timeout=15.0) as client:
@@ -1972,7 +1905,7 @@ async def aiia_session_start(body: Dict[str, Any] = {}):
 
 
 @app.post("/api/aiia/remember")
-async def aiia_remember(body: Dict[str, Any] = {}):
+async def aiia_remember(body: dict[str, Any] = {}):
     """Proxy to AIIA remember (teach from console)."""
     try:
         async with httpx.AsyncClient(timeout=15.0) as client:
@@ -1989,15 +1922,15 @@ async def aiia_remember(body: Dict[str, Any] = {}):
 
 # ─── Daily Reports + Roadmap + Syntax ────────────────────────
 
+from local_brain.eq_brain.story_prioritizer import StoryPrioritizer
 from local_brain.scripts.daily_report import (
     generate_report,
-    save_report,
-    load_report,
     list_reports,
+    load_report,
+    save_report,
 )
-from local_brain.scripts.roadmap_store import RoadmapStore
 from local_brain.scripts.pipeline_store import PipelineStore
-from local_brain.eq_brain.story_prioritizer import StoryPrioritizer
+from local_brain.scripts.roadmap_store import RoadmapStore
 from local_brain.scripts.syntax_checker import check_syntax
 
 _roadmap = RoadmapStore()
@@ -2164,7 +2097,7 @@ async def report_by_date(date: str):
 
 
 @app.post("/api/reports/generate")
-async def report_generate(body: Dict[str, Any] = {}):
+async def report_generate(body: dict[str, Any] = {}):
     date = body.get("date")
     report = generate_report(date=date, repo_dir=REPO_PATH)
     save_report(report)
@@ -2172,12 +2105,12 @@ async def report_generate(body: Dict[str, Any] = {}):
 
 
 @app.get("/api/roadmap")
-async def roadmap_list(product: Optional[str] = None, status: Optional[str] = None):
+async def roadmap_list(product: str | None = None, status: str | None = None):
     stories = _roadmap.list(product=product, status=status)
     return {"stories": stories, "count": len(stories)}
 
 
-async def _index_story_in_aiia(story: Dict[str, Any]) -> None:
+async def _index_story_in_aiia(story: dict[str, Any]) -> None:
     """Fire-and-forget: index a story in AIIA's ChromaDB."""
     try:
         async with httpx.AsyncClient(timeout=5.0) as client:
@@ -2190,7 +2123,7 @@ async def _index_story_in_aiia(story: Dict[str, Any]) -> None:
 
 
 @app.post("/api/roadmap")
-async def roadmap_create(body: Dict[str, Any]):
+async def roadmap_create(body: dict[str, Any]):
     try:
         story = _roadmap.create(
             title=body["title"],
@@ -2212,7 +2145,7 @@ async def roadmap_create(body: Dict[str, Any]):
 
 
 @app.put("/api/roadmap/{story_id}")
-async def roadmap_update(story_id: str, body: Dict[str, Any]):
+async def roadmap_update(story_id: str, body: dict[str, Any]):
     try:
         story = _roadmap.update(story_id, **body)
         if story is None:
@@ -2230,7 +2163,7 @@ async def roadmap_delete(story_id: str):
 
 
 @app.post("/api/roadmap/extract")
-async def roadmap_extract(body: Dict[str, Any]):
+async def roadmap_extract(body: dict[str, Any]):
     """Extract candidate stories from session data and log them."""
     if not _story_prioritizer:
         return {"error": "Story prioritizer not available", "stories": []}
@@ -2265,7 +2198,7 @@ async def roadmap_extract(body: Dict[str, Any]):
 
 
 @app.post("/api/roadmap/prioritize")
-async def roadmap_prioritize(body: Dict[str, Any]):
+async def roadmap_prioritize(body: dict[str, Any]):
     """Score and rank backlog stories."""
     if not _story_prioritizer:
         return {"error": "Story prioritizer not available"}
@@ -2297,13 +2230,13 @@ async def roadmap_summary():
 
 
 @app.get("/api/pipeline")
-async def pipeline_list(stage: Optional[str] = None):
+async def pipeline_list(stage: str | None = None):
     deals = _pipeline.list(stage=stage)
     return {"deals": deals, "count": len(deals), "summary": _pipeline.summary()}
 
 
 @app.post("/api/pipeline")
-async def pipeline_create(body: Dict[str, Any]):
+async def pipeline_create(body: dict[str, Any]):
     try:
         deal = _pipeline.create(
             company=body.get("company", ""),
@@ -2319,7 +2252,7 @@ async def pipeline_create(body: Dict[str, Any]):
 
 
 @app.put("/api/pipeline/{deal_id}")
-async def pipeline_update(deal_id: str, body: Dict[str, Any]):
+async def pipeline_update(deal_id: str, body: dict[str, Any]):
     try:
         deal = _pipeline.update(deal_id, **body)
         if deal is None:
@@ -2348,7 +2281,7 @@ async def work_context():
     import subprocess
     from datetime import date as date_type
 
-    result: Dict[str, Any] = {}
+    result: dict[str, Any] = {}
 
     # 1. Today's report (always regenerate for freshness)
     today = date_type.today().isoformat()
@@ -2386,14 +2319,10 @@ async def work_context():
         uncommitted_files = []
         for line in diff_result.stdout.strip().splitlines():
             if "|" in line:
-                uncommitted_files.append(
-                    {"file": line.split("|")[0].strip(), "status": "modified"}
-                )
+                uncommitted_files.append({"file": line.split("|")[0].strip(), "status": "modified"})
         for line in staged_result.stdout.strip().splitlines():
             if "|" in line:
-                uncommitted_files.append(
-                    {"file": line.split("|")[0].strip(), "status": "staged"}
-                )
+                uncommitted_files.append({"file": line.split("|")[0].strip(), "status": "staged"})
         result["uncommitted"] = uncommitted_files
     except Exception:
         result["uncommitted"] = []
@@ -2407,7 +2336,7 @@ async def work_context():
             timeout=15,
             cwd=REPO_PATH,
         )
-        day_counts: Dict[str, int] = {}
+        day_counts: dict[str, int] = {}
         for line in week_log.stdout.strip().splitlines():
             if line:
                 day = line[:10]
@@ -2440,7 +2369,7 @@ async def work_context():
 async def checkin():
     """Aggregated morning check-in: WIP, sessions, commits, nightly jobs, actions, stories, pipeline."""
     now = datetime.now(timezone.utc)
-    result: Dict[str, Any] = {"timestamp": now.isoformat()}
+    result: dict[str, Any] = {"timestamp": now.isoformat()}
 
     # 1. WIP state from AIIA memory
     try:
@@ -2462,13 +2391,9 @@ async def checkin():
             if resp.status_code == 200:
                 data = resp.json()
                 memories = data.get("memories", data if isinstance(data, list) else [])
-                result["recent_sessions"] = (
-                    memories[-3:] if len(memories) > 3 else memories
-                )
+                result["recent_sessions"] = memories[-3:] if len(memories) > 3 else memories
             else:
-                result["recent_sessions"] = {
-                    "error": f"AIIA returned {resp.status_code}"
-                }
+                result["recent_sessions"] = {"error": f"AIIA returned {resp.status_code}"}
     except Exception as e:
         result["recent_sessions"] = {"error": str(e)}
 
@@ -2476,7 +2401,7 @@ async def checkin():
     try:
         report = generate_report(repo_dir=REPO_PATH, since_hours=24)
         commits_flat = []
-        by_product: Dict[str, int] = {}
+        by_product: dict[str, int] = {}
         for product, data in report.get("products", {}).items():
             prod_commits = data.get("commits", [])
             by_product[product] = len(prod_commits)
@@ -2496,10 +2421,10 @@ async def checkin():
         }
 
     # 4. Nightly job freshness — check file modification timestamps
-    nightly: Dict[str, Any] = {}
+    nightly: dict[str, Any] = {}
     stale_threshold_hours = 26
 
-    def _check_job_file(path: Path) -> Dict[str, Any]:
+    def _check_job_file(path: Path) -> dict[str, Any]:
         """Check if a nightly job output file exists and how old it is."""
         if not path.exists():
             return {"status": "missing", "age_hours": None, "path": str(path)}
@@ -2517,9 +2442,7 @@ async def checkin():
             }
 
     home = Path.home()
-    nightly["security_scan"] = _check_job_file(
-        home / ".aiia" / "logs" / "security" / "latest.txt"
-    )
+    nightly["security_scan"] = _check_job_file(home / ".aiia" / "logs" / "security" / "latest.txt")
 
     # Daily report — find latest file in reports dir
     reports_dir = home / ".aiia" / "eq_data" / "reports"
@@ -2555,11 +2478,9 @@ async def checkin():
 
     # 5. Pending actions — summary + top 10 critical/error severity
     try:
-        result_actions: Dict[str, Any] = {"summary": action_queue.summary()}
+        result_actions: dict[str, Any] = {"summary": action_queue.summary()}
         pending = action_queue.list_actions(status="pending")
-        top_critical = [
-            a for a in pending if a.get("severity") in ("critical", "error")
-        ][:10]
+        top_critical = [a for a in pending if a.get("severity") in ("critical", "error")][:10]
         result_actions["top_critical"] = top_critical
         result["actions"] = result_actions
     except Exception as e:
@@ -2568,9 +2489,7 @@ async def checkin():
     # 6. Active/blocked stories from roadmap
     try:
         all_stories = _roadmap.list()
-        active = [
-            s for s in all_stories if s.get("status") in ("active", "in_progress")
-        ]
+        active = [s for s in all_stories if s.get("status") in ("active", "in_progress")]
         blocked = [s for s in all_stories if s.get("status") == "blocked"]
         backlog = [
             s
@@ -2669,8 +2588,7 @@ async def get_attention_items():
                 "status": s.get("status"),
             }
             for s in stories
-            if s.get("status") == "backlog"
-            and (not s.get("priority") or s.get("priority", 99) > 2)
+            if s.get("status") == "backlog" and (not s.get("priority") or s.get("priority", 99) > 2)
         ][:10]
     except Exception as e:
         logger.warning(f"Attention: stories check failed: {e}")
@@ -2763,7 +2681,7 @@ async def execution_log(limit: int = 20):
 
 
 @app.post("/api/execution/story/{story_id}")
-async def execution_story(story_id: str, body: Dict[str, Any] = {}):
+async def execution_story(story_id: str, body: dict[str, Any] = {}):
     """Decompose a story into actions and start execution."""
     if not _execution_engine:
         return {"error": "Execution engine not running"}

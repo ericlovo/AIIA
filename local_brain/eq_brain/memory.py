@@ -21,7 +21,7 @@ import logging
 import os
 import re
 import time
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 logger = logging.getLogger("aiia.eq_brain.memory")
 
@@ -73,15 +73,15 @@ class Memory:
     def _category_path(self, category: str) -> str:
         return os.path.join(self._data_dir, f"{category}.json")
 
-    def _read_category(self, category: str) -> List[Dict[str, Any]]:
+    def _read_category(self, category: str) -> list[dict[str, Any]]:
         path = self._category_path(category)
         try:
-            with open(path, "r") as f:
+            with open(path) as f:
                 return json.load(f)
         except (json.JSONDecodeError, FileNotFoundError):
             return []
 
-    def _write_category(self, category: str, items: List[Dict[str, Any]]):
+    def _write_category(self, category: str, items: list[dict[str, Any]]):
         path = self._category_path(category)
         with open(path, "w") as f:
             json.dump(items, f, indent=2, default=str)
@@ -108,8 +108,8 @@ class Memory:
         fact: str,
         category: str = "lessons",
         source: str = "session",
-        metadata: Optional[Dict[str, Any]] = None,
-    ) -> Dict[str, Any]:
+        metadata: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
         """
         Store a new fact in memory.
 
@@ -154,9 +154,9 @@ class Memory:
 
     def recall(
         self,
-        category: Optional[str] = None,
+        category: str | None = None,
         limit: int = 50,
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """
         Recall memories, optionally filtered by category.
 
@@ -178,7 +178,7 @@ class Memory:
         all_items.sort(key=lambda x: x.get("created_at", ""), reverse=True)
         return all_items[:limit]
 
-    def search(self, query: str, limit: int = 10) -> List[Dict[str, Any]]:
+    def search(self, query: str, limit: int = 10) -> list[dict[str, Any]]:
         """
         Simple keyword search across all memories.
 
@@ -208,7 +208,7 @@ class Memory:
                 return True
         return False
 
-    def stats(self) -> Dict[str, Any]:
+    def stats(self) -> dict[str, Any]:
         """Return memory statistics."""
         counts = {}
         total = 0

@@ -28,21 +28,16 @@ import sys
 import time
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from claude_agent_sdk import (
     AssistantMessage,
     ClaudeAgentOptions,
     ResultMessage,
     TextBlock,
-    ToolUseBlock,
     query,
 )
 
-from local_brain.story_runner.security import (
-    ALLOWED_BASH_COMMANDS,
-    validate_bash_command,
-)
 from local_brain.story_runner.progress import (
     ActionPlan,
     load_plan,
@@ -98,7 +93,7 @@ def fetch_aiia_context() -> str:
         return ""
 
 
-def notify_aiia(event: str, data: Dict[str, Any]) -> None:
+def notify_aiia(event: str, data: dict[str, Any]) -> None:
     """Send event to AIIA (fire-and-forget)."""
     import httpx
 
@@ -152,9 +147,7 @@ def cleanup_worktree(worktree_path: Path, branch_name: str) -> None:
         text=True,
     )
     if result.stdout.strip():
-        logger.warning(
-            f"Worktree has uncommitted changes, not cleaning up: {worktree_path}"
-        )
+        logger.warning(f"Worktree has uncommitted changes, not cleaning up: {worktree_path}")
         return
 
     subprocess.run(
@@ -190,7 +183,7 @@ async def run_planner(
     aiia_context: str,
     model: str = DEFAULT_MODEL,
     max_budget: float = DEFAULT_MAX_BUDGET,
-) -> Optional[ActionPlan]:
+) -> ActionPlan | None:
     """
     Session 1: Planner Agent.
 
@@ -236,9 +229,7 @@ async def run_planner(
         elif isinstance(message, ResultMessage):
             session_id = message.session_id
             total_cost = message.total_cost_usd or 0.0
-            logger.info(
-                f"[Planner] Done. Cost: ${total_cost:.4f}, Turns: {message.num_turns}"
-            )
+            logger.info(f"[Planner] Done. Cost: ${total_cost:.4f}, Turns: {message.num_turns}")
 
     # Load the plan the agent should have created
     if plan_path.exists():
@@ -374,7 +365,7 @@ def create_pull_request(
     plan: ActionPlan,
     worktree_path: Path,
     branch_name: str,
-) -> Optional[str]:
+) -> str | None:
     """Push branch and create a PR."""
     # Push the branch
     result = subprocess.run(
@@ -454,7 +445,7 @@ async def run_story(
     max_budget: float = DEFAULT_MAX_BUDGET,
     max_iterations: int = 20,
     plan_only: bool = False,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     Execute a complete story from planning through PR creation.
 
@@ -559,9 +550,7 @@ async def run_story(
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        description="AIIA Story Runner — autonomous coding for AIIA"
-    )
+    parser = argparse.ArgumentParser(description="AIIA Story Runner — autonomous coding for AIIA")
     parser.add_argument(
         "--story",
         "-s",

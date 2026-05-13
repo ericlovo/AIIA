@@ -22,16 +22,15 @@ from local_brain.a2a.executors.aiia_memory_executor import (
 )
 from local_brain.a2a.schema import Message, TextPart
 
-
 # ─── Stubs ───────────────────────────────────────────────────────────
 
 
 class _StubKnowledge:
     """Minimal knowledge store stand-in supporting search()."""
 
-    def __init__(self, results: List[Dict[str, Any]]) -> None:
+    def __init__(self, results: list[dict[str, Any]]) -> None:
         self._results = results
-        self.calls: List[tuple] = []
+        self.calls: list[tuple] = []
 
     async def search(self, query: str, n_results: int = 5):
         self.calls.append((query, n_results))
@@ -41,17 +40,17 @@ class _StubKnowledge:
 class _StubAIIA:
     """Minimal AIIA stand-in exposing remember() and _knowledge."""
 
-    def __init__(self, knowledge: Optional[_StubKnowledge] = None) -> None:
+    def __init__(self, knowledge: _StubKnowledge | None = None) -> None:
         self._knowledge = knowledge
-        self.remember_calls: List[Dict[str, Any]] = []
+        self.remember_calls: list[dict[str, Any]] = []
 
     async def remember(
         self,
         fact: str,
         category: str = "lessons",
         source: str = "session",
-        metadata: Optional[Dict[str, Any]] = None,
-    ) -> Dict[str, Any]:
+        metadata: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
         entry = {
             "id": "mem-1",
             "fact": fact,
@@ -78,9 +77,7 @@ async def _stub_getter_factory(aiia):
 
 
 def test_parse_tagged_fact_recognizes_valid_category():
-    cat, fact = _parse_tagged_fact(
-        "decisions: pin chromadb to 0.5.23", default="lessons"
-    )
+    cat, fact = _parse_tagged_fact("decisions: pin chromadb to 0.5.23", default="lessons")
     assert cat == "decisions"
     assert fact == "pin chromadb to 0.5.23"
 

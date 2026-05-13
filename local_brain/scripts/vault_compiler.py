@@ -24,10 +24,8 @@ import urllib.error
 import urllib.request
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, List, Optional
 
 # --- Vault path resolution ---
-
 from local_brain.vault_paths import vault_dir as _vault_dir
 
 VAULT_DIR = _vault_dir()
@@ -45,7 +43,7 @@ def _slugify(text: str, max_len: int = 50) -> str:
     return slug.strip("-")[:max_len].rstrip("-") or "untitled"
 
 
-def _extract_text(path: Path) -> Optional[str]:
+def _extract_text(path: Path) -> str | None:
     """Extract text content from a file. Returns None if unsupported."""
     suffix = path.suffix.lower()
 
@@ -72,7 +70,7 @@ def _extract_text(path: Path) -> Optional[str]:
     return None
 
 
-def _call_ollama(prompt: str, system: str = "", max_tokens: int = 4096) -> Optional[str]:
+def _call_ollama(prompt: str, system: str = "", max_tokens: int = 4096) -> str | None:
     """Call local Ollama via HTTP (no httpx dependency)."""
     url = os.getenv("LOCAL_LLM_URL", "http://localhost:11434") + "/api/generate"
     payload = json.dumps(
@@ -121,7 +119,7 @@ def _remember_fact(fact: str, category: str = "lessons", source: str = "vault-co
         pass  # Best-effort
 
 
-def _parse_llm_response(response: str) -> Dict:
+def _parse_llm_response(response: str) -> dict:
     """Parse the LLM's structured JSON response."""
     # Try to extract JSON block
     json_match = re.search(r"```json\s*(.*?)\s*```", response, re.DOTALL)
@@ -179,7 +177,7 @@ def compile_file(path: Path, dry_run: bool = False) -> bool:
     print(f"  Extracted {len(text)} chars")
 
     if dry_run:
-        print(f"  [dry-run] Would compile with LLM and write wiki article")
+        print("  [dry-run] Would compile with LLM and write wiki article")
         return True
 
     # LLM compilation
@@ -189,7 +187,7 @@ def compile_file(path: Path, dry_run: bool = False) -> bool:
         system="You are a knowledge compiler. Extract and organize information into structured wiki articles. Return valid JSON only.",
     )
     if not response:
-        print(f"  Failed: no LLM response")
+        print("  Failed: no LLM response")
         return False
 
     parsed = _parse_llm_response(response)
@@ -200,7 +198,7 @@ def compile_file(path: Path, dry_run: bool = False) -> bool:
     suggested_links = parsed.get("suggested_links", [])
 
     if not summary:
-        print(f"  Failed: empty summary from LLM")
+        print("  Failed: empty summary from LLM")
         return False
 
     print(f"  Title: {title}")
@@ -223,7 +221,7 @@ def compile_file(path: Path, dry_run: bool = False) -> bool:
             "---",
             "type: aiia-wiki",
             f"date: {today}",
-            f"source: vault-compiler",
+            "source: vault-compiler",
             "aiia_managed: true",
             "aiia_version: 2",
             f'compiled_from: "{path.name}"',
@@ -264,7 +262,7 @@ def compile_file(path: Path, dry_run: bool = False) -> bool:
     return True
 
 
-def run(dry_run: bool = False) -> Dict:
+def run(dry_run: bool = False) -> dict:
     """Process all files in 00-Inbox/."""
     print(f"Vault Compiler — inbox={INBOX_DIR} dry_run={dry_run}")
 

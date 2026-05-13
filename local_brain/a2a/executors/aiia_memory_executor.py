@@ -17,7 +17,8 @@ expensive ChromaDB + embeddings init only fires on first call.
 from __future__ import annotations
 
 import logging
-from typing import Any, Awaitable, Callable, Literal, Optional
+from collections.abc import Awaitable, Callable
+from typing import Any, Literal
 
 from local_brain.a2a.executors.base import AgentExecutor, ExecutorResult
 from local_brain.a2a.schema import Message, TextPart
@@ -52,9 +53,7 @@ class AIIAMemoryExecutor(AgentExecutor):
         n_results: int = DEFAULT_SEARCH_RESULTS,
     ) -> None:
         if mode not in ("remember", "search"):
-            raise ValueError(
-                f"AIIAMemoryExecutor mode must be remember|search, got {mode}"
-            )
+            raise ValueError(f"AIIAMemoryExecutor mode must be remember|search, got {mode}")
         self._get_aiia = aiia_getter
         self._mode = mode
         self._default_category = default_category
@@ -64,9 +63,7 @@ class AIIAMemoryExecutor(AgentExecutor):
     async def execute(self, message: Message) -> ExecutorResult:
         text = _join_text_parts(message)
         if not text.strip():
-            raise ValueError(
-                f"AIIAMemoryExecutor[{self._mode}] requires a non-empty text part"
-            )
+            raise ValueError(f"AIIAMemoryExecutor[{self._mode}] requires a non-empty text part")
 
         aiia = await self._get_aiia()
         if aiia is None:
@@ -117,9 +114,7 @@ class AIIAMemoryExecutor(AgentExecutor):
         if knowledge is None or not hasattr(knowledge, "search"):
             raise RuntimeError("AIIA has no knowledge store available for search")
 
-        logger.info(
-            "AIIAMemoryExecutor.search n=%d query=%.80s", self._n_results, query
-        )
+        logger.info("AIIAMemoryExecutor.search n=%d query=%.80s", self._n_results, query)
         results = await knowledge.search(query, n_results=self._n_results)
 
         if not results:

@@ -7,7 +7,6 @@ Configured via environment variables with sensible defaults.
 
 import os
 from dataclasses import dataclass, field
-from typing import Dict, Optional
 
 
 @dataclass
@@ -56,16 +55,14 @@ class LocalBrainConfig:
     # Local Brain API server
     api_host: str = "0.0.0.0"  # nosec B104
     api_port: int = 8100
-    api_key: Optional[str] = None  # Set to require auth from production backend
+    api_key: str | None = None  # Set to require auth from production backend
 
     # Model assignments — which model handles what
-    models: Dict[str, ModelConfig] = field(default_factory=dict)
+    models: dict[str, ModelConfig] = field(default_factory=dict)
 
     # AIIA — persistent AI teammate (knowledge + memory)
     eq_brain_enabled: bool = True  # Config key kept for backward compat
-    eq_brain_data_dir: str = (
-        ""  # Set from env or default to ~/.aiia/eq_data
-    )
+    eq_brain_data_dir: str = ""  # Set from env or default to ~/.aiia/eq_data
     eq_brain_collection: str = "aiia_knowledge"
 
     # Recursive inference engine (Phase 4 — RLM-inspired)
@@ -100,9 +97,7 @@ class LocalBrainConfig:
 
     def __post_init__(self):
         """Load from environment variables."""
-        self.ollama_url = self.ollama_url or os.getenv(
-            "LOCAL_LLM_URL", "http://localhost:11434"
-        )
+        self.ollama_url = self.ollama_url or os.getenv("LOCAL_LLM_URL", "http://localhost:11434")
         self.api_host = os.getenv("LOCAL_BRAIN_HOST", self.api_host)
         self.api_port = int(os.getenv("LOCAL_BRAIN_PORT", str(self.api_port)))
         self.api_key = os.getenv("LOCAL_BRAIN_API_KEY", self.api_key)
@@ -113,9 +108,7 @@ class LocalBrainConfig:
             "EQ_BRAIN_DATA_DIR",
             os.path.expanduser("~/.aiia/eq_data"),
         )
-        self.eq_brain_collection = os.getenv(
-            "EQ_BRAIN_COLLECTION", self.eq_brain_collection
-        )
+        self.eq_brain_collection = os.getenv("EQ_BRAIN_COLLECTION", self.eq_brain_collection)
 
         # Obsidian vault — optional knowledge export
         _vault_default = os.path.expanduser("~/.aiia/vault")
@@ -199,9 +192,7 @@ class LocalBrainConfig:
 
         # Default model assignments
         if not self.models:
-            routing_model = os.getenv(
-                "LOCAL_ROUTING_MODEL", "llama3.1:8b-instruct-q8_0"
-            )
+            routing_model = os.getenv("LOCAL_ROUTING_MODEL", "llama3.1:8b-instruct-q8_0")
             task_model = os.getenv("LOCAL_TASK_MODEL", "llama3.1:8b-instruct-q8_0")
             embed_model = os.getenv("LOCAL_EMBED_MODEL", "nomic-embed-text")
             deep_model = os.getenv("LOCAL_DEEP_MODEL", "deepseek-r1:14b")
@@ -239,7 +230,7 @@ class LocalBrainConfig:
 
 
 # Singleton
-_config: Optional[LocalBrainConfig] = None
+_config: LocalBrainConfig | None = None
 
 
 def get_config() -> LocalBrainConfig:

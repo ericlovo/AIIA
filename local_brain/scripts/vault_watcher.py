@@ -41,7 +41,6 @@ import urllib.error
 import urllib.request
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
 
 # --- Paths & URLs ---
 
@@ -111,6 +110,7 @@ def _is_aiia_managed(file_path: Path) -> bool:
         pass
     return False
 
+
 # Max file size to ingest (skip huge files)
 MAX_FILE_SIZE = 100_000  # 100KB — larger files are likely data dumps, not knowledge
 
@@ -120,7 +120,7 @@ MAX_CHUNK_SIZE = 8_000  # chars — chunk larger docs
 
 # --- Structured extraction: which vault folders map to AIIA memory categories ---
 
-MEMORY_MAPPING: Dict[str, str] = {
+MEMORY_MAPPING: dict[str, str] = {
     "30-Decisions": "decisions",
     "50-Stories": "project",
     "10-Daily": "sessions",
@@ -135,7 +135,7 @@ MEMORY_MAPPING: Dict[str, str] = {
 # ---------------------------------------------------------------------------
 
 
-def _post(url: str, body: dict, timeout: int = 15) -> Optional[dict]:
+def _post(url: str, body: dict, timeout: int = 15) -> dict | None:
     """POST JSON to AIIA API, return parsed response or None on error."""
     data = json.dumps(body).encode("utf-8")
     req = urllib.request.Request(
@@ -154,7 +154,7 @@ def _post(url: str, body: dict, timeout: int = 15) -> Optional[dict]:
     return None
 
 
-def _get(url: str, timeout: int = 10) -> Optional[dict]:
+def _get(url: str, timeout: int = 10) -> dict | None:
     """GET request returning parsed JSON, or None on any error."""
     try:
         with urllib.request.urlopen(url, timeout=timeout) as resp:
@@ -174,7 +174,7 @@ class WatcherState:
 
     def __init__(self, path: Path):
         self._path = path
-        self._state: Dict[str, str] = {}
+        self._state: dict[str, str] = {}
         if path.exists():
             try:
                 self._state = json.loads(path.read_text())
@@ -206,7 +206,7 @@ class WatcherState:
 # ---------------------------------------------------------------------------
 
 
-def scan_vault(vault_dir: Path) -> List[Tuple[str, Path]]:
+def scan_vault(vault_dir: Path) -> list[tuple[str, Path]]:
     """
     Walk the vault and return (relative_path, full_path) for eligible .md files.
     Skips: AIIA-owned files, hidden dirs, Templates, files > MAX_FILE_SIZE.
@@ -241,9 +241,7 @@ def scan_vault(vault_dir: Path) -> List[Tuple[str, Path]]:
 
             # Skip oversized files
             if full_path.stat().st_size > MAX_FILE_SIZE:
-                logger.debug(
-                    f"Skipping oversized: {rel_path} ({full_path.stat().st_size} bytes)"
-                )
+                logger.debug(f"Skipping oversized: {rel_path} ({full_path.stat().st_size} bytes)")
                 continue
 
             results.append((rel_path, full_path))
@@ -266,7 +264,7 @@ def _extract_title(content: str, filename: str) -> str:
     return Path(filename).stem.replace("-", " ").replace("_", " ").title()
 
 
-def _classify_doc(rel_path: str) -> Tuple[str, Optional[str]]:
+def _classify_doc(rel_path: str) -> tuple[str, str | None]:
     """
     Classify a vault file for AIIA ingestion.
 
@@ -296,7 +294,7 @@ def _classify_doc(rel_path: str) -> Tuple[str, Optional[str]]:
     return doc_type, memory_cat
 
 
-def _chunk_content(text: str, max_size: int = MAX_CHUNK_SIZE) -> List[str]:
+def _chunk_content(text: str, max_size: int = MAX_CHUNK_SIZE) -> list[str]:
     """Split long content into chunks for ingestion. Splits at paragraph boundaries."""
     if len(text) <= max_size:
         return [text]
@@ -404,7 +402,7 @@ def remember_fact(rel_path: str, content: str, category: str) -> bool:
 # ---------------------------------------------------------------------------
 
 
-def run_watcher(dry_run: bool = False, force: bool = False) -> Dict:
+def run_watcher(dry_run: bool = False, force: bool = False) -> dict:
     """
     Scan the vault, find changed files, ingest into AIIA.
 

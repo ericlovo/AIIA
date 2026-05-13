@@ -15,7 +15,6 @@ import pytest
 
 from local_brain.config import Gemma4Capabilities, LocalBrainConfig
 
-
 # ─── Gemma4Capabilities.detect() — model name matching ────────────
 
 

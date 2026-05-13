@@ -18,8 +18,8 @@ import logging
 import os
 from typing import TYPE_CHECKING, Any
 
-from local_brain.ollama_client import OllamaClient
 from local_brain.config import get_config
+from local_brain.ollama_client import OllamaClient
 
 if TYPE_CHECKING:
     from local_brain.command_center.action_queue import (
@@ -94,9 +94,7 @@ class StoryExecutor:
         self._ollama = ollama or OllamaClient()
         self._config = get_config()
 
-    async def execute_story(
-        self, story_id: str, auto_approve: bool = False
-    ) -> dict[str, Any]:
+    async def execute_story(self, story_id: str, auto_approve: bool = False) -> dict[str, Any]:
         """Decompose a story into actions and start execution.
 
         Args:
@@ -113,10 +111,7 @@ class StoryExecutor:
         if story["status"] not in ("active", "backlog"):
             return {
                 "status": "error",
-                "reason": (
-                    f"Story status is '{story['status']}', "
-                    "expected 'active' or 'backlog'"
-                ),
+                "reason": (f"Story status is '{story['status']}', expected 'active' or 'backlog'"),
             }
 
         # Decompose via local LLM
@@ -159,9 +154,7 @@ class StoryExecutor:
         # Transition story to in_progress
         self._roadmap.update(story_id, status="in_progress")
 
-        logger.info(
-            f"Story {story_id} decomposed into {len(steps)} actions: {action_ids}"
-        )
+        logger.info(f"Story {story_id} decomposed into {len(steps)} actions: {action_ids}")
 
         return {
             "status": "decomposed",
@@ -225,14 +218,10 @@ class StoryExecutor:
                 try:
                     steps = json.loads(content[start : end + 1])
                 except json.JSONDecodeError:
-                    logger.warning(
-                        f"Could not parse decomposition output: {content[:200]}"
-                    )
+                    logger.warning(f"Could not parse decomposition output: {content[:200]}")
                     return []
             else:
-                logger.warning(
-                    f"No JSON array found in decomposition output: {content[:200]}"
-                )
+                logger.warning(f"No JSON array found in decomposition output: {content[:200]}")
                 return []
 
         if not isinstance(steps, list):
@@ -283,9 +272,7 @@ class StoryExecutor:
         total = len(actions)
         completed = sum(1 for a in actions if a["status"] == "completed")
         failed = sum(1 for a in actions if a["status"] == "failed")
-        pending = sum(
-            1 for a in actions if a["status"] in ("pending", "approved", "executing")
-        )
+        pending = sum(1 for a in actions if a["status"] in ("pending", "approved", "executing"))
 
         progress = int((completed / total) * 100) if total > 0 else 0
 
@@ -336,9 +323,7 @@ class StoryExecutor:
         if failed:
             titles = [a.get("title", a["id"]) for a in failed]
             self._roadmap.update(story_id, status="blocked")
-            logger.warning(
-                f"Story {story_id} blocked — failed actions: {', '.join(titles)}"
-            )
+            logger.warning(f"Story {story_id} blocked — failed actions: {', '.join(titles)}")
             return "blocked"
 
         return None
@@ -348,8 +333,7 @@ class StoryExecutor:
         return [
             a
             for a in self._queue.actions
-            if a.get("story_id") == story_id
-            or a.get("source_task") == f"story:{story_id}"
+            if a.get("story_id") == story_id or a.get("source_task") == f"story:{story_id}"
         ]
 
     @staticmethod

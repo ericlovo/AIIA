@@ -11,7 +11,7 @@ All queued actions land at SUPERVISED tier (human notified, not blocked).
 
 import logging
 from datetime import datetime, time
-from typing import Any, Dict, List
+from typing import Any
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from local_brain.config import AutonomyConfig
@@ -46,7 +46,7 @@ class ProactiveStoryExecutor:
     def enabled(self) -> bool:
         return self.config.level == "phase2" and self.config.proactive_story_execution
 
-    async def evaluate_pending_stories(self) -> Dict[str, Any]:
+    async def evaluate_pending_stories(self) -> dict[str, Any]:
         """
         Main entry point. Returns a summary of what was evaluated and queued.
         """
@@ -123,7 +123,7 @@ class ProactiveStoryExecutor:
         except Exception:
             return False  # Fail closed when the probe errors
 
-    def _get_eligible_stories(self) -> List[Dict[str, Any]]:
+    def _get_eligible_stories(self) -> list[dict[str, Any]]:
         """Get stories matching allowed priorities that aren't already in-progress."""
         if not self.roadmap_store:
             return []

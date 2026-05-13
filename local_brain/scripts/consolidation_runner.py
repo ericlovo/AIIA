@@ -45,8 +45,7 @@ def main():
             category = sys.argv[idx + 1]
 
     logger.info(
-        f"Consolidation starting — force={force}"
-        + (f", category={category}" if category else "")
+        f"Consolidation starting — force={force}" + (f", category={category}" if category else "")
     )
 
     # Load .env if running standalone
@@ -129,9 +128,7 @@ async def _run_consolidation(force: bool, category: str = None) -> dict:
 
     # Log pre-run state
     mem_stats = memory.stats()
-    logger.info(
-        f"Memory: {mem_stats['total_memories']} total, deep model: {deep_model}"
-    )
+    logger.info(f"Memory: {mem_stats['total_memories']} total, deep model: {deep_model}")
 
     # Run consolidation
     consolidator = MemoryConsolidator(
@@ -216,9 +213,7 @@ def _write_report(result: dict):
     for d in LOG_DIR.iterdir():
         if d.is_dir() and d.name.startswith("20") and len(d.name) == 10:
             try:
-                age = (
-                    datetime.now(timezone.utc) - datetime.strptime(d.name, "%Y-%m-%d")
-                ).days
+                age = (datetime.now(timezone.utc) - datetime.strptime(d.name, "%Y-%m-%d")).days
                 if age > 30:
                     shutil.rmtree(d)
                     logger.info(f"Cleaned old report: {d.name}")

@@ -14,7 +14,6 @@ import json
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Dict, List, Optional
 
 DATA_DIR = Path.home() / ".aiia" / "eq_data" / "pipeline"
 DEALS_FILE = DATA_DIR / "deals.json"
@@ -30,13 +29,13 @@ VALID_STAGES = (
 
 
 class PipelineStore:
-    def __init__(self, data_dir: Optional[str] = None):
+    def __init__(self, data_dir: str | None = None):
         self._dir = Path(data_dir) if data_dir else DATA_DIR
         self._file = self._dir / "deals.json"
         self._dir.mkdir(parents=True, exist_ok=True)
-        self._deals: List[Dict] = self._load()
+        self._deals: list[dict] = self._load()
 
-    def _load(self) -> List[Dict]:
+    def _load(self) -> list[dict]:
         if self._file.exists():
             try:
                 return json.loads(self._file.read_text())
@@ -47,13 +46,13 @@ class PipelineStore:
     def _save(self) -> None:
         self._file.write_text(json.dumps(self._deals, indent=2))
 
-    def list(self, stage: Optional[str] = None) -> List[Dict]:
+    def list(self, stage: str | None = None) -> list[dict]:
         results = self._deals
         if stage:
             results = [d for d in results if d.get("stage") == stage]
         return results
 
-    def get(self, deal_id: str) -> Optional[Dict]:
+    def get(self, deal_id: str) -> dict | None:
         for d in self._deals:
             if d["id"] == deal_id:
                 return d
@@ -67,7 +66,7 @@ class PipelineStore:
         value: float = 0,
         product: str = "",
         notes: str = "",
-    ) -> Dict:
+    ) -> dict:
         if stage not in VALID_STAGES:
             raise ValueError(f"Invalid stage: {stage}. Use {VALID_STAGES}")
 
@@ -86,7 +85,7 @@ class PipelineStore:
         self._save()
         return deal
 
-    def update(self, deal_id: str, **fields) -> Optional[Dict]:
+    def update(self, deal_id: str, **fields) -> dict | None:
         for d in self._deals:
             if d["id"] == deal_id:
                 if "stage" in fields and fields["stage"] not in VALID_STAGES:
@@ -107,7 +106,7 @@ class PipelineStore:
             return True
         return False
 
-    def summary(self) -> Dict:
+    def summary(self) -> dict:
         """Return funnel summary with counts and values per stage."""
         by_stage = {}
         for stage in VALID_STAGES:

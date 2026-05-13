@@ -137,9 +137,7 @@ class WorkstreamRegistry:
         self._save()
         return ws
 
-    def attach_session(
-        self, workstream_id: str, session_id: str, description: str = ""
-    ) -> bool:
+    def attach_session(self, workstream_id: str, session_id: str, description: str = "") -> bool:
         ws = self._workstreams.get(workstream_id)
         if not ws:
             return False
@@ -190,9 +188,7 @@ class WorkstreamRegistry:
 
     def list_active(self) -> list[dict]:
         active = [
-            w.to_dict()
-            for w in self._workstreams.values()
-            if w.status in ("active", "paused")
+            w.to_dict() for w in self._workstreams.values() if w.status in ("active", "paused")
         ]
         active.sort(key=lambda w: w["updated_at"], reverse=True)
         return active

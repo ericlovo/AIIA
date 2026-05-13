@@ -15,30 +15,30 @@ Public surface:
     A2AClient, A2AClientError, AgentSummary, TaskResult    — outbound client
 """
 
-from local_brain.a2a.schema import (
-    AgentCard,
-    AgentSkill,
-    AgentCapabilities,
-    AgentInterface,
-    Message,
-    Part,
-    Task,
-    TaskState,
-    TaskStatus,
-    Artifact,
-)
-from local_brain.a2a.registry import AgentRegistry
-from local_brain.a2a.executors.base import AgentExecutor
-from local_brain.a2a.executors.subprocess_executor import SubprocessExecutor
-from local_brain.a2a.executors.aiia_executor import AIIAExecutor
-from local_brain.a2a.executors.aiia_memory_executor import AIIAMemoryExecutor
-from local_brain.a2a.router import build_router
 from local_brain.a2a.bootstrap import register_default_agents
 from local_brain.a2a.client import (
     A2AClient,
     A2AClientError,
     AgentSummary,
     TaskResult,
+)
+from local_brain.a2a.executors.aiia_executor import AIIAExecutor
+from local_brain.a2a.executors.aiia_memory_executor import AIIAMemoryExecutor
+from local_brain.a2a.executors.base import AgentExecutor
+from local_brain.a2a.executors.subprocess_executor import SubprocessExecutor
+from local_brain.a2a.registry import AgentRegistry
+from local_brain.a2a.router import build_router
+from local_brain.a2a.schema import (
+    AgentCapabilities,
+    AgentCard,
+    AgentInterface,
+    AgentSkill,
+    Artifact,
+    Message,
+    Part,
+    Task,
+    TaskState,
+    TaskStatus,
 )
 
 __all__ = [

@@ -6,9 +6,9 @@ Each session reads it fresh, enabling pause/resume across sessions.
 """
 
 import json
-from dataclasses import dataclass, field, asdict
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 
 @dataclass
@@ -23,16 +23,16 @@ class ActionPlan:
     story: str = ""
     product: str = ""
     branch: str = ""
-    actions: List[Dict[str, Any]] = field(default_factory=list)
+    actions: list[dict[str, Any]] = field(default_factory=list)
 
     # Metadata
-    planner_session_id: Optional[str] = None
-    planner_cost: Optional[float] = None
-    total_cost: Optional[float] = 0.0
-    created_at: Optional[str] = None
-    updated_at: Optional[str] = None
+    planner_session_id: str | None = None
+    planner_cost: float | None = None
+    total_cost: float | None = 0.0
+    created_at: str | None = None
+    updated_at: str | None = None
 
-    def next_action(self) -> Optional[Dict[str, Any]]:
+    def next_action(self) -> dict[str, Any] | None:
         """Get the next incomplete action."""
         for action in self.actions:
             if not action.get("completed", False):

@@ -15,14 +15,11 @@ Can also be called programmatically for targeted folder updates:
 """
 
 import os
-import re
 import sys
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
 
 # --- Vault path resolution ---
-
 from local_brain.vault_paths import vault_dir as _vault_dir
 
 VAULT_DIR = _vault_dir()
@@ -34,7 +31,7 @@ SKIP_FOLDERS = {".obsidian", ".trash", "Templates", ".git", "processed"}
 INDEX_FILES = {"_Index.md", "_Master-Index.md", "_Wiki-Index.md", "_lint-report.md"}
 
 
-def _parse_frontmatter(path: Path) -> Dict[str, str]:
+def _parse_frontmatter(path: Path) -> dict[str, str]:
     """Parse YAML frontmatter from a markdown file. Simple key: value only."""
     try:
         text = path.read_text(encoding="utf-8")
@@ -99,7 +96,7 @@ def _first_paragraph(path: Path) -> str:
     return ""
 
 
-def scan_folder(folder: Path) -> List[Tuple[Path, Dict, str, str]]:
+def scan_folder(folder: Path) -> list[tuple[Path, dict, str, str]]:
     """Scan a vault folder for .md files. Returns [(path, frontmatter, heading, summary)]."""
     results = []
     if not folder.is_dir():
@@ -116,7 +113,7 @@ def scan_folder(folder: Path) -> List[Tuple[Path, Dict, str, str]]:
     return results
 
 
-def build_folder_index(folder_name: str, entries: List[Tuple[Path, Dict, str, str]]) -> str:
+def build_folder_index(folder_name: str, entries: list[tuple[Path, dict, str, str]]) -> str:
     """Build _Index.md content for a single vault folder."""
     today = datetime.utcnow().strftime("%Y-%m-%d")
 
@@ -169,7 +166,7 @@ def build_folder_index(folder_name: str, entries: List[Tuple[Path, Dict, str, st
     return "\n".join(lines)
 
 
-def build_master_index(folders: Dict[str, int]) -> str:
+def build_master_index(folders: dict[str, int]) -> str:
     """Build _Master-Index.md linking all folder indexes."""
     today = datetime.utcnow().strftime("%Y-%m-%d")
 
@@ -224,7 +221,7 @@ def update_folder_index(vault_dir: Path, folder_name: str, dry_run: bool = False
     return True
 
 
-def run_full_index(vault_dir: Path = None, dry_run: bool = False) -> Dict[str, int]:
+def run_full_index(vault_dir: Path = None, dry_run: bool = False) -> dict[str, int]:
     """Generate _Index.md for all folders and _Master-Index.md at root."""
     vault = vault_dir or VAULT_DIR
     print(f"MOC Generator — vault={vault} dry_run={dry_run}")

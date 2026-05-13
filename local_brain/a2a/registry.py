@@ -10,8 +10,8 @@ Rebuilt on every startup from bootstrap.register_default_agents().
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass
-from typing import Dict, Iterable, List, Optional
 
 from local_brain.a2a.executors.base import AgentExecutor
 from local_brain.a2a.schema import AgentCard
@@ -28,7 +28,7 @@ class AgentRegistry:
     """Tag-indexed in-memory registry of A2A agents on this host."""
 
     def __init__(self) -> None:
-        self._agents: Dict[str, RegisteredAgent] = {}
+        self._agents: dict[str, RegisteredAgent] = {}
 
     def register(
         self,
@@ -38,25 +38,23 @@ class AgentRegistry:
     ) -> None:
         if agent_id in self._agents:
             raise ValueError(f"agent_id already registered: {agent_id}")
-        self._agents[agent_id] = RegisteredAgent(
-            agent_id=agent_id, card=card, executor=executor
-        )
+        self._agents[agent_id] = RegisteredAgent(agent_id=agent_id, card=card, executor=executor)
 
     def unregister(self, agent_id: str) -> None:
         self._agents.pop(agent_id, None)
 
-    def get(self, agent_id: str) -> Optional[RegisteredAgent]:
+    def get(self, agent_id: str) -> RegisteredAgent | None:
         return self._agents.get(agent_id)
 
-    def all(self) -> List[RegisteredAgent]:
+    def all(self) -> list[RegisteredAgent]:
         return list(self._agents.values())
 
     def query(
         self,
         *,
-        tags: Optional[Iterable[str]] = None,
+        tags: Iterable[str] | None = None,
         require_all: bool = False,
-    ) -> List[RegisteredAgent]:
+    ) -> list[RegisteredAgent]:
         """
         Return agents whose skills carry the requested tags.
 
@@ -71,7 +69,7 @@ class AgentRegistry:
             return self.all()
 
         requested = set(tags)
-        matches: List[RegisteredAgent] = []
+        matches: list[RegisteredAgent] = []
         for agent in self._agents.values():
             agent_tags = set(agent.card.all_tags())
             if require_all:
