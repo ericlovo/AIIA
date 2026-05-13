@@ -1,0 +1,38 @@
+name: gitleaks
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    # Daily 13:00 UTC sweep — catches secrets that slipped past PR review
+    # via merge commits, force pushes to feature branches, or history
+    # rewrites. Daily (not weekly) because a leaked credential's blast
+    # radius compounds with every passing day.
+    - cron: "0 13 * * *"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  scan:
+    name: gitleaks scan
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Full history so gitleaks can scan past commits, not just the
+          # current tree. Critical for catching secrets in old commits
+          # that were force-pushed away or rebased over.
+          fetch-depth: 0
+
+      - name: Run gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          # gitleaks-action is free for public repos. If this repo is
+          # ever moved private, set GITLEAKS_LICENSE in repo secrets.
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
