@@ -26,7 +26,6 @@ from __future__ import annotations
 import json
 import urllib.error
 import urllib.request
-from typing import Optional
 
 import typer
 from rich.console import Console
@@ -64,7 +63,7 @@ def print_wordmark() -> None:
     console.print(WORDMARK)
 
 
-def _http_get(url: str, timeout: float = 5.0) -> Optional[dict]:
+def _http_get(url: str, timeout: float = 5.0) -> dict | None:
     """GET a JSON endpoint. Returns parsed dict or None on failure."""
     try:
         with urllib.request.urlopen(url, timeout=timeout) as resp:
@@ -91,9 +90,7 @@ def _service_unreachable(service: str, url: str) -> None:
 @app.callback(invoke_without_command=True)
 def root(
     ctx: typer.Context,
-    version: bool = typer.Option(
-        False, "--version", "-V", help="Show version and exit."
-    ),
+    version: bool = typer.Option(False, "--version", "-V", help="Show version and exit."),
 ) -> None:
     """⌬ AIIA — the memory layer your AI tools should have."""
     if version:
@@ -108,6 +105,25 @@ def root(
             "    [cyan]aiia status[/cyan]    Brain + Command Center health\n"
             "    [cyan]aiia --help[/cyan]    full command list\n"
         )
+
+
+@app.command()
+def doctor(
+    verbose: bool = typer.Option(
+        False, "--verbose", "-v", help="Show hints even for passing checks."
+    ),
+) -> None:
+    """Run environment + service health diagnostics.
+
+    Checks Python version, package install, Brain/CC/Ollama reachability,
+    default-model presence, vault directory, disk space, and optional
+    cloud API keys. Each failed check includes an actionable hint.
+    """
+    from local_brain.cli_doctor import run
+
+    rc = run(verbose=verbose)
+    if rc:
+        raise typer.Exit(rc)
 
 
 @app.command()
@@ -146,10 +162,10 @@ def briefing(
     """Fetch (or generate) AIIA's morning briefing from Command Center."""
     # Delegate to the existing briefing_cli script's main() so the surface
     # stays consistent with the `briefing` shell alias users already have.
-    from local_brain.scripts import briefing_cli
-
     # briefing_cli reads sys.argv directly; rebuild what it expects.
     import sys
+
+    from local_brain.scripts import briefing_cli
 
     saved_argv = sys.argv
     try:
@@ -201,7 +217,9 @@ def next_command(
     if pull:
         # Pull the top one with full body + memory hits + project context.
         top = stories[0]
-        console.print(f"\n[bold]Pulling story {top.get('id', '?')[:8]}:[/bold] {top.get('title', '?')}\n")
+        console.print(
+            f"\n[bold]Pulling story {top.get('id', '?')[:8]}:[/bold] {top.get('title', '?')}\n"
+        )
         body = top.get("body") or top.get("description") or "[dim](no body)[/dim]"
         console.print(body)
 
@@ -255,7 +273,9 @@ def memory_list(
         return
 
     for e in entries[:limit]:
-        console.print(f"[dim]{e.get('created_at', '?')}[/dim]  [{e.get('category', '?')}]  {e.get('text', '')}")
+        console.print(
+            f"[dim]{e.get('created_at', '?')}[/dim]  [{e.get('category', '?')}]  {e.get('text', '')}"
+        )
 
 
 @memory_app.command("search")
