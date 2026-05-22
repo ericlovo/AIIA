@@ -1,14 +1,17 @@
 @import "tailwindcss";
 
+/* Body + scrollbar use raw color() lookups against Tailwind's palette so the
+   design tokens (design/tokens.json) stay source-of-truth — change a color
+   here only by editing tokens.json, not by hardcoding new hex values. */
 body {
   margin: 0;
-  background: #0a0a0a;
-  color: #e5e5e5;
+  background: var(--color-neutral-950);
+  color: var(--color-neutral-200);
   font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', system-ui, sans-serif;
   -webkit-font-smoothing: antialiased;
 }
 
 ::-webkit-scrollbar { width: 6px; }
 ::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: #333; border-radius: 3px; }
-::-webkit-scrollbar-thumb:hover { background: #444; }
+::-webkit-scrollbar-thumb { background: var(--color-neutral-700); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--color-neutral-600); }

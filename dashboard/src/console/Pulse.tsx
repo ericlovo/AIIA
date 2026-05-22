@@ -27,7 +27,7 @@ const DOT_COLOR: Record<LoopState, string> = {
   healthy: 'bg-green-500',
   stale: 'bg-amber-500',
   failing: 'bg-red-500',
-  idle: 'bg-[#333]',
+  idle: 'bg-neutral-700',
 }
 
 function timeAgo(iso: string | null): string {
@@ -58,20 +58,20 @@ export function Pulse() {
   const hoveredTask = tasks.find(t => t.task_id === hovered)
 
   return (
-    <footer className="h-14 shrink-0 border-t border-[#181818] bg-[#0a0a0a] flex items-center px-6 gap-4 relative">
+    <footer className="h-14 shrink-0 border-t border-neutral-900 bg-neutral-950 flex items-center px-6 gap-4 relative">
       <div className="flex items-center gap-3 text-xs shrink-0">
-        <span className="text-[10px] tracking-[0.25em] text-[#666] font-semibold">PULSE</span>
+        <span className="text-[10px] tracking-[0.25em] text-neutral-500 font-semibold">PULSE</span>
         <div className="flex items-center gap-2">
           <span className="w-1.5 h-1.5 rounded-full bg-green-500" />
-          <span className="text-[11px] text-[#888]">{counts.healthy}</span>
+          <span className="text-[11px] text-neutral-500">{counts.healthy}</span>
         </div>
         <div className="flex items-center gap-2">
           <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
-          <span className="text-[11px] text-[#888]">{counts.stale}</span>
+          <span className="text-[11px] text-neutral-500">{counts.stale}</span>
         </div>
         <div className="flex items-center gap-2">
           <span className="w-1.5 h-1.5 rounded-full bg-red-500" />
-          <span className="text-[11px] text-[#888]">{counts.failing}</span>
+          <span className="text-[11px] text-neutral-500">{counts.failing}</span>
         </div>
       </div>
 
@@ -89,7 +89,7 @@ export function Pulse() {
               <span
                 className={`w-2.5 h-2.5 rounded-full ${DOT_COLOR[state]} ${state === 'healthy' ? '' : state === 'failing' ? 'animate-pulse' : ''} ring-1 ring-black/40 transition-transform group-hover:scale-125`}
               />
-              <span className="text-[9px] text-[#444] group-hover:text-[#888] tracking-tight max-w-[80px] truncate">
+              <span className="text-[9px] text-neutral-700 group-hover:text-neutral-500 tracking-tight max-w-[80px] truncate">
                 {t.task_id.replace(/_/g, ' ')}
               </span>
             </button>
@@ -99,14 +99,14 @@ export function Pulse() {
 
       {/* Hover tooltip */}
       {hoveredTask && (
-        <div className="absolute bottom-16 left-1/2 -translate-x-1/2 bg-[#111] border border-[#2a2a2a] rounded-lg px-4 py-3 text-xs shadow-2xl z-20 max-w-[480px]">
+        <div className="absolute bottom-16 left-1/2 -translate-x-1/2 bg-neutral-900 border border-neutral-800 rounded-lg px-4 py-3 text-xs shadow-2xl z-20 max-w-[480px]">
           <div className="flex items-baseline gap-3 mb-1">
             <span className={`w-1.5 h-1.5 rounded-full ${DOT_COLOR[loopState(hoveredTask)]}`} />
-            <span className="text-[#ddd] font-medium">{hoveredTask.name}</span>
-            <span className="text-[10px] text-[#555]">{timeAgo(hoveredTask.last_run)}</span>
+            <span className="text-neutral-300 font-medium">{hoveredTask.name}</span>
+            <span className="text-[10px] text-neutral-600">{timeAgo(hoveredTask.last_run)}</span>
           </div>
-          <p className="text-[11px] text-[#888] mb-1">{hoveredTask.description}</p>
-          <p className="text-[11px] text-[#666]">
+          <p className="text-[11px] text-neutral-500 mb-1">{hoveredTask.description}</p>
+          <p className="text-[11px] text-neutral-500">
             {hoveredTask.run_count} runs · {hoveredTask.fail_count} fails
           </p>
         </div>

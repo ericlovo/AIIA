@@ -158,10 +158,10 @@ export function RightNow({ user }: { user: TeamUser }) {
   }, [tasks])
 
   return (
-    <section className="bg-[#0a0a0a] flex flex-col min-h-0">
-      <div className="px-6 pt-5 pb-3 shrink-0 border-b border-[#141414]">
-        <h2 className="text-[11px] font-semibold tracking-[0.25em] text-[#888] uppercase">Right Now</h2>
-        <p className="text-[11px] text-[#555]">What I'm doing, what I need, what I shipped</p>
+    <section className="bg-neutral-950 flex flex-col min-h-0">
+      <div className="px-6 pt-5 pb-3 shrink-0 border-b border-neutral-900">
+        <h2 className="text-[11px] font-semibold tracking-[0.25em] text-neutral-500 uppercase">Right Now</h2>
+        <p className="text-[11px] text-neutral-600">What I'm doing, what I need, what I shipped</p>
       </div>
 
       <div className="flex-1 min-h-0 overflow-y-auto px-6 py-4 space-y-5">
@@ -266,10 +266,10 @@ function LiveSection({
     <div>
       <div className="flex items-baseline gap-2 mb-2">
         <h3 className={`text-xs font-medium ${accentClass}`}>{title}</h3>
-        <span className="text-[10px] text-[#555]">{count}</span>
+        <span className="text-[10px] text-neutral-600">{count}</span>
       </div>
       {count === 0 ? (
-        <p className="text-xs text-[#444] italic">{emptyText}</p>
+        <p className="text-xs text-neutral-700 italic">{emptyText}</p>
       ) : (
         <div className="space-y-1.5">{children}</div>
       )}
@@ -292,8 +292,8 @@ function LiveCard({
 }) {
   const accentBg = {
     purple: 'bg-purple-500/10 border-purple-500/20 hover:border-purple-500/40',
-    green: 'bg-green-500/5 border-[#1e1e1e] hover:border-green-500/30',
-    blue: 'bg-blue-500/5 border-[#1e1e1e] hover:border-blue-500/30',
+    green: 'bg-green-500/5 border-neutral-800 hover:border-green-500/30',
+    blue: 'bg-blue-500/5 border-neutral-800 hover:border-blue-500/30',
     amber: 'bg-amber-500/10 border-amber-500/20 hover:border-amber-500/40',
   }[accent]
   const iconColor = {
@@ -308,8 +308,8 @@ function LiveCard({
         {icon}
       </span>
       <div className="min-w-0 flex-1">
-        <div className="text-sm text-[#ddd] truncate">{title}</div>
-        <div className="text-[11px] text-[#555] truncate mt-0.5">{subtitle}</div>
+        <div className="text-sm text-neutral-300 truncate">{title}</div>
+        <div className="text-[11px] text-neutral-600 truncate mt-0.5">{subtitle}</div>
       </div>
     </div>
   )
@@ -326,7 +326,7 @@ function AuthorBadge({ name }: { name: string }) {
     paul: 'bg-emerald-500/20 border-emerald-500/50 text-emerald-300',
     tony: 'bg-amber-500/20 border-amber-500/50 text-amber-300',
   }
-  const color = colors[name.toLowerCase()] ?? 'bg-[#222] border-[#333] text-[#aaa]'
+  const color = colors[name.toLowerCase()] ?? 'bg-neutral-800 border-neutral-700 text-neutral-400'
   return (
     <div className={`w-5 h-5 rounded-full border flex items-center justify-center text-[10px] font-medium shrink-0 ${color}`} title={name}>
       {initial}
@@ -350,10 +350,10 @@ function TeamInboxSection({ stories, me }: { stories: Story[]; me: string }) {
     <div>
       <div className="flex items-baseline gap-2 mb-2">
         <h3 className="text-xs font-medium text-cyan-400">From the team</h3>
-        <span className="text-[10px] text-[#555]">{stories.length}</span>
+        <span className="text-[10px] text-neutral-600">{stories.length}</span>
       </div>
       {stories.length === 0 ? (
-        <p className="text-xs text-[#444] italic">No new requests from the team.</p>
+        <p className="text-xs text-neutral-700 italic">No new requests from the team.</p>
       ) : (
         <div className="space-y-1.5">
           {stories.map(s => {
@@ -365,8 +365,8 @@ function TeamInboxSection({ stories, me }: { stories: Story[]; me: string }) {
               >
                 <AuthorBadge name={author} />
                 <div className="min-w-0 flex-1">
-                  <div className="text-sm text-[#ddd]">{s.title}</div>
-                  <div className="text-[11px] text-[#666] mt-0.5">
+                  <div className="text-sm text-neutral-300">{s.title}</div>
+                  <div className="text-[11px] text-neutral-500 mt-0.5">
                     {author} · {s.priority} · {s.product || 'unassigned'} · {timeAgo(s.created_at)}
                   </div>
                 </div>
@@ -396,13 +396,13 @@ function MyWorkSection({ stories }: { stories: Story[] }) {
     <div>
       <div className="flex items-baseline gap-2 mb-2">
         <h3 className="text-xs font-medium text-purple-400">My work</h3>
-        <span className="text-[10px] text-[#555]">{stories.length}</span>
+        <span className="text-[10px] text-neutral-600">{stories.length}</span>
       </div>
       <div className="space-y-1.5">
         {stories.map(s => {
           const author = parseAuthor(s)
           const owner = parseOwner(s)
-          const statusColor = s.status === 'active' ? 'text-blue-400' : s.status === 'in_progress' ? 'text-purple-400' : s.status === 'blocked' ? 'text-red-400' : 'text-[#888]'
+          const statusColor = s.status === 'active' ? 'text-blue-400' : s.status === 'in_progress' ? 'text-purple-400' : s.status === 'blocked' ? 'text-red-400' : 'text-neutral-500'
           return (
             <div
               key={s.id}
@@ -410,8 +410,8 @@ function MyWorkSection({ stories }: { stories: Story[] }) {
             >
               {author && <AuthorBadge name={author} />}
               <div className="min-w-0 flex-1">
-                <div className="text-sm text-[#ddd]">{s.title}</div>
-                <div className="text-[11px] text-[#666] mt-0.5 flex items-center gap-2">
+                <div className="text-sm text-neutral-300">{s.title}</div>
+                <div className="text-[11px] text-neutral-500 mt-0.5 flex items-center gap-2">
                   <span className={statusColor}>{s.status.replace('_', ' ')}</span>
                   <span>·</span>
                   <span>{s.priority}</span>
@@ -435,11 +435,11 @@ function WatchingSection({ tasks }: { tasks: TaskInfo[] }) {
   return (
     <div>
       <div className="flex items-baseline gap-2 mb-2">
-        <h3 className="text-xs font-medium text-[#888]">Watching</h3>
-        <span className="text-[10px] text-[#555]">{tasks.length}</span>
+        <h3 className="text-xs font-medium text-neutral-500">Watching</h3>
+        <span className="text-[10px] text-neutral-600">{tasks.length}</span>
       </div>
       {tasks.length === 0 ? (
-        <p className="text-xs text-[#444] italic">Loops starting up…</p>
+        <p className="text-xs text-neutral-700 italic">Loops starting up…</p>
       ) : (
         <div className="space-y-1.5">
           {tasks.map(t => {
@@ -449,15 +449,15 @@ function WatchingSection({ tasks }: { tasks: TaskInfo[] }) {
             return (
               <div
                 key={t.task_id}
-                className="flex items-start gap-3 p-3 rounded-lg bg-[#0f0f0f] border border-[#161616] hover:border-[#222] transition-colors"
+                className="flex items-start gap-3 p-3 rounded-lg bg-neutral-900 border border-neutral-900 hover:border-neutral-800 transition-colors"
               >
-                <span className={`w-1.5 h-1.5 mt-1.5 rounded-full shrink-0 ${failed ? 'bg-red-500' : 'bg-[#3a3a3a]'}`} />
+                <span className={`w-1.5 h-1.5 mt-1.5 rounded-full shrink-0 ${failed ? 'bg-red-500' : 'bg-neutral-700'}`} />
                 <div className="min-w-0 flex-1">
                   <div className="flex items-baseline gap-2">
-                    <span className="text-xs text-[#aaa]">{humanName}</span>
-                    <span className="text-[10px] text-[#444]">{timeAgo(t.last_run)}</span>
+                    <span className="text-xs text-neutral-400">{humanName}</span>
+                    <span className="text-[10px] text-neutral-700">{timeAgo(t.last_run)}</span>
                   </div>
-                  <div className="text-[11px] text-[#666] mt-0.5 truncate">{result}</div>
+                  <div className="text-[11px] text-neutral-500 mt-0.5 truncate">{result}</div>
                 </div>
               </div>
             )
@@ -486,10 +486,10 @@ function PendingSection({ actions }: { actions: Action[] }) {
     <div>
       <div className="flex items-baseline gap-2 mb-2">
         <h3 className="text-xs font-medium text-amber-400">Needs your call</h3>
-        <span className="text-[10px] text-[#555]">{actions.length}</span>
+        <span className="text-[10px] text-neutral-600">{actions.length}</span>
       </div>
       {actions.length === 0 ? (
-        <p className="text-xs text-[#444] italic">All clear. Nothing waiting on you.</p>
+        <p className="text-xs text-neutral-700 italic">All clear. Nothing waiting on you.</p>
       ) : (
         <div className="space-y-1.5">
           {actions.map(a => (
@@ -500,8 +500,8 @@ function PendingSection({ actions }: { actions: Action[] }) {
               <div className="flex items-start gap-3">
                 <span className="text-amber-400 text-sm mt-0.5 shrink-0">!</span>
                 <div className="min-w-0 flex-1">
-                  <div className="text-sm text-[#ddd]">{a.title}</div>
-                  <div className="text-[11px] text-[#555] mt-0.5">
+                  <div className="text-sm text-neutral-300">{a.title}</div>
+                  <div className="text-[11px] text-neutral-600 mt-0.5">
                     {a.severity} · {a.source_task} · {timeAgo(a.created_at)}
                   </div>
                 </div>
@@ -514,7 +514,7 @@ function PendingSection({ actions }: { actions: Action[] }) {
                   </button>
                   <button
                     onClick={() => reject.mutate(a.id)}
-                    className="text-[10px] px-2 py-1 rounded text-[#777] hover:text-red-400 cursor-pointer"
+                    className="text-[10px] px-2 py-1 rounded text-neutral-500 hover:text-red-400 cursor-pointer"
                   >
                     Reject
                   </button>

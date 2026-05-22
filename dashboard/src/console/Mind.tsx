@@ -11,7 +11,7 @@ const CATEGORY_COLORS: Record<string, string> = {
   meta: 'text-pink-400 bg-pink-500/10',
   team: 'text-cyan-400 bg-cyan-500/10',
   agents: 'text-indigo-400 bg-indigo-500/10',
-  sessions: 'text-[#888] bg-[#222]',
+  sessions: 'text-neutral-500 bg-neutral-800',
 }
 
 function timeAgo(iso: string): string {
@@ -44,11 +44,11 @@ export function Mind() {
     data?.memories ?? []
 
   return (
-    <aside className="bg-[#0a0a0a] flex flex-col min-h-0">
+    <aside className="bg-neutral-950 flex flex-col min-h-0">
       {/* Header */}
       <div className="px-5 pt-5 pb-3 shrink-0">
         <div className="flex items-baseline justify-between mb-1">
-          <h2 className="text-[11px] font-semibold tracking-[0.25em] text-[#888] uppercase">Mind</h2>
+          <h2 className="text-[11px] font-semibold tracking-[0.25em] text-neutral-500 uppercase">Mind</h2>
           <button
             onClick={() => setTeaching(true)}
             className="text-[10px] text-purple-400 hover:text-purple-300 cursor-pointer"
@@ -56,7 +56,7 @@ export function Mind() {
             + teach
           </button>
         </div>
-        <p className="text-[11px] text-[#555]">Memory, knowledge, what I've learned</p>
+        <p className="text-[11px] text-neutral-600">Memory, knowledge, what I've learned</p>
       </div>
 
       {/* Search */}
@@ -65,12 +65,12 @@ export function Mind() {
           value={query}
           onChange={e => setQuery(e.target.value)}
           placeholder="Search memory..."
-          className="w-full bg-[#141414] border border-[#1e1e1e] rounded-lg px-3 py-2 text-xs text-[#ddd] outline-none focus:border-purple-500/40 placeholder:text-[#444]"
+          className="w-full bg-neutral-900 border border-neutral-800 rounded-lg px-3 py-2 text-xs text-neutral-300 outline-none focus:border-purple-500/40 placeholder:text-neutral-700"
         />
         <div className="flex gap-1 mt-2 flex-wrap">
           <button
             onClick={() => setCategoryFilter('')}
-            className={`text-[10px] px-2 py-0.5 rounded-full ${!categoryFilter ? 'bg-purple-500/20 text-purple-300' : 'text-[#555] hover:text-[#888]'}`}
+            className={`text-[10px] px-2 py-0.5 rounded-full ${!categoryFilter ? 'bg-purple-500/20 text-purple-300' : 'text-neutral-600 hover:text-neutral-500'}`}
           >
             all
           </button>
@@ -78,7 +78,7 @@ export function Mind() {
             <button
               key={c}
               onClick={() => setCategoryFilter(categoryFilter === c ? '' : c)}
-              className={`text-[10px] px-2 py-0.5 rounded-full ${categoryFilter === c ? CATEGORY_COLORS[c] : 'text-[#555] hover:text-[#888]'}`}
+              className={`text-[10px] px-2 py-0.5 rounded-full ${categoryFilter === c ? CATEGORY_COLORS[c] : 'text-neutral-600 hover:text-neutral-500'}`}
             >
               {c}
             </button>
@@ -90,7 +90,7 @@ export function Mind() {
       <div className="flex-1 min-h-0 overflow-y-auto px-5 pb-5">
         {memories.length === 0 && !isFetching && (
           <div className="mt-8 text-center">
-            <div className="text-xs text-[#555] italic mb-3">
+            <div className="text-xs text-neutral-600 italic mb-3">
               {query
                 ? 'Nothing matches your search.'
                 : categoryFilter
@@ -125,16 +125,16 @@ function MemoryCard({ memory }: { memory: { id: string; fact: string; category: 
   const show = !isLong || expanded ? memory.fact : memory.fact.slice(0, 140) + '…'
   return (
     <div
-      className="bg-[#111] border border-[#1a1a1a] rounded-lg p-3 hover:border-[#252525] transition-colors cursor-pointer"
+      className="bg-neutral-900 border border-neutral-900 rounded-lg p-3 hover:border-neutral-800 transition-colors cursor-pointer"
       onClick={() => isLong && setExpanded(!expanded)}
     >
       <div className="flex items-center gap-2 mb-1.5">
-        <span className={`text-[9px] px-1.5 py-0.5 rounded uppercase tracking-wider ${CATEGORY_COLORS[memory.category] ?? 'text-[#666] bg-[#1a1a1a]'}`}>
+        <span className={`text-[9px] px-1.5 py-0.5 rounded uppercase tracking-wider ${CATEGORY_COLORS[memory.category] ?? 'text-neutral-500 bg-neutral-900'}`}>
           {memory.category}
         </span>
-        <span className="text-[10px] text-[#444]">{timeAgo(memory.created_at)}</span>
+        <span className="text-[10px] text-neutral-700">{timeAgo(memory.created_at)}</span>
       </div>
-      <p className="text-[12px] text-[#bbb] leading-relaxed whitespace-pre-wrap">{show}</p>
+      <p className="text-[12px] text-neutral-400 leading-relaxed whitespace-pre-wrap">{show}</p>
     </div>
   )
 }
@@ -165,7 +165,7 @@ function TeachModal({ onClose }: { onClose: () => void }) {
       onClick={onClose}
     >
       <div
-        className="bg-[#111] border border-[#222] rounded-xl p-5 w-[420px] shadow-2xl"
+        className="bg-neutral-900 border border-neutral-800 rounded-xl p-5 w-[420px] shadow-2xl"
         onClick={e => e.stopPropagation()}
       >
         <div className="text-[10px] text-purple-400 tracking-[0.3em] font-semibold mb-2">TEACH AIIA</div>
@@ -173,7 +173,7 @@ function TeachModal({ onClose }: { onClose: () => void }) {
         <select
           value={category}
           onChange={e => setCategory(e.target.value)}
-          className="text-xs bg-[#1a1a1a] border border-[#2a2a2a] text-[#ccc] rounded-md px-2 py-1.5 mb-3 w-full cursor-pointer outline-none"
+          className="text-xs bg-neutral-900 border border-neutral-800 text-neutral-300 rounded-md px-2 py-1.5 mb-3 w-full cursor-pointer outline-none"
         >
           {CATEGORIES.map(c => (
             <option key={c} value={c}>{c}</option>
@@ -185,7 +185,7 @@ function TeachModal({ onClose }: { onClose: () => void }) {
           autoFocus
           placeholder="A fact, decision, pattern, or lesson..."
           rows={4}
-          className="w-full bg-[#141414] border border-[#1e1e1e] rounded-lg px-3 py-2 text-sm text-[#ddd] outline-none focus:border-purple-500/40 placeholder:text-[#444] resize-none mb-3"
+          className="w-full bg-neutral-900 border border-neutral-800 rounded-lg px-3 py-2 text-sm text-neutral-300 outline-none focus:border-purple-500/40 placeholder:text-neutral-700 resize-none mb-3"
         />
         <div className="flex gap-2">
           <button
@@ -197,7 +197,7 @@ function TeachModal({ onClose }: { onClose: () => void }) {
           </button>
           <button
             onClick={onClose}
-            className="px-4 py-2 rounded-lg text-sm text-[#888] hover:text-white cursor-pointer"
+            className="px-4 py-2 rounded-lg text-sm text-neutral-500 hover:text-white cursor-pointer"
           >
             Cancel
           </button>
