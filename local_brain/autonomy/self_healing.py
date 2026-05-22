@@ -16,7 +16,7 @@ Typically runs every 5 minutes via a scheduler.
 """
 
 import logging
-from typing import Any, Dict, Optional
+from typing import Any
 
 from local_brain.config import AutonomyConfig
 
@@ -70,20 +70,20 @@ class SelfHealingMonitor:
         self,
         config: AutonomyConfig,
         action_queue: Any,
-        memory: Optional[Any] = None,
+        memory: Any | None = None,
         notify_fn: Any = None,
     ):
         self.config = config
         self.action_queue = action_queue
         self.memory = memory
         self._notify = notify_fn
-        self._consecutive_failures: Dict[str, int] = {}
+        self._consecutive_failures: dict[str, int] = {}
 
     @property
     def enabled(self) -> bool:
         return self.config.level == "phase2" and self.config.self_healing_enabled
 
-    async def check_and_heal(self) -> Dict[str, Any]:
+    async def check_and_heal(self) -> dict[str, Any]:
         """Check every configured service and take action on unhealthy ones."""
         if not self.enabled:
             return {"skipped": True, "reason": "self_healing_disabled"}
@@ -118,7 +118,7 @@ class SelfHealingMonitor:
 
         return results
 
-    async def _check_service(self, service: Dict[str, str]) -> Dict[str, Any]:
+    async def _check_service(self, service: dict[str, str]) -> dict[str, Any]:
         """Check a single service's health endpoint."""
         try:
             import httpx
@@ -140,8 +140,8 @@ class SelfHealingMonitor:
 
     async def _handle_unhealthy(
         self,
-        service: Dict[str, str],
-        status: Dict[str, Any],
+        service: dict[str, str],
+        status: dict[str, Any],
     ) -> int:
         """Handle an unhealthy service — create action queue entries."""
         service_name = service["name"]

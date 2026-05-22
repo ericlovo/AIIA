@@ -29,16 +29,17 @@ import json
 import logging
 import re
 import time
-from typing import Any, AsyncGenerator, Dict, List, Optional, Tuple
+from collections.abc import AsyncGenerator
+from typing import Any
 
 from local_brain.eq_brain.knowledge_store import KnowledgeStore
 from local_brain.eq_brain.memory import Memory
-from local_brain.eq_brain.vault_writer import VaultWriter
 from local_brain.eq_brain.recursive_engine import (
     RecursiveConfig,
     RecursiveEngine,
 )
 from local_brain.eq_brain.repl_env import REPLEnvironment
+from local_brain.eq_brain.vault_writer import VaultWriter
 
 logger = logging.getLogger("aiia.eq_brain")
 
@@ -115,8 +116,8 @@ class AIIA:
         memory: Memory,
         ollama_client: Any,  # OllamaClient from local_brain
         model: str = "llama3.1:8b-instruct-q8_0",
-        deep_model: Optional[str] = None,
-        vault_writer: Optional[VaultWriter] = None,
+        deep_model: str | None = None,
+        vault_writer: VaultWriter | None = None,
     ):
         self._knowledge = knowledge_store
         self._memory = memory
@@ -126,11 +127,11 @@ class AIIA:
         self._vault_writer = vault_writer  # Real-time Obsidian vault sync
 
         # Prompt cache — identity + memory export rebuilt only when memory changes
-        self._cached_base_prompt: Optional[str] = None
+        self._cached_base_prompt: str | None = None
         self._cached_memory_version: int = 0
 
         # Knowledge search cache — 60s TTL, keyed by (question, n_results)
-        self._knowledge_cache: Dict[str, Any] = {}  # key → (timestamp, results)
+        self._knowledge_cache: dict[str, Any] = {}  # key → (timestamp, results)
         self._knowledge_cache_ttl: float = 60.0
 
         # Ask-and-learn: debounce extraction to avoid rapid-fire queries
@@ -141,7 +142,7 @@ class AIIA:
         self._background_tasks: set[asyncio.Task] = set()
 
     @staticmethod
-    def _parse_deepseek_output(raw: str) -> Tuple[str, str]:
+    def _parse_deepseek_output(raw: str) -> tuple[str, str]:
         """Parse DeepSeek R1 output, separating <think> reasoning from answer.
 
         Returns:
@@ -161,10 +162,7 @@ class AIIA:
         This saves ~200ms+ per request by avoiding repeated JSON reads.
         """
         mem_version = self._memory.version
-        if (
-            self._cached_base_prompt is None
-            or self._cached_memory_version != mem_version
-        ):
+        if self._cached_base_prompt is None or self._cached_memory_version != mem_version:
             memory_export = self._memory.export_for_context(max_tokens=2000)
             parts = [AIIA_IDENTITY]
             if memory_export:
@@ -179,10 +177,10 @@ class AIIA:
 
     def _build_system_prompt(
         self,
-        knowledge_results: List[Dict],
-        memory_results: List[Dict],
-        session_results: List[Dict],
-        context: Optional[str] = None,
+        knowledge_results: list[dict],
+        memory_results: list[dict],
+        session_results: list[dict],
+        context: str | None = None,
     ) -> str:
         """Build the full system prompt from cached base + per-query search results."""
         context_parts = [self._get_base_prompt()]
@@ -193,9 +191,7 @@ class AIIA:
                 source = doc.get("source", "unknown")
                 relevance = doc.get("relevance", 0)
                 content = doc["content"][:3000]
-                context_parts.append(
-                    f"\n### Source: {source} (relevance: {relevance})\n{content}"
-                )
+                context_parts.append(f"\n### Source: {source} (relevance: {relevance})\n{content}")
 
         if memory_results:
             context_parts.append("\n## Relevant Memories")
@@ -217,12 +213,12 @@ class AIIA:
 
     def _build_sources(
         self,
-        knowledge_results: List[Dict],
-        memory_results: List[Dict],
-        session_results: List[Dict],
-    ) -> List[Dict[str, Any]]:
+        knowledge_results: list[dict],
+        memory_results: list[dict],
+        session_results: list[dict],
+    ) -> list[dict[str, Any]]:
         """Build the source list from search results."""
-        sources: List[Dict[str, Any]] = []
+        sources: list[dict[str, Any]] = []
         for doc in knowledge_results:
             sources.append(
                 {
@@ -386,12 +382,12 @@ class AIIA:
     async def ask(
         self,
         question: str,
-        context: Optional[str] = None,
+        context: str | None = None,
         include_sessions: bool = True,
         n_results: int = 5,
         num_ctx: int = 32768,
         depth: str = "fast",
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Ask the brain a question. It searches knowledge + memory,
         builds context, and reasons with the local LLM.
@@ -493,9 +489,7 @@ class AIIA:
 
         # File substantive answers to Obsidian vault wiki
         if self._vault_writer and len(answer) > 800:
-            task = asyncio.create_task(
-                self._vault_writer.file_query(question, answer, sources)
-            )
+            task = asyncio.create_task(self._vault_writer.file_query(question, answer, sources))
             self._background_tasks.add(task)
             task.add_done_callback(self._background_tasks.discard)
 
@@ -504,13 +498,13 @@ class AIIA:
     async def ask_stream(
         self,
         question: str,
-        context: Optional[str] = None,
+        context: str | None = None,
         include_sessions: bool = True,
         n_results: int = 5,
         max_tokens: int = 4096,
         num_ctx: int = 32768,
         depth: str = "fast",
-    ) -> AsyncGenerator[Dict[str, Any], None]:
+    ) -> AsyncGenerator[dict[str, Any], None]:
         """
         Streaming version of ask(). Yields SSE-style events:
           - {"type": "meta", ...}   — sources and hit counts (before LLM starts)
@@ -558,7 +552,7 @@ class AIIA:
         }
 
         # Stream LLM tokens
-        full_answer: List[str] = []
+        full_answer: list[str] = []
         async for chunk in self._ollama.chat_stream(
             model=model,
             messages=[{"role": "user", "content": question}],
@@ -591,11 +585,11 @@ class AIIA:
 
     async def _build_recursive_env(
         self,
-        context: Optional[str],
-        knowledge_results: List[Dict],
-        memory_results: List[Dict],
-        session_results: List[Dict],
-        recursive_config: Optional[RecursiveConfig] = None,
+        context: str | None,
+        knowledge_results: list[dict],
+        memory_results: list[dict],
+        session_results: list[dict],
+        recursive_config: RecursiveConfig | None = None,
     ) -> tuple:
         """Build a REPLEnvironment loaded with gathered context as variables."""
         config = recursive_config or RecursiveConfig()
@@ -619,16 +613,14 @@ class AIIA:
         # Concatenate memory results as $memory
         if memory_results:
             memory_text = "\n".join(
-                f"[{m.get('category', 'general')}] {m.get('fact', '')}"
-                for m in memory_results
+                f"[{m.get('category', 'general')}] {m.get('fact', '')}" for m in memory_results
             )
             env.load("memory", memory_text, var_type="memory")
 
         # Concatenate session results as $sessions
         if session_results:
             session_text = "\n\n".join(
-                sess.get("summary", sess.get("content", ""))[:1000]
-                for sess in session_results
+                sess.get("summary", sess.get("content", ""))[:1000] for sess in session_results
             )
             env.load("sessions", session_text, var_type="sessions")
 
@@ -644,7 +636,7 @@ class AIIA:
     async def _recursive_llm_callback(self, **kwargs) -> str:
         """LLM callback for REPL sub-actions (chunk_summarize, sub_ask)."""
         messages = kwargs.get("messages", [])
-        system = kwargs.get("system", None)
+        system = kwargs.get("system")
         temperature = kwargs.get("temperature", 0.2)
         max_tokens = kwargs.get("max_tokens", 1024)
 
@@ -661,10 +653,10 @@ class AIIA:
     async def _ask_recursive(
         self,
         question: str,
-        context: Optional[str] = None,
+        context: str | None = None,
         include_sessions: bool = True,
         n_results: int = 5,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Non-streaming recursive inference. Collects all events, returns final dict."""
         start = time.monotonic()
 
@@ -678,9 +670,7 @@ class AIIA:
             context, knowledge_results, memory_results, session_results
         )
 
-        sources = self._build_sources(
-            knowledge_results, memory_results, session_results
-        )
+        sources = self._build_sources(knowledge_results, memory_results, session_results)
 
         system_context = self._get_base_prompt()
         final_answer = None
@@ -719,10 +709,10 @@ class AIIA:
     async def ask_recursive_stream(
         self,
         question: str,
-        context: Optional[str] = None,
+        context: str | None = None,
         include_sessions: bool = True,
         n_results: int = 5,
-    ) -> AsyncGenerator[Dict[str, Any], None]:
+    ) -> AsyncGenerator[dict[str, Any], None]:
         """
         Streaming recursive inference. Yields SSE events:
           - meta: sources + variable handles
@@ -737,9 +727,7 @@ class AIIA:
             session_results,
         ) = await self._gather_context(question, include_sessions, n_results)
 
-        sources = self._build_sources(
-            knowledge_results, memory_results, session_results
-        )
+        sources = self._build_sources(knowledge_results, memory_results, session_results)
 
         env, engine = await self._build_recursive_env(
             context, knowledge_results, memory_results, session_results
@@ -765,8 +753,8 @@ class AIIA:
         fact: str,
         category: str = "lessons",
         source: str = "session",
-        metadata: Optional[Dict[str, Any]] = None,
-    ) -> Dict[str, Any]:
+        metadata: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
         """
         Teach the brain something new. Stores in structured memory
         AND indexes in the knowledge store for semantic search.
@@ -789,9 +777,7 @@ class AIIA:
 
         # Sync to Obsidian vault (fire-and-forget via queue)
         if self._vault_writer and entry:
-            task = asyncio.create_task(
-                self._vault_writer.write_memory(entry, category)
-            )
+            task = asyncio.create_task(self._vault_writer.write_memory(entry, category))
             self._background_tasks.add(task)
             task.add_done_callback(self._background_tasks.discard)
 
@@ -801,9 +787,9 @@ class AIIA:
         self,
         session_id: str,
         summary: str,
-        key_decisions: Optional[List[str]] = None,
-        lessons_learned: Optional[List[str]] = None,
-    ) -> Dict[str, Any]:
+        key_decisions: list[str] | None = None,
+        lessons_learned: list[str] | None = None,
+    ) -> dict[str, Any]:
         """
         Called at the end of a session. Stores the summary and
         extracts learnable facts into structured memory.
@@ -854,7 +840,7 @@ class AIIA:
             "lessons_stored": len(stored_lessons),
         }
 
-    async def status(self) -> Dict[str, Any]:
+    async def status(self) -> dict[str, Any]:
         """Full status of AIIA."""
         knowledge_stats = await self._knowledge.stats()
         return {

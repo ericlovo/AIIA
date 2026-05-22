@@ -24,10 +24,8 @@ import urllib.request
 from collections import defaultdict
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Dict, List, Optional, Set, Tuple
 
 # --- Vault path resolution ---
-
 from local_brain.vault_paths import vault_dir as _vault_dir
 
 VAULT_DIR = _vault_dir()
@@ -39,7 +37,7 @@ INDEX_FILES = {"_Index.md", "_Master-Index.md", "_Wiki-Index.md", "_lint-report.
 STALE_DAYS = 30
 
 
-def _parse_frontmatter(path: Path) -> Dict[str, str]:
+def _parse_frontmatter(path: Path) -> dict[str, str]:
     try:
         text = path.read_text(encoding="utf-8")
     except Exception:
@@ -57,7 +55,7 @@ def _parse_frontmatter(path: Path) -> Dict[str, str]:
     return fm
 
 
-def _all_vault_files(vault: Path) -> List[Path]:
+def _all_vault_files(vault: Path) -> list[Path]:
     """Get all .md files in the vault (excluding skip folders and index files)."""
     files = []
     for item in vault.iterdir():
@@ -72,12 +70,12 @@ def _all_vault_files(vault: Path) -> List[Path]:
     return files
 
 
-def _extract_wikilinks(text: str) -> Set[str]:
+def _extract_wikilinks(text: str) -> set[str]:
     """Extract all [[link]] and [[link|alias]] targets from text."""
     return set(re.findall(r"\[\[([^\]|]+?)(?:\|[^\]]+)?\]\]", text))
 
 
-def _word_set(text: str) -> Set[str]:
+def _word_set(text: str) -> set[str]:
     """Tokenize text into a set of lowercase words."""
     return set(re.findall(r"[a-z]{3,}", text.lower()))
 
@@ -87,7 +85,7 @@ def _word_set(text: str) -> Set[str]:
 # ---------------------------------------------------------------------------
 
 
-def check_stale(files: List[Path]) -> List[Dict]:
+def check_stale(files: list[Path]) -> list[dict]:
     """Find AIIA-managed files with date older than STALE_DAYS and no recent updates."""
     findings = []
     cutoff = (datetime.now() - timedelta(days=STALE_DAYS)).strftime("%Y-%m-%d")
@@ -120,7 +118,7 @@ def check_stale(files: List[Path]) -> List[Dict]:
 # ---------------------------------------------------------------------------
 
 
-def _call_ollama_batch(facts: List[str]) -> Optional[str]:
+def _call_ollama_batch(facts: list[str]) -> str | None:
     """Send facts to LLM to check for contradictions."""
     url = os.getenv("LOCAL_LLM_URL", "http://localhost:11434") + "/api/generate"
     prompt = (
@@ -145,16 +143,16 @@ def _call_ollama_batch(facts: List[str]) -> Optional[str]:
         with urllib.request.urlopen(req, timeout=60) as resp:
             result = json.loads(resp.read().decode())
             return result.get("response", "")
-    except Exception as e:
+    except Exception:
         return None
 
 
-def check_contradictions(files: List[Path], batch_size: int = 10) -> List[Dict]:
+def check_contradictions(files: list[Path], batch_size: int = 10) -> list[dict]:
     """Check AIIA-managed files for contradicting facts using LLM."""
     findings = []
 
     # Collect all fact lines from AIIA cluster files
-    facts_by_category: Dict[str, List[str]] = defaultdict(list)
+    facts_by_category: dict[str, list[str]] = defaultdict(list)
     for f in files:
         fm = _parse_frontmatter(f)
         if fm.get("aiia_managed") not in ("true", "True"):
@@ -204,11 +202,11 @@ def check_contradictions(files: List[Path], batch_size: int = 10) -> List[Dict]:
 # ---------------------------------------------------------------------------
 
 
-def check_orphans(files: List[Path]) -> List[Dict]:
+def check_orphans(files: list[Path]) -> list[dict]:
     """Find files with zero incoming wikilinks from other files."""
     # Build link graph
     all_stems = {f.stem for f in files}
-    incoming: Dict[str, int] = {stem: 0 for stem in all_stems}
+    incoming: dict[str, int] = {stem: 0 for stem in all_stems}
 
     for f in files:
         try:
@@ -236,7 +234,7 @@ def check_orphans(files: List[Path]) -> List[Dict]:
                     {
                         "type": "orphan",
                         "file": matching[0].name,
-                        "message": f"No incoming wikilinks — consider linking from related pages",
+                        "message": "No incoming wikilinks — consider linking from related pages",
                     }
                 )
     return findings
@@ -247,7 +245,7 @@ def check_orphans(files: List[Path]) -> List[Dict]:
 # ---------------------------------------------------------------------------
 
 
-def check_missing_links(files: List[Path]) -> List[Dict]:
+def check_missing_links(files: list[Path]) -> list[dict]:
     """Find mentions of vault filenames in text that aren't wikilinked."""
     all_stems = {f.stem for f in files if not f.name.startswith("_")}
     findings = []
@@ -285,12 +283,12 @@ def check_missing_links(files: List[Path]) -> List[Dict]:
 # ---------------------------------------------------------------------------
 
 
-def check_duplicates(files: List[Path], threshold: float = 0.7) -> List[Dict]:
+def check_duplicates(files: list[Path], threshold: float = 0.7) -> list[dict]:
     """Find pairs of AIIA entries with high Jaccard similarity."""
     findings = []
 
     # Collect entries per category
-    entries_by_cat: Dict[str, List[Tuple[str, Set[str]]]] = defaultdict(list)
+    entries_by_cat: dict[str, list[tuple[str, set[str]]]] = defaultdict(list)
     for f in files:
         fm = _parse_frontmatter(f)
         if fm.get("aiia_managed") not in ("true", "True"):
@@ -342,11 +340,11 @@ def check_duplicates(files: List[Path], threshold: float = 0.7) -> List[Dict]:
 # ---------------------------------------------------------------------------
 
 
-def check_enhancements(files: List[Path]) -> List[Dict]:
+def check_enhancements(files: list[Path]) -> list[dict]:
     """Suggest folders that could use more wiki articles."""
     findings = []
 
-    folder_counts: Dict[str, int] = defaultdict(int)
+    folder_counts: dict[str, int] = defaultdict(int)
     for f in files:
         fm = _parse_frontmatter(f)
         if fm.get("aiia_managed") in ("true", "True"):
@@ -373,7 +371,7 @@ def check_enhancements(files: List[Path]) -> List[Dict]:
 # ---------------------------------------------------------------------------
 
 
-def build_report(all_findings: List[Dict]) -> str:
+def build_report(all_findings: list[dict]) -> str:
     """Build a markdown report of all findings."""
     today = datetime.now().strftime("%Y-%m-%d")
 
@@ -393,7 +391,7 @@ def build_report(all_findings: List[Dict]) -> str:
     ]
 
     # Group by type
-    by_type: Dict[str, List[Dict]] = defaultdict(list)
+    by_type: dict[str, list[dict]] = defaultdict(list)
     for f in all_findings:
         by_type[f["type"]].append(f)
 
@@ -446,7 +444,7 @@ def build_report(all_findings: List[Dict]) -> str:
 # ---------------------------------------------------------------------------
 
 
-def run(dry_run: bool = False, fix: bool = False, skip_llm: bool = False) -> List[Dict]:
+def run(dry_run: bool = False, fix: bool = False, skip_llm: bool = False) -> list[dict]:
     """Run all lint passes and generate report."""
     print(f"Wiki Linter — vault={VAULT_DIR} dry_run={dry_run} fix={fix}")
 

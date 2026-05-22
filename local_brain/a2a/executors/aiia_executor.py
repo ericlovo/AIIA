@@ -15,7 +15,8 @@ AIIA's initialization and subsequent calls reuse the warm singleton.
 from __future__ import annotations
 
 import logging
-from typing import Any, Awaitable, Callable, Optional
+from collections.abc import Awaitable, Callable
+from typing import Any
 
 from local_brain.a2a.executors.base import AgentExecutor, ExecutorResult
 from local_brain.a2a.schema import Message, TextPart
@@ -42,9 +43,7 @@ class AIIAExecutor(AgentExecutor):
     async def execute(self, message: Message) -> ExecutorResult:
         question = _join_text_parts(message)
         if not question.strip():
-            raise ValueError(
-                "AIIAExecutor requires a non-empty text part in the message"
-            )
+            raise ValueError("AIIAExecutor requires a non-empty text part in the message")
 
         aiia = await self._get_aiia()
         if aiia is None:

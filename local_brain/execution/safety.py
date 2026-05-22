@@ -112,8 +112,7 @@ class SafetyGate:
         if len(files) > self.max_files_per_action:
             return (
                 False,
-                f"action touches {len(files)} files, max is"
-                f" {self.max_files_per_action}",
+                f"action touches {len(files)} files, max is {self.max_files_per_action}",
             )
 
         ok, violations = self.validate_files(files)

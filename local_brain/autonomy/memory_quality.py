@@ -15,7 +15,7 @@ non-invasive and replay-safe.
 import json
 import logging
 import os
-from typing import Any, Dict, List, Optional, Set
+from typing import Any
 
 from local_brain.config import AutonomyConfig
 
@@ -41,9 +41,9 @@ class MemoryQualityLoop:
         memory: Any,
         knowledge_store: Any,
         ollama: Any,
-        consolidator: Optional[Any] = None,
+        consolidator: Any | None = None,
         notify_fn: Any = None,
-        state_dir: Optional[str] = None,
+        state_dir: str | None = None,
     ):
         self.config = config
         self.memory = memory
@@ -62,13 +62,13 @@ class MemoryQualityLoop:
             if isinstance(state_dir, str) and state_dir
             else None
         )
-        self._promoted_ids: Set[str] = self._load_state()
+        self._promoted_ids: set[str] = self._load_state()
 
     @property
     def enabled(self) -> bool:
         return self.config.level == "phase2" and self.config.memory_quality_enabled
 
-    def _load_state(self) -> Set[str]:
+    def _load_state(self) -> set[str]:
         """Load previously-promoted memory IDs from disk."""
         if not self._state_path or not os.path.exists(self._state_path):
             return set()
@@ -91,7 +91,7 @@ class MemoryQualityLoop:
         except OSError as e:
             logger.warning(f"Could not save memory quality state: {e}")
 
-    async def run_quality_cycle(self) -> Dict[str, Any]:
+    async def run_quality_cycle(self) -> dict[str, Any]:
         """
         Phase 1: Consolidation (dedup, merge related entries)
         Phase 2: Score unpromoted memories by quality
@@ -121,7 +121,7 @@ class MemoryQualityLoop:
 
         # Phase 2: Score unpromoted memories. Memory API: recall() returns
         # entries in most-recent-first order; there is no get_all().
-        candidates: List[Dict[str, Any]] = []
+        candidates: list[dict[str, Any]] = []
         for category in PROMOTABLE_CATEGORIES:
             try:
                 entries = self.memory.recall(category=category, limit=500)
@@ -138,7 +138,7 @@ class MemoryQualityLoop:
                     entry["category"] = category
                 candidates.append(entry)
 
-        scored: List[tuple] = []
+        scored: list[tuple] = []
         for entry in candidates[:200]:  # Cap scoring batch
             try:
                 score = await self._score_memory(entry)
@@ -178,7 +178,7 @@ class MemoryQualityLoop:
 
         return results
 
-    async def _score_memory(self, entry: Dict[str, Any]) -> float:
+    async def _score_memory(self, entry: dict[str, Any]) -> float:
         """
         Score a memory entry 0.0-1.0 on quality using the local LLM.
 
@@ -215,7 +215,7 @@ class MemoryQualityLoop:
         except (ValueError, TypeError):
             return 0.0
 
-    async def _promote_to_knowledge(self, entry: Dict[str, Any], score: float) -> None:
+    async def _promote_to_knowledge(self, entry: dict[str, Any], score: float) -> None:
         """Promote a memory entry to the ChromaDB knowledge store."""
         content = entry.get("fact", entry.get("content", ""))
         category = entry.get("category", "unknown")

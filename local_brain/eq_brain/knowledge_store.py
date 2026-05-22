@@ -14,7 +14,7 @@ import hashlib
 import logging
 import os
 import time
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 logger = logging.getLogger("aiia.eq_brain.knowledge")
 
@@ -74,7 +74,7 @@ class KnowledgeStore:
         text: str,
         source: str,
         doc_type: str = "documentation",
-        metadata: Optional[Dict[str, Any]] = None,
+        metadata: dict[str, Any] | None = None,
         chunk_index: int = 0,
     ):
         """Add a document chunk to the knowledge store."""
@@ -100,10 +100,10 @@ class KnowledgeStore:
 
     async def add_documents(
         self,
-        texts: List[str],
-        sources: List[str],
+        texts: list[str],
+        sources: list[str],
         doc_type: str = "documentation",
-        metadatas: Optional[List[Dict[str, Any]]] = None,
+        metadatas: list[dict[str, Any]] | None = None,
     ):
         """Add multiple document chunks at once."""
         if not self._collection:
@@ -137,8 +137,8 @@ class KnowledgeStore:
         self,
         query: str,
         n_results: int = 5,
-        doc_type: Optional[str] = None,
-    ) -> List[Dict[str, Any]]:
+        doc_type: str | None = None,
+    ) -> list[dict[str, Any]]:
         """Search the knowledge store for relevant documents."""
         if not self._collection:
             raise RuntimeError("KnowledgeStore not initialized")
@@ -164,9 +164,7 @@ class KnowledgeStore:
                         "content": doc,
                         "source": meta.get("source", "unknown"),
                         "doc_type": meta.get("doc_type", "unknown"),
-                        "relevance": round(
-                            1 - distance, 3
-                        ),  # Convert distance to relevance
+                        "relevance": round(1 - distance, 3),  # Convert distance to relevance
                         "metadata": meta,
                     }
                 )
@@ -177,7 +175,7 @@ class KnowledgeStore:
         self,
         summary: str,
         session_id: str,
-        metadata: Optional[Dict[str, Any]] = None,
+        metadata: dict[str, Any] | None = None,
     ):
         """Store a session summary for long-term recall."""
         if not self._sessions_collection:
@@ -196,9 +194,7 @@ class KnowledgeStore:
             metadatas=[doc_metadata],
         )
 
-    async def search_sessions(
-        self, query: str, n_results: int = 3
-    ) -> List[Dict[str, Any]]:
+    async def search_sessions(self, query: str, n_results: int = 3) -> list[dict[str, Any]]:
         """Search past session summaries."""
         if not self._sessions_collection:
             return []
@@ -223,11 +219,9 @@ class KnowledgeStore:
 
         return sessions
 
-    async def stats(self) -> Dict[str, Any]:
+    async def stats(self) -> dict[str, Any]:
         """Return knowledge store statistics (async, non-blocking)."""
-        k_count = (
-            await asyncio.to_thread(self._collection.count) if self._collection else 0
-        )
+        k_count = await asyncio.to_thread(self._collection.count) if self._collection else 0
         s_count = (
             await asyncio.to_thread(self._sessions_collection.count)
             if self._sessions_collection
@@ -240,7 +234,7 @@ class KnowledgeStore:
             "collection": self._collection_name,
         }
 
-    async def index_story(self, story: Dict[str, Any]) -> None:
+    async def index_story(self, story: dict[str, Any]) -> None:
         """Index a roadmap story so AIIA can find it via semantic search."""
         if not self._collection:
             raise RuntimeError("KnowledgeStore not initialized")
@@ -285,7 +279,7 @@ class KnowledgeStore:
         )
         logger.info(f"Indexed story {story_id}: {title}")
 
-    async def index_stories(self, stories: List[Dict[str, Any]]) -> int:
+    async def index_stories(self, stories: list[dict[str, Any]]) -> int:
         """Bulk index roadmap stories. Returns count indexed."""
         if not self._collection:
             raise RuntimeError("KnowledgeStore not initialized")
@@ -338,13 +332,11 @@ class KnowledgeStore:
         logger.info(f"Indexed {len(ids)} stories into ChromaDB")
         return len(ids)
 
-    def stats_sync(self) -> Dict[str, Any]:
+    def stats_sync(self) -> dict[str, Any]:
         """Return knowledge store statistics (sync, for scripts)."""
         return {
             "knowledge_docs": self._collection.count() if self._collection else 0,
-            "session_docs": self._sessions_collection.count()
-            if self._sessions_collection
-            else 0,
+            "session_docs": self._sessions_collection.count() if self._sessions_collection else 0,
             "data_dir": self._data_dir,
             "collection": self._collection_name,
         }

@@ -11,9 +11,8 @@ Usage:
 import json
 import subprocess
 import sys
-from datetime import datetime, timezone
+from datetime import datetime
 from pathlib import Path
-from typing import Optional
 
 from local_brain.scripts.daily_report import (
     generate_report,
@@ -21,9 +20,7 @@ from local_brain.scripts.daily_report import (
 )
 
 REPORTS_DIR = Path.home() / ".aiia" / "eq_data" / "reports" / "intervals"
-LATEST_LINK = (
-    Path.home() / ".aiia" / "eq_data" / "reports" / "latest-interval.json"
-)
+LATEST_LINK = Path.home() / ".aiia" / "eq_data" / "reports" / "latest-interval.json"
 DAILY_MD = Path.home() / ".aiia" / "eq_data" / "reports" / "today.md"
 
 
@@ -69,9 +66,7 @@ def _post_localhost(port: int, path: str, body: dict) -> None:
 
 def _push_to_command_center(report: dict) -> None:
     """POST the report to the Command Center so it broadcasts via WebSocket."""
-    _post_localhost(
-        8200, "/api/reports/interval", {"event": "interval_report", "report": report}
-    )
+    _post_localhost(8200, "/api/reports/interval", {"event": "interval_report", "report": report})
 
 
 def _remember_in_aiia(summary: str) -> None:
@@ -114,15 +109,13 @@ def _build_summary_line(report: dict) -> str:
     adds = s["total_additions"]
     dels = s["total_deletions"]
     types = s.get("commit_types", {})
-    type_str = ", ".join(
-        f"{v} {k}" for k, v in sorted(types.items(), key=lambda x: -x[1])[:3]
-    )
+    type_str = ", ".join(f"{v} {k}" for k, v in sorted(types.items(), key=lambda x: -x[1])[:3])
     products = list(report.get("products", {}).keys())[:3]
     product_str = ", ".join(products)
     return f"Last {hours}h: {commits} commits ({type_str}) | +{adds}/-{dels} in {files} files | {product_str}"
 
 
-def _check_uncommitted() -> Optional[str]:
+def _check_uncommitted() -> str | None:
     """Check for uncommitted changes and return a summary if any exist."""
     try:
         result = subprocess.run(
@@ -211,7 +204,7 @@ def _append_to_daily_md(report: dict, summary: str) -> Path:
     return DAILY_MD
 
 
-def run(hours: int = 3) -> Optional[dict]:
+def run(hours: int = 3) -> dict | None:
     """Generate and deliver an interval report."""
     report = generate_report(since_hours=hours)
     commits = report["summary"]["total_commits"]

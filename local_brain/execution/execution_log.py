@@ -48,9 +48,7 @@ class ExecutionLog:
 
     def _write(self, record: ExecutionRecord) -> None:
         try:
-            self._path(record.id).write_text(
-                json.dumps(asdict(record), indent=2, default=str)
-            )
+            self._path(record.id).write_text(json.dumps(asdict(record), indent=2, default=str))
         except Exception as e:
             logger.error(f"Failed to write execution record {record.id}: {e}")
 
@@ -122,9 +120,7 @@ class ExecutionLog:
 
     def list_recent(self, limit: int = 20) -> list[dict[str, Any]]:
         records = []
-        paths = sorted(
-            self._dir.glob("*.json"), key=lambda p: p.stat().st_mtime, reverse=True
-        )
+        paths = sorted(self._dir.glob("*.json"), key=lambda p: p.stat().st_mtime, reverse=True)
         for path in paths[:limit]:
             rec = self._read(path)
             if rec:
@@ -162,8 +158,6 @@ class ExecutionLog:
             "total": total,
             "by_status": by_status,
             "by_type": by_type,
-            "avg_duration_ms": (
-                int(sum(durations) / len(durations)) if durations else 0
-            ),
+            "avg_duration_ms": (int(sum(durations) / len(durations)) if durations else 0),
             "success_rate": (round(successes / total, 2) if total else 0.0),
         }

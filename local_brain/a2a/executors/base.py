@@ -10,7 +10,7 @@ envelope, error translation), and executors can focus on doing their job.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import List, Optional, Protocol, runtime_checkable
+from typing import Protocol, runtime_checkable
 
 from local_brain.a2a.schema import Message, Part
 
@@ -19,9 +19,9 @@ from local_brain.a2a.schema import Message, Part
 class ExecutorResult:
     """What an executor returns: parts to attach to the task artifact."""
 
-    parts: List[Part]
+    parts: list[Part]
     artifact_name: str = "result"
-    artifact_description: Optional[str] = None
+    artifact_description: str | None = None
     metadata: dict = field(default_factory=dict)
 
 

@@ -6,10 +6,9 @@ Defense-in-depth: OS sandbox + command allowlist + path restrictions.
 """
 
 import re
-from typing import Set
 
 # Commands the coding agent is allowed to run
-ALLOWED_BASH_COMMANDS: Set[str] = {
+ALLOWED_BASH_COMMANDS: set[str] = {
     # File inspection
     "ls",
     "cat",
@@ -76,7 +75,7 @@ ALLOWED_BASH_COMMANDS: Set[str] = {
 }
 
 # Commands that are NEVER allowed
-BLOCKED_COMMANDS: Set[str] = {
+BLOCKED_COMMANDS: set[str] = {
     "curl",
     "wget",
     "ssh",
@@ -154,9 +153,7 @@ def validate_bash_command(command: str) -> tuple[bool, str]:
 
         if base_cmd and base_cmd not in ALLOWED_BASH_COMMANDS and base_cmd != "cd":
             # Check if it's a subcommand of an allowed tool
-            if not any(
-                base_cmd.startswith(allowed) for allowed in ALLOWED_BASH_COMMANDS
-            ):
+            if not any(base_cmd.startswith(allowed) for allowed in ALLOWED_BASH_COMMANDS):
                 return False, f"Command not in allowlist: {base_cmd}"
 
     return True, ""

@@ -14,7 +14,7 @@ Typically runs every 6 hours via a scheduler.
 
 import logging
 from datetime import datetime, timedelta
-from typing import Any, Dict
+from typing import Any
 
 from local_brain.config import AutonomyConfig
 
@@ -56,7 +56,7 @@ class GatedDowngradePolicy:
     def enabled(self) -> bool:
         return self.config.level == "phase2" and self.config.gated_downgrade_enabled
 
-    async def check_stale_gated_actions(self) -> Dict[str, Any]:
+    async def check_stale_gated_actions(self) -> dict[str, Any]:
         """
         Scan for GATED actions older than downgrade_hours that haven't
         been acted on, and promote eligible ones to SUPERVISED.

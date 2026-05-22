@@ -15,7 +15,7 @@ Omitted for MVP (all optional per spec):
 """
 
 from enum import Enum
-from typing import Any, Dict, List, Literal, Optional, Union
+from typing import Any, Literal
 from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -49,30 +49,30 @@ Part = TextPart  # MVP: text only; spec allows file/data parts as a union
 
 class Message(_A2AModel):
     role: str
-    parts: List[Part]
+    parts: list[Part]
     message_id: str = Field(default_factory=lambda: f"msg-{uuid4()}")
-    context_id: Optional[str] = None
-    reference_task_ids: Optional[List[str]] = None
+    context_id: str | None = None
+    reference_task_ids: list[str] | None = None
 
 
 class Artifact(_A2AModel):
     artifact_id: str = Field(default_factory=lambda: f"artifact-{uuid4()}")
-    name: Optional[str] = None
-    description: Optional[str] = None
-    parts: List[Part]
+    name: str | None = None
+    description: str | None = None
+    parts: list[Part]
 
 
 class TaskStatus(_A2AModel):
     state: TaskState
-    message: Optional[str] = None
+    message: str | None = None
 
 
 class Task(_A2AModel):
     id: str = Field(default_factory=lambda: f"task-{uuid4()}")
     context_id: str = Field(default_factory=lambda: f"ctx-{uuid4()}")
     status: TaskStatus
-    artifacts: List[Artifact] = Field(default_factory=list)
-    history: List[Message] = Field(default_factory=list)
+    artifacts: list[Artifact] = Field(default_factory=list)
+    history: list[Message] = Field(default_factory=list)
 
 
 class AgentInterface(_A2AModel):
@@ -92,34 +92,34 @@ class AgentSkill(_A2AModel):
     id: str
     name: str
     description: str
-    tags: List[str] = Field(default_factory=list)
-    examples: List[str] = Field(default_factory=list)
-    input_modes: List[str] = Field(default_factory=lambda: ["text/plain"])
-    output_modes: List[str] = Field(default_factory=lambda: ["text/plain"])
+    tags: list[str] = Field(default_factory=list)
+    examples: list[str] = Field(default_factory=list)
+    input_modes: list[str] = Field(default_factory=lambda: ["text/plain"])
+    output_modes: list[str] = Field(default_factory=lambda: ["text/plain"])
 
 
 class AgentProvider(_A2AModel):
     organization: str
-    url: Optional[str] = None
+    url: str | None = None
 
 
 class AgentCard(_A2AModel):
     name: str
     description: str
     version: str = "0.1.0"
-    provider: Optional[AgentProvider] = None
-    icon_url: Optional[str] = None
-    documentation_url: Optional[str] = None
-    supported_interfaces: List[AgentInterface]
+    provider: AgentProvider | None = None
+    icon_url: str | None = None
+    documentation_url: str | None = None
+    supported_interfaces: list[AgentInterface]
     capabilities: AgentCapabilities = Field(default_factory=AgentCapabilities)
-    security_schemes: Dict[str, Any] = Field(default_factory=dict)
-    security_requirements: List[Dict[str, List[str]]] = Field(default_factory=list)
-    default_input_modes: List[str] = Field(default_factory=lambda: ["text/plain"])
-    default_output_modes: List[str] = Field(default_factory=lambda: ["text/plain"])
-    skills: List[AgentSkill] = Field(default_factory=list)
+    security_schemes: dict[str, Any] = Field(default_factory=dict)
+    security_requirements: list[dict[str, list[str]]] = Field(default_factory=list)
+    default_input_modes: list[str] = Field(default_factory=lambda: ["text/plain"])
+    default_output_modes: list[str] = Field(default_factory=lambda: ["text/plain"])
+    skills: list[AgentSkill] = Field(default_factory=list)
 
-    def all_tags(self) -> List[str]:
-        tags: List[str] = []
+    def all_tags(self) -> list[str]:
+        tags: list[str] = []
         for skill in self.skills:
             tags.extend(skill.tags)
         return sorted(set(tags))
@@ -127,27 +127,27 @@ class AgentCard(_A2AModel):
 
 class JsonRpcRequest(_A2AModel):
     jsonrpc: Literal["2.0"] = "2.0"
-    id: Union[str, int, None] = None
+    id: str | int | None = None
     method: str
-    params: Dict[str, Any] = Field(default_factory=dict)
+    params: dict[str, Any] = Field(default_factory=dict)
 
 
 class JsonRpcError(_A2AModel):
     code: int
     message: str
-    data: Optional[Any] = None
+    data: Any | None = None
 
 
 class JsonRpcResponse(_A2AModel):
     jsonrpc: Literal["2.0"] = "2.0"
-    id: Union[str, int, None] = None
-    result: Optional[Dict[str, Any]] = None
-    error: Optional[JsonRpcError] = None
+    id: str | int | None = None
+    result: dict[str, Any] | None = None
+    error: JsonRpcError | None = None
 
 
 def text_message(role: str, text: str) -> Message:
     return Message(role=role, parts=[TextPart(text=text)])
 
 
-def text_artifact(name: str, text: str, description: Optional[str] = None) -> Artifact:
+def text_artifact(name: str, text: str, description: str | None = None) -> Artifact:
     return Artifact(name=name, description=description, parts=[TextPart(text=text)])

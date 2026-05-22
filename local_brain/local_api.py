@@ -17,27 +17,27 @@ Or:
 """
 
 import asyncio
+import json as json_module
 import logging
 import os
 import time
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 import httpx
-import json as json_module
-from fastapi import FastAPI, HTTPException, Depends, Header
+from fastapi import Depends, FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import Response as RawResponse
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
-from fastapi.responses import Response as RawResponse
-
-from local_brain.config import get_config, LocalBrainConfig
-from local_brain.ollama_client import OllamaClient
-from local_brain.smart_conductor import SmartConductor
+from local_brain.config import LocalBrainConfig, get_config
+from local_brain.eq_brain.brain import AIIA
 from local_brain.eq_brain.knowledge_store import KnowledgeStore
 from local_brain.eq_brain.memory import Memory
-from local_brain.eq_brain.brain import AIIA
 from local_brain.eq_brain.vault_writer import VaultWriter
+from local_brain.ollama_client import OllamaClient
+from local_brain.smart_conductor import SmartConductor
+
 try:
     from local_brain.services.google_tts import GoogleTTSService
 except ImportError:
@@ -105,12 +105,12 @@ app.add_middleware(
 
 
 # Singletons initialized on startup
-_ollama: Optional[OllamaClient] = None
-_conductor: Optional[SmartConductor] = None
-_config: Optional[LocalBrainConfig] = None
-_aiia: Optional[AIIA] = None
-_google_tts: Optional[GoogleTTSService] = None
-_active_sessions: Dict[str, Dict[str, Any]] = {}  # Active session tracking
+_ollama: OllamaClient | None = None
+_conductor: SmartConductor | None = None
+_config: LocalBrainConfig | None = None
+_aiia: AIIA | None = None
+_google_tts: GoogleTTSService | None = None
+_active_sessions: dict[str, dict[str, Any]] = {}  # Active session tracking
 
 
 @app.on_event("startup")
@@ -125,9 +125,7 @@ async def startup():
     if _google_tts and _google_tts.is_available:
         logger.info("Google Cloud TTS available")
     else:
-        logger.info(
-            "Google Cloud TTS not configured (no GOOGLE_API_KEY or GOOGLE_TTS_API_KEY)"
-        )
+        logger.info("Google Cloud TTS not configured (no GOOGLE_API_KEY or GOOGLE_TTS_API_KEY)")
 
     # Check Ollama health on startup
     health = await _ollama.health()
@@ -149,7 +147,7 @@ async def startup():
 _aiia_init_lock = asyncio.Lock()
 
 
-async def _ensure_aiia() -> Optional[AIIA]:
+async def _ensure_aiia() -> AIIA | None:
     """Lazy-initialize AIIA on first use. Thread-safe via asyncio lock."""
     global _aiia
     if _aiia is not None:
@@ -212,7 +210,7 @@ async def _require_aiia() -> AIIA:
     return aiia
 
 
-async def verify_api_key(x_api_key: Optional[str] = Header(None)):
+async def verify_api_key(x_api_key: str | None = Header(None)):
     """Optional API key verification for production security."""
     if _config and _config.api_key:
         if x_api_key != _config.api_key:
@@ -231,7 +229,7 @@ class RouteRequest(BaseModel):
     tenant_id: str = "default"
     has_documents: bool = False
     document_count: int = 0
-    conversation_context: Optional[str] = None
+    conversation_context: str | None = None
 
 
 class RouteResponse(BaseModel):
@@ -250,9 +248,9 @@ class RouteResponse(BaseModel):
 class ChatRequest(BaseModel):
     """Request for local chat completion."""
 
-    messages: List[Dict[str, str]]
-    system: Optional[str] = None
-    model: Optional[str] = None  # Override default
+    messages: list[dict[str, str]]
+    system: str | None = None
+    model: str | None = None  # Override default
     model_role: str = "task"  # "routing", "task", "pii"
     max_tokens: int = 4096
     temperature: float = 0.7
@@ -264,21 +262,21 @@ class ChatResponse(BaseModel):
 
     content: str
     model: str
-    usage: Dict[str, int] = {}
+    usage: dict[str, int] = {}
     latency_ms: float = 0.0
 
 
 class EmbedRequest(BaseModel):
     """Request for local embeddings."""
 
-    texts: List[str]
-    model: Optional[str] = None
+    texts: list[str]
+    model: str | None = None
 
 
 class EmbedResponse(BaseModel):
     """Embedding response."""
 
-    embeddings: List[List[float]]
+    embeddings: list[list[float]]
     model: str
     count: int
     latency_ms: float
@@ -295,16 +293,16 @@ class SummarizeRequest(BaseModel):
 class MemoryExtractRequest(BaseModel):
     """Request to extract learnable facts from a conversation."""
 
-    messages: List[Dict[str, str]]
+    messages: list[dict[str, str]]
     user_id: str
-    existing_memories: Optional[List[str]] = None
+    existing_memories: list[str] | None = None
 
 
 class PIIScanRequest(BaseModel):
     """Request to scan text for PII/PHI."""
 
     text: str
-    categories: List[str] = Field(
+    categories: list[str] = Field(
         default=["ssn", "email", "phone", "address", "dob", "medical", "financial"]
     )
 
@@ -313,7 +311,7 @@ class PIIScanResponse(BaseModel):
     """PII scan result."""
 
     has_pii: bool
-    findings: List[Dict[str, Any]]
+    findings: list[dict[str, Any]]
     risk_level: str  # "none", "low", "medium", "high", "critical"
     latency_ms: float
 
@@ -337,9 +335,7 @@ async def health_check():
         "features": {
             "smart_routing": _config.smart_routing_enabled if _config else False,
             "summarization": _config.summarization_enabled if _config else False,
-            "memory_extraction": _config.memory_extraction_enabled
-            if _config
-            else False,
+            "memory_extraction": _config.memory_extraction_enabled if _config else False,
             "pii_scanning": _config.pii_scanning_enabled if _config else False,
             "embeddings": _config.embeddings_enabled if _config else False,
         },
@@ -351,9 +347,7 @@ async def health_check():
 # ─────────────────────────────────────────────────────────────
 
 
-@app.post(
-    "/v1/route", response_model=RouteResponse, dependencies=[Depends(verify_api_key)]
-)
+@app.post("/v1/route", response_model=RouteResponse, dependencies=[Depends(verify_api_key)])
 async def smart_route(request: RouteRequest):
     """
     Classify a user query using local LLM — replaces keyword matching.
@@ -391,9 +385,7 @@ async def smart_route(request: RouteRequest):
 # ─────────────────────────────────────────────────────────────
 
 
-@app.post(
-    "/v1/chat", response_model=ChatResponse, dependencies=[Depends(verify_api_key)]
-)
+@app.post("/v1/chat", response_model=ChatResponse, dependencies=[Depends(verify_api_key)])
 async def local_chat(request: ChatRequest):
     """
     Local chat completion via Ollama.
@@ -452,9 +444,7 @@ async def local_chat(request: ChatRequest):
 # ─────────────────────────────────────────────────────────────
 
 
-@app.post(
-    "/v1/embed", response_model=EmbedResponse, dependencies=[Depends(verify_api_key)]
-)
+@app.post("/v1/embed", response_model=EmbedResponse, dependencies=[Depends(verify_api_key)])
 async def generate_embeddings(request: EmbedRequest):
     """Generate embeddings locally using nomic-embed-text or similar."""
     if not _ollama:
@@ -542,9 +532,7 @@ async def extract_memory(request: MemoryExtractRequest):
         raise HTTPException(status_code=503, detail="Not initialized")
 
     # Build conversation text
-    conversation = "\n".join(
-        f"{m['role'].upper()}: {m['content']}" for m in request.messages
-    )
+    conversation = "\n".join(f"{m['role'].upper()}: {m['content']}" for m in request.messages)
 
     existing = ""
     if request.existing_memories:
@@ -716,7 +704,7 @@ class AIIAAskRequest(BaseModel):
     """Ask AIIA a question."""
 
     question: str
-    context: Optional[str] = None
+    context: str | None = None
     include_sessions: bool = True
     n_results: int = 5
     max_tokens: int = 4096
@@ -730,7 +718,7 @@ class AIIARememberRequest(BaseModel):
     fact: str
     category: str = "lessons"
     source: str = "session"
-    metadata: Optional[Dict[str, Any]] = None
+    metadata: dict[str, Any] | None = None
 
 
 class AIIASessionEndRequest(BaseModel):
@@ -738,8 +726,8 @@ class AIIASessionEndRequest(BaseModel):
 
     session_id: str
     summary: str
-    key_decisions: Optional[List[str]] = None
-    lessons_learned: Optional[List[str]] = None
+    key_decisions: list[str] | None = None
+    lessons_learned: list[str] | None = None
 
 
 class AIIAIngestRequest(BaseModel):
@@ -748,7 +736,7 @@ class AIIAIngestRequest(BaseModel):
     text: str
     source: str
     doc_type: str = "documentation"
-    metadata: Optional[Dict[str, Any]] = None
+    metadata: dict[str, Any] | None = None
 
 
 @app.post("/v1/aiia/ask", dependencies=[Depends(verify_api_key)])
@@ -856,19 +844,17 @@ async def aiia_remember(request: AIIARememberRequest):
     return result
 
 
-@app.post(
-    "/v1/eq/remember", dependencies=[Depends(verify_api_key)], include_in_schema=False
-)
+@app.post("/v1/eq/remember", dependencies=[Depends(verify_api_key)], include_in_schema=False)
 async def eq_remember_legacy(request: AIIARememberRequest):
     return await aiia_remember(request)
 
 
 class StoryIndexRequest(BaseModel):
-    story: Dict[str, Any]
+    story: dict[str, Any]
 
 
 class StoriesBulkIndexRequest(BaseModel):
-    stories: List[Dict[str, Any]]
+    stories: list[dict[str, Any]]
 
 
 @app.post("/v1/aiia/index-story", dependencies=[Depends(verify_api_key)])
@@ -922,19 +908,22 @@ async def eq_session_end_legacy(request: AIIASessionEndRequest):
 
 class SlackPostRequest(BaseModel):
     """Post a message to Slack."""
+
     channel: str = "#aiia-backlog"
     text: str
-    thread_ts: Optional[str] = None
+    thread_ts: str | None = None
 
 
 @app.post("/v1/aiia/slack", dependencies=[Depends(verify_api_key)])
 async def aiia_slack_post(request: SlackPostRequest):
     """Post a message to Slack on behalf of AIIA."""
-    from local_brain.slack_client import slack, _api, _resolve_channel
+    from local_brain.slack_client import _api, _resolve_channel
 
     token = os.getenv("SLACK_BOT_TOKEN", "")
     if not token:
-        raise HTTPException(status_code=503, detail="Slack not configured (SLACK_BOT_TOKEN missing)")
+        raise HTTPException(
+            status_code=503, detail="Slack not configured (SLACK_BOT_TOKEN missing)"
+        )
 
     channel_id = _resolve_channel(request.channel)
     if not channel_id:
@@ -971,9 +960,7 @@ async def aiia_status():
     return await aiia.status()
 
 
-@app.get(
-    "/v1/eq/status", dependencies=[Depends(verify_api_key)], include_in_schema=False
-)
+@app.get("/v1/eq/status", dependencies=[Depends(verify_api_key)], include_in_schema=False)
 async def eq_status_legacy():
     return await aiia_status()
 
@@ -996,9 +983,7 @@ async def aiia_ingest(request: AIIAIngestRequest):
     }
 
 
-@app.post(
-    "/v1/eq/ingest", dependencies=[Depends(verify_api_key)], include_in_schema=False
-)
+@app.post("/v1/eq/ingest", dependencies=[Depends(verify_api_key)], include_in_schema=False)
 async def eq_ingest_legacy(request: AIIAIngestRequest):
     return await aiia_ingest(request)
 
@@ -1018,15 +1003,13 @@ async def aiia_search(request: AIIAAskRequest):
     return {"results": results, "count": len(results)}
 
 
-@app.post(
-    "/v1/eq/search", dependencies=[Depends(verify_api_key)], include_in_schema=False
-)
+@app.post("/v1/eq/search", dependencies=[Depends(verify_api_key)], include_in_schema=False)
 async def eq_search_legacy(request: AIIAAskRequest):
     return await aiia_search(request)
 
 
 @app.get("/v1/aiia/memory", dependencies=[Depends(verify_api_key)])
-async def aiia_memory(category: Optional[str] = None, limit: int = 50):
+async def aiia_memory(category: str | None = None, limit: int = 50):
     """Browse AIIA's structured memories, optionally filtered by category."""
     _aiia = await _require_aiia()
 
@@ -1038,10 +1021,8 @@ async def aiia_memory(category: Optional[str] = None, limit: int = 50):
     }
 
 
-@app.get(
-    "/v1/eq/memory", dependencies=[Depends(verify_api_key)], include_in_schema=False
-)
-async def eq_memory_legacy(category: Optional[str] = None, limit: int = 50):
+@app.get("/v1/eq/memory", dependencies=[Depends(verify_api_key)], include_in_schema=False)
+async def eq_memory_legacy(category: str | None = None, limit: int = 50):
     return await aiia_memory(category, limit)
 
 
@@ -1062,7 +1043,7 @@ async def aiia_memory_delete(memory_id: str):
 
 # TTS state: async lock ensures one speak at a time, process tracked by PID
 _tts_lock = asyncio.Lock()
-_tts_process: Optional[asyncio.subprocess.Process] = None
+_tts_process: asyncio.subprocess.Process | None = None
 
 
 class SpeakRequest(BaseModel):
@@ -1350,7 +1331,7 @@ class SessionStartRequest(BaseModel):
 
     task_description: str
     branch: str = ""
-    files: List[str] = []
+    files: list[str] = []
 
 
 @app.post("/v1/aiia/session-start", dependencies=[Depends(verify_api_key)])
@@ -1433,10 +1414,7 @@ async def aiia_session_start(request: SessionStartRequest):
                 routing_stats = route_resp.json()
             if not isinstance(token_resp, Exception) and token_resp.status_code == 200:
                 token_summary = token_resp.json()
-            if (
-                not isinstance(stories_resp, Exception)
-                and stories_resp.status_code == 200
-            ):
+            if not isinstance(stories_resp, Exception) and stories_resp.status_code == 200:
                 all_stories = stories_resp.json().get("stories", [])
                 # Filter to actionable statuses, sort by priority
                 priority_order = {"P0": 0, "P1": 1, "P2": 2, "P3": 3}
@@ -1449,8 +1427,7 @@ async def aiia_session_start(request: SessionStartRequest):
                 actionable_stories = [
                     s
                     for s in all_stories
-                    if s.get("status")
-                    in ("backlog", "active", "in_progress", "blocked")
+                    if s.get("status") in ("backlog", "active", "in_progress", "blocked")
                 ]
                 actionable_stories.sort(
                     key=lambda s: (
@@ -1504,9 +1481,7 @@ async def pre_commit_check():
     import re
     import subprocess
 
-    repo_path = os.path.dirname(
-        os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    )
+    repo_path = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     reasons = []
 
     try:
@@ -1518,9 +1493,7 @@ async def pre_commit_check():
             text=True,
             timeout=10,
         )
-        staged_files = [
-            f.strip() for f in result.stdout.strip().split("\n") if f.strip()
-        ]
+        staged_files = [f.strip() for f in result.stdout.strip().split("\n") if f.strip()]
     except Exception as e:
         return {"block": False, "reason": f"Could not read staged files: {e}"}
 
@@ -1529,9 +1502,7 @@ async def pre_commit_check():
 
     # Check 1: .env files staged
     env_files = [
-        f
-        for f in staged_files
-        if f.endswith(".env") or "/.env" in f or f.startswith(".env")
+        f for f in staged_files if f.endswith(".env") or "/.env" in f or f.startswith(".env")
     ]
     if env_files:
         reasons.append(f"Staged .env file(s): {', '.join(env_files)}")
@@ -1548,9 +1519,7 @@ async def pre_commit_check():
         diff_text = diff_result.stdout
         # Only check added lines (starting with +)
         added_lines = [
-            l
-            for l in diff_text.split("\n")
-            if l.startswith("+") and not l.startswith("+++")
+            l for l in diff_text.split("\n") if l.startswith("+") and not l.startswith("+++")
         ]
         key_patterns = [
             r"sk-ant-[a-zA-Z0-9\-_]{20,}",
@@ -1598,13 +1567,11 @@ async def pre_commit_check():
         if not os.path.exists(full_path):
             continue
         try:
-            content = open(full_path, "r", errors="replace").read()
+            content = open(full_path, errors="replace").read()
             for kw in product_keywords:
                 # Exclude comments, imports from local_brain references
                 if f'tenant_id = "{kw}"' in content or f'tenant_id="{kw}"' in content:
-                    reasons.append(
-                        f"Product-specific code ({kw}) in platform file: {pf}"
-                    )
+                    reasons.append(f"Product-specific code ({kw}) in platform file: {pf}")
                     break
         except Exception:
             pass
@@ -1615,7 +1582,7 @@ async def pre_commit_check():
             full_path = os.path.join(repo_path, f)
             if os.path.exists(full_path):
                 try:
-                    content = open(full_path, "r", errors="replace").read()
+                    content = open(full_path, errors="replace").read()
                     if "load_sme_knowledge_on_startup" in content:
                         reasons.append(f"SME auto-loading may be re-enabled in {f}")
                 except Exception:
@@ -1740,9 +1707,7 @@ async def review_commit(request: ReviewCommitRequest):
     if not _aiia:
         return {"status": "skipped", "reason": "AIIA not initialized"}
 
-    repo_path = os.path.dirname(
-        os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    )
+    repo_path = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
     try:
         # Get the diff
@@ -1787,9 +1752,7 @@ async def review_commit(request: ReviewCommitRequest):
             stderr=asyncio.subprocess.PIPE,
         )
         stdout3, _ = await asyncio.wait_for(proc3.communicate(), timeout=5)
-        changed_py = [
-            f.strip() for f in stdout3.decode().strip().split("\n") if f.strip()
-        ]
+        changed_py = [f.strip() for f in stdout3.decode().strip().split("\n") if f.strip()]
 
     except Exception as e:
         return {"status": "error", "reason": str(e)[:200]}
@@ -1968,7 +1931,5 @@ if __name__ == "__main__":
 
     config = get_config()
     logging.basicConfig(level=logging.INFO)
-    logger.info(
-        f"Starting AIIA (AIIA Local Brain) on {config.api_host}:{config.api_port}"
-    )
+    logger.info(f"Starting AIIA (AIIA Local Brain) on {config.api_host}:{config.api_port}")
     uvicorn.run(app, host=config.api_host, port=config.api_port)

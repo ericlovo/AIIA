@@ -12,9 +12,9 @@ from other agents or the team dashboard.
 
 from __future__ import annotations
 
-import json
 import logging
-from typing import Any, Awaitable, Callable
+from collections.abc import Awaitable, Callable
+from typing import Any
 
 from local_brain.a2a.executors.base import AgentExecutor, ExecutorResult
 from local_brain.a2a.schema import Message, TextPart
@@ -61,9 +61,7 @@ class AIIAStatusExecutor(AgentExecutor):
             lines.extend(cat_parts)
 
         sm = status.get("supermemory", {})
-        lines.append(
-            f"\nSupermemory: {'connected' if sm.get('available') else 'not connected'}"
-        )
+        lines.append(f"\nSupermemory: {'connected' if sm.get('available') else 'not connected'}")
 
         text_output = "\n".join(lines)
         return ExecutorResult(

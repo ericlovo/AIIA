@@ -17,9 +17,10 @@ import logging
 import os
 import time
 import uuid
-from dataclasses import dataclass, field
+from collections.abc import AsyncGenerator, Callable, Coroutine
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, AsyncGenerator, Callable, Coroutine, Dict, List, Optional
+from typing import Any
 
 from local_brain.eq_brain.repl_env import REPLEnvironment
 
@@ -38,13 +39,9 @@ class RecursiveConfig:
     history_window: int = 6  # Keep last N messages (3 action-result pairs)
 
     def __post_init__(self):
-        self.max_iterations = int(
-            os.getenv("RECURSIVE_MAX_ITERATIONS", str(self.max_iterations))
-        )
+        self.max_iterations = int(os.getenv("RECURSIVE_MAX_ITERATIONS", str(self.max_iterations)))
         self.max_depth = int(os.getenv("RECURSIVE_MAX_DEPTH", str(self.max_depth)))
-        self.token_budget = int(
-            os.getenv("RECURSIVE_TOKEN_BUDGET", str(self.token_budget))
-        )
+        self.token_budget = int(os.getenv("RECURSIVE_TOKEN_BUDGET", str(self.token_budget)))
 
 
 @dataclass
@@ -76,10 +73,10 @@ class TokenLedger:
 
 
 # LLM call type: async (model, messages, system, temperature, max_tokens, num_ctx) -> Dict
-LLMChatCallback = Callable[..., Coroutine[Any, Any, Dict[str, Any]]]
+LLMChatCallback = Callable[..., Coroutine[Any, Any, dict[str, Any]]]
 
 
-def _parse_json_action(content: str) -> Optional[Dict[str, Any]]:
+def _parse_json_action(content: str) -> dict[str, Any] | None:
     """
     Parse JSON from LLM output. 3-tier fallback matching SmartConductor pattern.
 
@@ -134,23 +131,21 @@ class RecursiveEngine:
         self,
         llm_chat: LLMChatCallback,
         model: str,
-        config: Optional[RecursiveConfig] = None,
+        config: RecursiveConfig | None = None,
         data_dir: str = "~/.aiia/eq_data",
-        memory_callback: Optional[Callable[..., Coroutine[Any, Any, Any]]] = None,
+        memory_callback: Callable[..., Coroutine[Any, Any, Any]] | None = None,
     ):
         self._llm_chat = llm_chat
         self._model = model
         self._config = config or RecursiveConfig()
         self._data_dir = os.path.expanduser(data_dir)
-        self._memory_callback = (
-            memory_callback  # async (fact, category, source, metadata) -> None
-        )
+        self._memory_callback = memory_callback  # async (fact, category, source, metadata) -> None
         self._background_tasks: set = set()
 
     def _build_system_prompt(
         self,
         question: str,
-        handles: List[Dict[str, Any]],
+        handles: list[dict[str, Any]],
         iteration: int,
         token_status: str,
         action_schema: str,
@@ -180,7 +175,7 @@ RULES:
     async def _llm_callback_simple(self, **kwargs) -> str:
         """Simplified LLM callback for REPL sub-actions (chunk_summarize, sub_ask)."""
         messages = kwargs.get("messages", [])
-        system = kwargs.get("system", None)
+        system = kwargs.get("system")
         temperature = kwargs.get("temperature", 0.2)
         max_tokens = kwargs.get("max_tokens", 1024)
 
@@ -199,7 +194,7 @@ RULES:
         question: str,
         env: REPLEnvironment,
         system_context: str = "",
-    ) -> AsyncGenerator[Dict[str, Any], None]:
+    ) -> AsyncGenerator[dict[str, Any], None]:
         """
         Run the REPL loop. Yields SSE events.
 
@@ -214,7 +209,7 @@ RULES:
         action_schema = REPLEnvironment.action_schema()
 
         # Trajectory for logging
-        trajectory: List[Dict[str, Any]] = []
+        trajectory: list[dict[str, Any]] = []
         session_start = time.monotonic()
 
         # Yield meta event
@@ -227,7 +222,7 @@ RULES:
             "token_budget": config.token_budget,
         }
 
-        messages: List[Dict[str, str]] = []
+        messages: list[dict[str, str]] = []
         parse_failures = 0
         final_answer = None
 
@@ -333,9 +328,7 @@ RULES:
                 "type": "action",
                 "iteration": iteration,
                 "action": action_type,
-                "details": {
-                    k: v for k, v in action.items() if k != "action" and k != "answer"
-                },
+                "details": {k: v for k, v in action.items() if k != "action" and k != "answer"},
                 "latency_ms": round(step_latency, 1),
                 "tokens": ledger.status(),
             }
@@ -350,9 +343,7 @@ RULES:
                 {
                     "iteration": iteration,
                     "action": action_type,
-                    "details": {
-                        k: str(v)[:200] for k, v in action.items() if k != "action"
-                    },
+                    "details": {k: str(v)[:200] for k, v in action.items() if k != "action"},
                     "ok": result["ok"],
                     "result_preview": str(result["result"])[:300],
                     "llm_latency_ms": round(step_latency, 1),
@@ -469,9 +460,7 @@ RULES:
             return "Unable to process the document. Please try with a shorter text."
 
         # Synthesize final answer from summaries
-        combined = "\n\n".join(
-            f"[Section {i + 1}] {s}" for i, s in enumerate(summaries)
-        )
+        combined = "\n\n".join(f"[Section {i + 1}] {s}" for i, s in enumerate(summaries))
 
         try:
             response = await self._llm_chat(
@@ -486,9 +475,7 @@ RULES:
                 max_tokens=2048,
                 num_ctx=16384,
             )
-            return response.get("message", {}).get(
-                "content", "Unable to synthesize answer."
-            )
+            return response.get("message", {}).get("content", "Unable to synthesize answer.")
         except Exception as e:
             logger.error(f"Chunked fallback synthesis failed: {e}")
             return f"Analysis incomplete. Summaries:\n{combined}"
@@ -497,9 +484,9 @@ RULES:
         self,
         session_id: str,
         question: str,
-        variables: List[str],
-        trajectory: List[Dict[str, Any]],
-        final_answer: Optional[str],
+        variables: list[str],
+        trajectory: list[dict[str, Any]],
+        final_answer: str | None,
         tokens_used: int,
         latency_ms: float,
         success: bool,
@@ -560,13 +547,9 @@ RULES:
                 task.add_done_callback(self._background_tasks.discard)
                 task.add_done_callback(
                     lambda t: (
-                        logger.info(
-                            f"Trajectory memory stored for session {session_id}"
-                        )
+                        logger.info(f"Trajectory memory stored for session {session_id}")
                         if not t.cancelled() and t.exception() is None
-                        else logger.debug(
-                            f"Trajectory memory task failed for {session_id}"
-                        )
+                        else logger.debug(f"Trajectory memory task failed for {session_id}")
                     )
                 )
             except Exception as e:

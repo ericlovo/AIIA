@@ -16,9 +16,9 @@ Persistence: action_data.json alongside task_data.json.
 import json
 import logging
 import uuid
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 logger = logging.getLogger("aiia.actions")
 
@@ -54,7 +54,7 @@ class ActionQueue:
     }
 
     def __init__(self):
-        self.actions: List[Dict[str, Any]] = []
+        self.actions: list[dict[str, Any]] = []
         self.load()
 
     def create_action(
@@ -65,8 +65,8 @@ class ActionQueue:
         description: str = "",
         proposed_fix: str = "",
         source_task: str = "",
-        files_affected: Optional[List[str]] = None,
-    ) -> Dict[str, Any]:
+        files_affected: list[str] | None = None,
+    ) -> dict[str, Any]:
         """Create a new pending action item.
 
         Deduplicates: if a pending action with the same type + title already
@@ -79,9 +79,7 @@ class ActionQueue:
                 and existing["type"] == action_type
                 and existing["title"] == title
             ):
-                logger.debug(
-                    f"Skipping duplicate action: [{severity}] {action_type} — {title}"
-                )
+                logger.debug(f"Skipping duplicate action: [{severity}] {action_type} — {title}")
                 return existing
 
         action = {
@@ -119,10 +117,10 @@ class ActionQueue:
 
     def list_actions(
         self,
-        status: Optional[str] = None,
-        action_type: Optional[str] = None,
+        status: str | None = None,
+        action_type: str | None = None,
         limit: int = 50,
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """List actions, optionally filtered by status and/or type."""
         results = self.actions
         if status:
@@ -131,14 +129,14 @@ class ActionQueue:
             results = [a for a in results if a["type"] == action_type]
         return results[:limit]
 
-    def get_action(self, action_id: str) -> Optional[Dict[str, Any]]:
+    def get_action(self, action_id: str) -> dict[str, Any] | None:
         """Get a single action by ID."""
         for action in self.actions:
             if action["id"] == action_id:
                 return action
         return None
 
-    def approve(self, action_id: str) -> Optional[Dict[str, Any]]:
+    def approve(self, action_id: str) -> dict[str, Any] | None:
         """Mark an action as approved for execution."""
         action = self.get_action(action_id)
         if not action:
@@ -151,7 +149,7 @@ class ActionQueue:
         logger.info(f"Action approved: {action_id} — {action['title']}")
         return action
 
-    def reject(self, action_id: str, reason: str = "") -> Optional[Dict[str, Any]]:
+    def reject(self, action_id: str, reason: str = "") -> dict[str, Any] | None:
         """Reject an action (won't fix)."""
         action = self.get_action(action_id)
         if not action:
@@ -163,7 +161,7 @@ class ActionQueue:
         logger.info(f"Action rejected: {action_id} — {reason or 'no reason'}")
         return action
 
-    def complete(self, action_id: str, result: str = "") -> Optional[Dict[str, Any]]:
+    def complete(self, action_id: str, result: str = "") -> dict[str, Any] | None:
         """Mark an approved/executing action as completed.
 
         If chain_on_complete is set, auto-creates a follow-up action.
@@ -189,15 +187,11 @@ class ActionQueue:
             )
             chained["parent_id"] = action_id
             self.save()
-            logger.info(
-                f"Chain created: {chained['id']} ({chain_type}) from parent {action_id}"
-            )
+            logger.info(f"Chain created: {chained['id']} ({chain_type}) from parent {action_id}")
 
         return action
 
-    def set_executing(
-        self, action_id: str, execution_log_id: str
-    ) -> Optional[Dict[str, Any]]:
+    def set_executing(self, action_id: str, execution_log_id: str) -> dict[str, Any] | None:
         """Transition an approved action to executing state."""
         action = self.get_action(action_id)
         if not action or action["status"] != "approved":
@@ -210,13 +204,13 @@ class ActionQueue:
         logger.info(f"Action executing: {action_id} (log={execution_log_id})")
         return action
 
-    def get_approved(self, limit: int = 10) -> List[Dict[str, Any]]:
+    def get_approved(self, limit: int = 10) -> list[dict[str, Any]]:
         """Return approved actions sorted by created_at (oldest first)."""
         approved = [a for a in self.actions if a["status"] == "approved"]
         approved.sort(key=lambda a: a.get("created_at", ""))
         return approved[:limit]
 
-    def fail_action(self, action_id: str, error: str) -> Optional[Dict[str, Any]]:
+    def fail_action(self, action_id: str, error: str) -> dict[str, Any] | None:
         """Mark an action as failed with an error message."""
         action = self.get_action(action_id)
         if not action:
@@ -228,7 +222,7 @@ class ActionQueue:
         logger.info(f"Action failed: {action_id} — {error}")
         return action
 
-    def increment_retry(self, action_id: str) -> Optional[Dict[str, Any]]:
+    def increment_retry(self, action_id: str) -> dict[str, Any] | None:
         """Increment retry_count and reset status to approved."""
         action = self.get_action(action_id)
         if not action:
@@ -240,7 +234,7 @@ class ActionQueue:
         logger.info(f"Action retry #{action['retry_count']}: {action_id}")
         return action
 
-    def get_chain_children(self, parent_id: str) -> List[Dict[str, Any]]:
+    def get_chain_children(self, parent_id: str) -> list[dict[str, Any]]:
         """Return actions whose parent_id matches."""
         return [a for a in self.actions if a.get("parent_id") == parent_id]
 
@@ -263,10 +257,10 @@ class ActionQueue:
             logger.info(f"Expired {expired_count} stale actions (>{hours}h old)")
         return expired_count
 
-    def summary(self) -> Dict[str, Any]:
+    def summary(self) -> dict[str, Any]:
         """Count actions by status and severity."""
-        by_status: Dict[str, int] = {}
-        by_severity: Dict[str, int] = {}
+        by_status: dict[str, int] = {}
+        by_severity: dict[str, int] = {}
         for action in self.actions:
             status = action["status"]
             severity = action["severity"]

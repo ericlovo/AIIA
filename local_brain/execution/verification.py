@@ -61,11 +61,7 @@ class Verifier:
         result = await self._pool.run(cmd, cwd=self._repo_path, timeout=30)
         return VerificationResult(
             verified=result.returncode == 0,
-            reason=(
-                "Lint check passed"
-                if result.returncode == 0
-                else "Lint check still failing"
-            ),
+            reason=("Lint check passed" if result.returncode == 0 else "Lint check still failing"),
             output=_truncate_tail(result.stdout + result.stderr),
         )
 
@@ -89,9 +85,7 @@ class Verifier:
         result = await self._pool.run(cmd, cwd=self._repo_path, timeout=180)
         return VerificationResult(
             verified=result.returncode == 0,
-            reason=(
-                "Tests passed" if result.returncode == 0 else "Tests still failing"
-            ),
+            reason=("Tests passed" if result.returncode == 0 else "Tests still failing"),
             output=_truncate_tail(result.stdout + result.stderr),
         )
 

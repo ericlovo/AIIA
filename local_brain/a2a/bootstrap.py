@@ -13,8 +13,9 @@ import logging
 import os
 import shutil
 import sys
+from collections.abc import Awaitable, Callable
 from pathlib import Path
-from typing import Any, Awaitable, Callable, Optional
+from typing import Any
 
 from local_brain.a2a.executors.aiia_executor import AIIAExecutor
 from local_brain.a2a.executors.aiia_memory_executor import AIIAMemoryExecutor
@@ -34,7 +35,7 @@ logger = logging.getLogger("aplora.a2a.bootstrap")
 AIIAGetter = Callable[[], Awaitable[Any]]
 
 
-def _find_brain_cli() -> Optional[str]:
+def _find_brain_cli() -> str | None:
     """Locate the brain CLI, with a fallback to the standard install location.
 
     shutil.which() depends on PATH, which under launchd on macOS doesn't
@@ -57,7 +58,7 @@ def _find_brain_cli() -> Optional[str]:
 def register_default_agents(
     *,
     base_url: str = "http://localhost:8100",
-    aiia_getter: Optional[AIIAGetter] = None,
+    aiia_getter: AIIAGetter | None = None,
 ) -> AgentRegistry:
     """
     Build a fresh registry and populate it with the default agent set.
@@ -109,9 +110,7 @@ def _maybe_register_brain_status(registry: AgentRegistry, base_url: str) -> None
         ),
         version="0.1.0",
         provider=AgentProvider(organization="Aplora AI", url="https://aplora.ai"),
-        supported_interfaces=[
-            AgentInterface(url=f"{base_url}/a2a/agents/{agent_id}/rpc")
-        ],
+        supported_interfaces=[AgentInterface(url=f"{base_url}/a2a/agents/{agent_id}/rpc")],
         capabilities=AgentCapabilities(streaming=False, push_notifications=False),
         default_input_modes=["text/plain"],
         default_output_modes=["text/plain"],
@@ -156,9 +155,7 @@ def _register_aiia_ask(
         ),
         version="0.1.0",
         provider=AgentProvider(organization="Aplora AI", url="https://aplora.ai"),
-        supported_interfaces=[
-            AgentInterface(url=f"{base_url}/a2a/agents/{agent_id}/rpc")
-        ],
+        supported_interfaces=[AgentInterface(url=f"{base_url}/a2a/agents/{agent_id}/rpc")],
         capabilities=AgentCapabilities(streaming=False, push_notifications=False),
         default_input_modes=["text/plain"],
         default_output_modes=["text/plain"],
@@ -206,9 +203,7 @@ def _register_aiia_remember(
         ),
         version="0.1.0",
         provider=AgentProvider(organization="Aplora AI", url="https://aplora.ai"),
-        supported_interfaces=[
-            AgentInterface(url=f"{base_url}/a2a/agents/{agent_id}/rpc")
-        ],
+        supported_interfaces=[AgentInterface(url=f"{base_url}/a2a/agents/{agent_id}/rpc")],
         capabilities=AgentCapabilities(streaming=False, push_notifications=False),
         default_input_modes=["text/plain"],
         default_output_modes=["text/plain"],
@@ -255,9 +250,7 @@ def _register_aiia_search(
         ),
         version="0.1.0",
         provider=AgentProvider(organization="Aplora AI", url="https://aplora.ai"),
-        supported_interfaces=[
-            AgentInterface(url=f"{base_url}/a2a/agents/{agent_id}/rpc")
-        ],
+        supported_interfaces=[AgentInterface(url=f"{base_url}/a2a/agents/{agent_id}/rpc")],
         capabilities=AgentCapabilities(streaming=False, push_notifications=False),
         default_input_modes=["text/plain"],
         default_output_modes=["text/plain"],
@@ -308,9 +301,7 @@ def _register_run_tests(registry: AgentRegistry, base_url: str) -> None:
         ),
         version="0.1.0",
         provider=AgentProvider(organization="Aplora AI", url="https://aplora.ai"),
-        supported_interfaces=[
-            AgentInterface(url=f"{base_url}/a2a/agents/{agent_id}/rpc")
-        ],
+        supported_interfaces=[AgentInterface(url=f"{base_url}/a2a/agents/{agent_id}/rpc")],
         capabilities=AgentCapabilities(streaming=False, push_notifications=False),
         default_input_modes=["text/plain"],
         default_output_modes=["text/plain"],
@@ -368,9 +359,7 @@ def _maybe_register_review_security(registry: AgentRegistry, base_url: str) -> N
         ),
         version="0.1.0",
         provider=AgentProvider(organization="Aplora AI", url="https://aplora.ai"),
-        supported_interfaces=[
-            AgentInterface(url=f"{base_url}/a2a/agents/{agent_id}/rpc")
-        ],
+        supported_interfaces=[AgentInterface(url=f"{base_url}/a2a/agents/{agent_id}/rpc")],
         capabilities=AgentCapabilities(streaming=False, push_notifications=False),
         default_input_modes=["text/plain"],
         default_output_modes=["text/plain"],
@@ -427,9 +416,7 @@ def _maybe_register_generate_report(registry: AgentRegistry, base_url: str) -> N
         ),
         version="0.1.0",
         provider=AgentProvider(organization="Aplora AI", url="https://aplora.ai"),
-        supported_interfaces=[
-            AgentInterface(url=f"{base_url}/a2a/agents/{agent_id}/rpc")
-        ],
+        supported_interfaces=[AgentInterface(url=f"{base_url}/a2a/agents/{agent_id}/rpc")],
         capabilities=AgentCapabilities(streaming=False, push_notifications=False),
         default_input_modes=["text/plain"],
         default_output_modes=["text/plain"],
@@ -483,9 +470,7 @@ def _register_aiia_status(
         ),
         version="0.1.0",
         provider=AgentProvider(organization="Aplora AI", url="https://aplora.ai"),
-        supported_interfaces=[
-            AgentInterface(url=f"{base_url}/a2a/agents/{agent_id}/rpc")
-        ],
+        supported_interfaces=[AgentInterface(url=f"{base_url}/a2a/agents/{agent_id}/rpc")],
         capabilities=AgentCapabilities(streaming=False, push_notifications=False),
         default_input_modes=["text/plain"],
         default_output_modes=["text/plain"],
@@ -539,9 +524,7 @@ def _register_aiia_log_story(
         ),
         version="0.1.0",
         provider=AgentProvider(organization="Aplora AI", url="https://aplora.ai"),
-        supported_interfaces=[
-            AgentInterface(url=f"{base_url}/a2a/agents/{agent_id}/rpc")
-        ],
+        supported_interfaces=[AgentInterface(url=f"{base_url}/a2a/agents/{agent_id}/rpc")],
         capabilities=AgentCapabilities(streaming=False, push_notifications=False),
         default_input_modes=["text/plain"],
         default_output_modes=["text/plain"],

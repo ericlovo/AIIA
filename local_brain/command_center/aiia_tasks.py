@@ -20,9 +20,10 @@ import json
 import logging
 import os
 import time
+from collections.abc import Callable, Coroutine
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Callable, Coroutine, Dict, List, Optional
+from typing import Any
 
 import httpx
 
@@ -120,7 +121,7 @@ def _should_index(filepath: str) -> bool:
     return True
 
 
-def _chunk_text(text: str, source: str) -> List[Dict[str, Any]]:
+def _chunk_text(text: str, source: str) -> list[dict[str, Any]]:
     """Split text into overlapping chunks with deterministic IDs."""
     if len(text) <= CHUNK_SIZE:
         chunk_id = hashlib.sha256(f"{source}:0".encode()).hexdigest()[:16]
@@ -143,9 +144,7 @@ def _chunk_text(text: str, source: str) -> List[Dict[str, Any]]:
 
         chunk = text[start:end].strip()
         if chunk:
-            chunk_id = hashlib.sha256(f"{source}:{chunk_index}".encode()).hexdigest()[
-                :16
-            ]
+            chunk_id = hashlib.sha256(f"{source}:{chunk_index}".encode()).hexdigest()[:16]
             chunks.append(
                 {
                     "id": chunk_id,
@@ -281,10 +280,10 @@ class TaskRunner:
         self.repo_path = repo_path
         self.monitor_state = monitor_state
         self.action_queue = action_queue
-        self._running_task: Optional[str] = None
+        self._running_task: str | None = None
 
         # Initialize task states
-        self.tasks: Dict[str, Dict[str, Any]] = {}
+        self.tasks: dict[str, dict[str, Any]] = {}
         for task_id, defn in TASK_DEFINITIONS.items():
             self.tasks[task_id] = {
                 "task_id": task_id,
@@ -305,7 +304,7 @@ class TaskRunner:
             }
 
         # Extra persistent state (e.g. last_commit_sha for repo_sync)
-        self._extra: Dict[str, Any] = {}
+        self._extra: dict[str, Any] = {}
 
         # Task implementations
         self._implementations = {
@@ -344,7 +343,7 @@ class TaskRunner:
 
             await asyncio.sleep(SCHEDULER_INTERVAL)
 
-    def _find_due_task(self) -> Optional[str]:
+    def _find_due_task(self) -> str | None:
         """Find the next task that is due to run."""
         now = datetime.now(timezone.utc)
 
@@ -389,9 +388,7 @@ class TaskRunner:
             if task["last_run"]:
                 last_dt = datetime.fromisoformat(task["last_run"])
                 next_dt = (
-                    last_dt.replace(tzinfo=timezone.utc)
-                    if last_dt.tzinfo is None
-                    else last_dt
+                    last_dt.replace(tzinfo=timezone.utc) if last_dt.tzinfo is None else last_dt
                 )
                 from datetime import timedelta
 
@@ -405,16 +402,14 @@ class TaskRunner:
 
             target_hour = defn["schedule_cron_hour"]
             target_minute = defn.get("schedule_cron_minute", 0)
-            next_dt = now.replace(
-                hour=target_hour, minute=target_minute, second=0, microsecond=0
-            )
+            next_dt = now.replace(hour=target_hour, minute=target_minute, second=0, microsecond=0)
             if next_dt <= now:
                 next_dt += timedelta(days=1)
             task["next_run"] = next_dt.isoformat()
 
     # ─── Execution Lifecycle ─────────────────────────────────
 
-    async def trigger_task(self, task_id: str) -> Dict[str, Any]:
+    async def trigger_task(self, task_id: str) -> dict[str, Any]:
         """Manually trigger a task. Returns immediately; task runs in background."""
         if task_id not in self.tasks:
             return {"error": f"Unknown task: {task_id}"}
@@ -494,9 +489,7 @@ class TaskRunner:
                     "elapsed_ms": elapsed_ms,
                 },
             )
-            logger.info(
-                f"Task '{task_id}' completed in {elapsed_ms}ms: {result_summary}"
-            )
+            logger.info(f"Task '{task_id}' completed in {elapsed_ms}ms: {result_summary}")
 
         except Exception as e:
             elapsed_ms = round((time.monotonic() - start_time) * 1000, 1)
@@ -561,11 +554,11 @@ class TaskRunner:
 
     # ─── API Methods ─────────────────────────────────────────
 
-    def get_all_tasks(self) -> List[Dict[str, Any]]:
+    def get_all_tasks(self) -> list[dict[str, Any]]:
         """Return all tasks with current status."""
         return list(self.tasks.values())
 
-    def get_history(self) -> List[Dict[str, Any]]:
+    def get_history(self) -> list[dict[str, Any]]:
         """Return recent run history across all tasks."""
         all_runs = []
         for task_id, task in self.tasks.items():
@@ -636,9 +629,9 @@ class TaskRunner:
         self,
         method: str,
         path: str,
-        body: Optional[Dict] = None,
+        body: dict | None = None,
         timeout: float = 30.0,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """HTTP request to AIIA at port 8100."""
         url = f"{AIIA_BASE_URL}{path}"
         async with httpx.AsyncClient(timeout=timeout) as client:
@@ -650,9 +643,7 @@ class TaskRunner:
                 raise ValueError(f"Unsupported method: {method}")
 
             if resp.status_code != 200:
-                raise RuntimeError(
-                    f"AIIA returned HTTP {resp.status_code}: {resp.text[:200]}"
-                )
+                raise RuntimeError(f"AIIA returned HTTP {resp.status_code}: {resp.text[:200]}")
             return resp.json()
 
     async def _run_git(self, *args: str) -> str:
@@ -760,9 +751,7 @@ class TaskRunner:
 
         # Emit insight if any service is degraded/offline
         offline = [
-            svc.get("name", sid)
-            for sid, svc in services.items()
-            if svc.get("status") != "online"
+            svc.get("name", sid) for sid, svc in services.items() if svc.get("status") != "online"
         ]
         if offline:
             await self._emit_insight(
@@ -804,9 +793,7 @@ class TaskRunner:
 
         if last_sha and last_sha != new_sha:
             # Get changed files between old and new
-            diff_output = await self._run_git(
-                "diff", "--name-only", f"{last_sha}..{new_sha}"
-            )
+            diff_output = await self._run_git("diff", "--name-only", f"{last_sha}..{new_sha}")
             changed_files = [f for f in diff_output.strip().split("\n") if f]
         elif last_sha is None:
             # First run — don't index everything, just mark position
@@ -819,9 +806,7 @@ class TaskRunner:
             await self._progress("repo_sync", 100, "Complete")
             return "Already up to date — no new commits"
 
-        await self._progress(
-            "repo_sync", 30, f"Filtering {len(changed_files)} changed files"
-        )
+        await self._progress("repo_sync", 30, f"Filtering {len(changed_files)} changed files")
 
         # Filter to indexable files
         indexable = []
@@ -833,12 +818,8 @@ class TaskRunner:
         if not indexable:
             self._extra["last_commit_sha"] = new_sha
             await self._progress("repo_sync", 100, "Complete")
-            commits = (
-                new_sha[:8] if last_sha is None else f"{last_sha[:8]}..{new_sha[:8]}"
-            )
-            return (
-                f"Pulled {commits}: {len(changed_files)} changed files, none indexable"
-            )
+            commits = new_sha[:8] if last_sha is None else f"{last_sha[:8]}..{new_sha[:8]}"
+            return f"Pulled {commits}: {len(changed_files)} changed files, none indexable"
 
         await self._progress("repo_sync", 40, f"Indexing {len(indexable)} files")
 
@@ -904,19 +885,15 @@ class TaskRunner:
             await self._progress("memory_digest", 100, "Complete")
             return "No memories to review"
 
-        await self._progress(
-            "memory_digest", 15, f"Grouping {len(memories)} memories by category"
-        )
+        await self._progress("memory_digest", 15, f"Grouping {len(memories)} memories by category")
 
         # Group by category
-        by_category: Dict[str, List] = {}
+        by_category: dict[str, list] = {}
         for mem in memories:
             cat = mem.get("category", "uncategorized")
             by_category.setdefault(cat, []).append(mem)
 
-        await self._progress(
-            "memory_digest", 20, f"Found {len(by_category)} categories"
-        )
+        await self._progress("memory_digest", 20, f"Found {len(by_category)} categories")
 
         # Review categories with enough entries to have potential duplicates
         findings = []
@@ -925,9 +902,7 @@ class TaskRunner:
 
         for i, (cat, mems) in enumerate(reviewable.items()):
             pct = 20 + int((i / max(len(reviewable), 1)) * 50)  # 20-70%
-            await self._progress(
-                "memory_digest", pct, f"Reviewing '{cat}' ({len(mems)} entries)"
-            )
+            await self._progress("memory_digest", pct, f"Reviewing '{cat}' ({len(mems)} entries)")
 
             # Build prompt with memory contents
             memory_list = "\n".join(
@@ -994,9 +969,7 @@ class TaskRunner:
         )
 
         await self._progress("memory_digest", 100, "Complete")
-        return (
-            f"Reviewed {categories_reviewed} categories, {len(memories)} memories total"
-        )
+        return f"Reviewed {categories_reviewed} categories, {len(memories)} memories total"
 
     async def _task_daily_brief(self) -> str:
         """Generate a daily summary: git activity, health trends, KB growth."""
@@ -1016,9 +989,7 @@ class TaskRunner:
         # Fallback: raw git log if report generation failed
         if report is None:
             try:
-                git_log = await self._run_git(
-                    "log", "--oneline", "--since=24 hours ago"
-                )
+                git_log = await self._run_git("log", "--oneline", "--since=24 hours ago")
                 recent_commits = [line for line in git_log.strip().split("\n") if line]
             except Exception:
                 recent_commits = []
@@ -1041,9 +1012,7 @@ class TaskRunner:
 
         # KB stats
         try:
-            aiia_status = await self._aiia_request(
-                "GET", "/v1/aiia/status", timeout=10.0
-            )
+            aiia_status = await self._aiia_request("GET", "/v1/aiia/status", timeout=10.0)
             knowledge = aiia_status.get("knowledge", {})
             kb_docs = knowledge.get("knowledge_docs", 0)
             memory_info = aiia_status.get("memory", {})
@@ -1057,17 +1026,13 @@ class TaskRunner:
         # Compare with yesterday's stats
         yesterday_stats = self._extra.get("daily_brief_stats", {})
         kb_delta = kb_docs - yesterday_stats.get("kb_docs", kb_docs)
-        mem_delta = total_memories - yesterday_stats.get(
-            "total_memories", total_memories
-        )
+        mem_delta = total_memories - yesterday_stats.get("total_memories", total_memories)
 
         await self._progress("daily_brief", 35, "Loading recent memories")
 
         # Recent memories
         try:
-            mem_data = await self._aiia_request(
-                "GET", "/v1/aiia/memory?limit=20", timeout=10.0
-            )
+            mem_data = await self._aiia_request("GET", "/v1/aiia/memory?limit=20", timeout=10.0)
             recent_memories = mem_data.get("memories", [])
         except Exception:
             recent_memories = []
@@ -1087,14 +1052,8 @@ class TaskRunner:
                     providers = tdata.get("by_provider", {})
                     parts = []
                     for prov, stats in providers.items():
-                        cost = (
-                            "FREE"
-                            if prov == "local"
-                            else f"${stats.get('cost', 0):.4f}"
-                        )
-                        parts.append(
-                            f"{prov}: {stats.get('tokens', 0)} tokens ({cost})"
-                        )
+                        cost = "FREE" if prov == "local" else f"${stats.get('cost', 0):.4f}"
+                        parts.append(f"{prov}: {stats.get('tokens', 0)} tokens ({cost})")
                     token_section = (
                         f"  Total: {total_tokens} tokens, ${total_cost:.4f}, {total_requests} requests\n  "
                         + "\n  ".join(parts)
@@ -1112,9 +1071,7 @@ class TaskRunner:
             )
             wip_items = wip_data.get("memories", [])
             if wip_items:
-                wip_section = "\n".join(
-                    f"  - {w.get('fact', '')[:120]}" for w in wip_items[:5]
-                )
+                wip_section = "\n".join(f"  - {w.get('fact', '')[:120]}" for w in wip_items[:5])
         except Exception:
             pass
 
@@ -1166,15 +1123,11 @@ class TaskRunner:
                     f"+{pdata['total_additions']}/-{pdata['total_deletions']}"
                 )
                 for c in pdata["commits"][:5]:
-                    commits_lines.append(
-                        f"    {c['type']:8s} {c['hash']} {c['subject'][:70]}"
-                    )
+                    commits_lines.append(f"    {c['type']:8s} {c['hash']} {c['subject'][:70]}")
             # Syntax errors from report
             sx = report.get("syntax_errors", {})
             if sx.get("total_errors", 0) > 0:
-                commits_lines.append(
-                    f"\n  SYNTAX ERRORS: {sx['total_errors']} errors found"
-                )
+                commits_lines.append(f"\n  SYNTAX ERRORS: {sx['total_errors']} errors found")
             commits_section = "\n".join(commits_lines)
         elif recent_commits:
             # Fallback: flat list from raw git log
@@ -1235,9 +1188,7 @@ RECENT MEMORIES:
                 },
                 timeout=90.0,
             )
-            brief = result.get(
-                "answer", "Brief generation failed — no response from AIIA"
-            )
+            brief = result.get("answer", "Brief generation failed — no response from AIIA")
         except Exception as e:
             brief = f"Brief generation failed: {str(e)[:200]}"
 
@@ -1303,18 +1254,14 @@ RECENT MEMORIES:
                 if f.endswith(".py"):
                     py_files.append(os.path.join(root, f))
 
-        await self._progress(
-            "code_health", 15, f"Checking {len(py_files)} Python files"
-        )
+        await self._progress("code_health", 15, f"Checking {len(py_files)} Python files")
 
         # Syntax check
         syntax_errors = []
         for i, filepath in enumerate(py_files):
             if i % 50 == 0:
                 pct = 15 + int((i / max(len(py_files), 1)) * 40)
-                await self._progress(
-                    "code_health", pct, f"Syntax checking ({i}/{len(py_files)})"
-                )
+                await self._progress("code_health", pct, f"Syntax checking ({i}/{len(py_files)})")
             try:
                 proc = await asyncio.create_subprocess_exec(
                     "python3",
@@ -1454,9 +1401,7 @@ RECENT MEMORIES:
         )
 
         await self._progress("code_health", 100, "Complete")
-        summary = (
-            f"{len(py_files)} files, {len(syntax_errors)} errors, {todo_count} TODOs"
-        )
+        summary = f"{len(py_files)} files, {len(syntax_errors)} errors, {todo_count} TODOs"
         return (summary, report)
 
     async def _task_learning_loop(self) -> str:
@@ -1479,12 +1424,8 @@ RECENT MEMORIES:
                 # Check if SHA still exists (might have been force-pushed)
                 try:
                     await self._run_git("cat-file", "-t", last_learned_sha)
-                    diff = await self._run_git(
-                        "diff", "--stat", f"{last_learned_sha}..HEAD"
-                    )
-                    log = await self._run_git(
-                        "log", "--oneline", f"{last_learned_sha}..HEAD"
-                    )
+                    diff = await self._run_git("diff", "--stat", f"{last_learned_sha}..HEAD")
+                    log = await self._run_git("log", "--oneline", f"{last_learned_sha}..HEAD")
                     diff_detail = await self._run_git(
                         "diff",
                         f"{last_learned_sha}..HEAD",
@@ -1613,9 +1554,7 @@ Be specific and reference actual file names. Keep each point to 1-2 sentences.""
         for root, dirs, files in os.walk(repo):
             dirs[:] = [d for d in dirs if d not in SKIP_DIRS]
             for f in files:
-                if f.startswith("test_") and f.endswith(".py"):
-                    test_files.append(os.path.join(root, f))
-                elif f.endswith("_test.py"):
+                if f.startswith("test_") and f.endswith(".py") or f.endswith("_test.py"):
                     test_files.append(os.path.join(root, f))
 
         if not test_files:
@@ -1729,9 +1668,7 @@ Be specific and reference actual file names. Keep each point to 1-2 sentences.""
 
         # Store in AIIA
         status_word = (
-            "all passing"
-            if failed == 0 and errors == 0
-            else f"{failed} failures, {errors} errors"
+            "all passing" if failed == 0 and errors == 0 else f"{failed} failures, {errors} errors"
         )
         await self._aiia_request(
             "POST",
@@ -1749,9 +1686,7 @@ Be specific and reference actual file names. Keep each point to 1-2 sentences.""
 
     async def _task_weekly_default_status(self) -> str:
         """Generate a DefaultApp client delivery report for the last 7 days."""
-        await self._progress(
-            "weekly_default_status", 5, "Getting DefaultApp commits (7 days)"
-        )
+        await self._progress("weekly_default_status", 5, "Getting DefaultApp commits (7 days)")
 
         # 1. DefaultApp-specific commits
         try:
@@ -1840,9 +1775,7 @@ Be specific and reference actual file names. Keep each point to 1-2 sentences.""
 
         # 4. AIIA knowledge stats
         try:
-            aiia_status = await self._aiia_request(
-                "GET", "/v1/aiia/status", timeout=10.0
-            )
+            aiia_status = await self._aiia_request("GET", "/v1/aiia/status", timeout=10.0)
             kb_docs = aiia_status.get("knowledge", {}).get("knowledge_docs", 0)
             total_memories = aiia_status.get("memory", {}).get("total_memories", 0)
         except Exception:
@@ -1870,9 +1803,7 @@ Be specific and reference actual file names. Keep each point to 1-2 sentences.""
             "total_memories": total_memories,
         }
 
-        await self._progress(
-            "weekly_default_status", 60, "AIIA generating client summary"
-        )
+        await self._progress("weekly_default_status", 60, "AIIA generating client summary")
 
         # 6. Ask AIIA to generate client-facing summary
         # Keep prompt compact — strip commit prefixes, limit to 8 per category
@@ -1917,9 +1848,7 @@ Be specific and reference actual file names. Keep each point to 1-2 sentences.""
         await self._progress("weekly_default_status", 80, "Saving report")
 
         # 7. Save report JSON
-        reports_dir = Path(
-            os.path.expanduser("~/.aiia/eq_data/weekly_reports")
-        )
+        reports_dir = Path(os.path.expanduser("~/.aiia/eq_data/weekly_reports"))
         reports_dir.mkdir(parents=True, exist_ok=True)
         report_data["generated_at"] = datetime.now(timezone.utc).isoformat()
         report_data["report_text"] = report_text
@@ -1982,9 +1911,7 @@ Be specific and reference actual file names. Keep each point to 1-2 sentences.""
             return f"DB connection failed: {str(e)[:100]}"
 
         try:
-            await self._progress(
-                "cross_tenant_analytics", 20, "Querying conversation stats"
-            )
+            await self._progress("cross_tenant_analytics", 20, "Querying conversation stats")
 
             # Total conversations per tenant (last 7 days)
             rows = await conn.fetch("""
@@ -1996,9 +1923,7 @@ Be specific and reference actual file names. Keep each point to 1-2 sentences.""
                 ORDER BY conv_count DESC
             """)
 
-            await self._progress(
-                "cross_tenant_analytics", 40, "Querying message volume"
-            )
+            await self._progress("cross_tenant_analytics", 40, "Querying message volume")
 
             # Message volume per tenant
             msg_rows = await conn.fetch("""
@@ -2026,9 +1951,7 @@ Be specific and reference actual file names. Keep each point to 1-2 sentences.""
                 if tid in tenant_stats:
                     tenant_stats[tid]["messages"] = row["msg_count"]
 
-            await self._progress(
-                "cross_tenant_analytics", 70, "Asking AIIA for insights"
-            )
+            await self._progress("cross_tenant_analytics", 70, "Asking AIIA for insights")
 
             # Build summary text
             stats_text = "\n".join(
@@ -2138,9 +2061,7 @@ Be specific and reference actual file names. Keep each point to 1-2 sentences.""
 
         # 3. Build security snapshot
         ci_passing = all(
-            r.get("conclusion") == "success"
-            for r in ci_runs
-            if r.get("status") == "completed"
+            r.get("conclusion") == "success" for r in ci_runs if r.get("status") == "completed"
         )
         ci_status = "passing" if ci_passing and ci_runs else "unknown"
 
@@ -2203,8 +2124,7 @@ Be specific and reference actual file names. Keep each point to 1-2 sentences.""
                 await self.broadcast(
                     "new_action",
                     {
-                        "count": alerts_by_severity["critical"]
-                        + alerts_by_severity["high"],
+                        "count": alerts_by_severity["critical"] + alerts_by_severity["high"],
                         "source": "security_scan",
                     },
                 )
@@ -2326,11 +2246,7 @@ Be specific and reference actual file names. Keep each point to 1-2 sentences.""
                     severity=severity,
                     title=f"CI failing: {run_name} on {branch}",
                     description=f"GitHub Actions workflow '{run_name}' failed on branch '{branch}'. "
-                    + (
-                        f"Failing for {hours_failing:.0f}h. "
-                        if hours_failing > 1
-                        else ""
-                    )
+                    + (f"Failing for {hours_failing:.0f}h. " if hours_failing > 1 else "")
                     + (f"URL: {run_url}" if run_url else ""),
                     source_task="ci_monitor",
                 )

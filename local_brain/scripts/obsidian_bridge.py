@@ -37,10 +37,8 @@ import urllib.parse
 import urllib.request
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, List, Optional
 
 # --- Paths & URLs ---
-
 from local_brain.vault_paths import vault_dir as _vault_dir
 
 BRAIN_URL = os.getenv("AIIA_URL", "http://localhost:8100")
@@ -78,7 +76,7 @@ logger = logging.getLogger("aiia.obsidian_bridge")
 # ---------------------------------------------------------------------------
 
 
-def _get(url: str, params: Optional[Dict] = None, timeout: int = 10) -> Optional[dict]:
+def _get(url: str, params: dict | None = None, timeout: int = 10) -> dict | None:
     """GET request returning parsed JSON, or None on any error."""
     if params:
         url = url + "?" + urllib.parse.urlencode(params)
@@ -97,17 +95,17 @@ def _get(url: str, params: Optional[Dict] = None, timeout: int = 10) -> Optional
 # ---------------------------------------------------------------------------
 
 
-def fetch_memories(category: str, limit: int = 200) -> List[dict]:
+def fetch_memories(category: str, limit: int = 200) -> list[dict]:
     result = _get(f"{BRAIN_URL}/v1/aiia/memory", {"category": category, "limit": limit})
     return result.get("memories", []) if result else []
 
 
-def fetch_workstreams() -> List[dict]:
+def fetch_workstreams() -> list[dict]:
     result = _get(f"{CC_URL}/api/workstreams")
     return result if isinstance(result, list) else []
 
 
-def fetch_roadmap() -> List[dict]:
+def fetch_roadmap() -> list[dict]:
     result = _get(f"{CC_URL}/api/roadmap")
     if isinstance(result, list):
         return result
@@ -126,7 +124,7 @@ class SyncState:
 
     def __init__(self, path: Path):
         self._path = path
-        self._state: Dict[str, str] = {}
+        self._state: dict[str, str] = {}
         if path.exists():
             try:
                 self._state = json.loads(path.read_text())
@@ -164,7 +162,7 @@ def _frontmatter(**kwargs) -> str:
     return "\n".join(lines)
 
 
-def build_decisions_md(memories: List[dict]) -> str:
+def build_decisions_md(memories: list[dict]) -> str:
     today = datetime.utcnow().strftime("%Y-%m-%d")
     fm = _frontmatter(
         type="resource",
@@ -175,7 +173,7 @@ def build_decisions_md(memories: List[dict]) -> str:
     lines = [fm, "", "# AIIA Decisions Digest", "", _AUTOGEN_WARNING, ""]
 
     # Group by YYYY-MM for readability
-    by_month: Dict[str, List[dict]] = {}
+    by_month: dict[str, list[dict]] = {}
     for m in memories:
         month = (m.get("created_at") or "")[:7] or "unknown"
         by_month.setdefault(month, []).append(m)
@@ -198,7 +196,7 @@ def build_decisions_md(memories: List[dict]) -> str:
     return "\n".join(lines)
 
 
-def build_patterns_md(memories: List[dict]) -> str:
+def build_patterns_md(memories: list[dict]) -> str:
     today = datetime.utcnow().strftime("%Y-%m-%d")
     fm = _frontmatter(
         type="resource",
@@ -216,7 +214,7 @@ def build_patterns_md(memories: List[dict]) -> str:
     return "\n".join(lines)
 
 
-def build_lessons_md(memories: List[dict]) -> str:
+def build_lessons_md(memories: list[dict]) -> str:
     today = datetime.utcnow().strftime("%Y-%m-%d")
     fm = _frontmatter(
         type="resource",
@@ -234,7 +232,7 @@ def build_lessons_md(memories: List[dict]) -> str:
     return "\n".join(lines)
 
 
-def build_sessions_md(memories: List[dict]) -> str:
+def build_sessions_md(memories: list[dict]) -> str:
     today = datetime.utcnow().strftime("%Y-%m-%d")
     fm = _frontmatter(
         type="resource",
@@ -256,7 +254,7 @@ def build_sessions_md(memories: List[dict]) -> str:
     return "\n".join(lines)
 
 
-def build_backlog_md(stories: List[dict]) -> str:
+def build_backlog_md(stories: list[dict]) -> str:
     today = datetime.utcnow().strftime("%Y-%m-%d")
     fm = _frontmatter(
         type="resource",
@@ -267,7 +265,7 @@ def build_backlog_md(stories: List[dict]) -> str:
     lines = [fm, "", "# AIIA Roadmap Backlog", "", _AUTOGEN_WARNING, ""]
 
     status_order = ["active", "in_progress", "backlog", "shipped", "cancelled"]
-    by_status: Dict[str, List[dict]] = {}
+    by_status: dict[str, list[dict]] = {}
     for s in stories:
         st = s.get("status", "unknown")
         by_status.setdefault(st, []).append(s)
@@ -402,7 +400,7 @@ def _cluster_frontmatter(category: str, cluster_name: str, today: str) -> str:
     )
 
 
-def build_cluster_files(category: str, memories: List[dict]) -> Dict[str, str]:
+def build_cluster_files(category: str, memories: list[dict]) -> dict[str, str]:
     """Build monthly cluster files from memories. Returns {rel_path: content}."""
     today = datetime.utcnow().strftime("%Y-%m-%d")
     folder = _CLUSTER_FOLDERS.get(category)
@@ -410,7 +408,7 @@ def build_cluster_files(category: str, memories: List[dict]) -> Dict[str, str]:
         return {}
 
     # Group by YYYY-MM
-    by_month: Dict[str, List[dict]] = {}
+    by_month: dict[str, list[dict]] = {}
     for m in memories:
         month = (m.get("created_at") or "")[:7] or "unknown"
         by_month.setdefault(month, []).append(m)
@@ -431,7 +429,7 @@ def build_cluster_files(category: str, memories: List[dict]) -> Dict[str, str]:
         ]
 
         # Group entries within the month by date
-        by_date: Dict[str, List[dict]] = {}
+        by_date: dict[str, list[dict]] = {}
         for m in items:
             date = (m.get("created_at") or "")[:10] or "unknown"
             by_date.setdefault(date, []).append(m)
@@ -458,7 +456,7 @@ def build_cluster_files(category: str, memories: List[dict]) -> Dict[str, str]:
     return files
 
 
-def build_moc_for_category(category: str, cluster_rel_paths: List[str], total: int) -> str:
+def build_moc_for_category(category: str, cluster_rel_paths: list[str], total: int) -> str:
     """Build a MOC (Map of Content) that links to cluster files."""
     today = datetime.utcnow().strftime("%Y-%m-%d")
     title = category.replace("_", " ").title()
@@ -506,7 +504,7 @@ class ObsidianBridge:
         self.state = SyncState(STATE_FILE)
         self.written = 0
         self.skipped = 0
-        self.errors: List[str] = []
+        self.errors: list[str] = []
 
     def _write(self, rel_path: str, content: str):
         dest = VAULT_DIR / rel_path

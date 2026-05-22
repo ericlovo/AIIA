@@ -30,9 +30,8 @@ Requires:
     pip install mcp httpx
 """
 
-import os
 import logging
-from typing import Optional
+import os
 
 import httpx
 from mcp.server.fastmcp import FastMCP
@@ -47,14 +46,10 @@ AIIA_URL = os.environ.get("AIIA_URL", "http://localhost:8100")
 AIIA_API_KEY = os.environ.get("AIIA_API_KEY", "")
 # Derive Command Center URL from AIIA_URL (same host, port 8200) unless explicitly set
 _default_cc_url = (
-    AIIA_URL.replace(":8100", ":8200")
-    if ":8100" in AIIA_URL
-    else "http://localhost:8200"
+    AIIA_URL.replace(":8100", ":8200") if ":8100" in AIIA_URL else "http://localhost:8200"
 )
 COMMAND_CENTER_URL = os.environ.get("COMMAND_CENTER_URL", _default_cc_url)
-TIMEOUT = float(
-    os.environ.get("AIIA_TIMEOUT", "120")
-)  # seconds — ask can be slow on 7B
+TIMEOUT = float(os.environ.get("AIIA_TIMEOUT", "120"))  # seconds — ask can be slow on 7B
 
 # ─────────────────────────────────────────────────────────────
 # MCP Server
@@ -76,7 +71,7 @@ mcp = FastMCP(
 )
 
 
-async def _call_aiia(method: str, path: str, body: Optional[dict] = None) -> dict:
+async def _call_aiia(method: str, path: str, body: dict | None = None) -> dict:
     """Make an HTTP request to the AIIA Local Brain API."""
     url = f"{AIIA_URL}{path}"
     headers = {}
@@ -98,8 +93,7 @@ async def _call_aiia(method: str, path: str, body: Optional[dict] = None) -> dic
     except httpx.ConnectError:
         return {
             "error": (
-                f"Cannot reach AIIA at {AIIA_URL}. "
-                "Is the Mac Mini on? Is Tailscale connected?"
+                f"Cannot reach AIIA at {AIIA_URL}. Is the Mac Mini on? Is Tailscale connected?"
             )
         }
     except httpx.ReadTimeout:
@@ -111,7 +105,7 @@ async def _call_aiia(method: str, path: str, body: Optional[dict] = None) -> dic
 
 
 async def _call_command_center(
-    method: str, path: str, body: Optional[dict] = None, timeout: float = 30.0
+    method: str, path: str, body: dict | None = None, timeout: float = 30.0
 ) -> dict:
     """Make an HTTP request to the Command Center dashboard."""
     url = f"{COMMAND_CENTER_URL}{path}"
@@ -123,9 +117,7 @@ async def _call_command_center(
                 resp = await client.post(url, json=body or {})
 
             if resp.status_code != 200:
-                return {
-                    "error": f"Command Center returned {resp.status_code}: {resp.text}"
-                }
+                return {"error": f"Command Center returned {resp.status_code}: {resp.text}"}
             return resp.json()
     except httpx.ConnectError:
         return {"error": f"Cannot reach Command Center at {COMMAND_CENTER_URL}"}
@@ -179,9 +171,7 @@ async def aiia_ask(
 
 
 @mcp.tool()
-async def aiia_remember(
-    fact: str, category: str = "lessons", source: str = "claude-code"
-) -> str:
+async def aiia_remember(fact: str, category: str = "lessons", source: str = "claude-code") -> str:
     """Teach AIIA a fact so she remembers it permanently. This is stored on
     the Mac Mini and persists across all sessions forever.
 
@@ -353,9 +343,7 @@ async def _auto_extract_stories(
         "key_decisions": key_decisions or [],
         "session_id": session_id,
     }
-    result = await _call_command_center(
-        "POST", "/api/roadmap/extract", body, timeout=120.0
-    )
+    result = await _call_command_center("POST", "/api/roadmap/extract", body, timeout=120.0)
 
     if "error" in result:
         logger.warning(f"Story extraction failed: {result['error']}")
@@ -405,9 +393,7 @@ async def aiia_session_start(
     lines = ["=== AIIA Session Brief ===\n"]
 
     # Pending actions from action queue
-    actions_result = await _call_command_center(
-        "GET", "/api/actions?status=pending&limit=10"
-    )
+    actions_result = await _call_command_center("GET", "/api/actions?status=pending&limit=10")
     if "error" not in actions_result:
         pending_actions = actions_result.get("actions", [])
         if pending_actions:
@@ -456,9 +442,7 @@ async def aiia_session_start(
             story_id = s.get("id", "?")
             tags = s.get("tags", [])
             tag_str = f" [{', '.join(tags)}]" if tags else ""
-            lines.append(
-                f"- [{priority}] ({status}) {title} — {product}{tag_str} [id: {story_id}]"
-            )
+            lines.append(f"- [{priority}] ({status}) {title} — {product}{tag_str} [id: {story_id}]")
         if len(stories) > 10:
             lines.append(f"  ... and {len(stories) - 10} more")
 
@@ -543,23 +527,15 @@ async def aiia_session_start(
             actions = checkin_data.get("actions", {})
             action_summary = actions.get("summary", {})
             pending_count = (
-                action_summary.get("pending", 0)
-                if isinstance(action_summary, dict)
-                else 0
+                action_summary.get("pending", 0) if isinstance(action_summary, dict) else 0
             )
 
             if pending_count > 0:
-                lines.append(
-                    f"\n### Pending Actions: {pending_count} items need review"
-                )
+                lines.append(f"\n### Pending Actions: {pending_count} items need review")
                 top_critical = actions.get("top_critical", [])
                 for a in top_critical[:5]:
-                    lines.append(
-                        f"  - [{a.get('type', '?')}] {a.get('title', 'untitled')}"
-                    )
-                lines.append(
-                    "  Use aiia_approve_action or aiia_reject_action to triage."
-                )
+                    lines.append(f"  - [{a.get('type', '?')}] {a.get('title', 'untitled')}")
+                lines.append("  Use aiia_approve_action or aiia_reject_action to triage.")
 
             # Add blocked stories
             stories = checkin_data.get("stories", {})
@@ -567,9 +543,7 @@ async def aiia_session_start(
             if blocked:
                 lines.append(f"\n### Blocked Stories: {len(blocked)}")
                 for s in blocked:
-                    lines.append(
-                        f"  - {s.get('title', 'untitled')} ({s.get('product', '?')})"
-                    )
+                    lines.append(f"  - {s.get('title', 'untitled')} ({s.get('product', '?')})")
 
             # Add nightly job status
             jobs = checkin_data.get("nightly_jobs", {})
@@ -583,16 +557,10 @@ async def aiia_session_start(
     except Exception:
         pass  # Check-in enrichment is optional
 
-    return (
-        "\n".join(lines)
-        if len(lines) > 1
-        else "No prior context found. Starting fresh."
-    )
+    return "\n".join(lines) if len(lines) > 1 else "No prior context found. Starting fresh."
 
 
-async def _session_start_fallback(
-    task_description: str, files: list[str] | None
-) -> str:
+async def _session_start_fallback(task_description: str, files: list[str] | None) -> str:
     """Fallback if /v1/aiia/session-start doesn't exist yet — make individual calls."""
     lines = ["## Session Context from AIIA\n"]
 
@@ -661,9 +629,7 @@ async def _session_start_fallback(
                 product = s.get("product", "?")
                 title = s.get("title", "untitled")
                 story_id = s.get("id", "?")
-                lines.append(
-                    f"- [{priority}] ({status}) {title} — {product} [id: {story_id}]"
-                )
+                lines.append(f"- [{priority}] ({status}) {title} — {product} [id: {story_id}]")
             if len(actionable) > 10:
                 lines.append(f"  ... and {len(actionable) - 10} more")
             lines.append("")
@@ -681,11 +647,7 @@ async def _session_start_fallback(
             lines.append(condensed)
             lines.append("")
 
-    return (
-        "\n".join(lines)
-        if len(lines) > 1
-        else "No prior context found. Starting fresh."
-    )
+    return "\n".join(lines) if len(lines) > 1 else "No prior context found. Starting fresh."
 
 
 @mcp.tool()
@@ -773,9 +735,7 @@ async def aiia_ops_status() -> str:
         uptime = svc.get("uptime_pct")
         errors = svc.get("error_count", 0)
 
-        icon = (
-            "OK" if status == "online" else "WARN" if status == "degraded" else "DOWN"
-        )
+        icon = "OK" if status == "online" else "WARN" if status == "degraded" else "DOWN"
         latency_str = f"{latency:.0f}ms" if latency is not None else "--"
         avg_str = f"avg {avg_latency:.0f}ms" if avg_latency else ""
         uptime_str = f"{uptime:.1f}% uptime" if uptime is not None else ""
@@ -856,9 +816,7 @@ async def aiia_briefing(generate: bool = False) -> str:
         generate: If True, trigger a fresh briefing before fetching (default: False)
     """
     if generate:
-        gen_result = await _call_command_center(
-            "POST", "/api/briefing/generate", timeout=120.0
-        )
+        gen_result = await _call_command_center("POST", "/api/briefing/generate", timeout=120.0)
         if "error" in gen_result:
             return f"Failed to trigger briefing: {gen_result['error']}"
         # Wait briefly for the task to produce output
@@ -961,9 +919,7 @@ async def aiia_tokens_today() -> str:
             cost = stats.get("cost", 0)
             reqs = stats.get("requests", 0)
             cost_str = "FREE" if provider == "local" else f"${cost:.4f}"
-            lines.append(
-                f"- {provider}: {tokens:,} tokens | {cost_str} | {reqs} requests"
-            )
+            lines.append(f"- {provider}: {tokens:,} tokens | {cost_str} | {reqs} requests")
 
     return "\n".join(lines)
 
@@ -986,9 +942,7 @@ async def aiia_get_actions(status: str = "pending", limit: int = 10) -> str:
         status: Filter by status — "pending" (default), "approved", "rejected", "completed", "expired"
         limit: Max results (default: 10)
     """
-    result = await _call_command_center(
-        "GET", f"/api/actions?status={status}&limit={limit}"
-    )
+    result = await _call_command_center("GET", f"/api/actions?status={status}&limit={limit}")
 
     if "error" in result:
         return f"Action queue unavailable: {result['error']}"
@@ -1066,9 +1020,7 @@ async def aiia_reject_action(action_id: str, reason: str = "") -> str:
         return f"Reject failed: {result['error']}"
 
     title = result.get("title", "?")
-    return f"Action `{action_id}` rejected: {title}" + (
-        f" (reason: {reason})" if reason else ""
-    )
+    return f"Action `{action_id}` rejected: {title}" + (f" (reason: {reason})" if reason else "")
 
 
 @mcp.tool()
@@ -1207,9 +1159,7 @@ async def aiia_find_solutions(
             m
             for m in memories
             if any(
-                word in m.get("fact", "").lower()
-                for word in query_lower.split()
-                if len(word) > 3
+                word in m.get("fact", "").lower() for word in query_lower.split() if len(word) > 3
             )
         ]
         if matched:
@@ -1398,9 +1348,7 @@ async def aiia_story_progress(story_id: str) -> str:
     Args:
         story_id: The roadmap story ID to check
     """
-    result = await _call_command_center(
-        "GET", f"/api/execution/story/{story_id}/progress"
-    )
+    result = await _call_command_center("GET", f"/api/execution/story/{story_id}/progress")
 
     if "error" in result:
         return f"Progress unavailable: {result['error']}"
@@ -1425,9 +1373,7 @@ async def aiia_story_progress(story_id: str) -> str:
         lines.append("\n**Steps:**")
         for a in actions:
             step = a.get("step", "?")
-            icon = {"completed": "+", "failed": "x", "executing": "~"}.get(
-                a["status"], " "
-            )
+            icon = {"completed": "+", "failed": "x", "executing": "~"}.get(a["status"], " ")
             lines.append(f"  {step}. [{icon}] {a.get('title', '?')} ({a['status']})")
 
     return "\n".join(lines)
@@ -1642,7 +1588,6 @@ async def aiia_set_agent(
         chain_id: If part of a chain, the chain execution ID
         chain_position: Position in the chain (0-indexed)
     """
-    import glob as globmod
 
     session_id = None
     session_dir = "/tmp/aiia-sessions"
@@ -1727,16 +1672,12 @@ async def aiia_update_session(
     if not body:
         return "Nothing to update — provide at least one field."
 
-    result = await _call_command_center(
-        "POST", f"/api/sessions/{session_id}/update", body
-    )
+    result = await _call_command_center("POST", f"/api/sessions/{session_id}/update", body)
 
     if "error" in result:
         return f"Session update failed: {result['error']}"
 
-    return (
-        f"Session updated: {result.get('description', '')} [{result.get('status', '')}]"
-    )
+    return f"Session updated: {result.get('description', '')} [{result.get('status', '')}]"
 
 
 @mcp.tool()

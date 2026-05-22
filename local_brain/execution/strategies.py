@@ -16,9 +16,7 @@ logger = logging.getLogger("aiia.execution.strategies")
 
 REPO_PATH = os.environ.get(
     "AIIA_REPO_PATH",
-    os.path.dirname(
-        os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-    ),
+    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
 )
 
 
@@ -187,9 +185,7 @@ class ClaudeCodeStrategy(ExecutionStrategy):
 
     def _build_prompt(self, action: dict) -> str:
         files = action.get("files_affected", [])
-        files_str = (
-            "\n".join(f"  - {f}" for f in files) if files else "  (not specified)"
-        )
+        files_str = "\n".join(f"  - {f}" for f in files) if files else "  (not specified)"
         proposed = action.get("proposed_fix", "")
 
         prompt = (
@@ -267,9 +263,7 @@ class BranchPrepStrategy(ExecutionStrategy):
             )
 
         # Write context file
-        files_section = (
-            "\n".join(f"- `{f}`" for f in files) if files else "- (not specified)"
-        )
+        files_section = "\n".join(f"- `{f}`" for f in files) if files else "- (not specified)"
         step_info = f"Step {story_step}/{story_step_total}" if story_step else ""
 
         context = (

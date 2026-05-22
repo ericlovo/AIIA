@@ -101,9 +101,7 @@ async def _run_briefing() -> dict:
     deep_model = deep_cfg.model_name if deep_cfg else None
 
     if not deep_model:
-        logger.warning(
-            "No deep model configured — briefing will use heuristic fallback"
-        )
+        logger.warning("No deep model configured — briefing will use heuristic fallback")
 
     aiia = AIIA(
         knowledge_store=knowledge,
@@ -219,9 +217,7 @@ def _write_report(result: dict):
     for d in LOG_DIR.iterdir():
         if d.is_dir() and d.name.startswith("20") and len(d.name) == 10:
             try:
-                age = (
-                    datetime.now(timezone.utc) - datetime.strptime(d.name, "%Y-%m-%d")
-                ).days
+                age = (datetime.now(timezone.utc) - datetime.strptime(d.name, "%Y-%m-%d")).days
                 if age > 30:
                     shutil.rmtree(d)
                     logger.info(f"Cleaned old report: {d.name}")

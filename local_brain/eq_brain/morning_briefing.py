@@ -14,11 +14,10 @@ Fallback: if DeepSeek fails, build briefing from pre-analyzed risk flags only.
 
 import json
 import logging
-import os
 import time
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from local_brain.eq_brain.brain import AIIA
 from local_brain.eq_brain.memory import Memory
@@ -26,7 +25,7 @@ from local_brain.eq_brain.memory import Memory
 logger = logging.getLogger("aiia.briefing")
 
 # Risky file path patterns — pre-LLM heuristic classification
-RISKY_PATTERNS: Dict[str, Dict[str, Any]] = {
+RISKY_PATTERNS: dict[str, dict[str, Any]] = {
     "auth": {
         "paths": ["auth.py", "auth/", "jwt", "login", "password", "token"],
         "severity": "critical",
@@ -133,9 +132,7 @@ class MorningBriefing:
                 scanner_name = scanner_file.stem
                 try:
                     data = json.loads(scanner_file.read_text())
-                    scanner_summaries.append(
-                        self._summarize_scanner(scanner_name, data)
-                    )
+                    scanner_summaries.append(self._summarize_scanner(scanner_name, data))
                 except (json.JSONDecodeError, OSError) as e:
                     scanner_summaries.append(f"{scanner_name}: error reading ({e})")
 
@@ -170,25 +167,19 @@ class MorningBriefing:
             if isinstance(data, dict):
                 results = data.get("Results", [])
                 total_vulns = sum(
-                    len(r.get("Vulnerabilities", []))
-                    for r in results
-                    if isinstance(r, dict)
+                    len(r.get("Vulnerabilities", [])) for r in results if isinstance(r, dict)
                 )
                 return f"trivy: {total_vulns} vulnerabilities"
             return "trivy: unknown format"
 
         if name == "trufflehog":
             if isinstance(data, list):
-                return (
-                    f"trufflehog: {len(data)} findings" if data else "trufflehog: PASS"
-                )
+                return f"trufflehog: {len(data)} findings" if data else "trufflehog: PASS"
             return "trufflehog: unknown format"
 
         if name == "shellcheck":
             if isinstance(data, list):
-                return (
-                    f"shellcheck: {len(data)} findings" if data else "shellcheck: PASS"
-                )
+                return f"shellcheck: {len(data)} findings" if data else "shellcheck: PASS"
             return "shellcheck: unknown format"
 
         if name == "hadolint":
@@ -224,7 +215,7 @@ class MorningBriefing:
 
         return (datetime.utcnow() - timedelta(days=1)).strftime("%Y-%m-%d")
 
-    def _format_code_report(self, data: Dict[str, Any]) -> str:
+    def _format_code_report(self, data: dict[str, Any]) -> str:
         """Format the daily code report JSON into a readable string."""
         summary = data.get("summary", {})
         lines = [
@@ -245,8 +236,7 @@ class MorningBriefing:
                 for c in commits[:10]:  # Cap at 10 per product
                     files = c.get("files", [])
                     file_list = ", ".join(
-                        (f if isinstance(f, str) else f.get("path", "?"))
-                        for f in files[:5]
+                        (f if isinstance(f, str) else f.get("path", "?")) for f in files[:5]
                     )
                     lines.append(f"  [{c.get('type', '?')}] {c.get('subject', '?')}")
                     if file_list:
@@ -266,7 +256,7 @@ class MorningBriefing:
 
         return "\n".join(lines)
 
-    def _classify_commit_risk(self, commit: Dict[str, Any]) -> List[Dict[str, Any]]:
+    def _classify_commit_risk(self, commit: dict[str, Any]) -> list[dict[str, Any]]:
         """Pre-LLM heuristic: scan commit's changed files for risky patterns."""
         flags = []
         files = commit.get("files", [])
@@ -290,7 +280,7 @@ class MorningBriefing:
 
         return flags
 
-    def _gather_risk_flags(self, code_report: Dict[str, Any]) -> List[Dict[str, Any]]:
+    def _gather_risk_flags(self, code_report: dict[str, Any]) -> list[dict[str, Any]]:
         """Scan all commits for risky patterns."""
         all_flags = []
         for pname, pdata in code_report.get("products", {}).items():
@@ -299,7 +289,7 @@ class MorningBriefing:
                 all_flags.extend(flags)
         return all_flags
 
-    async def generate(self) -> Dict[str, Any]:
+    async def generate(self) -> dict[str, Any]:
         """Generate the morning briefing.
 
         Phase 1: Gather overnight reports
@@ -388,7 +378,7 @@ class MorningBriefing:
         sync_report: str,
         code_report: str,
         risk_flags: str,
-    ) -> Optional[Dict[str, Any]]:
+    ) -> dict[str, Any] | None:
         """Feed reports to DeepSeek for intelligent synthesis."""
         prompt = BRIEFING_PROMPT.format(
             security_report=security_report,
@@ -430,9 +420,9 @@ class MorningBriefing:
         self,
         security_report: str,
         sync_report: str,
-        code_report_data: Dict[str, Any],
-        risk_flags: List[Dict[str, Any]],
-    ) -> Dict[str, Any]:
+        code_report_data: dict[str, Any],
+        risk_flags: list[dict[str, Any]],
+    ) -> dict[str, Any]:
         """Build a basic briefing from heuristics when DeepSeek is unavailable."""
         alerts = []
 
@@ -509,7 +499,7 @@ class MorningBriefing:
             "fallback": True,
         }
 
-    def _create_actions(self, alerts: List[Dict[str, Any]]) -> int:
+    def _create_actions(self, alerts: list[dict[str, Any]]) -> int:
         """Create ActionQueue items for critical and error severity alerts.
 
         Deduplicates against existing pending actions by title to prevent

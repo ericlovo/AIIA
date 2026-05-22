@@ -32,25 +32,23 @@ jobs:
         run: |
           python -c "from local_brain.__version__ import __version__; print('version:', __version__); assert __version__, 'empty version'"
 
-      - name: ruff lint (advisory)
-        # The inherited codebase has a large backlog of pre-existing ruff
-        # findings. We surface them in the build log but don't fail the
-        # build on them yet — incremental cleanup is tracked for a later
-        # release. New code in PRs should still be clean; reviewers can
-        # scan the log. Flip continue-on-error to false once the backlog
-        # is down to zero.
+      - name: ruff lint (enforced)
+        # Initial enforcement landed 2026-05-13. The auto-fixable backlog
+        # (~912 sites) was cleaned in the same PR; ~73 remaining sites are
+        # listed under [tool.ruff.lint.ignore] in pyproject.toml with a
+        # site count per rule, to be un-ignored as the backlog drains.
         run: ruff check local_brain/
-        continue-on-error: true
 
-      - name: ruff format check (advisory)
+      - name: ruff format check (enforced)
         run: ruff format --check local_brain/
-        continue-on-error: true
 
-      - name: pytest collect-only
+      - name: pytest collect-only (still advisory)
         # Tests in local_brain/tests are integration tests that require
         # running Ollama + Brain API + Command Center, so CI cannot run
-        # them for real. --collect-only still verifies that imports resolve
-        # and the test files are syntactically valid.
+        # them for real yet. --collect-only verifies that imports resolve
+        # and the test files are syntactically valid. Track 2 in the 24h
+        # plan will land conftest fixtures that mock the external services
+        # so this can flip to a real `pytest` invocation.
         run: pytest --collect-only local_brain/tests/
         continue-on-error: true
 

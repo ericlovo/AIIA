@@ -13,7 +13,6 @@ import subprocess
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Dict, List, Optional
 
 from local_brain.scripts.syntax_checker import check_syntax
 
@@ -22,7 +21,7 @@ DATA_DIR = Path.home() / ".aiia" / "eq_data" / "reports"
 REPO_DIR = Path(__file__).parent.parent.parent.parent  # AIIA root
 
 
-def _run_git(args: List[str], cwd: str) -> str:
+def _run_git(args: list[str], cwd: str) -> str:
     """Run a git command and return stdout.
 
     Uses list form (no shell) to prevent shell injection.
@@ -129,9 +128,9 @@ def _categorize_product(product: str) -> str:
     return "Other"
 
 
-def _categorize_files(files: List[str]) -> str:
+def _categorize_files(files: list[str]) -> str:
     """Determine the primary category from a list of changed files."""
-    cats: Dict[str, int] = {}
+    cats: dict[str, int] = {}
     for f in files:
         product = _classify_file(f)
         # Check for AI/Infra paths within platform
@@ -154,9 +153,7 @@ def _categorize_files(files: List[str]) -> str:
     return max(cats, key=cats.get)
 
 
-def _get_commits(
-    date: str, repo_dir: str, *, since_hours: Optional[int] = None
-) -> List[Dict]:
+def _get_commits(date: str, repo_dir: str, *, since_hours: int | None = None) -> list[dict]:
     """Get commits for a given date, or for the last N hours if since_hours is set."""
     if since_hours is not None:
         since_arg = f"--since={since_hours} hours ago"
@@ -197,7 +194,7 @@ def _get_commits(
     return commits
 
 
-def _get_commit_files(hash_val: str, repo_dir: str) -> Dict:
+def _get_commit_files(hash_val: str, repo_dir: str) -> dict:
     """Get files changed and stats for a commit."""
     # Get file list
     files_raw = _run_git(
@@ -206,9 +203,7 @@ def _get_commit_files(hash_val: str, repo_dir: str) -> Dict:
     files = [f for f in files_raw.splitlines() if f.strip()]
 
     # Get numstat (additions/deletions)
-    stat_raw = _run_git(
-        ["diff-tree", "--no-commit-id", "-r", "--numstat", hash_val], cwd=repo_dir
-    )
+    stat_raw = _run_git(["diff-tree", "--no-commit-id", "-r", "--numstat", hash_val], cwd=repo_dir)
     additions = 0
     deletions = 0
     for stat_line in stat_raw.splitlines():
@@ -224,11 +219,11 @@ def _get_commit_files(hash_val: str, repo_dir: str) -> Dict:
 
 
 def generate_report(
-    date: Optional[str] = None,
-    repo_dir: Optional[str] = None,
+    date: str | None = None,
+    repo_dir: str | None = None,
     *,
-    since_hours: Optional[int] = None,
-) -> Dict:
+    since_hours: int | None = None,
+) -> dict:
     """Generate a shipped code report.
 
     If since_hours is set, captures commits from the last N hours
@@ -242,9 +237,9 @@ def generate_report(
     commits = _get_commits(date, repo_dir, since_hours=since_hours)
 
     # Group commits by product
-    products: Dict[str, Dict] = {}
+    products: dict[str, dict] = {}
     all_authors = set()
-    all_types: Dict[str, int] = {}
+    all_types: dict[str, int] = {}
     total_additions = 0
     total_deletions = 0
     total_files_changed = set()
@@ -281,9 +276,7 @@ def generate_report(
                     "author": commit["author"],
                     "type": commit["type"],
                     "category": commit["category"],
-                    "files": [
-                        f for f in details["files"] if _classify_file(f) == product
-                    ],
+                    "files": [f for f in details["files"] if _classify_file(f) == product],
                 }
             )
             products[product]["total_additions"] += details["additions"]
@@ -293,7 +286,7 @@ def generate_report(
         total_deletions += details["deletions"]
 
     # Build category grouping
-    categories: Dict[str, Dict] = {}
+    categories: dict[str, dict] = {}
     for commit in commits:
         cat = commit["category"]
         if cat not in categories:
@@ -337,7 +330,7 @@ def generate_report(
     return report
 
 
-def save_report(report: Dict, data_dir: Optional[str] = None) -> Path:
+def save_report(report: dict, data_dir: str | None = None) -> Path:
     """Save report to JSON file."""
     out_dir = Path(data_dir) if data_dir else DATA_DIR
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -346,7 +339,7 @@ def save_report(report: Dict, data_dir: Optional[str] = None) -> Path:
     return path
 
 
-def load_report(date: str, data_dir: Optional[str] = None) -> Optional[Dict]:
+def load_report(date: str, data_dir: str | None = None) -> dict | None:
     """Load a saved report by date."""
     out_dir = Path(data_dir) if data_dir else DATA_DIR
     path = out_dir / f"{date}.json"
@@ -355,7 +348,7 @@ def load_report(date: str, data_dir: Optional[str] = None) -> Optional[Dict]:
     return None
 
 
-def list_reports(data_dir: Optional[str] = None) -> List[str]:
+def list_reports(data_dir: str | None = None) -> list[str]:
     """List all available report dates."""
     out_dir = Path(data_dir) if data_dir else DATA_DIR
     if not out_dir.exists():
@@ -363,7 +356,7 @@ def list_reports(data_dir: Optional[str] = None) -> List[str]:
     return sorted([f.stem for f in out_dir.glob("*.json")], reverse=True)
 
 
-def print_report(report: Dict) -> None:
+def print_report(report: dict) -> None:
     """Pretty-print a report to the terminal."""
     s = report["summary"]
     print(f"\n  Shipped Code Report — {report['date']}")

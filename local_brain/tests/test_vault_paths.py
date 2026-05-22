@@ -15,7 +15,6 @@ import pytest
 
 from local_brain import vault_paths
 
-
 # ─── vault_dir() — env var path ─────────────────────────────────────
 
 

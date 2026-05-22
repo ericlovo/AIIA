@@ -15,13 +15,12 @@ import subprocess
 import sys
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, List, Optional
 
 REPO_DIR = Path(__file__).parent.parent.parent.parent  # AIIA root
 BRAIN_API = ("localhost", 8100)
 
 
-def _run_git(args: List[str]) -> str:
+def _run_git(args: list[str]) -> str:
     """Run a git command and return stdout."""
     result = subprocess.run(
         ["git"] + args,
@@ -32,7 +31,7 @@ def _run_git(args: List[str]) -> str:
     return result.stdout.decode("utf-8", errors="replace").strip()
 
 
-def _get_recent_commits(hours: int = 3) -> List[Dict]:
+def _get_recent_commits(hours: int = 3) -> list[dict]:
     """Get commits from the last N hours with file stats.
 
     Fetches from origin first so we see commits pushed by other agents.
@@ -61,12 +60,8 @@ def _get_recent_commits(hours: int = 3) -> List[Dict]:
         sha, subject, author, date = parts
 
         # Get files changed
-        stat_output = _run_git(
-            ["diff-tree", "--no-commit-id", "-r", "--name-only", sha]
-        )
-        files = (
-            [f for f in stat_output.splitlines() if f.strip()] if stat_output else []
-        )
+        stat_output = _run_git(["diff-tree", "--no-commit-id", "-r", "--name-only", sha])
+        files = [f for f in stat_output.splitlines() if f.strip()] if stat_output else []
 
         commits.append(
             {
@@ -91,7 +86,7 @@ def _get_diff_summary(sha: str) -> str:
     return diff
 
 
-def _post_aiia(path: str, body: dict) -> Optional[dict]:
+def _post_aiia(path: str, body: dict) -> dict | None:
     """POST JSON to AIIA API."""
     try:
         conn = http.client.HTTPConnection(*BRAIN_API, timeout=120)
@@ -110,7 +105,7 @@ def _post_aiia(path: str, body: dict) -> Optional[dict]:
         return None
 
 
-def _extract_intelligence(commits: List[Dict]) -> List[Dict]:
+def _extract_intelligence(commits: list[dict]) -> list[dict]:
     """Send commits to local LLM and extract architectural intelligence."""
     # Build commit summary for the LLM
     commit_text_parts = []
@@ -132,8 +127,7 @@ def _extract_intelligence(commits: List[Dict]) -> List[Dict]:
         if len(diff_details) >= 5:
             break
         if c["file_count"] > 2 and any(
-            kw in c["subject"].lower()
-            for kw in ("refactor", "architect", "migrate", "feat")
+            kw in c["subject"].lower() for kw in ("refactor", "architect", "migrate", "feat")
         ):
             diff = _get_diff_summary(c["sha"])
             if diff:
@@ -177,7 +171,7 @@ def _extract_intelligence(commits: List[Dict]) -> List[Dict]:
     return insights
 
 
-def _parse_insights(text: str) -> List[Dict]:
+def _parse_insights(text: str) -> list[dict]:
     """Extract insights JSON from LLM response."""
     # Try direct parse
     try:
@@ -213,7 +207,7 @@ def _parse_insights(text: str) -> List[Dict]:
     return []
 
 
-def _store_memories(insights: List[Dict], commits: List[Dict]) -> int:
+def _store_memories(insights: list[dict], commits: list[dict]) -> int:
     """Store extracted insights as AIIA memories."""
     stored = 0
     shas = [c["sha"] for c in commits[:5]]
@@ -242,7 +236,7 @@ def _store_memories(insights: List[Dict], commits: List[Dict]) -> int:
     return stored
 
 
-def run(hours: int = 3) -> Dict:
+def run(hours: int = 3) -> dict:
     """Run commit intelligence extraction."""
     now = datetime.now()
     print(f"\n  Commit Intelligence — {now.strftime('%Y-%m-%d %H:%M')}")

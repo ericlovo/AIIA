@@ -98,6 +98,23 @@ select = ["E", "F", "I", "UP", "B", "SIM"]
 ignore = [
     "E501",  # line too long — handled by formatter
     "B008",  # function calls in argument defaults (common in FastAPI)
+    # Backlog from initial enforcement (2026-05-13). Each is real code-quality
+    # signal we want to keep, but cleaning all 73 sites in one pass would
+    # bloat the enforcement PR. Tracked as individual follow-up tasks; rules
+    # should be un-ignored one at a time as the backlog drains to zero.
+    "E402",  # module-import-not-at-top — 12 sites
+    "B006",  # mutable-argument-default — 11 sites
+    "E741",  # ambiguous-variable-name — 11 sites
+    "SIM105",  # suppressible-exception — 9 sites
+    "F841",  # unused-variable — 6 sites
+    "SIM102",  # collapsible-if — 6 sites
+    "B007",  # unused-loop-control-variable — 4 sites
+    "UP035",  # deprecated-import — 4 sites (mostly typing.List/Dict legacy)
+    "B904",  # raise-without-from-inside-except — 3 sites
+    "SIM115",  # open-file-with-context-handler — 3 sites
+    "SIM110",  # reimplemented-builtin — 2 sites
+    "B905",  # zip-without-explicit-strict — 1 site
+    "SIM108",  # if-else-block-instead-of-if-exp — 1 site
 ]
 
 [tool.ruff.lint.per-file-ignores]

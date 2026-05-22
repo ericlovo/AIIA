@@ -13,7 +13,8 @@ summarizer, etc.) use this client internally.
 
 import logging
 import time
-from typing import Any, AsyncGenerator, Dict, List, Optional
+from collections.abc import AsyncGenerator
+from typing import Any
 
 import httpx
 
@@ -36,7 +37,7 @@ class OllamaClient:
         print(response["message"]["content"])
     """
 
-    def __init__(self, config: Optional[LocalBrainConfig] = None):
+    def __init__(self, config: LocalBrainConfig | None = None):
         self.config = config or get_config()
         self.base_url = self.config.ollama_url
         self.timeout = self.config.ollama_timeout
@@ -44,14 +45,14 @@ class OllamaClient:
     async def chat(
         self,
         model: str,
-        messages: List[Dict[str, str]],
-        system: Optional[str] = None,
+        messages: list[dict[str, str]],
+        system: str | None = None,
         temperature: float = 0.7,
         max_tokens: int = 4096,
         stream: bool = False,
         num_ctx: int = 32768,
-        timeout: Optional[float] = None,
-    ) -> Dict[str, Any]:
+        timeout: float | None = None,
+    ) -> dict[str, Any]:
         """
         Send a chat completion request to Ollama.
 
@@ -112,8 +113,8 @@ class OllamaClient:
     async def chat_stream(
         self,
         model: str,
-        messages: List[Dict[str, str]],
-        system: Optional[str] = None,
+        messages: list[dict[str, str]],
+        system: str | None = None,
         temperature: float = 0.7,
         max_tokens: int = 4096,
         num_ctx: int = 32768,
@@ -143,29 +144,31 @@ class OllamaClient:
             },
         }
 
-        async with httpx.AsyncClient(timeout=self.timeout) as client:
-            async with client.stream(
+        async with (
+            httpx.AsyncClient(timeout=self.timeout) as client,
+            client.stream(
                 "POST",
                 f"{self.base_url}/api/chat",
                 json=payload,
-            ) as response:
-                response.raise_for_status()
-                async for line in response.aiter_lines():
-                    if line.strip():
-                        import json
+            ) as response,
+        ):
+            response.raise_for_status()
+            async for line in response.aiter_lines():
+                if line.strip():
+                    import json
 
-                        chunk = json.loads(line)
-                        content = chunk.get("message", {}).get("content", "")
-                        if content:
-                            yield content
-                        if chunk.get("done", False):
-                            return
+                    chunk = json.loads(line)
+                    content = chunk.get("message", {}).get("content", "")
+                    if content:
+                        yield content
+                    if chunk.get("done", False):
+                        return
 
     async def embed(
         self,
         model: str,
         text: str,
-    ) -> List[float]:
+    ) -> list[float]:
         """
         Generate embeddings for text using a local embedding model.
 
@@ -189,8 +192,8 @@ class OllamaClient:
     async def embed_batch(
         self,
         model: str,
-        texts: List[str],
-    ) -> List[List[float]]:
+        texts: list[str],
+    ) -> list[list[float]]:
         """
         Generate embeddings for multiple texts.
 
@@ -207,7 +210,7 @@ class OllamaClient:
             embeddings.append(embedding)
         return embeddings
 
-    async def list_models(self) -> List[Dict[str, Any]]:
+    async def list_models(self) -> list[dict[str, Any]]:
         """List all models available in Ollama."""
         async with httpx.AsyncClient(timeout=5.0) as client:
             response = await client.get(f"{self.base_url}/api/tags")
@@ -235,7 +238,7 @@ class OllamaClient:
         logger.info(f"Model pulled: {model}")
         return True
 
-    async def health(self) -> Dict[str, Any]:
+    async def health(self) -> dict[str, Any]:
         """
         Check Ollama health and return system status.
 

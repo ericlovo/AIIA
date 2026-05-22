@@ -8,13 +8,12 @@ Usage:
 
 import py_compile
 from pathlib import Path
-from typing import Dict, List
 
 
-def check_syntax(repo_dir: str) -> Dict:
+def check_syntax(repo_dir: str) -> dict:
     """Run py_compile on every .py file, grouped by product."""
     repo = Path(repo_dir)
-    errors: Dict[str, List[Dict]] = {}
+    errors: dict[str, list[dict]] = {}
     total_files = 0
     total_errors = 0
 

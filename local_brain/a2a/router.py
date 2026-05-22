@@ -16,7 +16,7 @@ local_api and makes the router unit-testable with a stub registry.
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import JSONResponse
@@ -45,7 +45,7 @@ def build_router(registry: AgentRegistry) -> APIRouter:
     router = APIRouter(prefix="/a2a", tags=["a2a"])
 
     @router.get("/health")
-    async def health() -> Dict[str, Any]:
+    async def health() -> dict[str, Any]:
         return {
             "status": "online",
             "agents_registered": len(registry),
@@ -54,9 +54,9 @@ def build_router(registry: AgentRegistry) -> APIRouter:
 
     @router.get("/registry/agents")
     async def list_agents(
-        tag: Optional[List[str]] = Query(default=None),
+        tag: list[str] | None = Query(default=None),
         require_all: bool = Query(default=False),
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         matches = registry.query(tags=tag, require_all=require_all)
         return {
             "count": len(matches),
@@ -74,7 +74,7 @@ def build_router(registry: AgentRegistry) -> APIRouter:
         }
 
     @router.get("/registry/agents/{agent_id}")
-    async def get_agent(agent_id: str) -> Dict[str, Any]:
+    async def get_agent(agent_id: str) -> dict[str, Any]:
         agent = registry.get(agent_id)
         if agent is None:
             raise HTTPException(status_code=404, detail=f"unknown agent: {agent_id}")
@@ -140,9 +140,7 @@ def build_router(registry: AgentRegistry) -> APIRouter:
                 id=rpc_req.id,
                 result={"task": task.model_dump(by_alias=True, exclude_none=True)},
             )
-            return JSONResponse(
-                content=response.model_dump(by_alias=True, exclude_none=True)
-            )
+            return JSONResponse(content=response.model_dump(by_alias=True, exclude_none=True))
 
         task.artifacts.append(
             Artifact(
@@ -157,14 +155,12 @@ def build_router(registry: AgentRegistry) -> APIRouter:
             id=rpc_req.id,
             result={"task": task.model_dump(by_alias=True, exclude_none=True)},
         )
-        return JSONResponse(
-            content=response.model_dump(by_alias=True, exclude_none=True)
-        )
+        return JSONResponse(content=response.model_dump(by_alias=True, exclude_none=True))
 
     return router
 
 
-def _extract_message(params: Dict[str, Any]) -> Message:
+def _extract_message(params: dict[str, Any]) -> Message:
     if not isinstance(params, dict):
         raise ValueError("params must be an object")
     message_payload = params.get("message")
@@ -176,7 +172,7 @@ def _extract_message(params: Dict[str, Any]) -> Message:
     if not isinstance(raw_parts, list) or not raw_parts:
         raise ValueError("params.message.parts must be a non-empty array")
 
-    text_parts: List[TextPart] = []
+    text_parts: list[TextPart] = []
     for raw in raw_parts:
         if not isinstance(raw, dict):
             raise ValueError("each part must be an object")
@@ -188,12 +184,9 @@ def _extract_message(params: Dict[str, Any]) -> Message:
     return Message(
         role=role,
         parts=text_parts,
-        message_id=message_payload.get(
-            "messageId", message_payload.get("message_id", None)
-        )
+        message_id=message_payload.get("messageId", message_payload.get("message_id", None))
         or Message.model_fields["message_id"].default_factory(),
-        context_id=message_payload.get("contextId")
-        or message_payload.get("context_id"),
+        context_id=message_payload.get("contextId") or message_payload.get("context_id"),
     )
 
 

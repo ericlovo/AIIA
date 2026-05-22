@@ -18,10 +18,10 @@ tells the production Conductor to use its existing keyword matching.
 import json
 import logging
 import time
-from typing import Any, Dict, Optional
+from typing import Any
 
-from local_brain.ollama_client import OllamaClient
 from local_brain.config import LocalBrainConfig
+from local_brain.ollama_client import OllamaClient
 
 logger = logging.getLogger("aiia.local_brain.conductor")
 
@@ -101,8 +101,8 @@ class SmartConductor:
         tenant_id: str = "default",
         has_documents: bool = False,
         document_count: int = 0,
-        conversation_context: Optional[str] = None,
-    ) -> Dict[str, Any]:
+        conversation_context: str | None = None,
+    ) -> dict[str, Any]:
         """
         Classify and route a user query using local LLM.
 
@@ -125,11 +125,11 @@ class SmartConductor:
 
         try:
             model = (
-                self._routing_model.model_name if self._routing_model else "llama3.1:8b-instruct-q8_0"
+                self._routing_model.model_name
+                if self._routing_model
+                else "llama3.1:8b-instruct-q8_0"
             )
-            temperature = (
-                self._routing_model.temperature if self._routing_model else 0.1
-            )
+            temperature = self._routing_model.temperature if self._routing_model else 0.1
             max_tokens = self._routing_model.max_tokens if self._routing_model else 256
 
             response = await self.ollama.chat(
@@ -167,7 +167,7 @@ class SmartConductor:
         tenant_id: str,
         has_documents: bool,
         document_count: int,
-        conversation_context: Optional[str],
+        conversation_context: str | None,
     ) -> str:
         """Build the classification prompt with all available signals."""
         parts = [f"Query: {query}"]
@@ -183,7 +183,7 @@ class SmartConductor:
 
         return "\n".join(parts)
 
-    def _parse_routing_response(self, content: str) -> Dict[str, Any]:
+    def _parse_routing_response(self, content: str) -> dict[str, Any]:
         """Parse the LLM's JSON response, with fallback extraction."""
         # Try direct JSON parse
         try:
@@ -216,7 +216,7 @@ class SmartConductor:
         logger.warning(f"Could not parse routing response: {content[:200]}")
         return self._default_result()
 
-    def _validate_result(self, result: Dict[str, Any]) -> Dict[str, Any]:
+    def _validate_result(self, result: dict[str, Any]) -> dict[str, Any]:
         """Validate and normalize the parsed routing result."""
         valid_domains = [
             "finance",
@@ -281,7 +281,7 @@ class SmartConductor:
             "latency_ms": 0.0,  # Filled in by caller
         }
 
-    def _default_result(self) -> Dict[str, Any]:
+    def _default_result(self) -> dict[str, Any]:
         """Default routing when parsing fails entirely."""
         return {
             "domain": "general",
@@ -294,7 +294,7 @@ class SmartConductor:
             "latency_ms": 0.0,
         }
 
-    def _fallback_response(self, query: str, latency: float) -> Dict[str, Any]:
+    def _fallback_response(self, query: str, latency: float) -> dict[str, Any]:
         """
         Fallback when local model is unavailable.
 

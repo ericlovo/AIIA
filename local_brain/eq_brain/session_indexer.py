@@ -18,10 +18,10 @@ import os
 import re
 import time
 from collections import Counter
-from dataclasses import dataclass, field, asdict
+from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 logger = logging.getLogger("aiia.session_indexer")
 
@@ -41,17 +41,17 @@ class SessionRecord:
     branch: str = ""
     slug: str = ""
     model: str = ""
-    files_touched: List[str] = field(default_factory=list)
-    tools_used: Dict[str, int] = field(default_factory=dict)
-    errors: List[str] = field(default_factory=list)
+    files_touched: list[str] = field(default_factory=list)
+    tools_used: dict[str, int] = field(default_factory=dict)
+    errors: list[str] = field(default_factory=list)
     user_intent: str = ""
-    commit_messages: List[str] = field(default_factory=list)
+    commit_messages: list[str] = field(default_factory=list)
     message_count: int = 0
     # LLM-enriched fields (Phase 3)
     summary: str = ""
-    decisions: List[str] = field(default_factory=list)
-    solutions: List[Dict[str, str]] = field(default_factory=list)
-    patterns: List[str] = field(default_factory=list)
+    decisions: list[str] = field(default_factory=list)
+    solutions: list[dict[str, str]] = field(default_factory=list)
+    patterns: list[str] = field(default_factory=list)
     domain: str = ""
 
 
@@ -62,7 +62,7 @@ class JSONLParser:
     def parse_file(path: str):
         """Yield parsed dicts from a JSONL file, skipping noise types."""
         try:
-            with open(path, "r", encoding="utf-8", errors="replace") as f:
+            with open(path, encoding="utf-8", errors="replace") as f:
                 for line_num, line in enumerate(f, 1):
                     line = line.strip()
                     if not line:
@@ -77,7 +77,7 @@ class JSONLParser:
                         if line_num <= 3:
                             continue  # First few lines sometimes malformed
                         logger.debug(f"Skipping malformed line {line_num} in {path}")
-        except (OSError, IOError) as e:
+        except OSError as e:
             logger.error(f"Cannot read {path}: {e}")
 
     @staticmethod
@@ -102,7 +102,7 @@ class JSONLParser:
         return ""
 
     @staticmethod
-    def extract_tool_calls(msg: dict) -> List[Dict[str, Any]]:
+    def extract_tool_calls(msg: dict) -> list[dict[str, Any]]:
         """Extract tool_use blocks from an assistant message."""
         message = msg.get("message", {})
         content = message.get("content", [])
@@ -122,7 +122,7 @@ class JSONLParser:
         return tools
 
     @staticmethod
-    def extract_tool_results(msg: dict) -> List[Dict[str, Any]]:
+    def extract_tool_results(msg: dict) -> list[dict[str, Any]]:
         """Extract tool_result blocks from a user message."""
         message = msg.get("message", {})
         content = message.get("content", [])
@@ -208,11 +208,7 @@ class SessionExtractor:
 
                     # Files from Edit/Write tool calls
                     inp = tool.get("input", {})
-                    if name in ("Edit", "Write", "NotebookEdit"):
-                        fp = inp.get("file_path", "")
-                        if fp:
-                            files_set.add(fp)
-                    elif name == "Read":
+                    if name in ("Edit", "Write", "NotebookEdit") or name == "Read":
                         fp = inp.get("file_path", "")
                         if fp:
                             files_set.add(fp)
@@ -298,17 +294,12 @@ Return ONLY valid JSON. No markdown fences, no explanation."""
         """Add LLM-generated summary, decisions, solutions, patterns, and domain."""
         # Build compact prompt from heuristic extractions
         duration_str = (
-            f"{record.duration_seconds / 60:.0f} min"
-            if record.duration_seconds
-            else "unknown"
+            f"{record.duration_seconds / 60:.0f} min" if record.duration_seconds else "unknown"
         )
         files_str = ", ".join(record.files_touched[:15]) or "none"
         errors_str = "; ".join(record.errors[:5]) or "none"
         commits_str = "; ".join(record.commit_messages[:5]) or "none"
-        tools_str = (
-            ", ".join(f"{k}:{v}" for k, v in list(record.tools_used.items())[:10])
-            or "none"
-        )
+        tools_str = ", ".join(f"{k}:{v}" for k, v in list(record.tools_used.items())[:10]) or "none"
 
         prompt = self.ENRICHMENT_PROMPT.format(
             project_path=record.project_path or "unknown",
@@ -340,24 +331,23 @@ Return ONLY valid JSON. No markdown fences, no explanation."""
                 record.domain = parsed.get("domain", "other")
             else:
                 logger.warning(
-                    f"Failed to parse LLM response for {record.session_id} "
-                    f"({len(raw)} chars)"
+                    f"Failed to parse LLM response for {record.session_id} ({len(raw)} chars)"
                 )
-                record.summary = f"Session on {record.branch or 'unknown'}: {record.user_intent[:200]}"
+                record.summary = (
+                    f"Session on {record.branch or 'unknown'}: {record.user_intent[:200]}"
+                )
                 record.domain = "other"
 
         except Exception as e:
             logger.warning(f"LLM enrichment failed for {record.session_id}: {e}")
             # Graceful fallback — session still indexed with heuristics only
-            record.summary = (
-                f"Session on {record.branch or 'unknown'}: {record.user_intent[:200]}"
-            )
+            record.summary = f"Session on {record.branch or 'unknown'}: {record.user_intent[:200]}"
             record.domain = "other"
 
         return record
 
     @staticmethod
-    def _parse_json_response(raw: str) -> Optional[Dict[str, Any]]:
+    def _parse_json_response(raw: str) -> dict[str, Any] | None:
         """3-level fallback JSON parser (same pattern as MemoryConsolidator)."""
         # Level 1: direct parse
         try:
@@ -409,7 +399,7 @@ class SessionIndexer:
 
     # ─── State Management ──────────────────────────────────────
 
-    def _load_state(self) -> Dict[str, Any]:
+    def _load_state(self) -> dict[str, Any]:
         if os.path.exists(self._state_path):
             try:
                 with open(self._state_path) as f:
@@ -418,11 +408,11 @@ class SessionIndexer:
                 pass
         return {}
 
-    def _save_state(self, state: Dict[str, Any]):
+    def _save_state(self, state: dict[str, Any]):
         with open(self._state_path, "w") as f:
             json.dump(state, f, indent=2, default=str)
 
-    def _load_index(self) -> Dict[str, Any]:
+    def _load_index(self) -> dict[str, Any]:
         if os.path.exists(self._index_path):
             try:
                 with open(self._index_path) as f:
@@ -431,13 +421,13 @@ class SessionIndexer:
                 pass
         return {"sessions": {}}
 
-    def _save_index(self, index: Dict[str, Any]):
+    def _save_index(self, index: dict[str, Any]):
         with open(self._index_path, "w") as f:
             json.dump(index, f, indent=2, default=str)
 
     # ─── Phase 1: File Scanner ─────────────────────────────────
 
-    def scan_for_new_files(self, force: bool = False) -> List[str]:
+    def scan_for_new_files(self, force: bool = False) -> list[str]:
         """Walk ~/.claude/projects/ for JSONL files, return those needing indexing."""
         claude_dir = Path.home() / ".claude" / "projects"
         if not claude_dir.exists():
@@ -481,9 +471,7 @@ class SessionIndexer:
             record = await extractor.enrich_session(record)
         else:
             # Fallback summary from heuristics
-            record.summary = (
-                f"Session on {record.branch or 'unknown'}: {record.user_intent[:200]}"
-            )
+            record.summary = f"Session on {record.branch or 'unknown'}: {record.user_intent[:200]}"
             record.domain = "other"
 
         return record
@@ -546,8 +534,7 @@ class SessionIndexer:
                 if (
                     error
                     and fix
-                    and fix.lower()
-                    not in ("none", "not specified", "none specified", "n/a")
+                    and fix.lower() not in ("none", "not specified", "none specified", "n/a")
                     and len(fix) > 10
                 ):
                     self._memory.remember(
@@ -572,7 +559,7 @@ class SessionIndexer:
 
     # ─── Pipeline Orchestrator ─────────────────────────────────
 
-    async def run(self, force: bool = False) -> Dict[str, Any]:
+    async def run(self, force: bool = False) -> dict[str, Any]:
         """Full pipeline: scan -> extract -> enrich -> store -> report."""
         start = time.monotonic()
         state = self._load_state()

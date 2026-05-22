@@ -3,7 +3,8 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 from .chains import VERIFY_TYPES, apply_chain
 from .execution_log import ExecutionLog
@@ -24,9 +25,7 @@ logger = logging.getLogger("aiia.execution.engine")
 
 REPO_PATH = os.environ.get(
     "AIIA_REPO_PATH",
-    os.path.dirname(
-        os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-    ),
+    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
 )
 
 
@@ -180,9 +179,7 @@ class ExecutionEngine:
         if action["status"] not in ("approved", "executing"):
             return {
                 "status": "error",
-                "reason": (
-                    f"Action status is '{action['status']}', expected 'approved'"
-                ),
+                "reason": (f"Action status is '{action['status']}', expected 'approved'"),
             }
 
         can, reason = self.safety.can_execute(action)
@@ -234,9 +231,7 @@ class ExecutionEngine:
                 timeout=self._config.execution_max_timeout,
             )
         except ExecutionTimeout as e:
-            self._handle_failure(
-                action, log_record.id, f"Timeout: {e}", is_timeout=True
-            )
+            self._handle_failure(action, log_record.id, f"Timeout: {e}", is_timeout=True)
             return {"status": "timeout", "action_id": action_id}
         except Exception as e:
             self._handle_failure(action, log_record.id, str(e))
@@ -312,9 +307,7 @@ class ExecutionEngine:
                 "error": error,
             }
 
-    async def _handle_verify_only(
-        self, action: dict, tier_label: str
-    ) -> dict[str, Any]:
+    async def _handle_verify_only(self, action: dict, tier_label: str) -> dict[str, Any]:
         """Handle verify_* actions — run verification check, no fix."""
         action_id = action["id"]
         action_type = action.get("type", "unknown")
@@ -422,18 +415,14 @@ class ExecutionEngine:
             )
         logger.warning(f"Emergency stop: killed {killed} processes")
 
-    async def execute_story(
-        self, story_id: str, auto_approve: bool = False
-    ) -> dict[str, Any]:
+    async def execute_story(self, story_id: str, auto_approve: bool = False) -> dict[str, Any]:
         """Decompose and execute a story from the kanban board."""
         if not self._story_executor:
             return {
                 "status": "error",
                 "reason": "Story executor not initialized (no roadmap store)",
             }
-        return await self._story_executor.execute_story(
-            story_id, auto_approve=auto_approve
-        )
+        return await self._story_executor.execute_story(story_id, auto_approve=auto_approve)
 
     def get_story_progress(self, story_id: str) -> dict[str, Any]:
         """Get execution progress for a story."""

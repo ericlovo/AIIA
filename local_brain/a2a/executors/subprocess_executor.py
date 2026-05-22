@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import List, Optional, Sequence
+from collections.abc import Sequence
 
 from local_brain.a2a.executors.base import AgentExecutor, ExecutorResult
 from local_brain.a2a.schema import Message, TextPart
@@ -26,7 +26,7 @@ class SubprocessExecutor(AgentExecutor):
         timeout_seconds: float = 30.0,
         artifact_name: str = "stdout",
         include_stderr: bool = True,
-        cwd: Optional[str] = None,
+        cwd: str | None = None,
     ) -> None:
         if not command:
             raise ValueError("command must be a non-empty sequence")
