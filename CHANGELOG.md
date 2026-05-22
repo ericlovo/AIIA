@@ -18,6 +18,11 @@ All notable changes to AIIA are documented here. This project adheres to
   - `aiia briefing [--fresh]` — wraps existing `briefing_cli.py` script;
     works alongside the existing `briefing` shell alias
   - `aiia status` — health of Brain API + Command Center
+  - `aiia doctor [-v]` — full environment diagnostics: Python version,
+    package install, Brain/CC/Ollama reachability, default-model presence
+    in Ollama, vault directory writability, disk space, optional API keys.
+    Each non-ok finding includes an actionable hint. Exits non-zero on
+    blocking issues (Python too old, Ollama unreachable, etc.).
   - `aiia --version` / `aiia --help` — standard CLI behavior
   - Dependencies added: `typer>=0.12`, `rich>=13.0`
   - `[project.scripts]` entry registers the `aiia` command on install

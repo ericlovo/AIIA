@@ -31,17 +31,17 @@ export class PanelBoundary extends Component<Props, State> {
   render() {
     if (this.state.error) {
       return (
-        <div className="h-full flex items-center justify-center p-6 bg-[#0a0a0a]">
+        <div className="h-full flex items-center justify-center p-6 bg-neutral-950">
           <div className="text-center max-w-xs">
             <div className="text-[10px] text-red-400 tracking-[0.3em] font-semibold mb-2">
               {this.props.name.toUpperCase()} CRASHED
             </div>
-            <p className="text-xs text-[#888] mb-4 leading-relaxed">
+            <p className="text-xs text-neutral-500 mb-4 leading-relaxed">
               {this.state.error.message || 'Something went wrong rendering this panel.'}
             </p>
             <button
               onClick={this.handleRetry}
-              className="text-xs px-3 py-1.5 rounded-lg border border-[#2a2a2a] text-[#888] hover:text-white hover:border-purple-500/50 cursor-pointer"
+              className="text-xs px-3 py-1.5 rounded-lg border border-neutral-800 text-neutral-500 hover:text-white hover:border-purple-500/50 cursor-pointer"
             >
               Retry
             </button>

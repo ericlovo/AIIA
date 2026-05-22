@@ -108,6 +108,25 @@ def root(
 
 
 @app.command()
+def doctor(
+    verbose: bool = typer.Option(
+        False, "--verbose", "-v", help="Show hints even for passing checks."
+    ),
+) -> None:
+    """Run environment + service health diagnostics.
+
+    Checks Python version, package install, Brain/CC/Ollama reachability,
+    default-model presence, vault directory, disk space, and optional
+    cloud API keys. Each failed check includes an actionable hint.
+    """
+    from local_brain.cli_doctor import run
+
+    rc = run(verbose=verbose)
+    if rc:
+        raise typer.Exit(rc)
+
+
+@app.command()
 def status() -> None:
     """Show health of Brain API + Command Center."""
     table = Table(show_header=True, header_style="bold")

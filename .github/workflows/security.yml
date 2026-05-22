@@ -1,0 +1,67 @@
+name: security
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    # Weekly Monday 16:00 UTC (09:00 PT) — catches new CVEs in deps without
+    # waiting for the next push. Pairs with Dependabot's Monday schedule.
+    - cron: "0 16 * * 1"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  bandit:
+    name: bandit (python static analysis)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install bandit
+        run: pip install bandit
+
+      - name: Run bandit
+        # Skip rules:
+        # - B108 hardcoded /tmp paths: only flagged in test setup
+        # - B310 urllib.urlopen: only flagged on hardcoded localhost CLI
+        #   calls to Brain (:8100) and Command Center (:8200). The threat
+        #   model in SECURITY.md does not include malicious env vars
+        #   pointing at file:/ schemes. A URL-scheme guard wrapper is
+        #   tracked as future work; once landed, drop the B310 skip here.
+        # -ll medium+ severity, -ii medium+ confidence — filters noise.
+        run: bandit -r local_brain/ -ll -ii --skip B108,B310
+
+  pip-audit:
+    name: pip-audit (dependency CVEs)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install pip-audit
+        run: pip install pip-audit
+
+      - name: Install project (so pip-audit sees pinned deps via metadata)
+        run: pip install -e .
+
+      - name: Run pip-audit
+        # Advisory for now: pip-audit can flag transitive CVEs in deep deps
+        # we don't directly control. Failing the build on every transitive
+        # finding creates churn. We surface findings in the log so they're
+        # visible; Dependabot will open PRs for direct-dep upgrades.
+        # Tighten to enforced once the noise level is understood.
+        run: pip-audit --strict
+        continue-on-error: true
