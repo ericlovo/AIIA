@@ -1,0 +1,43 @@
+name: gitleaks
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    # Daily 13:00 UTC sweep — catches secrets that slipped past PR review
+    # via merge commits, force pushes to feature branches, or history
+    # rewrites. Daily (not weekly) because a leaked credential's blast
+    # radius compounds with every passing day.
+    - cron: "0 13 * * *"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  scan:
+    name: gitleaks scan
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Full history — gitleaks scans past commits, not just current tree.
+          fetch-depth: 0
+
+      # Run the gitleaks CLI directly rather than the gitleaks-action wrapper.
+      # The action requires GITLEAKS_LICENSE for org-owned repos; the CLI
+      # itself is MIT-licensed and has no such gate. Same scan, no license dance.
+      - name: Install gitleaks CLI
+        run: |
+          GITLEAKS_VERSION=8.18.4
+          curl -sSfL "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" \
+            | tar -xz -C /tmp gitleaks
+          sudo mv /tmp/gitleaks /usr/local/bin/gitleaks
+          gitleaks version
+
+      - name: Run gitleaks
+        run: gitleaks detect --source . --verbose --redact --no-banner
