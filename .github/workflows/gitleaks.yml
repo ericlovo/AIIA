@@ -25,14 +25,19 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          # Full history so gitleaks can scan past commits, not just the
-          # current tree. Critical for catching secrets in old commits
-          # that were force-pushed away or rebased over.
+          # Full history — gitleaks scans past commits, not just current tree.
           fetch-depth: 0
 
+      # Run the gitleaks CLI directly rather than the gitleaks-action wrapper.
+      # The action requires GITLEAKS_LICENSE for org-owned repos; the CLI
+      # itself is MIT-licensed and has no such gate. Same scan, no license dance.
+      - name: Install gitleaks CLI
+        run: |
+          GITLEAKS_VERSION=8.18.4
+          curl -sSfL "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" \
+            | tar -xz -C /tmp gitleaks
+          sudo mv /tmp/gitleaks /usr/local/bin/gitleaks
+          gitleaks version
+
       - name: Run gitleaks
-        uses: gitleaks/gitleaks-action@v2
-        env:
-          # gitleaks-action is free for public repos. If this repo is
-          # ever moved private, set GITLEAKS_LICENSE in repo secrets.
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gitleaks detect --source . --verbose --redact --no-banner
