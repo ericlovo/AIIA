@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.aplora.aiia.journal-watch</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>-lc</string>
+        <string>cd "$HOME/code/aiia" && exec aiia journal-watch</string>
+    </array>
+
+    <!-- Keep alive: launchd respawns the watcher if it ever exits. -->
+    <key>KeepAlive</key>
+    <true/>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <!-- Throttle restarts so a broken config doesn't churn. -->
+    <key>ThrottleInterval</key>
+    <integer>10</integer>
+
+    <key>StandardOutPath</key>
+    <string>/tmp/aiia-journal-watch.out</string>
+
+    <key>StandardErrorPath</key>
+    <string>/tmp/aiia-journal-watch.err</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <!-- Adjust PATH for python + the aiia CLI script. If you use pyenv
+             or asdf, add their shims path. If aiia lives in a venv, point
+             at the venv's bin/ first. -->
+        <key>PATH</key>
+        <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+        <!-- Required: the GROQ_API_KEY for Whisper. You'll also want at least
+             one of ANTHROPIC_API_KEY / OPENAI_API_KEY / GROQ_API_KEY for
+             distillation. Set these via `launchctl setenv` before bootstrap,
+             OR uncomment and inline below. Leaving them out is fine if your
+             shell rc files (loaded by `bash -lc` above) export them. -->
+        <!--
+        <key>GROQ_API_KEY</key>
+        <string>gsk_...</string>
+        <key>ANTHROPIC_API_KEY</key>
+        <string>sk-ant-...</string>
+        -->
+    </dict>
+</dict>
+</plist>

@@ -344,6 +344,51 @@ def memory_add(
 # ----------------------------------------------------------------------------
 
 
+@app.command(name="journal-watch")
+def journal_watch(
+    poll_seconds: float = typer.Option(
+        5.0, "--poll", help="Seconds between iCloud-folder polls."
+    ),
+    inbox: str | None = typer.Option(
+        None,
+        "--inbox",
+        help=(
+            "Override the iCloud watch directory. Default is "
+            "~/Library/Mobile Documents/com~apple~CloudDocs/AIIA-Inbox. "
+            "Useful when you sync via Dropbox or a different cloud."
+        ),
+    ),
+) -> None:
+    """Run the iCloud watcher — processes audio files dropped by an iOS Shortcut.
+
+    Long-running. Designed to be supervised by launchd in production (see
+    scripts/com.aplora.aiia.journal-watch.plist + install-journal-watcher.sh).
+    Ctrl-C exits cleanly.
+
+    The watcher polls the configured inbox folder. When a new audio file
+    appears (m4a, mp3, wav, etc.), it transcribes via Groq Whisper, distills
+    via the first configured chat provider, writes the markdown to your
+    Obsidian vault under 00-Inbox/, and archives the source audio.
+    """
+    import asyncio
+    import logging
+    import os
+    from pathlib import Path
+
+    from local_brain.journal.watcher import watch_forever
+
+    logging.basicConfig(
+        level=os.getenv("AIIA_JOURNAL_LOG_LEVEL", "INFO"),
+        format="%(asctime)s %(levelname)s %(name)s %(message)s",
+    )
+
+    inbox_path = Path(inbox).expanduser() if inbox else None
+    try:
+        asyncio.run(watch_forever(poll_interval_seconds=poll_seconds, inbox=inbox_path))
+    except KeyboardInterrupt:
+        console.print("[dim]journal watcher stopped[/dim]")
+
+
 def main() -> None:
     """Entry point registered in pyproject.toml [project.scripts]."""
     app()

@@ -35,6 +35,7 @@ from local_brain.eq_brain.brain import AIIA
 from local_brain.eq_brain.knowledge_store import KnowledgeStore
 from local_brain.eq_brain.memory import Memory
 from local_brain.eq_brain.vault_writer import VaultWriter
+from local_brain.journal.router import router as journal_router
 from local_brain.ollama_client import OllamaClient
 from local_brain.smart_conductor import SmartConductor
 
@@ -102,6 +103,11 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Journal pipeline — voice recordings → transcript → distillation → vault.
+# Used by the desktop console, mobile-via-iCloud watcher, and any direct
+# HTTP client (future PWA, native iOS app, etc.).
+app.include_router(journal_router)
 
 
 # Singletons initialized on startup
