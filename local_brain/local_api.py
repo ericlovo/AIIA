@@ -37,6 +37,7 @@ from local_brain.eq_brain.memory import Memory
 from local_brain.eq_brain.vault_writer import VaultWriter
 from local_brain.journal.router import router as journal_router
 from local_brain.ollama_client import OllamaClient
+from local_brain.research.router import init_research, router as research_router
 from local_brain.smart_conductor import SmartConductor
 
 try:
@@ -108,6 +109,7 @@ app.add_middleware(
 # Used by the desktop console, mobile-via-iCloud watcher, and any direct
 # HTTP client (future PWA, native iOS app, etc.).
 app.include_router(journal_router)
+app.include_router(research_router)
 
 
 # Singletons initialized on startup
@@ -202,6 +204,24 @@ async def _ensure_aiia() -> AIIA | None:
                 f"AIIA online: {status['knowledge']['knowledge_docs']} knowledge docs, "
                 f"{status['memory']['total_memories']} memories"
             )
+
+            # Research harness — shares KnowledgeStore + OllamaClient with AIIA
+            try:
+                from local_brain.research.engine import ResearchEngine
+                from local_brain.research.topic import TopicStore
+
+                _topic_store = TopicStore(data_dir=_config.eq_brain_data_dir)
+                _research_engine = ResearchEngine(
+                    ollama=_ollama,
+                    knowledge=knowledge,
+                    topic_store=_topic_store,
+                    model=model,
+                )
+                init_research(_research_engine, _topic_store)
+                logger.info(f"Research harness online: {len(_topic_store.list_all())} topics")
+            except Exception as re:
+                logger.warning(f"Research harness failed to initialize: {re}")
+
         except Exception as e:
             logger.warning(f"AIIA failed to initialize: {e}")
             _aiia = None
