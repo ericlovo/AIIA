@@ -30,6 +30,7 @@ Requires:
     pip install mcp httpx
 """
 
+import json
 import logging
 import os
 
@@ -1722,6 +1723,144 @@ async def aiia_active_sessions() -> str:
         lines.append("")
 
     return "\n".join(lines)
+
+
+# ─────────────────────────────────────────────────────────────
+# Research harness
+# ─────────────────────────────────────────────────────────────
+
+
+@mcp.tool()
+async def aiia_research_new(title: str, question: str, seeds: list[str] | None = None) -> str:
+    """Create a deep-research topic. AIIA will fetch sources, index them into
+    her knowledge base, track open gaps, and grow a synthesis across sessions.
+
+    Use this to kick off long-horizon research that should persist and deepen
+    over multiple runs — e.g. "the history of Platonic eros" or "how WAL works
+    in modern databases". Each topic accumulates a corpus and a living synthesis.
+
+    Args:
+        title: Short topic title (e.g. "Platonic eros")
+        question: The research question to pursue
+        seeds: Optional list of seed URLs to fetch first
+    """
+    body = {"title": title, "question": question, "seeds": seeds or []}
+    result = await _call_aiia("POST", "/v1/research/topics", body)
+    if "error" in result:
+        return f"AIIA Error: {result['error']}"
+    return (
+        f'Created research topic "{result.get("title")}" [id: {result.get("id")}].\n'
+        f"Run a session with aiia_research_run, then read aiia_research_synthesis."
+    )
+
+
+@mcp.tool()
+async def aiia_research_list() -> str:
+    """List AIIA's research topics with their progress (runs, sources, open gaps)."""
+    result = await _call_aiia("GET", "/v1/research/topics")
+    if isinstance(result, dict) and "error" in result:
+        return f"AIIA Error: {result['error']}"
+    if not result:
+        return "No research topics yet. Create one with aiia_research_new."
+
+    lines = ["**Research topics:**", ""]
+    for t in result:
+        lines.append(
+            f"- **{t.get('title', '?')}** `{t.get('id', '?')}` "
+            f"[{t.get('status', '?')}] — {t.get('run_count', 0)} runs, "
+            f"{len(t.get('sources_indexed', []))} sources, "
+            f"{len(t.get('gaps', []))} open gaps"
+        )
+    return "\n".join(lines)
+
+
+@mcp.tool()
+async def aiia_research_synthesis(topic_id: str) -> str:
+    """Read a research topic's current synthesis, open gaps, and indexed sources.
+
+    Args:
+        topic_id: The topic ID (from aiia_research_list / aiia_research_new)
+    """
+    result = await _call_aiia("GET", f"/v1/research/topics/{topic_id}/synthesis")
+    if "error" in result:
+        return f"AIIA Error: {result['error']}"
+
+    parts = [
+        f"**{result.get('title', '?')}** ({topic_id})",
+        f"Question: {result.get('question', '?')}",
+        f"Runs: {result.get('run_count', 0)} | "
+        f"Sources: {len(result.get('sources_indexed', []))} | "
+        f"Status: {result.get('status', '?')}",
+        "",
+        "**Synthesis:**",
+        result.get("synthesis") or "(no synthesis yet — run a session first)",
+    ]
+    gaps = result.get("gaps", [])
+    if gaps:
+        parts.append("")
+        parts.append("**Open gaps:**")
+        parts.extend(f"- {g}" for g in gaps)
+    return "\n".join(parts)
+
+
+@mcp.tool()
+async def aiia_research_run(topic_id: str) -> str:
+    """Run one research session on a topic. AIIA fetches sources, indexes them,
+    searches the growing corpus, logs new gaps, and extends the synthesis.
+
+    Sessions are cumulative — call this repeatedly to deepen a topic. Each run
+    can take a few minutes on local hardware. Read the result with
+    aiia_research_synthesis afterward.
+
+    Args:
+        topic_id: The topic ID to run a session on
+    """
+    url = f"{AIIA_URL}/v1/research/topics/{topic_id}/run"
+    headers = {"Content-Type": "application/json"}
+    if AIIA_API_KEY:
+        headers["X-API-Key"] = AIIA_API_KEY
+
+    actions = 0
+    final_answer = ""
+    error = ""
+    try:
+        async with (
+            httpx.AsyncClient(timeout=900.0) as client,
+            client.stream("POST", url, headers=headers, json={}) as resp,
+        ):
+            if resp.status_code != 200:
+                body = await resp.aread()
+                return f"AIIA Error: research run returned {resp.status_code}: {body.decode('utf-8', 'replace')[:200]}"
+            async for line in resp.aiter_lines():
+                if not line.startswith("data:"):
+                    continue
+                payload = line[len("data:") :].strip()
+                if payload == "[DONE]":
+                    break
+                try:
+                    event = json.loads(payload)
+                except json.JSONDecodeError:
+                    continue
+                etype = event.get("type")
+                if etype == "action":
+                    actions += 1
+                elif etype == "done":
+                    final_answer = event.get("answer", "")
+                elif etype == "error":
+                    error = event.get("message", "unknown error")
+    except httpx.ConnectError:
+        return f"Cannot reach AIIA at {AIIA_URL}. Is the Brain running?"
+    except Exception as e:
+        return f"Research run failed: {e}"
+
+    if error:
+        return f"Research session ended with an error: {error}"
+    summary = final_answer[:600] if final_answer else "(no summary returned)"
+    return (
+        f"Research session complete on topic {topic_id} — {actions} actions taken.\n\n"
+        f"{summary}\n\n"
+        f'Full synthesis: aiia_research_synthesis("{topic_id}")'
+    )
 
 
 # ─────────────────────────────────────────────────────────────

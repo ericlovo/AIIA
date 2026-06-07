@@ -37,7 +37,8 @@ from local_brain.eq_brain.memory import Memory
 from local_brain.eq_brain.vault_writer import VaultWriter
 from local_brain.journal.router import router as journal_router
 from local_brain.ollama_client import OllamaClient
-from local_brain.research.router import init_research, router as research_router
+from local_brain.research.router import init_research
+from local_brain.research.router import router as research_router
 from local_brain.smart_conductor import SmartConductor
 
 try:

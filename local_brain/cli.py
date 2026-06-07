@@ -346,9 +346,7 @@ def memory_add(
 
 @app.command(name="journal-watch")
 def journal_watch(
-    poll_seconds: float = typer.Option(
-        5.0, "--poll", help="Seconds between iCloud-folder polls."
-    ),
+    poll_seconds: float = typer.Option(5.0, "--poll", help="Seconds between iCloud-folder polls."),
     inbox: str | None = typer.Option(
         None,
         "--inbox",
@@ -387,6 +385,165 @@ def journal_watch(
         asyncio.run(watch_forever(poll_interval_seconds=poll_seconds, inbox=inbox_path))
     except KeyboardInterrupt:
         console.print("[dim]journal watcher stopped[/dim]")
+
+
+research_app = typer.Typer(
+    name="research",
+    help="Autonomous deep-research topics — create, run sessions, read synthesis.",
+)
+app.add_typer(research_app)
+
+
+def _http_post(url: str, body: dict, timeout: float = 600.0) -> dict | None:
+    """POST JSON to the Brain and return the parsed dict (or None if unreachable)."""
+    req = urllib.request.Request(
+        url,
+        data=json.dumps(body).encode(),
+        method="POST",
+        headers={"Content-Type": "application/json"},
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            return json.loads(resp.read())
+    except urllib.error.URLError:
+        return None
+    except (json.JSONDecodeError, OSError):
+        return None
+
+
+@research_app.command("list")
+def research_list() -> None:
+    """List research topics, newest first."""
+    data = _http_get(f"{BRAIN_URL}/v1/research/topics")
+    if data is None:
+        _service_unreachable("Brain API", BRAIN_URL)
+        raise typer.Exit(1)
+    if not data:
+        console.print(
+            "[dim]No research topics yet. Create one with[/dim] [cyan]aiia research new[/cyan]"
+        )
+        return
+
+    table = Table(show_header=True, header_style="bold")
+    table.add_column("ID", style="dim")
+    table.add_column("Title")
+    table.add_column("Status")
+    table.add_column("Runs", justify="right")
+    table.add_column("Sources", justify="right")
+    table.add_column("Gaps", justify="right")
+    for t in data:
+        table.add_row(
+            t.get("id", "?"),
+            t.get("title", "?"),
+            t.get("status", "?"),
+            str(t.get("run_count", 0)),
+            str(len(t.get("sources_indexed", []))),
+            str(len(t.get("gaps", []))),
+        )
+    console.print(table)
+
+
+@research_app.command("new")
+def research_new(
+    title: str = typer.Argument(..., help="Short topic title."),
+    question: str = typer.Option(..., "-q", "--question", help="The research question to pursue."),
+    seed: list[str] = typer.Option(
+        None, "-s", "--seed", help="Seed URL to fetch first (repeatable)."
+    ),
+) -> None:
+    """Create a new research topic."""
+    data = _http_post(
+        f"{BRAIN_URL}/v1/research/topics",
+        {"title": title, "question": question, "seeds": seed or []},
+        timeout=10,
+    )
+    if data is None:
+        _service_unreachable("Brain API", BRAIN_URL)
+        raise typer.Exit(1)
+    console.print(
+        f"[green]✓[/green] Created topic [bold]{data.get('id')}[/bold] — {data.get('title')}\n"
+        f"  Run a session with: [cyan]aiia research run {data.get('id')}[/cyan]"
+    )
+
+
+@research_app.command("show")
+def research_show(
+    topic_id: str = typer.Argument(..., help="Topic ID."),
+) -> None:
+    """Show a topic's synthesis, open gaps, and indexed sources."""
+    data = _http_get(f"{BRAIN_URL}/v1/research/topics/{topic_id}/synthesis")
+    if data is None:
+        _service_unreachable("Brain API", BRAIN_URL)
+        raise typer.Exit(1)
+
+    console.print(f"[bold]{data.get('title', '?')}[/bold]  [dim]({topic_id})[/dim]")
+    console.print(f"[dim]Question:[/dim] {data.get('question', '?')}")
+    console.print(
+        f"[dim]Runs:[/dim] {data.get('run_count', 0)}   "
+        f"[dim]Sources:[/dim] {len(data.get('sources_indexed', []))}   "
+        f"[dim]Status:[/dim] {data.get('status', '?')}\n"
+    )
+
+    synthesis = data.get("synthesis") or "[dim](no synthesis yet — run a session)[/dim]"
+    console.print("[bold]Synthesis[/bold]")
+    console.print(synthesis)
+
+    gaps = data.get("gaps", [])
+    if gaps:
+        console.print("\n[bold]Open gaps[/bold]")
+        for g in gaps:
+            console.print(f"  • {g}")
+
+
+@research_app.command("run")
+def research_run(
+    topic_id: str = typer.Argument(..., help="Topic ID."),
+) -> None:
+    """Run one research session (streams progress as the engine works)."""
+    req = urllib.request.Request(
+        f"{BRAIN_URL}/v1/research/topics/{topic_id}/run",
+        data=b"",
+        method="POST",
+        headers={"Content-Type": "application/json"},
+    )
+    console.print(f"[dim]Running research session on {topic_id}…[/dim]\n")
+    try:
+        with urllib.request.urlopen(req, timeout=900) as resp:
+            for raw in resp:
+                line = raw.decode("utf-8", "replace").strip()
+                if not line.startswith("data:"):
+                    continue
+                payload = line[len("data:") :].strip()
+                if payload == "[DONE]":
+                    break
+                try:
+                    event = json.loads(payload)
+                except json.JSONDecodeError:
+                    continue
+                _print_research_event(event)
+    except urllib.error.URLError:
+        _service_unreachable("Brain API", BRAIN_URL)
+        raise typer.Exit(1) from None
+
+    console.print(
+        f"\n[dim]Session complete. View results:[/dim] [cyan]aiia research show {topic_id}[/cyan]"
+    )
+
+
+def _print_research_event(event: dict) -> None:
+    """Render a single SSE event from the research run stream."""
+    etype = event.get("type")
+    if etype == "action":
+        action = event.get("action", {})
+        name = action.get("action", "?") if isinstance(action, dict) else str(action)
+        console.print(f"  [cyan]→[/cyan] {name}")
+    elif etype == "result":
+        result = str(event.get("result", ""))
+        console.print(f"    [dim]{result[:160]}[/dim]")
+    elif etype == "done":
+        console.print(f"  [green]✓[/green] {event.get('answer', '')[:300]}")
+    elif etype == "error":
+        console.print(f"  [red]✗[/red] {event.get('message', 'error')}")
 
 
 def main() -> None:

@@ -63,7 +63,9 @@ async def fetch_url(url: str, timeout: float = 15.0, max_chars: int = 80_000) ->
     """
     Fetch a URL and return (canonical_url, plain_text). Raises on failure.
     """
-    async with httpx.AsyncClient(timeout=timeout, follow_redirects=True, headers=_HEADERS) as client:
+    async with httpx.AsyncClient(
+        timeout=timeout, follow_redirects=True, headers=_HEADERS
+    ) as client:
         response = await client.get(url)
         response.raise_for_status()
 

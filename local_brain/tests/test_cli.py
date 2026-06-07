@@ -13,7 +13,6 @@ from typer.testing import CliRunner
 from local_brain.__version__ import __version__
 from local_brain.cli import app
 
-
 runner = CliRunner()
 
 

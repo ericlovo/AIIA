@@ -83,7 +83,9 @@ async def run_research(topic_id: str):
     if not topic:
         raise HTTPException(status_code=404, detail=f"Topic '{topic_id}' not found")
     if topic.status == "complete":
-        raise HTTPException(status_code=409, detail="Topic is marked complete. Set status to 'active' to continue.")
+        raise HTTPException(
+            status_code=409, detail="Topic is marked complete. Set status to 'active' to continue."
+        )
 
     async def event_stream():
         try:
