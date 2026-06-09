@@ -10,14 +10,20 @@ This folder holds the source-of-truth design tokens for the AIIA product surface
 
 ## What's in `tokens.json`
 
-A v0.1 snapshot of the de facto design language extracted from how aiia-console actually styles its components:
+A v0.2 snapshot of the de facto design language extracted from the console's
+`src/App.css` `@theme` block (the layer that actually compiles to Tailwind
+utilities):
 
-- Dark-mode-first neutral surface palette (neutral-900 base, 950 deepest, 800 raised)
-- Emerald as the primary accent (`ring-emerald-500` is the focus ring, used 22 times in v0.1)
-- Amber / Rose / Indigo for warning / danger / info
-- System font stack, Tailwind default spacing + radii (no custom scales yet)
+- **Light-first vellum/ink brand surface** (Penguin Classics-inspired, Claude.ai-quiet) — warm cream `vellum-50` (#FBF7EC) page, graduated `carbon-*` cream→ink surfaces, warm near-black `ink-900` (#14110D) text
+- **Serif type** — EB Garamond for body, Cormorant Garamond for display, JetBrains Mono for code
+- **Cinnabar** (#C13B2A) as the reserved single-spot accent
+- Saturated `status-*` colours (healthy / attention / failing / active / …) kept readable on cream
+- Custom radius scale (4/8/12/16px) and letter-spacing scale (tight → brand 0.40em)
 
-Values reference Tailwind's named palette (`neutral-900`, `emerald-500`) rather than raw hex so updates flow with the framework.
+> Note: the console keeps the legacy utility names (`void`, `carbon-*`,
+> `text-*`, `amethyst-*`) but **rebinds** their values onto the vellum/ink
+> scale — so those names are historical and no longer describe colour. The
+> tokens here capture the effective (rebound) values as raw hex.
 
 ## Wordmark
 
