@@ -37,7 +37,8 @@ from local_brain.eq_brain.memory import Memory
 from local_brain.eq_brain.vault_writer import VaultWriter
 from local_brain.journal.router import router as journal_router
 from local_brain.ollama_client import OllamaClient
-from local_brain.research.router import init_research, router as research_router
+from local_brain.research.router import init_research
+from local_brain.research.router import router as research_router
 from local_brain.smart_conductor import SmartConductor
 
 try:
@@ -989,6 +990,28 @@ async def aiia_status():
 @app.get("/v1/eq/status", dependencies=[Depends(verify_api_key)], include_in_schema=False)
 async def eq_status_legacy():
     return await aiia_status()
+
+
+@app.get("/v1/aiia/briefing", dependencies=[Depends(verify_api_key)])
+async def aiia_briefing():
+    """
+    Morning briefing + active workstreams — the daily front door.
+
+    Wraps MorningBriefing.generate() (overnight reports, risk flags, deep
+    synthesis with heuristic fallback) and the WorkstreamRegistry so a single
+    call powers the console's Today view, the CLI, and mobile clients.
+    Report files that don't exist degrade to "No ... report found" — the
+    endpoint works on a fresh install.
+    """
+    _aiia = await _require_aiia()
+
+    from local_brain.command_center.workstream_registry import WorkstreamRegistry
+    from local_brain.eq_brain.morning_briefing import MorningBriefing
+
+    briefing = await MorningBriefing(_aiia, _aiia._memory).generate()
+    workstreams = WorkstreamRegistry().list_active()
+
+    return {"briefing": briefing, "workstreams": workstreams}
 
 
 @app.post("/v1/aiia/ingest", dependencies=[Depends(verify_api_key)])

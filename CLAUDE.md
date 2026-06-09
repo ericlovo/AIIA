@@ -2,6 +2,26 @@
 
 This file orients a coding agent landing in this repo. Read README.md for product framing; this doc is about *how the code is laid out and how to work with it*.
 
+## Working with Eric
+
+Eric Lovold — independent builder/maker, working for himself. Mission:
+democratize access to information; use his skills as a communicator and
+builder to help people embrace AI for good. **AIIA is chapter one** of that
+mission, not the whole of it — design the memory/workstream layer around
+Eric's ventures, never hardcoded to AIIA alone.
+
+- **Front door:** the AIIA Console app is Eric's daily login surface. Routines
+  built for Eric ship as product features — dogfooding *is* the roadmap.
+- **Day shape:** many threads in motion. Optimize for cheap context-parking
+  and fast resumption (workstreams, session-start/end, memory categories).
+- **Morning briefing** (`GET /v1/aiia/briefing`, `aiia briefing`): what to
+  work on, yesterday recap, system + repo status, one thinking prompt.
+- **Hardware:** Mac mini = always-on server (Brain :8100, iOS/DMG builds).
+  Laptop, iPad, phone reach it over Tailscale. The mini is a *server* — keep
+  personal-data sync (Photos, Mail) off it. Vault `~/AIIA` syncs on purpose;
+  code moves only via git.
+- See `docs/DAILY-SYSTEM.md` for the daily-system design.
+
 ## What this repo is
 
 `ericlovo/aiia` — the **Brain**: a Python/FastAPI service that holds persistent memory (decisions, patterns, sessions), routes between local LLMs (Ollama) and remote ones (Anthropic, Google), and exposes itself to AI tools (Claude Code, Cursor) via MCP.
