@@ -146,11 +146,22 @@ async def startup():
     else:
         logger.warning(f"Ollama not reachable: {health.get('error', 'unknown')}")
 
-    # AIIA initialized lazily on first request (ChromaDB + embeddings are memory-heavy)
-    if _config.eq_brain_enabled:
-        logger.info("AIIA will initialize on first request (lazy loading)")
-    else:
+    # Eager AIIA init (ChromaDB + embeddings). Initializing here, before the
+    # server accepts traffic, moves the ~15s warmup off the first user query
+    # and onto process startup — /health answering 200 then implies the Brain
+    # is genuinely ready. Set AIIA_LAZY_INIT=1 to restore lazy first-request
+    # init (faster restarts while developing).
+    if not _config.eq_brain_enabled:
         logger.info("AIIA disabled by config")
+    elif os.getenv("AIIA_LAZY_INIT") == "1":
+        logger.info("AIIA will initialize on first request (AIIA_LAZY_INIT=1)")
+    else:
+        logger.info("Initializing AIIA at startup (eager)...")
+        t0 = time.monotonic()
+        if await _ensure_aiia() is not None:
+            logger.info(f"AIIA ready in {time.monotonic() - t0:.1f}s")
+        else:
+            logger.warning("AIIA eager init failed — will retry on first request")
 
 
 _aiia_init_lock = asyncio.Lock()
