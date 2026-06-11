@@ -17,6 +17,7 @@ from local_brain.eq_brain.knowledge_store import KnowledgeStore
 from local_brain.eq_brain.recursive_engine import RecursiveConfig, RecursiveEngine
 from local_brain.ollama_client import OllamaClient
 from local_brain.research.fetcher import fetch_url
+from local_brain.research.profiles import get_profile
 from local_brain.research.repl_env import ResearchREPLEnvironment
 from local_brain.research.topic import ResearchTopic, TopicStore
 
@@ -26,6 +27,7 @@ _SEEDS_PER_SESSION = 3
 
 
 def _system_prompt(topic: ResearchTopic) -> str:
+    profile = get_profile(topic.profile)
     gaps = "\n".join(f"- {g}" for g in topic.gaps) if topic.gaps else "None yet — discover them."
     indexed = "\n".join(f"- {s}" for s in topic.sources_indexed) if topic.sources_indexed else "None yet."
     return f"""You are AIIA conducting structured deep research.
@@ -40,19 +42,10 @@ ALREADY INDEXED SOURCES (skip these):
 {indexed}
 
 YOUR GOAL THIS SESSION:
-1. Fetch primary or authoritative sources that address the question or open gaps
-2. Ingest them with ingest_chunks so the corpus grows
-3. Search the indexed knowledge to find key passages
-4. Log new gaps as you discover them — future sessions will address them
-5. Update the synthesis with what this session learned
-6. Call final() with a session summary: what was learned, what's still open
+{profile.goal}
 
 PRINCIPLES:
-- Build corpus first: fetch_url → ingest_chunks, then search_knowledge
-- Prefer primary texts, scholarly sources, or seminal secondary sources
-- The synthesis is cumulative — extend it, don't flatten previous content
-- log_gap for every open question you uncover, not just the obvious ones
-- final() ends this session only — the research continues across sessions"""
+{profile.principles}"""
 
 
 class ResearchEngine:

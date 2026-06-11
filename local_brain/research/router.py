@@ -2,6 +2,7 @@
 Research API — /v1/research/* endpoints.
 
 POST /v1/research/topics              — create a research topic
+POST /v1/research/erdos               — create a topic for an Erdős problem number
 GET  /v1/research/topics              — list all topics
 GET  /v1/research/topics/{id}         — get topic state
 POST /v1/research/topics/{id}/run     — run one session (SSE stream)
@@ -13,7 +14,10 @@ import logging
 
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
+
+from local_brain.research.erdos import create_erdos_topic, find_erdos_topic
+from local_brain.research.profiles import PROFILES
 
 logger = logging.getLogger("aiia.research.router")
 
@@ -46,13 +50,36 @@ class CreateTopicRequest(BaseModel):
     title: str
     question: str
     seeds: list[str] = []
+    profile: str = "general"
+
+
+class CreateErdosTopicRequest(BaseModel):
+    number: int = Field(gt=0, description="Erdős problem number on erdosproblems.com")
+    seeds: list[str] = []  # extra seeds beyond the problem page (e.g. arXiv abstracts)
 
 
 @router.post("/topics", status_code=201)
 async def create_topic(req: CreateTopicRequest):
     """Create a new research topic."""
     store = _require_store()
-    topic = store.create(title=req.title, question=req.question, seeds=req.seeds)
+    if req.profile not in PROFILES:
+        known = ", ".join(sorted(PROFILES))
+        raise HTTPException(status_code=422, detail=f"Unknown profile '{req.profile}'. Known: {known}")
+    topic = store.create(title=req.title, question=req.question, seeds=req.seeds, profile=req.profile)
+    return topic.to_dict()
+
+
+@router.post("/erdos", status_code=201)
+async def create_erdos(req: CreateErdosTopicRequest):
+    """Create a research topic for an Erdős problem, seeded with its erdosproblems.com page."""
+    store = _require_store()
+    existing = find_erdos_topic(store, req.number)
+    if existing:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Topic for Erdős problem #{req.number} already exists: '{existing.id}'",
+        )
+    topic = create_erdos_topic(store, req.number, extra_seeds=req.seeds)
     return topic.to_dict()
 
 
