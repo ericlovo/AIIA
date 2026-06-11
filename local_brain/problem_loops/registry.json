@@ -1,0 +1,200 @@
+{
+  "_meta": {
+    "schema": 1,
+    "purpose": "Erdős problem registry for AIIA autonomous problem loops.",
+    "source_of_truth": "https://www.erdosproblems.com — the loop re-verifies status against it + the literature on every run. Do NOT trust the `status` field here as ground truth; it is a training-knowledge prior with a confidence tag, and VERIFYING it is the loop's first job.",
+    "status_values": ["open", "partial", "solved", "disproved", "unknown"],
+    "modes": {
+      "literature": "Find whether it's already settled / what the current frontier paper is. Cheapest, highest hit-rate, runs first on every problem.",
+      "computational": "Counterexample search, small-case enumeration, statistic-gathering that can confirm/refute or reshape the conjecture. Verifiable by re-execution.",
+      "proof_search": "Attempt a novel argument, lemma, reduction, or special case. High value, high hallucination risk — gated hardest.",
+      "formalization": "Encode a known or newly-found result in Lean. A machine-checked proof cannot be a hallucination — the strongest verification we have.",
+      "generalization": "Propose new conjectures (analogues, strengthenings) backed by computational evidence. New territory: generating problems, not only attacking them."
+    },
+    "computational_surface": "0..1 — how much a brute-force / enumeration probe can move the needle. Picker favors high values for early runs (safe, demoable wins).",
+    "loop_first_move": "What the loop should attempt first; never start at proof_search on an open hard problem."
+  },
+  "problems": [
+    {
+      "id": "erdos-straus",
+      "name": "Erdős–Straus conjecture",
+      "statement": "For every n ≥ 2, 4/n = 1/a + 1/b + 1/c has a solution in positive integers.",
+      "domain": "number_theory",
+      "status": "open",
+      "status_confidence": "high",
+      "modes": ["computational", "literature", "generalization"],
+      "computational_surface": 0.95,
+      "related": ["erdos-sierpinski-5n"],
+      "loop_first_move": "Enumerate solutions to large n, characterize the residue classes where n is hard (the surviving cases mod 840), gather statistics on solution multiplicity. Pure verifiable computation — ideal first demo."
+    },
+    {
+      "id": "erdos-sierpinski-5n",
+      "name": "Sierpiński / Erdős 5/n analogue",
+      "statement": "5/n = 1/a + 1/b + 1/c solvable for all n ≥ 2 (analogue of Erdős–Straus).",
+      "domain": "number_theory",
+      "status": "open",
+      "status_confidence": "medium",
+      "modes": ["computational", "generalization"],
+      "computational_surface": 0.9,
+      "related": ["erdos-straus"],
+      "loop_first_move": "Same enumeration harness as Erdős–Straus; cross-problem reuse is the point — proves the technique-transfer hypothesis."
+    },
+    {
+      "id": "erdos-turan-additive-bases",
+      "name": "Erdős–Turán conjecture on additive bases",
+      "statement": "If A ⊆ ℕ is an additive basis of order 2, then the representation function r(n) = #{(a,b): a+b=n, a,b∈A} is unbounded.",
+      "domain": "number_theory",
+      "status": "open",
+      "status_confidence": "high",
+      "modes": ["literature", "proof_search"],
+      "computational_surface": 0.3,
+      "related": [],
+      "loop_first_move": "Literature frontier survey only. Low computational surface; this is a long-chain proof problem — a Fable-class deductive target, not a brute-force one. Do not let the loop emit a 'proof' here without the full verification ladder."
+    },
+    {
+      "id": "erdos-ap-reciprocals",
+      "name": "Erdős conjecture on arithmetic progressions",
+      "statement": "If A ⊆ ℕ and Σ_{a∈A} 1/a diverges, then A contains arbitrarily long arithmetic progressions.",
+      "domain": "combinatorics_number_theory",
+      "status": "open",
+      "status_confidence": "high",
+      "prize_usd": 5000,
+      "modes": ["literature", "proof_search"],
+      "computational_surface": 0.15,
+      "related": ["green-tao"],
+      "loop_first_move": "Map the frontier (Green–Tao gives primes; the general conjecture is wide open). Synthesis target: what reductions exist? No proof claims without Lean."
+    },
+    {
+      "id": "erdos-gyarfas-2a3b",
+      "name": "Erdős–Gyárfás / covering by {2^a·3^b}",
+      "statement": "Questions on covering integers by numbers of the form 2^a·3^b and related density problems.",
+      "domain": "number_theory",
+      "status": "open",
+      "status_confidence": "low",
+      "modes": ["literature", "computational"],
+      "computational_surface": 0.7,
+      "related": ["erdos-covering-congruences"],
+      "loop_first_move": "Verify exact statement + status first (status_confidence low). Then computational density gathering."
+    },
+    {
+      "id": "erdos-covering-min-modulus",
+      "name": "Erdős minimum modulus problem (covering congruences)",
+      "statement": "Is there a bound on the minimum modulus of a covering system with distinct moduli? (Resolved: Hough 2015 — no covering system with min modulus > 10^16; later work tightened.)",
+      "domain": "number_theory",
+      "status": "solved",
+      "status_confidence": "high",
+      "modes": ["formalization", "literature"],
+      "computational_surface": 0.4,
+      "related": ["erdos-gyarfas-2a3b"],
+      "loop_first_move": "Study/Lean-formalize the Hough distortion-method core. A 'solved' entry kept deliberately as a formalization + technique-extraction target."
+    },
+    {
+      "id": "erdos-discrepancy",
+      "name": "Erdős discrepancy problem",
+      "statement": "For any ±1 sequence, sums over homogeneous APs (d, 2d, 3d, …) are unbounded. (Resolved: Tao 2015.)",
+      "domain": "combinatorics",
+      "status": "solved",
+      "status_confidence": "high",
+      "modes": ["formalization", "literature", "generalization"],
+      "computational_surface": 0.5,
+      "related": [],
+      "loop_first_move": "Technique-extraction: Tao's GPY/entropy decomposition. Generalization mode: what analogues remain open? SAT-solver lower bounds (Konev–Lisitsa) are a verifiable computational re-run."
+    },
+    {
+      "id": "erdos-faber-lovasz",
+      "name": "Erdős–Faber–Lovász conjecture",
+      "statement": "The union of n edge-disjoint copies of K_n is n-edge-colorable. (Resolved for large n: Kang–Kelly–Kühn–Methuku–Osthus 2021.)",
+      "domain": "graph_theory",
+      "status": "solved",
+      "status_confidence": "high",
+      "modes": ["literature", "computational", "formalization"],
+      "computational_surface": 0.6,
+      "related": [],
+      "loop_first_move": "Verify small-n cases computationally; study the absorption method. Open remnant: explicit small-n bounds — a verifiable computational frontier."
+    },
+    {
+      "id": "erdos-distinct-distances",
+      "name": "Erdős distinct distances problem",
+      "statement": "n points in the plane determine ≳ n/√(log n) distinct distances. (Essentially resolved: Guth–Katz 2015, up to the log factor.)",
+      "domain": "discrete_geometry",
+      "status": "solved",
+      "status_confidence": "high",
+      "modes": ["literature", "generalization"],
+      "computational_surface": 0.3,
+      "related": ["erdos-unit-distance"],
+      "loop_first_move": "Frontier: the remaining √(log n) gap. Generalization: higher dimensions, where it is still open. Technique-extraction of polynomial method."
+    },
+    {
+      "id": "erdos-unit-distance",
+      "name": "Erdős unit distance problem",
+      "statement": "n points in the plane determine O(n^{1+ε}) unit distances? (Open; best known ~n^{4/3}.)",
+      "domain": "discrete_geometry",
+      "status": "open",
+      "status_confidence": "high",
+      "modes": ["computational", "literature", "proof_search"],
+      "computational_surface": 0.65,
+      "related": ["erdos-distinct-distances"],
+      "loop_first_move": "Computational: search configurations maximizing unit distances for small n (known optimal configs are a verifiable target), compare to the n^{4/3} bound."
+    },
+    {
+      "id": "erdos-szekeres-convex",
+      "name": "Erdős–Szekeres (happy ending) — convex polygons",
+      "statement": "ES(n) = 2^{n-2}+1 points in general position force a convex n-gon. (Suk 2017 proved 2^{n+o(n)}; exact conjecture open.)",
+      "domain": "discrete_geometry",
+      "status": "partial",
+      "status_confidence": "high",
+      "modes": ["computational", "literature"],
+      "computational_surface": 0.8,
+      "related": [],
+      "loop_first_move": "Verify exact small values (ES(6)=17 was a 2006 computer proof); the empty-hexagon and exact-ES frontiers are verifiable enumeration targets."
+    },
+    {
+      "id": "erdos-hajnal",
+      "name": "Erdős–Hajnal conjecture",
+      "statement": "For every graph H there is c(H)>0 such that H-free graphs on n vertices contain a clique or independent set of size n^{c(H)}.",
+      "domain": "graph_theory",
+      "status": "open",
+      "status_confidence": "high",
+      "modes": ["literature", "proof_search", "computational"],
+      "computational_surface": 0.45,
+      "related": [],
+      "loop_first_move": "Map which H are resolved (recent progress on specific H). Computational: verify c(H) lower bounds for small H. Synthesis target — many sub-cases share structure."
+    },
+    {
+      "id": "erdos-sunflower",
+      "name": "Erdős–Rado sunflower conjecture",
+      "statement": "A k-uniform family with > c^k sets contains a sunflower with 3 petals. (Major progress: Alweiss–Lovett–Wu–Zhang 2019/2021, c^k log... — exact c open.)",
+      "domain": "combinatorics",
+      "status": "partial",
+      "status_confidence": "high",
+      "modes": ["literature", "proof_search", "formalization"],
+      "computational_surface": 0.35,
+      "related": [],
+      "loop_first_move": "Frontier survey of the ALWZ bound + successors; the gap to the conjectured c^k is the target. Formalization candidate (the ALWZ argument is relatively short)."
+    },
+    {
+      "id": "erdos-multiplication-table",
+      "name": "Erdős multiplication table problem",
+      "statement": "How many distinct products appear in the n×n multiplication table? (Order of magnitude resolved: Ford 2008 — n^2/(log n)^{δ}(log log n)^{3/2}.)",
+      "domain": "number_theory",
+      "status": "solved",
+      "status_confidence": "high",
+      "modes": ["computational", "literature", "generalization"],
+      "computational_surface": 0.85,
+      "related": [],
+      "loop_first_move": "Directly computable: count distinct products for growing n, fit against Ford's order of magnitude. Clean verifiable demo with a known answer to check against."
+    },
+    {
+      "id": "erdos-minimum-overlap",
+      "name": "Erdős minimum overlap problem",
+      "statement": "Split {1,…,2n} into two equal sets A,B; minimize the max overlap of A with translates of B. Determine the limiting constant.",
+      "domain": "combinatorics",
+      "status": "partial",
+      "status_confidence": "medium",
+      "modes": ["computational", "literature"],
+      "computational_surface": 0.9,
+      "related": [],
+      "loop_first_move": "Optimization search for the constant at growing n; tighten the known numerical bounds. High computational surface, underexplored — a strong candidate for a genuine numerical contribution."
+    }
+  ]
+}
