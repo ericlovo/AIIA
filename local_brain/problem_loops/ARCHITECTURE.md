@@ -124,9 +124,13 @@ is the upside. Selling it as anything more is the failure mode.
 ## Build status
 
 - [x] `registry.json` — seed set (15 problems), mode-tagged, honesty-tagged status priors
-- [ ] `loop.py` — pick/attempt/verify/record cycle (forks `story_runner/runner.py`)
-- [ ] prover / refuter / arbiter prompts (`prompts/`)
-- [ ] computational harness sandbox (worktree + re-execution by refuter)
-- [ ] Lean bridge (formalization rung) — later; start with the lower rungs
+- [x] `loop.py` — pick/attempt/verify/record cycle (computational + literature lanes)
+- [x] computational lane — deterministic harnesses, fresh-subprocess refuter
+      re-execution, hash-match arbiter (fully offline; 3 harnesses live)
+- [x] literature lane — SDK prover/refuter with CODE-verified citations
+      (fetch URL, find verbatim quote, ≥2 independent domains) + independent
+      refuter agreement; fails closed on any gap (16 tests cover the gates)
+- [ ] proof_search lane — adversarial refuter prompts for novel arguments
+- [ ] Lean bridge (formalization rung) — the top of the ladder
 - [ ] cross-problem synthesis pass
 - [ ] scheduler hook (autonomy module / launchd nightly), gated like Phase 2

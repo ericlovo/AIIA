@@ -55,7 +55,7 @@ def run(params: dict[str, Any]) -> dict[str, Any]:
         values.append({"n": n, "M": m, "ratio": round(m / n, 6)})
     evidence = {
         "n_max": n_max,
-        "values": values,             # exact optima M(2)..M(n_max)
+        "values": values,  # exact optima M(2)..M(n_max)
         "is_exact_optimum": True,
         "known_constant_band": [0.379, 0.387],
     }
@@ -66,5 +66,10 @@ def run(params: dict[str, Any]) -> dict[str, Any]:
         f"(true optimum by exhaustive balanced-split search; asymptotic "
         f"constant band ≈0.379–0.387)."
     )
-    return {"problem_id": "erdos-minimum-overlap", "mode": "computational",
-            "verified": True, "claim": claim, "evidence": evidence}
+    return {
+        "problem_id": "erdos-minimum-overlap",
+        "mode": "computational",
+        "verified": True,
+        "claim": claim,
+        "evidence": evidence,
+    }

@@ -45,5 +45,10 @@ def run(params: dict[str, Any]) -> dict[str, Any]:
         f"({' → '.join(str(r) for r in ratios)} at k={ks}), consistent with "
         f"Ford's k²/((log k)^δ(log log k)^{{3/2}}) order, δ≈{round(delta, 3)}."
     )
-    return {"problem_id": "erdos-multiplication-table", "mode": "computational",
-            "verified": declining, "claim": claim, "evidence": evidence}
+    return {
+        "problem_id": "erdos-multiplication-table",
+        "mode": "computational",
+        "verified": declining,
+        "claim": claim,
+        "evidence": evidence,
+    }

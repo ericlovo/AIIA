@@ -33,6 +33,7 @@ logger = logging.getLogger("aiia.problem_loops")
 
 # Memory categories per verification rung (see ARCHITECTURE.md ladder).
 RUNG_CATEGORY = {
+    "status": "lessons",
     "computational": "lessons",
     "partial": "project",
     "verified_proof": "decisions",
@@ -57,7 +58,9 @@ def _refuter_subprocess(problem_id: str, params: dict[str, Any]) -> str | None:
     try:
         out = subprocess.run(
             [sys.executable, "-c", code, json.dumps(params), problem_id],
-            capture_output=True, text=True, timeout=600,
+            capture_output=True,
+            text=True,
+            timeout=600,
             cwd=str(Path(__file__).resolve().parents[2]),  # AIIA/
         )
         if out.returncode != 0:
@@ -134,13 +137,50 @@ def computational_cycle(
     return record
 
 
-# ── LLM lanes — declared, gated (next pass; needs claude_agent_sdk + API key) ──
+# ── LLM lanes ───────────────────────────────────────────────────
+
+
+def literature_run(
+    problem: dict[str, Any],
+    budget_usd: float,
+    memory: Any | None,
+    dry_run: bool = False,
+) -> dict[str, Any]:
+    """Run the literature lane (async cycle under the hood) and record it."""
+    import asyncio
+
+    from local_brain.problem_loops.llm_lane import SDKClient, literature_cycle
+
+    llm = SDKClient()  # raises with a clear message if SDK/key unavailable
+    record = asyncio.run(literature_cycle(problem, llm, budget_usd=budget_usd))
+
+    if record["promoted"] and memory is not None and not dry_run:
+        category = RUNG_CATEGORY[record["rung_reached"]]
+        memory.remember(
+            fact=record["claim"],
+            category=category,
+            source=f"erdos-loop:{record['problem_id']}",
+            metadata={
+                "problem_id": record["problem_id"],
+                "mode": "literature",
+                "rung_reached": record["rung_reached"],
+                "arbiter": record["arbiter"],
+                "citations": record.get("citations_checked"),
+                "proposed_registry_update": record.get("proposed_registry_update"),
+                "cost_usd": record["cost_usd"],
+            },
+        )
+        record["memory_category"] = category
+    return record
+
 
 def llm_cycle(problem: dict[str, Any], mode: str, **kwargs) -> dict[str, Any]:
+    if mode == "literature":
+        return literature_run(problem, **kwargs)
     raise NotImplementedError(
-        f"The {mode!r} lane (prover/refuter via claude_agent_sdk) is the next "
-        f"build pass. The computational lane runs fully offline today; see "
-        f"ARCHITECTURE.md for the prover/refuter/arbiter + Lean roadmap."
+        f"The {mode!r} lane is a later pass (proof_search needs the adversarial "
+        f"refuter prompts; formalization needs the Lean bridge). literature and "
+        f"the offline computational lane are live; see ARCHITECTURE.md."
     )
 
 
@@ -148,14 +188,22 @@ def _get_memory(memory_dir: str | None):
     if not memory_dir:
         return None
     from local_brain.eq_brain.memory import Memory
+
     return Memory(memory_dir)
 
 
 def main():
     logging.basicConfig(level=logging.INFO, format="%(message)s")
     ap = argparse.ArgumentParser(description="AIIA Erdős problem loop")
-    ap.add_argument("--offline", action="store_true",
-                    help="Computational lane only (no LLM, no API key).")
+    ap.add_argument(
+        "--offline", action="store_true", help="Computational lane only (no LLM, no API key)."
+    )
+    ap.add_argument(
+        "--mode",
+        choices=["computational", "literature"],
+        help="Lane to run (default: computational when --offline).",
+    )
+    ap.add_argument("--budget-usd", type=float, default=1.0, help="LLM spend cap for LLM lanes.")
     ap.add_argument("--problem", help="Specific problem id; else picker chooses.")
     ap.add_argument("--budget", type=float, default=2.0, help="Seconds per harness.")
     ap.add_argument("--memory-dir", help="AIIA memory data dir (omit to not persist).")
@@ -170,21 +218,41 @@ def main():
     else:
         problem = pick_problem(registry, offline_harnesses=set(HARNESSES))
 
-    if not args.offline:
-        ap.error("Only --offline (computational lane) is implemented this pass.")
+    mode = args.mode or ("computational" if args.offline else None)
+    if mode is None:
+        ap.error("Pass --offline for the computational lane or --mode literature.")
 
     memory = _get_memory(args.memory_dir) if not args.dry_run else None
-    record = computational_cycle(problem, args.budget, memory, dry_run=args.dry_run)
+    if mode == "computational":
+        record = computational_cycle(problem, args.budget, memory, dry_run=args.dry_run)
+    else:
+        record = llm_cycle(
+            problem, mode, budget_usd=args.budget_usd, memory=memory, dry_run=args.dry_run
+        )
 
     print("\n=== problem loop cycle ===")
     print(f"problem   : {record['problem_id']} ({record['mode']})")
-    print(f"verified  : {record['verified']}   reproduced: {record['reproduced']}")
-    print(f"promoted  : {record['promoted']}"
-          + (f" → memory[{record.get('memory_category')}]" if record["promoted"] and not args.dry_run else ""))
-    print(f"hash      : {record['result_hash'][:16]}  (refuter: "
-          f"{(record['refuter_hash'] or 'FAILED')[:16]})")
-    print(f"elapsed   : {record['elapsed_s']}s")
-    print(f"\nFINDING: {record['claim']}\n")
+    if "verified" in record:
+        print(f"verified  : {record['verified']}   reproduced: {record['reproduced']}")
+    print(
+        f"promoted  : {record['promoted']}"
+        + (
+            f" → memory[{record.get('memory_category')}]"
+            if record["promoted"] and not args.dry_run
+            else ""
+        )
+    )
+    if "result_hash" in record:
+        print(
+            f"hash      : {record['result_hash'][:16]}  (refuter: "
+            f"{(record['refuter_hash'] or 'FAILED')[:16]})"
+        )
+        print(f"elapsed   : {record['elapsed_s']}s")
+    if "arbiter" in record:
+        print(f"arbiter   : {record['arbiter']}")
+    if "cost_usd" in record:
+        print(f"llm cost  : ${record['cost_usd']:.4f}")
+    print(f"\nFINDING: {record.get('claim', '(not promoted — nothing recorded)')}\n")
     return 0 if record["promoted"] else 1
 
 

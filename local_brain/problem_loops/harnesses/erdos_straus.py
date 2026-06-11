@@ -71,5 +71,10 @@ def run(params: dict[str, Any]) -> dict[str, Any]:
         f"(no counterexample — consistent with the known result); the hardest "
         f"case needed leading denominator a={hardest_a} at n={hardest_n}."
     )
-    return {"problem_id": "erdos-straus", "mode": "computational",
-            "verified": no_counterexample, "claim": claim, "evidence": evidence}
+    return {
+        "problem_id": "erdos-straus",
+        "mode": "computational",
+        "verified": no_counterexample,
+        "claim": claim,
+        "evidence": evidence,
+    }
