@@ -61,8 +61,9 @@ _ERDOS = ResearchProfile(
   as a gap instead of stating it
 - Distinguish proved results from conjectures and heuristic arguments explicitly
 - Preserve LaTeX notation from sources as-is — do not paraphrase formulas
-- arXiv abstract pages are fetchable; PDFs are not yet supported — when only a
-  PDF exists, log a gap with the arXiv id so a future session can follow up
+- arXiv abstract pages and PDF full texts are both fetchable — prefer the abstract
+  page for framing, then fetch the PDF (arxiv.org/pdf/<id>) for proofs and bounds;
+  if a source genuinely cannot be fetched, log a gap with its id for a later session
 - The synthesis is cumulative — refine bounds and add results, don't flatten
   previous content
 - final() ends this session only — the research continues across sessions""",
