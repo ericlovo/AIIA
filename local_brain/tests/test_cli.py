@@ -10,9 +10,9 @@ from __future__ import annotations
 
 from typer.testing import CliRunner
 
+from local_brain import cli
 from local_brain.__version__ import __version__
 from local_brain.cli import app
-
 
 runner = CliRunner()
 
@@ -58,3 +58,134 @@ class TestCliGracefulFailure:
         assert result.exit_code in (0, 1)
         if result.exit_code == 1:
             assert "unreachable" in result.stdout.lower()
+
+
+class TestResearchErdos:
+    """`aiia research erdos` — topic creation, mocked at the HTTP boundary."""
+
+    def test_help_lists_research_subcommands(self):
+        result = runner.invoke(app, ["research", "--help"])
+        assert result.exit_code == 0
+        for cmd in ("erdos", "list", "run", "show"):
+            assert cmd in result.stdout
+
+    def test_rejects_non_positive_number_without_calling_brain(self, monkeypatch):
+        called = False
+
+        def _boom(*a, **k):
+            nonlocal called
+            called = True
+            return 0, None
+
+        monkeypatch.setattr(cli, "_http_post", _boom)
+        result = runner.invoke(app, ["research", "erdos", "0"])
+        assert result.exit_code == 2
+        assert not called  # validated client-side, never hit the network
+
+    def test_create_success_prints_id_and_run_hint(self, monkeypatch):
+        captured = {}
+
+        def _fake_post(url, payload, timeout=10.0):
+            captured["url"] = url
+            captured["payload"] = payload
+            return 201, {
+                "id": "ab12cd34",
+                "title": "Erdős Problem #351",
+                "seeds": ["https://www.erdosproblems.com/351"],
+            }
+
+        monkeypatch.setattr(cli, "_http_post", _fake_post)
+        result = runner.invoke(app, ["research", "erdos", "351"])
+        assert result.exit_code == 0
+        assert captured["url"].endswith("/v1/research/erdos")
+        assert captured["payload"] == {"number": 351, "seeds": []}
+        assert "ab12cd34" in result.stdout
+        assert "aiia research run ab12cd34" in result.stdout
+
+    def test_seeds_are_forwarded(self, monkeypatch):
+        captured = {}
+
+        def _fake_post(url, payload, timeout=10.0):
+            captured["payload"] = payload
+            return 201, {"id": "x", "title": "Erdős Problem #5", "seeds": []}
+
+        monkeypatch.setattr(cli, "_http_post", _fake_post)
+        result = runner.invoke(
+            app,
+            ["research", "erdos", "5", "-s", "https://arxiv.org/abs/2401.00001"],
+        )
+        assert result.exit_code == 0
+        assert captured["payload"]["seeds"] == ["https://arxiv.org/abs/2401.00001"]
+
+    def test_duplicate_reports_conflict_nonzero(self, monkeypatch):
+        monkeypatch.setattr(
+            cli,
+            "_http_post",
+            lambda *a, **k: (409, {"detail": "Topic for Erdős problem #351 already exists: 'ab12'"}),
+        )
+        result = runner.invoke(app, ["research", "erdos", "351"])
+        assert result.exit_code == 1
+        assert "already exists" in result.stdout
+
+    def test_unreachable_brain_reports_friendly_error(self, monkeypatch):
+        monkeypatch.setattr(cli, "_http_post", lambda *a, **k: (0, None))
+        result = runner.invoke(app, ["research", "erdos", "351"])
+        assert result.exit_code == 1
+        assert "unreachable" in result.stdout.lower()
+
+
+class TestResearchList:
+    def test_lists_topics(self, monkeypatch):
+        monkeypatch.setattr(
+            cli,
+            "_http_get",
+            lambda url, timeout=5.0: [
+                {"id": "ab12", "profile": "erdos", "status": "active", "run_count": 2, "title": "Erdős Problem #351"},
+            ],
+        )
+        result = runner.invoke(app, ["research", "list"])
+        assert result.exit_code == 0
+        assert "ab12" in result.stdout
+        assert "erdos" in result.stdout
+
+    def test_empty_list_is_friendly(self, monkeypatch):
+        monkeypatch.setattr(cli, "_http_get", lambda url, timeout=5.0: [])
+        result = runner.invoke(app, ["research", "list"])
+        assert result.exit_code == 0
+        assert "No research topics" in result.stdout
+
+    def test_unreachable_brain_nonzero(self, monkeypatch):
+        monkeypatch.setattr(cli, "_http_get", lambda url, timeout=5.0: None)
+        result = runner.invoke(app, ["research", "list"])
+        assert result.exit_code == 1
+        assert "unreachable" in result.stdout.lower()
+
+
+class TestResearchShow:
+    def test_renders_synthesis_and_gaps(self, monkeypatch):
+        monkeypatch.setattr(
+            cli,
+            "_http_get",
+            lambda url, timeout=5.0: {
+                "title": "Erdős Problem #351",
+                "status": "active",
+                "question": "What is the status?",
+                "synthesis": "Open problem; best known bound is X.",
+                "gaps": ["arXiv:2401.00001 is PDF-only"],
+                "sources_indexed": ["a", "b"],
+                "run_count": 3,
+                "last_run": "2026-06-14T00:00:00Z",
+            },
+        )
+        result = runner.invoke(app, ["research", "show", "ab12"])
+        assert result.exit_code == 0
+        assert "best known bound" in result.stdout
+        assert "PDF-only" in result.stdout
+
+    def test_missing_topic_nonzero(self, monkeypatch):
+        monkeypatch.setattr(
+            cli, "_http_get", lambda url, timeout=5.0: {"detail": "Topic 'nope' not found"}
+        )
+        result = runner.invoke(app, ["research", "show", "nope"])
+        assert result.exit_code == 1
+        assert "not found" in result.stdout

@@ -10,6 +10,8 @@ Subcommands:
     aiia next                     # surface top stories ranked by priority × freshness
     aiia ask "..."                # one-shot query with memory + project context
     aiia memory list|search|add   # memory CRUD
+    aiia research erdos <n>       # create a topic for an Erdős problem
+    aiia research list|run|show   # research loop — topics + sessions
     aiia briefing [--fresh]       # morning briefing (existing briefing_cli wrapper)
     aiia status                   # health of Brain + Command Center
 
@@ -72,6 +74,31 @@ def _http_get(url: str, timeout: float = 5.0) -> dict | None:
         return None
     except (json.JSONDecodeError, OSError):
         return None
+
+
+def _http_post(url: str, payload: dict, timeout: float = 10.0) -> tuple[int, dict | None]:
+    """POST JSON to an endpoint. Returns (status_code, parsed_body).
+
+    status_code is 0 when the service is unreachable (connection refused,
+    DNS, timeout). HTTP error responses (4xx/5xx) return their real code and
+    parsed body when available, so callers can branch on 409/422 etc.
+    """
+    data = json.dumps(payload).encode()
+    req = urllib.request.Request(
+        url, data=data, method="POST", headers={"Content-Type": "application/json"}
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            return resp.status, json.loads(resp.read())
+    except urllib.error.HTTPError as e:
+        try:
+            return e.code, json.loads(e.read())
+        except (json.JSONDecodeError, OSError):
+            return e.code, None
+    except urllib.error.URLError:
+        return 0, None
+    except (json.JSONDecodeError, OSError):
+        return 0, None
 
 
 def _service_unreachable(service: str, url: str) -> None:
@@ -337,6 +364,192 @@ def memory_add(
     else:
         console.print(f"[red]✗[/red] Failed: {data}")
         raise typer.Exit(1)
+
+
+research_app = typer.Typer(
+    name="research",
+    help="Autonomous research loop — topics, Erdős problems.",
+)
+app.add_typer(research_app)
+
+
+def _stream_research_run(topic_id: str) -> None:
+    """POST /topics/{id}/run and render the SSE event stream as it arrives."""
+    req = urllib.request.Request(
+        f"{BRAIN_URL}/v1/research/topics/{topic_id}/run",
+        method="POST",
+        headers={"Accept": "text/event-stream"},
+    )
+    try:
+        resp = urllib.request.urlopen(req, timeout=600)
+    except urllib.error.HTTPError as e:
+        try:
+            detail = json.loads(e.read()).get("detail", e.reason)
+        except (json.JSONDecodeError, OSError):
+            detail = e.reason
+        console.print(f"[red]✗[/red] {detail}")
+        raise typer.Exit(1) from None
+    except urllib.error.URLError:
+        _service_unreachable("Brain API", BRAIN_URL)
+        raise typer.Exit(1) from None
+
+    console.print(f"[dim]Running session on topic {topic_id} …[/dim]\n")
+    final_answer = ""
+    with resp:
+        for raw in resp:
+            line = raw.decode("utf-8", "replace").strip()
+            if not line.startswith("data:"):
+                continue
+            chunk = line[len("data:") :].strip()
+            if chunk == "[DONE]":
+                break
+            try:
+                event = json.loads(chunk)
+            except json.JSONDecodeError:
+                continue
+
+            kind = event.get("type")
+            if kind == "meta":
+                console.print(
+                    f"[dim]session {event.get('session_id', '?')} · model "
+                    f"{event.get('model', '?')} · max {event.get('max_iterations', '?')} iters[/dim]"
+                )
+            elif kind == "action":
+                i = event.get("iteration", "?")
+                console.print(f"  [cyan]→[/cyan] [{i}] {event.get('action', '?')}")
+            elif kind == "result":
+                mark = "[green]✓[/green]" if event.get("ok") else "[red]✗[/red]"
+                console.print(f"     {mark} [dim]{event.get('preview', '')[:160]}[/dim]")
+            elif kind == "fallback":
+                console.print(f"  [yellow]⤵ fallback[/yellow] [dim]{event.get('reason', '')}[/dim]")
+            elif kind == "error":
+                console.print(f"  [red]✗ {event.get('message', 'error')}[/red]")
+            elif kind == "done":
+                final_answer = event.get("answer") or ""
+                console.print(
+                    f"\n[green]✓[/green] done — {event.get('iterations', '?')} iterations, "
+                    f"{event.get('tokens_used', '?')} tokens"
+                )
+
+    if final_answer:
+        console.print(f"\n{final_answer}")
+    console.print(
+        f"\n  Synthesis so far: [cyan]aiia research show {topic_id}[/cyan]"
+    )
+
+
+@research_app.command("erdos")
+def research_erdos(
+    number: int = typer.Argument(..., help="Erdős problem number (erdosproblems.com/N)."),
+    seed: list[str] = typer.Option(
+        None,
+        "--seed",
+        "-s",
+        help="Extra seed URL beyond the problem page (repeatable), e.g. an arXiv abstract.",
+    ),
+    run: bool = typer.Option(
+        False, "--run", "-r", help="Start a research session immediately after creating the topic."
+    ),
+) -> None:
+    """Create a research topic for an Erdős problem, seeded with its erdosproblems.com page."""
+    if number < 1:
+        console.print("[red]✗[/red] Problem number must be a positive integer.")
+        raise typer.Exit(2)
+
+    code, data = _http_post(
+        f"{BRAIN_URL}/v1/research/erdos", {"number": number, "seeds": seed or []}
+    )
+    if code == 0:
+        _service_unreachable("Brain API", BRAIN_URL)
+        raise typer.Exit(1)
+    if code == 409:
+        detail = (data or {}).get("detail", f"Topic for Erdős problem #{number} already exists.")
+        console.print(f"[yellow]•[/yellow] {detail}")
+        console.print("  [dim]List topics: [/dim][cyan]aiia research list[/cyan]")
+        raise typer.Exit(1)
+    if code not in (200, 201) or not data:
+        detail = (data or {}).get("detail", data)
+        console.print(f"[red]✗[/red] Could not create topic ({code}): {detail}")
+        raise typer.Exit(1)
+
+    console.print(
+        f"[green]✓[/green] Created [bold]{data.get('title')}[/bold]  [dim]id={data.get('id')}[/dim]"
+    )
+    for s in data.get("seeds", []):
+        console.print(f"    seed: [dim]{s}[/dim]")
+
+    if run:
+        console.print()
+        _stream_research_run(data.get("id"))
+    else:
+        console.print(f"\n  Run it: [cyan]aiia research run {data.get('id')}[/cyan]")
+
+
+@research_app.command("list")
+def research_list() -> None:
+    """List all research topics, newest first."""
+    data = _http_get(f"{BRAIN_URL}/v1/research/topics")
+    if data is None:
+        _service_unreachable("Brain API", BRAIN_URL)
+        raise typer.Exit(1)
+
+    topics = data if isinstance(data, list) else data.get("topics", [])
+    if not topics:
+        console.print("[dim]No research topics yet. Try: aiia research erdos <n>[/dim]")
+        return
+
+    table = Table(show_header=True, header_style="bold")
+    table.add_column("ID", style="dim")
+    table.add_column("Profile")
+    table.add_column("Status")
+    table.add_column("Runs", justify="right")
+    table.add_column("Title")
+    for t in topics:
+        table.add_row(
+            t.get("id", "?"),
+            t.get("profile", "?"),
+            t.get("status", "?"),
+            str(t.get("run_count", 0)),
+            t.get("title", "?"),
+        )
+    console.print(table)
+
+
+@research_app.command("run")
+def research_run(
+    topic_id: str = typer.Argument(..., help="Topic ID (see `aiia research list`)."),
+) -> None:
+    """Run one research session on a topic and stream progress."""
+    _stream_research_run(topic_id)
+
+
+@research_app.command("show")
+def research_show(
+    topic_id: str = typer.Argument(..., help="Topic ID (see `aiia research list`)."),
+) -> None:
+    """Show a topic's synthesis document, gaps, and progress stats."""
+    data = _http_get(f"{BRAIN_URL}/v1/research/topics/{topic_id}/synthesis")
+    if data is None:
+        _service_unreachable("Brain API", BRAIN_URL)
+        raise typer.Exit(1)
+    if "detail" in data and "synthesis" not in data:
+        console.print(f"[red]✗[/red] {data['detail']}")
+        raise typer.Exit(1)
+
+    console.print(f"[bold]{data.get('title', topic_id)}[/bold]  [dim]({data.get('status', '?')})[/dim]")
+    console.print(f"[dim]{data.get('question', '')}[/dim]\n")
+    synthesis = data.get("synthesis") or "[dim](no synthesis yet — run a session)[/dim]"
+    console.print(synthesis)
+
+    gaps = data.get("gaps", [])
+    if gaps:
+        console.print("\n[bold]Open gaps[/bold]")
+        for g in gaps:
+            console.print(f"  • {g}")
+    console.print(
+        f"\n[dim]runs={data.get('run_count', 0)} · "
+        f"sources={len(data.get('sources_indexed', []))} · last={data.get('last_run', 'never')}[/dim]"
+    )
 
 
 # ----------------------------------------------------------------------------
