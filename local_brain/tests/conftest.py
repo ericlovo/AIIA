@@ -2,13 +2,12 @@
 
 The two jobs of this file:
 
-1. **Skip tests blocked on dead imports.** Three test files reference
-   classes that exist on unmerged feature branches but never landed on
-   main: `AutonomyConfig` (test_autonomy.py, test_autonomy_endpoint.py)
-   and `Gemma4Capabilities` (test_phase2_config.py). Until those classes
-   are restored in `local_brain.config` (tracked as follow-up to PR #25
-   landing T4), we collect-ignore them so the rest of the suite can
-   actually run.
+1. **Skip tests blocked on dead imports.** A couple of test files still
+   reference machinery that never landed on main: `test_autonomy_endpoint.py`
+   needs an `autonomy_status()` API endpoint, and `test_phase2_config.py`
+   needs `Gemma4Capabilities`. We collect-ignore those so the rest of the
+   suite can run. (`test_autonomy.py` is no longer ignored — `AutonomyConfig`
+   has been restored in `local_brain.config`.)
 
 2. **Provide HTTP / service mocks** so tests can exercise CLI / API
    flows without a live Brain (`:8100`), Command Center (`:8200`), or
@@ -43,9 +42,9 @@ import pytest
 # Remove an entry the moment the underlying import is restored.
 
 collect_ignore_glob = [
-    "test_autonomy.py",
-    "test_autonomy_endpoint.py",
-    "test_phase2_config.py",
+    # test_autonomy.py is restored: AutonomyConfig is back in local_brain.config.
+    "test_autonomy_endpoint.py",  # still needs an autonomy_status() API endpoint
+    "test_phase2_config.py",  # still needs Gemma4Capabilities
 ]
 
 

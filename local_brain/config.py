@@ -239,3 +239,84 @@ def get_config() -> LocalBrainConfig:
     if _config is None:
         _config = LocalBrainConfig()
     return _config
+
+
+@dataclass
+class AutonomyConfig:
+    """
+    Phase 2 autonomy settings — feature-flagged background loops.
+
+    Ships disabled: `level` defaults to "phase1" (no autonomous action) and
+    every loop has its own off-by-default switch on top of that. Set
+    `level="phase2"` (env: AIIA_AUTONOMY_LEVEL) plus the per-loop flag to
+    arm a loop. Direct construction stays pure (no env reads) so tests can
+    pin exact values; use `AutonomyConfig.from_env()` for the env-driven
+    instance the runners build.
+    """
+
+    # Master switch — "phase1" (disabled) or "phase2" (loops may run)
+    level: str = "phase1"
+
+    # Proactive story execution (proactive_executor.py)
+    proactive_story_execution: bool = False
+    proactive_business_hours_tz: str = "UTC"
+    proactive_business_hours_start: int = 9  # hour [0-23], inclusive
+    proactive_business_hours_end: int = 18  # hour [0-23], exclusive
+    proactive_health_check_url: str | None = None
+    proactive_priorities: list[str] = field(default_factory=lambda: ["P0", "P1"])
+
+    # Gated → supervised downgrade (gated_downgrade.py)
+    gated_downgrade_enabled: bool = False
+    gated_downgrade_hours: int = 24  # staleness cutoff before downgrade
+    gated_downgrade_max_severity: str = "low"  # only downgrade up to this severity
+
+    # Self-healing service monitor (self_healing.py)
+    self_healing_enabled: bool = False
+    monitored_services: list[str] = field(default_factory=list)
+
+    # Memory quality loop (memory_quality.py)
+    memory_quality_enabled: bool = False
+    memory_quality_threshold: float = 0.7  # min score to promote to knowledge
+    memory_quality_max_promotions: int = 10  # budget per cycle
+
+    # Autonomous research loop (research_loop.py)
+    research_enabled: bool = False
+    research_max_topics_per_cycle: int = 3  # how many topics to work per cycle
+    research_sessions_per_topic: int = 1  # sessions to run on each topic
+
+    @classmethod
+    def from_env(cls) -> "AutonomyConfig":
+        """Build a config from environment variables, defaults otherwise."""
+
+        def _flag(name: str, default: bool) -> bool:
+            raw = os.getenv(name)
+            return raw.lower() in ("true", "1", "yes") if raw is not None else default
+
+        services_raw = os.getenv("AIIA_SERVICES_CONFIG", "")
+        services = [s.strip() for s in services_raw.split(",") if s.strip()]
+
+        return cls(
+            level=os.getenv("AIIA_AUTONOMY_LEVEL", cls.level),
+            proactive_story_execution=_flag(
+                "AIIA_PROACTIVE_STORY_EXECUTION", cls.proactive_story_execution
+            ),
+            proactive_business_hours_tz=os.getenv(
+                "AIIA_BUSINESS_HOURS_TZ", cls.proactive_business_hours_tz
+            ),
+            proactive_health_check_url=os.getenv("AIIA_HEALTH_CHECK_URL"),
+            gated_downgrade_enabled=_flag(
+                "AIIA_GATED_DOWNGRADE_ENABLED", cls.gated_downgrade_enabled
+            ),
+            self_healing_enabled=_flag("AIIA_SELF_HEALING_ENABLED", cls.self_healing_enabled),
+            monitored_services=services,
+            memory_quality_enabled=_flag(
+                "AIIA_MEMORY_QUALITY_ENABLED", cls.memory_quality_enabled
+            ),
+            research_enabled=_flag("AIIA_RESEARCH_ENABLED", cls.research_enabled),
+            research_max_topics_per_cycle=int(
+                os.getenv("AIIA_RESEARCH_MAX_TOPICS", cls.research_max_topics_per_cycle)
+            ),
+            research_sessions_per_topic=int(
+                os.getenv("AIIA_RESEARCH_SESSIONS_PER_TOPIC", cls.research_sessions_per_topic)
+            ),
+        )
