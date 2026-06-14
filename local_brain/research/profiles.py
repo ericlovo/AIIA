@@ -7,14 +7,16 @@ goals are and what evidentiary standards apply. The loop mechanics
 only changes the prompt blocks the engine composes.
 
 Profiles:
-  general — the original topic-agnostic behavior
-  erdos   — open problems in mathematics (erdosproblems.com corpus)
+  general    — the original topic-agnostic behavior
+  erdos      — open problems in mathematics (erdosproblems.com corpus)
+  literature — English literature (authors, works, movements, criticism)
 """
 
 from dataclasses import dataclass
 
 GENERAL = "general"
 ERDOS = "erdos"
+LITERATURE = "literature"
 
 
 @dataclass(frozen=True)
@@ -69,7 +71,37 @@ _ERDOS = ResearchProfile(
 - final() ends this session only — the research continues across sessions""",
 )
 
-PROFILES: dict[str, ResearchProfile] = {p.id: p for p in (_GENERAL, _ERDOS)}
+_LITERATURE = ResearchProfile(
+    id=LITERATURE,
+    description="English literature — authors, works, movements, and criticism",
+    goal="""1. Establish the subject precisely — author, work (with edition/date), movement,
+   or theme — and record it at the top of the synthesis
+2. Fetch sources: the relevant reference/encyclopedia entry (a pre-loaded seed on
+   the first run), then primary-text resources and scholarly criticism it points to
+3. Ingest everything fetched with ingest_chunks, then search_knowledge for plot
+   and form, historical context, themes, and competing critical readings
+4. Log gaps: works or essays you could not fetch, quotations you could not verify,
+   related authors/works worth their own pass, critical debates left unexplored
+5. Update the synthesis as a structured overview: subject → context (period,
+   movement, biography) → summary/form → themes and motifs → major critical
+   interpretations (each attributed to its critic) → influence → references
+6. Call final() with a session summary: what was established, what's still open""",
+    principles="""- Separate PRIMARY texts (the literary work itself) from SECONDARY sources
+  (criticism, biography, reference) and say which a claim rests on
+- Attribute interpretations — a reading is a critic's argument, not a fact; name
+  the critic and, where possible, the work and year. Never present one reading as
+  settled truth
+- Quote exactly and locate the quotation (act.scene.line, chapter, or page) plus
+  the edition/translation; if you cannot verify a quotation, log it as a gap rather
+  than reproducing it from memory
+- Distinguish what the text says from what critics claim it means
+- Note the edition or translation when it bears on the reading
+- The synthesis is cumulative — deepen context and add readings, don't flatten
+  previous content
+- final() ends this session only — the research continues across sessions""",
+)
+
+PROFILES: dict[str, ResearchProfile] = {p.id: p for p in (_GENERAL, _ERDOS, _LITERATURE)}
 
 
 def get_profile(profile_id: str) -> ResearchProfile:

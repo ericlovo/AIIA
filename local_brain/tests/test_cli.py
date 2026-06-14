@@ -134,6 +134,52 @@ class TestResearchErdos:
         assert "unreachable" in result.stdout.lower()
 
 
+class TestResearchLiterature:
+    """`aiia research literature` — topic creation, mocked at the HTTP boundary."""
+
+    def test_create_success(self, monkeypatch):
+        captured = {}
+
+        def _fake_post(url, payload, timeout=10.0):
+            captured["url"] = url
+            captured["payload"] = payload
+            return 201, {
+                "id": "lit12345",
+                "title": "Literature: Mrs Dalloway",
+                "seeds": ["https://en.wikipedia.org/wiki/Mrs_Dalloway"],
+            }
+
+        monkeypatch.setattr(cli, "_http_post", _fake_post)
+        result = runner.invoke(app, ["research", "literature", "Mrs Dalloway"])
+        assert result.exit_code == 0
+        assert captured["url"].endswith("/v1/research/literature")
+        assert captured["payload"] == {"subject": "Mrs Dalloway", "seeds": []}
+        assert "lit12345" in result.stdout
+
+    def test_blank_subject_rejected_client_side(self, monkeypatch):
+        called = False
+
+        def _boom(*a, **k):
+            nonlocal called
+            called = True
+            return 0, None
+
+        monkeypatch.setattr(cli, "_http_post", _boom)
+        result = runner.invoke(app, ["research", "literature", "   "])
+        assert result.exit_code == 2
+        assert not called
+
+    def test_duplicate_reports_conflict(self, monkeypatch):
+        monkeypatch.setattr(
+            cli,
+            "_http_post",
+            lambda *a, **k: (409, {"detail": "Topic for 'Hamlet' already exists: 'ab12'"}),
+        )
+        result = runner.invoke(app, ["research", "literature", "Hamlet"])
+        assert result.exit_code == 1
+        assert "already exists" in result.stdout
+
+
 class TestResearchList:
     def test_lists_topics(self, monkeypatch):
         monkeypatch.setattr(

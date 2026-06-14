@@ -17,6 +17,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from local_brain.research.erdos import create_erdos_topic, find_erdos_topic
+from local_brain.research.literature import create_literature_topic, find_literature_topic
 from local_brain.research.profiles import PROFILES
 
 logger = logging.getLogger("aiia.research.router")
@@ -58,6 +59,11 @@ class CreateErdosTopicRequest(BaseModel):
     seeds: list[str] = []  # extra seeds beyond the problem page (e.g. arXiv abstracts)
 
 
+class CreateLiteratureTopicRequest(BaseModel):
+    subject: str = Field(min_length=1, description="Author, work, movement, or theme")
+    seeds: list[str] = []  # extra seeds beyond the Wikipedia article (e.g. a primary text)
+
+
 @router.post("/topics", status_code=201)
 async def create_topic(req: CreateTopicRequest):
     """Create a new research topic."""
@@ -80,6 +86,23 @@ async def create_erdos(req: CreateErdosTopicRequest):
             detail=f"Topic for Erdős problem #{req.number} already exists: '{existing.id}'",
         )
     topic = create_erdos_topic(store, req.number, extra_seeds=req.seeds)
+    return topic.to_dict()
+
+
+@router.post("/literature", status_code=201)
+async def create_literature(req: CreateLiteratureTopicRequest):
+    """Create a research topic for an English-literature subject, seeded with its Wikipedia article."""
+    store = _require_store()
+    subject = " ".join(req.subject.split()).strip()
+    if not subject:
+        raise HTTPException(status_code=422, detail="subject must not be blank")
+    existing = find_literature_topic(store, subject)
+    if existing:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Topic for '{subject}' already exists: '{existing.id}'",
+        )
+    topic = create_literature_topic(store, subject, extra_seeds=req.seeds)
     return topic.to_dict()
 
 

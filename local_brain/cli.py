@@ -11,6 +11,7 @@ Subcommands:
     aiia ask "..."                # one-shot query with memory + project context
     aiia memory list|search|add   # memory CRUD
     aiia research erdos <n>       # create a topic for an Erdős problem
+    aiia research literature <s>  # create an English-literature topic
     aiia research list|run|show   # research loop — topics + sessions
     aiia briefing [--fresh]       # morning briefing (existing briefing_cli wrapper)
     aiia status                   # health of Brain + Command Center
@@ -464,6 +465,54 @@ def research_erdos(
         raise typer.Exit(1)
     if code == 409:
         detail = (data or {}).get("detail", f"Topic for Erdős problem #{number} already exists.")
+        console.print(f"[yellow]•[/yellow] {detail}")
+        console.print("  [dim]List topics: [/dim][cyan]aiia research list[/cyan]")
+        raise typer.Exit(1)
+    if code not in (200, 201) or not data:
+        detail = (data or {}).get("detail", data)
+        console.print(f"[red]✗[/red] Could not create topic ({code}): {detail}")
+        raise typer.Exit(1)
+
+    console.print(
+        f"[green]✓[/green] Created [bold]{data.get('title')}[/bold]  [dim]id={data.get('id')}[/dim]"
+    )
+    for s in data.get("seeds", []):
+        console.print(f"    seed: [dim]{s}[/dim]")
+
+    if run:
+        console.print()
+        _stream_research_run(data.get("id"))
+    else:
+        console.print(f"\n  Run it: [cyan]aiia research run {data.get('id')}[/cyan]")
+
+
+@research_app.command("literature")
+def research_literature(
+    subject: str = typer.Argument(..., help="Author, work, movement, or theme (e.g. 'Mrs Dalloway')."),
+    seed: list[str] = typer.Option(
+        None,
+        "--seed",
+        "-s",
+        help="Extra seed URL beyond the Wikipedia article (repeatable), e.g. a primary text.",
+    ),
+    run: bool = typer.Option(
+        False, "--run", "-r", help="Start a research session immediately after creating the topic."
+    ),
+) -> None:
+    """Create an English-literature research topic, seeded with its Wikipedia article."""
+    subject = " ".join(subject.split()).strip()
+    if not subject:
+        console.print("[red]✗[/red] Subject must not be blank.")
+        raise typer.Exit(2)
+
+    code, data = _http_post(
+        f"{BRAIN_URL}/v1/research/literature", {"subject": subject, "seeds": seed or []}
+    )
+    if code == 0:
+        _service_unreachable("Brain API", BRAIN_URL)
+        raise typer.Exit(1)
+    if code == 409:
+        detail = (data or {}).get("detail", f"Topic for '{subject}' already exists.")
         console.print(f"[yellow]•[/yellow] {detail}")
         console.print("  [dim]List topics: [/dim][cyan]aiia research list[/cyan]")
         raise typer.Exit(1)
