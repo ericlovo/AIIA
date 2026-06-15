@@ -5,6 +5,8 @@ All settings for the Mac Mini intelligence node.
 Configured via environment variables with sensible defaults.
 """
 
+from __future__ import annotations
+
 import os
 from dataclasses import dataclass, field
 
@@ -94,6 +96,9 @@ class LocalBrainConfig:
     execution_max_concurrent: int = 1  # max concurrent subprocesses
     execution_max_files_per_action: int = 20  # safety: max files an action can touch
     execution_supervised_countdown: int = 30  # seconds before supervised actions execute
+
+    # Phase 2 autonomy — built from env at instantiation (see AutonomyConfig)
+    autonomy: AutonomyConfig = field(default_factory=lambda: AutonomyConfig.from_env())
 
     def __post_init__(self):
         """Load from environment variables."""

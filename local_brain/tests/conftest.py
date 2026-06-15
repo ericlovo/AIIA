@@ -2,12 +2,11 @@
 
 The two jobs of this file:
 
-1. **Skip tests blocked on dead imports.** A couple of test files still
-   reference machinery that never landed on main: `test_autonomy_endpoint.py`
-   needs an `autonomy_status()` API endpoint, and `test_phase2_config.py`
-   needs `Gemma4Capabilities`. We collect-ignore those so the rest of the
-   suite can run. (`test_autonomy.py` is no longer ignored — `AutonomyConfig`
-   has been restored in `local_brain.config`.)
+1. **Skip tests blocked on dead imports.** Only `test_phase2_config.py`
+   remains ignored — it needs `Gemma4Capabilities`, which never landed on
+   main. (`test_autonomy.py` and `test_autonomy_endpoint.py` are no longer
+   ignored: `AutonomyConfig` is back in `local_brain.config` and
+   `autonomy_status()` now exists in `local_api`.)
 
 2. **Provide HTTP / service mocks** so tests can exercise CLI / API
    flows without a live Brain (`:8100`), Command Center (`:8200`), or
@@ -26,24 +25,17 @@ import pytest
 # Collection rules
 # ----------------------------------------------------------------------------
 #
-# Files in this list don't collect cleanly on `main` today. Each entry
-# references a class that exists on an unmerged feature branch:
+# Files in this list don't collect cleanly on `main` today:
 #
-#   - test_autonomy.py             → needs AutonomyConfig (lost during
-#                                    a refactor; the autonomy/* modules
-#                                    themselves still import it)
-#   - test_autonomy_endpoint.py    → same
 #   - test_phase2_config.py        → needs Gemma4Capabilities (added on
 #                                    the v0.5.0-dev.2-native-tools-opt-in
 #                                    branch; never merged)
 #
-# Restoring these is its own focused PR. For now: skip collection so
-# the rest of the suite (60 tests across 5 files) can run on every PR.
 # Remove an entry the moment the underlying import is restored.
 
 collect_ignore_glob = [
-    # test_autonomy.py is restored: AutonomyConfig is back in local_brain.config.
-    "test_autonomy_endpoint.py",  # still needs an autonomy_status() API endpoint
+    # test_autonomy.py + test_autonomy_endpoint.py are restored: AutonomyConfig
+    # is back in local_brain.config and autonomy_status() exists in local_api.
     "test_phase2_config.py",  # still needs Gemma4Capabilities
 ]
 
