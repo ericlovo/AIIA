@@ -70,8 +70,12 @@ async def create_topic(req: CreateTopicRequest):
     store = _require_store()
     if req.profile not in PROFILES:
         known = ", ".join(sorted(PROFILES))
-        raise HTTPException(status_code=422, detail=f"Unknown profile '{req.profile}'. Known: {known}")
-    topic = store.create(title=req.title, question=req.question, seeds=req.seeds, profile=req.profile)
+        raise HTTPException(
+            status_code=422, detail=f"Unknown profile '{req.profile}'. Known: {known}"
+        )
+    topic = store.create(
+        title=req.title, question=req.question, seeds=req.seeds, profile=req.profile
+    )
     return topic.to_dict()
 
 
@@ -133,7 +137,9 @@ async def run_research(topic_id: str):
     if not topic:
         raise HTTPException(status_code=404, detail=f"Topic '{topic_id}' not found")
     if topic.status == "complete":
-        raise HTTPException(status_code=409, detail="Topic is marked complete. Set status to 'active' to continue.")
+        raise HTTPException(
+            status_code=409, detail="Topic is marked complete. Set status to 'active' to continue."
+        )
 
     async def event_stream():
         try:

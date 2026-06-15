@@ -434,9 +434,7 @@ def _stream_research_run(topic_id: str) -> None:
 
     if final_answer:
         console.print(f"\n{final_answer}")
-    console.print(
-        f"\n  Synthesis so far: [cyan]aiia research show {topic_id}[/cyan]"
-    )
+    console.print(f"\n  Synthesis so far: [cyan]aiia research show {topic_id}[/cyan]")
 
 
 @research_app.command("erdos")
@@ -488,7 +486,9 @@ def research_erdos(
 
 @research_app.command("literature")
 def research_literature(
-    subject: str = typer.Argument(..., help="Author, work, movement, or theme (e.g. 'Mrs Dalloway')."),
+    subject: str = typer.Argument(
+        ..., help="Author, work, movement, or theme (e.g. 'Mrs Dalloway')."
+    ),
     seed: list[str] = typer.Option(
         None,
         "--seed",
@@ -585,7 +585,9 @@ def research_show(
         console.print(f"[red]✗[/red] {data['detail']}")
         raise typer.Exit(1)
 
-    console.print(f"[bold]{data.get('title', topic_id)}[/bold]  [dim]({data.get('status', '?')})[/dim]")
+    console.print(
+        f"[bold]{data.get('title', topic_id)}[/bold]  [dim]({data.get('status', '?')})[/dim]"
+    )
     console.print(f"[dim]{data.get('question', '')}[/dim]\n")
     synthesis = data.get("synthesis") or "[dim](no synthesis yet — run a session)[/dim]"
     console.print(synthesis)
@@ -608,9 +610,7 @@ def research_show(
 
 @app.command(name="journal-watch")
 def journal_watch(
-    poll_seconds: float = typer.Option(
-        5.0, "--poll", help="Seconds between iCloud-folder polls."
-    ),
+    poll_seconds: float = typer.Option(5.0, "--poll", help="Seconds between iCloud-folder polls."),
     inbox: str | None = typer.Option(
         None,
         "--inbox",

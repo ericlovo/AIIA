@@ -121,7 +121,10 @@ class TestResearchErdos:
         monkeypatch.setattr(
             cli,
             "_http_post",
-            lambda *a, **k: (409, {"detail": "Topic for Erdős problem #351 already exists: 'ab12'"}),
+            lambda *a, **k: (
+                409,
+                {"detail": "Topic for Erdős problem #351 already exists: 'ab12'"},
+            ),
         )
         result = runner.invoke(app, ["research", "erdos", "351"])
         assert result.exit_code == 1
@@ -186,7 +189,13 @@ class TestResearchList:
             cli,
             "_http_get",
             lambda url, timeout=5.0: [
-                {"id": "ab12", "profile": "erdos", "status": "active", "run_count": 2, "title": "Erdős Problem #351"},
+                {
+                    "id": "ab12",
+                    "profile": "erdos",
+                    "status": "active",
+                    "run_count": 2,
+                    "title": "Erdős Problem #351",
+                },
             ],
         )
         result = runner.invoke(app, ["research", "list"])

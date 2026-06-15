@@ -29,7 +29,9 @@ _SEEDS_PER_SESSION = 3
 def _system_prompt(topic: ResearchTopic) -> str:
     profile = get_profile(topic.profile)
     gaps = "\n".join(f"- {g}" for g in topic.gaps) if topic.gaps else "None yet — discover them."
-    indexed = "\n".join(f"- {s}" for s in topic.sources_indexed) if topic.sources_indexed else "None yet."
+    indexed = (
+        "\n".join(f"- {s}" for s in topic.sources_indexed) if topic.sources_indexed else "None yet."
+    )
     return f"""You are AIIA conducting structured deep research.
 
 TOPIC: {topic.title}
@@ -49,7 +51,6 @@ PRINCIPLES:
 
 
 class ResearchEngine:
-
     def __init__(
         self,
         ollama: OllamaClient,

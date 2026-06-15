@@ -23,9 +23,7 @@ class FakeAIIA:
         self.calls: list[dict] = []
 
     async def ask(self, question, context=None, include_sessions=True, n_results=5, **kw):
-        self.calls.append(
-            {"question": question, "context": context, "n_results": n_results}
-        )
+        self.calls.append({"question": question, "context": context, "n_results": n_results})
         return {"answer": self.answer, "sources": ["doc1"], "model": "local"}
 
 

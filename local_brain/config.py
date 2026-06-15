@@ -314,9 +314,7 @@ class AutonomyConfig:
             ),
             self_healing_enabled=_flag("AIIA_SELF_HEALING_ENABLED", cls.self_healing_enabled),
             monitored_services=services,
-            memory_quality_enabled=_flag(
-                "AIIA_MEMORY_QUALITY_ENABLED", cls.memory_quality_enabled
-            ),
+            memory_quality_enabled=_flag("AIIA_MEMORY_QUALITY_ENABLED", cls.memory_quality_enabled),
             research_enabled=_flag("AIIA_RESEARCH_ENABLED", cls.research_enabled),
             research_max_topics_per_cycle=int(
                 os.getenv("AIIA_RESEARCH_MAX_TOPICS", cls.research_max_topics_per_cycle)
