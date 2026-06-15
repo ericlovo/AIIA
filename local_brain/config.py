@@ -290,7 +290,7 @@ class AutonomyConfig:
     research_sessions_per_topic: int = 1  # sessions to run on each topic
 
     @classmethod
-    def from_env(cls) -> "AutonomyConfig":
+    def from_env(cls) -> AutonomyConfig:
         """Build a config from environment variables, defaults otherwise."""
 
         def _flag(name: str, default: bool) -> bool:
