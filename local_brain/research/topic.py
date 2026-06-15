@@ -19,6 +19,7 @@ class ResearchTopic:
     title: str
     question: str
     status: str = "active"  # active, paused, complete
+    profile: str = "general"  # prompt profile id — see research/profiles.py
     created_at: str = field(default_factory=lambda: time.strftime("%Y-%m-%dT%H:%M:%SZ"))
     seeds: list[str] = field(default_factory=list)
     gaps: list[str] = field(default_factory=list)
@@ -67,12 +68,19 @@ class TopicStore:
                 continue
         return topics
 
-    def create(self, title: str, question: str, seeds: list[str] | None = None) -> ResearchTopic:
+    def create(
+        self,
+        title: str,
+        question: str,
+        seeds: list[str] | None = None,
+        profile: str = "general",
+    ) -> ResearchTopic:
         topic = ResearchTopic(
             id=str(uuid.uuid4())[:8],
             title=title,
             question=question,
             seeds=seeds or [],
+            profile=profile,
         )
         self.save(topic)
         return topic

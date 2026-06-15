@@ -9,7 +9,7 @@ Public surface:
     AgentCard, AgentSkill, Message, Part, Task, TaskState  — schema
     AgentRegistry                                          — discovery
     AgentExecutor, SubprocessExecutor, AIIAExecutor,
-        AIIAMemoryExecutor                                 — executors
+        AIIAMemoryExecutor, EducationExecutor              — executors
     build_router                                           — FastAPI integration
     register_default_agents                                — startup bootstrap
     A2AClient, A2AClientError, AgentSummary, TaskResult    — outbound client
@@ -25,6 +25,7 @@ from local_brain.a2a.client import (
 from local_brain.a2a.executors.aiia_executor import AIIAExecutor
 from local_brain.a2a.executors.aiia_memory_executor import AIIAMemoryExecutor
 from local_brain.a2a.executors.base import AgentExecutor
+from local_brain.a2a.executors.education_executor import EducationExecutor
 from local_brain.a2a.executors.subprocess_executor import SubprocessExecutor
 from local_brain.a2a.registry import AgentRegistry
 from local_brain.a2a.router import build_router
@@ -57,6 +58,7 @@ __all__ = [
     "SubprocessExecutor",
     "AIIAExecutor",
     "AIIAMemoryExecutor",
+    "EducationExecutor",
     "build_router",
     "register_default_agents",
     "A2AClient",

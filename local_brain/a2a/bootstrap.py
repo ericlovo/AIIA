@@ -20,6 +20,7 @@ from typing import Any
 from local_brain.a2a.executors.aiia_executor import AIIAExecutor
 from local_brain.a2a.executors.aiia_memory_executor import AIIAMemoryExecutor
 from local_brain.a2a.executors.aiia_status_executor import AIIAStatusExecutor
+from local_brain.a2a.executors.education_executor import EducationExecutor
 from local_brain.a2a.executors.subprocess_executor import SubprocessExecutor
 from local_brain.a2a.registry import AgentRegistry
 from local_brain.a2a.schema import (
@@ -85,6 +86,7 @@ def register_default_agents(
         _register_aiia_search(registry, base_url, aiia_getter)
         _register_aiia_status(registry, base_url, aiia_getter)
         _register_aiia_log_story(registry, base_url, aiia_getter)
+        _register_aiia_educate(registry, base_url, aiia_getter)
     else:
         logger.warning("aiia_getter not provided; aiia-* agents will not be registered")
 
@@ -555,5 +557,61 @@ def _register_aiia_log_story(
         default_category="project",
         default_source="a2a-story",
     )
+    registry.register(agent_id, card, executor)
+    logger.info("registered A2A agent: %s", agent_id)
+
+
+def _register_aiia_educate(
+    registry: AgentRegistry,
+    base_url: str,
+    aiia_getter: AIIAGetter,
+) -> None:
+    """
+    Education agent — explains a topic at a chosen level, grounded in AIIA's
+    knowledge (including the research corpus). Prefix the message with a level
+    to control depth: 'eli5: ...', 'undergrad: ...', 'expert: ...'.
+    """
+    agent_id = "aiia-educate"
+    card = AgentCard(
+        name="AIIA Tutor",
+        description=(
+            "Teaches and explains, grounded in AIIA's knowledge store (repo docs "
+            "plus any research corpus, e.g. English literature). Prefix your "
+            "message with a level to set depth: 'eli5:', 'beginner:', "
+            "'intermediate:', 'undergrad:' (default), 'advanced:', or 'expert:'. "
+            "Leads with a direct answer, then the reasoning, then an example; "
+            "says when the knowledge base doesn't cover something rather than "
+            "inventing it."
+        ),
+        version="0.1.0",
+        provider=AgentProvider(organization="Aplora AI", url="https://aplora.ai"),
+        supported_interfaces=[AgentInterface(url=f"{base_url}/a2a/agents/{agent_id}/rpc")],
+        capabilities=AgentCapabilities(streaming=False, push_notifications=False),
+        default_input_modes=["text/plain"],
+        default_output_modes=["text/plain"],
+        skills=[
+            AgentSkill(
+                id="educate",
+                name="Explain at a level",
+                description=(
+                    "Returns a tutored explanation at the requested level, "
+                    "backed by AIIA's knowledge and the local LLM."
+                ),
+                tags=[
+                    "layer:aiia",
+                    "scope:global",
+                    "domain:education",
+                    "domain:knowledge",
+                    "action:read",
+                ],
+                examples=[
+                    "eli5: What is iambic pentameter?",
+                    "undergrad: Explain the major themes of Mrs Dalloway.",
+                    "expert: Summarize the state of the Erdős–Szekeres conjecture.",
+                ],
+            ),
+        ],
+    )
+    executor = EducationExecutor(aiia_getter=aiia_getter)
     registry.register(agent_id, card, executor)
     logger.info("registered A2A agent: %s", agent_id)

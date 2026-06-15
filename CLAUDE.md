@@ -30,6 +30,7 @@ local_brain/                  # The Python package — everything lives here
 │   ├── verification.py       # Post-execution verify
 │   └── git_ops.py            # Git-aware safe ops
 ├── autonomy/                 # Scheduled autonomous loops (Phase 2)
+├── research/                 # Autonomous research loop — topics, prompt profiles (general/erdos), Erdős problem factory
 ├── a2a/                      # Google A2A protocol module
 ├── story_runner/             # Story-driven workflow engine
 ├── scripts/                  # CLI runners + indexers + reporters

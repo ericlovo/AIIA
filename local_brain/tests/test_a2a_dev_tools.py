@@ -267,6 +267,7 @@ async def test_bootstrap_registers_aiia_agents_when_getter_provided(monkeypatch)
         "aiia-search",
         "aiia-status",
         "aiia-log-story",
+        "aiia-educate",
     }
     assert {a.agent_id for a in registry.all()} == expected
 
@@ -332,6 +333,7 @@ def test_tag_query_isolates_dev_tools_from_aiia(monkeypatch):
         "aiia-search",
         "aiia-status",
         "aiia-log-story",
+        "aiia-educate",
     }
     assert dev_only.isdisjoint(aiia_only)
 

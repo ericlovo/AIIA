@@ -26,7 +26,6 @@ _SPLITTER = RecursiveCharacterTextSplitter(chunk_size=1200, chunk_overlap=150)
 
 
 class ResearchREPLEnvironment(REPLEnvironment):
-
     def __init__(
         self,
         topic: ResearchTopic,
@@ -127,8 +126,7 @@ class ResearchREPLEnvironment(REPLEnvironment):
 
         results = await self._knowledge.search(query, n_results=8, doc_type="research")
         topic_results = [
-            r for r in results
-            if r.get("metadata", {}).get("topic_id") == self._topic.id
+            r for r in results if r.get("metadata", {}).get("topic_id") == self._topic.id
         ]
 
         if not topic_results:
@@ -140,15 +138,16 @@ class ResearchREPLEnvironment(REPLEnvironment):
         parts = [f"{len(topic_results)} results for '{query}':"]
         for i, r in enumerate(topic_results):
             parts.append(
-                f"\n[{i+1}] relevance={r['relevance']} source={r['source']}\n"
-                f"{r['content'][:400]}"
+                f"\n[{i + 1}] relevance={r['relevance']} source={r['source']}\n{r['content'][:400]}"
             )
         return "\n".join(parts)
 
     @staticmethod
     def action_schema() -> str:
         base = REPLEnvironment.action_schema()
-        return base + """
+        return (
+            base
+            + """
 
 Research actions:
 
@@ -168,3 +167,4 @@ Research actions:
     {"action": "search_knowledge", "query": "Platonic eros transcendence"}
 
 Research flow: fetch_url → ingest_chunks → search_knowledge → synthesize → log gaps → final()"""
+        )

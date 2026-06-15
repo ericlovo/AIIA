@@ -16,11 +16,14 @@ Or:
     python local_api.py
 """
 
+from __future__ import annotations
+
 import asyncio
 import json as json_module
 import logging
 import os
 import time
+from pathlib import Path
 from typing import Any
 
 import httpx
@@ -37,7 +40,8 @@ from local_brain.eq_brain.memory import Memory
 from local_brain.eq_brain.vault_writer import VaultWriter
 from local_brain.journal.router import router as journal_router
 from local_brain.ollama_client import OllamaClient
-from local_brain.research.router import init_research, router as research_router
+from local_brain.research.router import init_research
+from local_brain.research.router import router as research_router
 from local_brain.smart_conductor import SmartConductor
 
 try:
@@ -119,6 +123,18 @@ _config: LocalBrainConfig | None = None
 _aiia: AIIA | None = None
 _google_tts: GoogleTTSService | None = None
 _active_sessions: dict[str, dict[str, Any]] = {}  # Active session tracking
+
+# Where the Command Center task scheduler persists per-loop run state.
+# Module-level so it can be pointed elsewhere in tests.
+_TASK_DATA_FILE = Path(__file__).parent / "command_center" / "task_data.json"
+
+# Response loop id → the AutonomyConfig flag that arms that loop.
+_AUTONOMY_LOOPS = {
+    "proactive_story_eval": "proactive_story_execution",
+    "gated_downgrade_check": "gated_downgrade_enabled",
+    "self_healing_monitor": "self_healing_enabled",
+    "memory_quality_loop": "memory_quality_enabled",
+}
 
 
 @app.on_event("startup")
@@ -365,6 +381,96 @@ async def health_check():
             "pii_scanning": _config.pii_scanning_enabled if _config else False,
             "embeddings": _config.embeddings_enabled if _config else False,
         },
+    }
+
+
+def _load_autonomy_task_state() -> tuple[dict[str, Any], bool]:
+    """Load per-loop run state from the task scheduler's JSON file.
+
+    Returns (tasks, available). `available` is False when the file is
+    missing or unreadable/corrupt — the scheduler's save is non-atomic, so a
+    mid-write read can hit invalid JSON and must degrade, not 500.
+    """
+    try:
+        data = json_module.loads(_TASK_DATA_FILE.read_text())
+    except (FileNotFoundError, OSError, ValueError):
+        return {}, False
+    tasks = data.get("tasks") if isinstance(data, dict) else None
+    if not isinstance(tasks, dict):
+        return {}, False
+    return tasks, True
+
+
+def _autonomy_safety() -> dict[str, list[str]]:
+    """Surface the static safety constraints autonomy operates under."""
+    forbidden_files: list[str] = []
+    forbidden_actions: list[str] = []
+    try:
+        from local_brain.execution import safety
+
+        forbidden_files = list(safety._FORBIDDEN_PATHS) + sorted(safety._FORBIDDEN_EXACT)
+        forbidden_files += [f"*{ext}" for ext in sorted(safety._FORBIDDEN_EXTENSIONS)]
+        forbidden_files += [f"*/{seg}/*" for seg in sorted(safety._FORBIDDEN_PATH_SEGMENTS)]
+    except Exception:  # pragma: no cover - safety module optional at runtime
+        pass
+    try:
+        from local_brain.autonomy.gated_downgrade import NEVER_DOWNGRADE_TYPES
+
+        forbidden_actions = sorted(NEVER_DOWNGRADE_TYPES)
+    except Exception:  # pragma: no cover - autonomy module optional at runtime
+        pass
+    return {"forbidden_files": forbidden_files, "forbidden_actions": forbidden_actions}
+
+
+@app.get("/v1/autonomy/status")
+async def autonomy_status() -> dict[str, Any]:
+    """
+    Report the autonomy layer's posture: master switch, per-loop enabled
+    state + last run, the active policy, and the static safety constraints.
+
+    Read-only and side-effect free. A loop is `enabled` only when the master
+    switch is phase2 AND its own flag is set — never the raw flag alone, so
+    the report can't claim a loop is live after the switch was downgraded.
+    """
+    if _config is None:
+        raise HTTPException(status_code=503, detail="Config not initialized")
+
+    autonomy = _config.autonomy
+    phase2_active = autonomy.level == "phase2"
+    tasks, runtime_ok = _load_autonomy_task_state()
+
+    loops: dict[str, Any] = {}
+    for loop_id, flag_attr in _AUTONOMY_LOOPS.items():
+        enabled = phase2_active and bool(getattr(autonomy, flag_attr, False))
+        state = tasks.get(loop_id, {}) if runtime_ok else {}
+        loops[loop_id] = {
+            "enabled": enabled,
+            "run_count": state.get("run_count") or 0,
+            "last_run": state.get("last_run"),
+            "last_result": state.get("last_result"),
+            "last_duration_ms": state.get("last_duration_ms"),
+            "fail_count": state.get("fail_count") or 0,
+        }
+
+    return {
+        "level": autonomy.level,
+        "phase2_active": phase2_active,
+        "loops": loops,
+        "policy": {
+            "proactive": {
+                "business_hours_tz": autonomy.proactive_business_hours_tz,
+                "business_hours": [
+                    autonomy.proactive_business_hours_start,
+                    autonomy.proactive_business_hours_end,
+                ],
+                "health_check_url": autonomy.proactive_health_check_url,
+            },
+            "self_healing": {
+                "monitored_service_count": len(autonomy.monitored_services),
+            },
+        },
+        "safety": _autonomy_safety(),
+        "runtime_state_available": runtime_ok,
     }
 
 

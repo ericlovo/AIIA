@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.aplora.aiia.research</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>-lc</string>
+        <string>cd "$HOME/code/aiia" &amp;&amp; exec python3 -m local_brain.scripts.research_runner</string>
+    </array>
+
+    <!-- Nightly at 03:30 (after consolidation at 03:00). -->
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Hour</key>
+        <integer>3</integer>
+        <key>Minute</key>
+        <integer>30</integer>
+    </dict>
+
+    <!-- Do NOT RunAtLoad: this is a scheduled job, not a service. -->
+
+    <key>StandardOutPath</key>
+    <string>/tmp/aiia-research.out</string>
+
+    <key>StandardErrorPath</key>
+    <string>/tmp/aiia-research.err</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <!-- Adjust PATH for python + Ollama. If you use pyenv/asdf, add their
+             shims; if aiia lives in a venv, point at the venv's bin/ first. -->
+        <key>PATH</key>
+        <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+
+        <!-- The loop is gated and ships disabled. These two arm it; remove
+             them (or set to false) to pause the nightly run without
+             unloading the agent. -->
+        <key>AIIA_AUTONOMY_LEVEL</key>
+        <string>phase2</string>
+        <key>AIIA_RESEARCH_ENABLED</key>
+        <string>true</string>
+
+        <!-- Optional budget knobs (defaults shown). How many topics to work
+             per night, and how many sessions to run on each. -->
+        <!--
+        <key>AIIA_RESEARCH_MAX_TOPICS</key>
+        <string>3</string>
+        <key>AIIA_RESEARCH_SESSIONS_PER_TOPIC</key>
+        <string>1</string>
+        -->
+    </dict>
+</dict>
+</plist>
