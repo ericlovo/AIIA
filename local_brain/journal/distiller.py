@@ -19,6 +19,8 @@ from datetime import datetime
 
 import httpx
 
+from local_brain.sanction import log_tokens_bg
+
 logger = logging.getLogger("aiia.journal.distiller")
 
 
@@ -136,6 +138,8 @@ async def _distill_anthropic(
     text = "".join(b.get("text", "") for b in blocks if b.get("type") == "text")
     if not text.strip():
         raise DistillationError("Anthropic returned empty content")
+    usage = data.get("usage", {})
+    log_tokens_bg(model, usage.get("input_tokens", 0), usage.get("output_tokens", 0), task="journal-distill")
     return text
 
 

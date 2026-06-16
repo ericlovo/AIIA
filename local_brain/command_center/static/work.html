@@ -1080,6 +1080,59 @@
     .stats-strip { grid-template-columns: repeat(3, 1fr); }
     .kanban { grid-template-columns: 1fr 1fr; }
   }
+
+  /* Morning launchpad */
+  .launch-tile {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    padding: 14px 10px;
+    border-radius: 10px;
+    text-decoration: none;
+    color: var(--text);
+    transition: transform 0.15s, opacity 0.15s;
+    cursor: pointer;
+  }
+  .launch-tile:hover { transform: translateY(-2px); opacity: 0.9; }
+  .launch-icon {
+    width: 40px; height: 40px;
+    border-radius: 10px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 18px;
+  }
+  .launch-label { font-size: 12px; font-weight: 500; color: var(--text-dim); text-align: center; }
+
+  /* Sprint items */
+  .sprint-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 10px;
+    border-radius: 7px;
+    font-size: 13px;
+    transition: background 0.15s;
+  }
+  .sprint-item:hover { background: rgba(255,255,255,0.04); }
+  .sprint-check {
+    width: 16px; height: 16px; min-width: 16px;
+    border-radius: 4px;
+    border: 1.5px solid rgba(255,255,255,0.2);
+    cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 10px;
+    transition: all 0.15s;
+  }
+  .sprint-check.done { background: var(--green); border-color: var(--green); color: #000; }
+  .sprint-item-label { flex: 1; }
+  .sprint-item-label.done { text-decoration: line-through; color: var(--text-dim); }
+  .sprint-item-tag {
+    font-size: 10px; padding: 2px 7px; border-radius: 4px; font-weight: 500;
+    background: rgba(255,255,255,0.07); color: var(--text-dim);
+  }
+  .sprint-item-tag.P0 { background: rgba(239,68,68,0.2); color: var(--red); }
+  .sprint-item-tag.P1 { background: rgba(245,158,11,0.2); color: var(--amber); }
+  .sprint-item-tag.now { background: rgba(10,132,255,0.2); color: var(--blue); }
 </style>
 </head>
 <body>
@@ -1105,6 +1158,55 @@
 
 <!-- ═══════ TAB: Check-in (morning overview) ═══════ -->
 <div class="tab-content active" id="tab-checkin">
+
+  <!-- ═══ MORNING LAUNCHPAD ═══ -->
+  <div id="morningLaunchpad" style="padding: 20px 28px 0;">
+
+    <!-- Greeting row -->
+    <div style="display:flex; align-items:baseline; justify-content:space-between; margin-bottom:16px;">
+      <div>
+        <div id="morningGreeting" style="font-size:22px; font-weight:600; letter-spacing:-0.4px;">Good morning</div>
+        <div id="morningDate" style="font-size:13px; color:var(--text-dim); margin-top:2px;"></div>
+      </div>
+      <div id="sprintBadge" style="font-size:12px; color:var(--purple); background:rgba(168,85,247,0.1); border:1px solid rgba(168,85,247,0.2); border-radius:6px; padding:4px 10px; font-weight:500;"></div>
+    </div>
+
+    <!-- Quick-launch tiles -->
+    <div style="display:grid; grid-template-columns:repeat(5,1fr); gap:10px; margin-bottom:20px;">
+      <a href="http://localhost:8100/chat" target="_blank" class="launch-tile" style="background:linear-gradient(135deg,rgba(10,132,255,0.15),rgba(10,132,255,0.05)); border:1px solid rgba(10,132,255,0.25);">
+        <div class="launch-icon" style="background:rgba(10,132,255,0.2);">🧠</div>
+        <div class="launch-label">AIIA Chat</div>
+      </a>
+      <a href="http://localhost:8200/dashboard" target="_blank" class="launch-tile" style="background:linear-gradient(135deg,rgba(168,85,247,0.15),rgba(168,85,247,0.05)); border:1px solid rgba(168,85,247,0.25);">
+        <div class="launch-icon" style="background:rgba(168,85,247,0.2);">📡</div>
+        <div class="launch-label">Dashboard</div>
+      </a>
+      <a href="https://proxy-ai-three.vercel.app" target="_blank" class="launch-tile" style="background:linear-gradient(135deg,rgba(34,197,94,0.15),rgba(34,197,94,0.05)); border:1px solid rgba(34,197,94,0.25);">
+        <div class="launch-icon" style="background:rgba(34,197,94,0.2);">💳</div>
+        <div class="launch-label">Sanction</div>
+      </a>
+      <a href="https://github.com/ericlovold" target="_blank" class="launch-tile" style="background:linear-gradient(135deg,rgba(255,255,255,0.08),rgba(255,255,255,0.03)); border:1px solid rgba(255,255,255,0.1);">
+        <div class="launch-icon" style="background:rgba(255,255,255,0.1);">🐙</div>
+        <div class="launch-label">GitHub</div>
+      </a>
+      <a href="https://claude.ai" target="_blank" class="launch-tile" style="background:linear-gradient(135deg,rgba(245,158,11,0.15),rgba(245,158,11,0.05)); border:1px solid rgba(245,158,11,0.25);">
+        <div class="launch-icon" style="background:rgba(245,158,11,0.2);">⚡</div>
+        <div class="launch-label">Claude</div>
+      </a>
+    </div>
+
+    <!-- Sprint board -->
+    <div id="sprintBoard" style="background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.08); border-radius:12px; padding:16px; margin-bottom:20px;">
+      <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:12px;">
+        <div style="font-size:13px; font-weight:600; letter-spacing:0.3px; text-transform:uppercase; color:var(--text-dim);">Current Sprint</div>
+        <button onclick="addSprintItem()" style="font-size:11px; background:rgba(59,130,246,0.15); border:1px solid rgba(59,130,246,0.3); color:var(--blue); border-radius:5px; padding:3px 10px; cursor:pointer;">+ Add</button>
+      </div>
+      <div id="sprintItems" style="display:flex; flex-direction:column; gap:6px;">
+        <div style="color:var(--text-dim); font-size:13px;">Loading sprint...</div>
+      </div>
+    </div>
+
+  </div>
 
   <!-- Status bar: nightly jobs -->
   <div class="checkin-status-bar" id="checkinStatusBar">
@@ -1398,6 +1500,74 @@
 </div>
 
 <script>
+// ── Morning Launchpad ──────────────────────────────────
+const SPRINT = {
+  name: 'Sprint 1 — Platform Foundation',
+  ends: '2026-06-22',
+  items: [
+    { id: 's1', label: 'npm login + publish sanction-mcp to registry', tag: 'now', done: false },
+    { id: 's2', label: 'Pull gemma-4-12B coder model (disk freed ✓)', tag: 'now', done: false },
+    { id: 's3', label: 'AIIA morning dashboard locked in', tag: 'now', done: false },
+    { id: 's4', label: 'Bootstrap production Sanction wallet sk_ key', tag: 'P0', done: false },
+    { id: 's5', label: 'Wire gemma-4-12B as LOCAL_TASK_MODEL in AIIA', tag: 'P1', done: false },
+    { id: 's6', label: 'Camelid benchmark harness — commit raw Metal perf logs', tag: 'P2', done: false },
+    { id: 's7', label: 'Sanction landing page + pricing page (UX)', tag: 'P1', done: false },
+    { id: 's8', label: 'DIST-4: Submit to Anthropic Connectors Directory', tag: 'P2', done: false },
+  ]
+};
+
+let sprintState = {};
+
+function initMorningLaunchpad() {
+  // Greeting
+  const h = new Date().getHours();
+  const greet = h < 12 ? 'Good morning' : h < 17 ? 'Good afternoon' : 'Good evening';
+  document.getElementById('morningGreeting').textContent = greet;
+  document.getElementById('morningDate').textContent = new Date().toLocaleDateString('en-US', {
+    weekday: 'long', month: 'long', day: 'numeric', year: 'numeric'
+  });
+
+  // Sprint badge
+  const ends = new Date(SPRINT.ends);
+  const daysLeft = Math.ceil((ends - new Date()) / 86400000);
+  document.getElementById('sprintBadge').textContent =
+    `${SPRINT.name} · ${daysLeft > 0 ? daysLeft + 'd left' : 'ends today'}`;
+
+  // Load persisted done state
+  try { sprintState = JSON.parse(localStorage.getItem('sprintState') || '{}'); } catch(e) { sprintState = {}; }
+
+  renderSprintItems();
+}
+
+function renderSprintItems() {
+  const el = document.getElementById('sprintItems');
+  const done = SPRINT.items.filter(i => sprintState[i.id]).length;
+  el.innerHTML = SPRINT.items.map(item => {
+    const isDone = !!sprintState[item.id];
+    return `<div class="sprint-item">
+      <div class="sprint-check ${isDone ? 'done' : ''}" onclick="toggleSprint('${item.id}')">
+        ${isDone ? '✓' : ''}
+      </div>
+      <div class="sprint-item-label ${isDone ? 'done' : ''}">${item.label}</div>
+      <div class="sprint-item-tag ${item.tag}">${item.tag}</div>
+    </div>`;
+  }).join('') + `<div style="margin-top:10px; padding-top:10px; border-top:1px solid rgba(255,255,255,0.06); font-size:12px; color:var(--text-dim);">${done}/${SPRINT.items.length} complete</div>`;
+}
+
+function toggleSprint(id) {
+  sprintState[id] = !sprintState[id];
+  localStorage.setItem('sprintState', JSON.stringify(sprintState));
+  renderSprintItems();
+}
+
+function addSprintItem() {
+  const label = prompt('Sprint item:');
+  if (!label) return;
+  const id = 's' + Date.now();
+  SPRINT.items.push({ id, label, tag: 'P2', done: false });
+  renderSprintItems();
+}
+
 // ── State ──────────────────────────────────────────────
 let allStories = [];
 let workData = {};
@@ -2450,6 +2620,7 @@ function connectWS() {
 }
 
 // ── Init ───────────────────────────────────────────────
+initMorningLaunchpad();
 loadCheckin();
 loadData();
 loadTodayMd();

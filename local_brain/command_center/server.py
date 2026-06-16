@@ -811,7 +811,11 @@ from local_brain.command_center.action_queue import ActionQueue
 from local_brain.command_center.aiia_tasks import TaskRunner
 
 action_queue = ActionQueue()
-REPO_PATH = str(Path(__file__).parent.parent.parent.parent)
+# Git root is AIIA-public (server.py → command_center → local_brain → AIIA-public).
+# A fourth .parent pointed at the outer ~/aiia-brain wrapper repo, which dragged
+# the github-runner checkout, archives, and node externals into every report scan
+# (~17s, zero products). Keep this anchored to the real repo root.
+REPO_PATH = str(Path(__file__).parent.parent.parent)
 task_runner = TaskRunner(
     broadcast_fn=manager.broadcast,
     repo_path=REPO_PATH,

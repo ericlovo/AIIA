@@ -121,7 +121,7 @@ _ollama: OllamaClient | None = None
 _conductor: SmartConductor | None = None
 _config: LocalBrainConfig | None = None
 _aiia: AIIA | None = None
-_google_tts: GoogleTTSService | None = None
+_google_tts: Any = None  # GoogleTTSService when available, None otherwise
 _active_sessions: dict[str, dict[str, Any]] = {}  # Active session tracking
 
 # Where the Command Center task scheduler persists per-loop run state.

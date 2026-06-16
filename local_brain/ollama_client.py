@@ -12,6 +12,7 @@ summarizer, etc.) use this client internally.
 """
 
 import logging
+import re
 import time
 from collections.abc import AsyncGenerator
 from typing import Any
@@ -21,6 +22,33 @@ import httpx
 from local_brain.config import LocalBrainConfig, get_config
 
 logger = logging.getLogger("aiia.local_brain.ollama")
+
+# Some fine-tuned GGUFs (harmony-style "channel" reasoning formats) emit a
+# thinking preamble like `<|channel>thought\n<channel|>` before the real answer.
+# Ollama's stock templates don't strip these, so the markers leak into output.
+# We clean them client-side so any model can be swapped in without polluting
+# responses. No-op when no markers are present (clean models are untouched).
+_CHANNEL_CLOSE_RE = re.compile(r"<\|?channel\|?>")
+_CHANNEL_MARKER_RE = re.compile(r"<\|?(?:channel|turn|message|start|end)\|?>")
+_LEADING_CHANNEL_NAME_RE = re.compile(
+    r"^\s*(?:thought|thinking|analysis|final|commentary)\b[:\s]*",
+    re.IGNORECASE,
+)
+
+
+def strip_reasoning_channels(text: str) -> str:
+    """Strip leaked reasoning-channel markers and preamble from model output."""
+    if not text or "channel" not in text:
+        return text
+    # The thinking preamble lives before the final channel-close marker; keep
+    # only what follows it (the actual answer).
+    matches = list(_CHANNEL_CLOSE_RE.finditer(text))
+    if matches:
+        text = text[matches[-1].end() :]
+    # Remove any residual structural markers and a dangling channel-name word.
+    text = _CHANNEL_MARKER_RE.sub("", text)
+    text = _LEADING_CHANNEL_NAME_RE.sub("", text)
+    return text.strip()
 
 
 class OllamaClient:
@@ -100,6 +128,10 @@ class OllamaClient:
 
         latency_ms = (time.monotonic() - start) * 1000
 
+        message = data.get("message")
+        if isinstance(message, dict) and message.get("content"):
+            message["content"] = strip_reasoning_channels(message["content"])
+
         logger.debug(
             f"Ollama [{model}]: "
             f"in={data.get('prompt_eval_count', 0)}, "
@@ -153,16 +185,41 @@ class OllamaClient:
             ) as response,
         ):
             response.raise_for_status()
+            buffer = ""
+            passthrough = False
             async for line in response.aiter_lines():
-                if line.strip():
-                    import json
+                if not line.strip():
+                    continue
+                import json
 
-                    chunk = json.loads(line)
-                    content = chunk.get("message", {}).get("content", "")
-                    if content:
+                chunk = json.loads(line)
+                content = chunk.get("message", {}).get("content", "")
+                if content:
+                    if passthrough:
                         yield content
-                    if chunk.get("done", False):
-                        return
+                    else:
+                        # Hold the opening chunks until we know whether this
+                        # model is leaking a reasoning-channel preamble.
+                        buffer += content
+                        looks_channel = (
+                            "channel" in buffer or "<|" in buffer or "<turn" in buffer
+                        )
+                        if not looks_channel and len(buffer) >= 8:
+                            yield buffer
+                            buffer = ""
+                            passthrough = True
+                        elif _CHANNEL_CLOSE_RE.search(buffer):
+                            cleaned = strip_reasoning_channels(buffer)
+                            if cleaned:
+                                yield cleaned
+                            buffer = ""
+                            passthrough = True
+                if chunk.get("done", False):
+                    if buffer:
+                        cleaned = strip_reasoning_channels(buffer)
+                        if cleaned:
+                            yield cleaned
+                    return
 
     async def embed(
         self,
