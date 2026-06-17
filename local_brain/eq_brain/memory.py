@@ -57,6 +57,7 @@ class Memory:
         "sessions",  # Session summaries
         "wip",  # Work-in-progress state for session continuity
         "meta",  # Self-reflection, memory digests
+        "journal",  # Journal entries — personal reflections captured in the console
     ]
 
     def __init__(self, data_dir: str):
