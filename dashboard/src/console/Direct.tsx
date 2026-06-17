@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import type { TeamUser } from '../lib/chatStore'
 
@@ -23,14 +23,58 @@ export function Direct({ user }: { user: TeamUser }) {
   const [input, setInput] = useState('')
   const [log, setLog] = useState<LogEntry[]>([])
   const [busy, setBusy] = useState(false)
+  const [recording, setRecording] = useState(false)
+  const [transcribing, setTranscribing] = useState(false)
   const abortRef = useRef<AbortController | null>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
+  // Transient recording state — refs, not state, to avoid spurious re-renders
+  const recorderRef = useRef<MediaRecorder | null>(null)
+  const chunksRef = useRef<Blob[]>([])
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [log])
 
   useEffect(() => () => abortRef.current?.abort(), [])
+
+  const startRecording = useCallback(async () => {
+    if (recording || transcribing) return
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      chunksRef.current = []
+      const recorder = new MediaRecorder(stream, { mimeType: 'audio/webm' })
+      recorder.ondataavailable = e => { if (e.data.size > 0) chunksRef.current.push(e.data) }
+      recorder.onstop = async () => {
+        stream.getTracks().forEach(t => t.stop())
+        const blob = new Blob(chunksRef.current, { type: 'audio/webm' })
+        chunksRef.current = []
+        if (blob.size < 1000) return
+        setTranscribing(true)
+        try {
+          const fd = new FormData()
+          fd.append('file', blob, 'audio.webm')
+          const res = await fetch('/api/v1/voice/transcribe', { method: 'POST', body: fd })
+          if (res.ok) {
+            const { text } = await res.json()
+            if (text?.trim()) setInput(prev => (prev ? prev + ' ' + text.trim() : text.trim()))
+          }
+        } finally {
+          setTranscribing(false)
+        }
+      }
+      recorderRef.current = recorder
+      recorder.start()
+      setRecording(true)
+    } catch {
+      // mic permission denied — silently ignore
+    }
+  }, [recording, transcribing])
+
+  const stopRecording = useCallback(() => {
+    recorderRef.current?.stop()
+    recorderRef.current = null
+    setRecording(false)
+  }, [])
 
   async function submit() {
     const text = input.trim()
@@ -99,23 +143,41 @@ export function Direct({ user }: { user: TeamUser }) {
             placeholder={busy ? 'Thinking…' : "What do you need AIIA to do?"}
             rows={3}
             disabled={busy}
-            className="w-full bg-neutral-900 border border-neutral-800 rounded-xl px-3 py-3 pr-14 text-sm text-neutral-300 outline-none focus:border-purple-500/40 placeholder:text-neutral-700 resize-none disabled:opacity-70"
+            className="w-full bg-neutral-900 border border-neutral-800 rounded-xl px-3 py-3 pr-24 text-sm text-neutral-300 outline-none focus:border-purple-500/40 placeholder:text-neutral-700 resize-none disabled:opacity-70"
           />
-          <button
-            onClick={busy ? stop : submit}
-            disabled={!busy && !input.trim()}
-            className={`absolute right-2 bottom-2 w-10 h-10 rounded-lg text-sm cursor-pointer transition-colors ${
-              busy
-                ? 'bg-neutral-800 text-neutral-500 hover:text-white'
-                : 'bg-purple-600 text-white hover:bg-purple-700 disabled:opacity-40 disabled:cursor-default'
-            }`}
-            title={busy ? 'Stop' : 'Send (Enter)'}
-          >
-            {busy ? '■' : '↑'}
-          </button>
+          <div className="absolute right-2 bottom-2 flex gap-1">
+            {/* Mic button */}
+            <button
+              onClick={recording ? stopRecording : startRecording}
+              disabled={busy || transcribing}
+              className={`w-10 h-10 rounded-lg text-sm cursor-pointer transition-colors ${
+                recording
+                  ? 'bg-red-600 text-white animate-pulse'
+                  : transcribing
+                  ? 'bg-neutral-700 text-neutral-400'
+                  : 'bg-neutral-800 text-neutral-400 hover:text-white hover:bg-neutral-700 disabled:opacity-40 disabled:cursor-default'
+              }`}
+              title={recording ? 'Stop recording' : transcribing ? 'Transcribing…' : 'Voice input'}
+            >
+              {transcribing ? '…' : recording ? '◉' : '🎤'}
+            </button>
+            {/* Send/Stop button */}
+            <button
+              onClick={busy ? stop : submit}
+              disabled={!busy && !input.trim()}
+              className={`w-10 h-10 rounded-lg text-sm cursor-pointer transition-colors ${
+                busy
+                  ? 'bg-neutral-800 text-neutral-500 hover:text-white'
+                  : 'bg-purple-600 text-white hover:bg-purple-700 disabled:opacity-40 disabled:cursor-default'
+              }`}
+              title={busy ? 'Stop' : 'Send (Enter)'}
+            >
+              {busy ? '■' : '↑'}
+            </button>
+          </div>
         </div>
         <div className="flex items-center gap-3 mt-2 text-[10px] text-neutral-700">
-          <span>Enter to send · Shift+Enter for newline</span>
+          <span>Enter to send · Shift+Enter for newline · 🎤 for voice</span>
         </div>
       </div>
     </section>

@@ -38,11 +38,13 @@ from local_brain.eq_brain.brain import AIIA
 from local_brain.eq_brain.knowledge_store import KnowledgeStore
 from local_brain.eq_brain.memory import Memory
 from local_brain.eq_brain.vault_writer import VaultWriter
+from local_brain.indexer.router import router as files_router
 from local_brain.journal.router import router as journal_router
 from local_brain.ollama_client import OllamaClient
 from local_brain.research.router import init_research
 from local_brain.research.router import router as research_router
 from local_brain.smart_conductor import SmartConductor
+from local_brain.voice.router import router as voice_router
 
 try:
     from local_brain.services.google_tts import GoogleTTSService
@@ -112,8 +114,10 @@ app.add_middleware(
 # Journal pipeline — voice recordings → transcript → distillation → vault.
 # Used by the desktop console, mobile-via-iCloud watcher, and any direct
 # HTTP client (future PWA, native iOS app, etc.).
+app.include_router(files_router)
 app.include_router(journal_router)
 app.include_router(research_router)
+app.include_router(voice_router)
 
 
 # Singletons initialized on startup
