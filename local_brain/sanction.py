@@ -16,8 +16,14 @@ import httpx
 
 logger = logging.getLogger("aiia.autoflux")
 
-_ANTHROPIC_COST_PER_M_IN = 3.00   # claude-sonnet-4-x input $/M tokens
-_ANTHROPIC_COST_PER_M_OUT = 15.00  # claude-sonnet-4-x output $/M tokens
+# (input, output) USD per 1M tokens, matched by family substring. Order matters:
+# checked most-specific first so "opus" wins before a generic "claude" fallback.
+_ANTHROPIC_RATES = {
+    "opus": (15.00, 75.00),
+    "sonnet": (3.00, 15.00),
+    "haiku": (1.00, 5.00),
+}
+_ANTHROPIC_FALLBACK = (3.00, 15.00)  # unknown claude model → sonnet-class estimate
 
 
 def _client() -> tuple[str, str] | None:
@@ -30,9 +36,14 @@ def _client() -> tuple[str, str] | None:
 
 
 def _cost_usd(model: str, tokens_in: int, tokens_out: int) -> float:
-    if "claude" in model:
-        return (tokens_in * _ANTHROPIC_COST_PER_M_IN + tokens_out * _ANTHROPIC_COST_PER_M_OUT) / 1_000_000
-    return 0.0
+    if "claude" not in model:
+        return 0.0
+    rate_in, rate_out = _ANTHROPIC_FALLBACK
+    for family, rates in _ANTHROPIC_RATES.items():
+        if family in model:
+            rate_in, rate_out = rates
+            break
+    return (tokens_in * rate_in + tokens_out * rate_out) / 1_000_000
 
 
 async def log_tokens(model: str, tokens_in: int, tokens_out: int, task: str | None = None) -> None:
