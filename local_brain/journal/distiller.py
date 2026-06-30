@@ -108,6 +108,11 @@ def _user_prompt(transcript: str) -> str:
     return f"Raw transcript follows. Distill it.\n\n---\n{transcript}\n---"
 
 
+def _via_gateway(base_url: str) -> bool:
+    """True when the base URL routes through Sanction's metering gateway."""
+    return "/api/gateway/" in base_url
+
+
 async def _distill_anthropic(
     system: str,
     user: str,
@@ -116,14 +121,19 @@ async def _distill_anthropic(
     timeout: float,
 ) -> str:
     api_key = os.environ["ANTHROPIC_API_KEY"]
+    base = os.getenv("ANTHROPIC_BASE_URL", "https://api.anthropic.com")
+    headers = {
+        "x-api-key": api_key,
+        "anthropic-version": "2023-06-01",
+        "content-type": "application/json",
+    }
+    sanction_key = os.getenv("SANCTION_API_KEY", "").strip()
+    if _via_gateway(base) and sanction_key:
+        headers["x-sanction-key"] = sanction_key
     async with httpx.AsyncClient(timeout=timeout) as client:
         resp = await client.post(
-            "https://api.anthropic.com/v1/messages",
-            headers={
-                "x-api-key": api_key,
-                "anthropic-version": "2023-06-01",
-                "content-type": "application/json",
-            },
+            f"{base}/v1/messages",
+            headers=headers,
             json={
                 "model": model,
                 "max_tokens": 2048,
@@ -139,7 +149,10 @@ async def _distill_anthropic(
     if not text.strip():
         raise DistillationError("Anthropic returned empty content")
     usage = data.get("usage", {})
-    log_tokens_bg(model, usage.get("input_tokens", 0), usage.get("output_tokens", 0), task="journal-distill")
+    # Routed through Sanction's gateway, it meters the call itself; logging here
+    # too would double-count. Only self-report on a direct provider call.
+    if not _via_gateway(base):
+        log_tokens_bg(model, usage.get("input_tokens", 0), usage.get("output_tokens", 0), task="journal-distill")
     return text
 
 
@@ -151,13 +164,18 @@ async def _distill_openai(
     timeout: float,
 ) -> str:
     api_key = os.environ["OPENAI_API_KEY"]
+    base = os.getenv("OPENAI_BASE_URL", "https://api.openai.com")
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "content-type": "application/json",
+    }
+    sanction_key = os.getenv("SANCTION_API_KEY", "").strip()
+    if _via_gateway(base) and sanction_key:
+        headers["x-sanction-key"] = sanction_key
     async with httpx.AsyncClient(timeout=timeout) as client:
         resp = await client.post(
-            "https://api.openai.com/v1/chat/completions",
-            headers={
-                "Authorization": f"Bearer {api_key}",
-                "content-type": "application/json",
-            },
+            f"{base}/v1/chat/completions",
+            headers=headers,
             json={
                 "model": model,
                 "messages": [
