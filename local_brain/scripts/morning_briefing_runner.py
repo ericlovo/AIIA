@@ -135,7 +135,35 @@ async def _run_briefing() -> dict:
     )
 
     report = await briefing.generate()
+
+    rollup = await _fetch_sanction_rollup()
+    if rollup:
+        report["sanction"] = rollup
+
     return report
+
+
+async def _fetch_sanction_rollup() -> dict | None:
+    """Today's Sanction spend rollup for the dogfood wallet. Fails silent."""
+    import httpx
+
+    api_url = os.getenv("SANCTION_API_URL", "").strip()
+    api_key = os.getenv("SANCTION_API_KEY", "").strip()
+    wallet_id = os.getenv("SANCTION_WALLET_ID", "").strip()
+    if not (api_url and api_key and wallet_id):
+        return None
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            resp = await client.get(
+                f"{api_url}/wallets/stats",
+                params={"wallet_id": wallet_id},
+                headers={"x-api-key": api_key},
+            )
+        if resp.status_code == 200:
+            return resp.json()
+    except Exception as e:
+        logger.debug(f"Sanction rollup fetch failed: {e}")
+    return None
 
 
 def _write_report(result: dict):
@@ -189,6 +217,18 @@ def _write_report(result: dict):
             sev = note.get("severity", "info").upper()
             text = note.get("note", "?")
             lines.append(f"  [{sev}] {text}")
+
+    sanction = result.get("sanction")
+    if sanction:
+        today = sanction.get("today", {})
+        pending = sanction.get("pending_approvals", 0)
+        line = (
+            f"\nSanction — today: ${today.get('token_cost_usd', 0):.2f} tokens + "
+            f"${today.get('spend_usd', 0):.2f} spend"
+        )
+        if pending:
+            line += f" · {pending} awaiting you"
+        lines.append(line)
 
     if actions:
         lines.append(f"\nActionQueue: {actions} new items created")
