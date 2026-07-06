@@ -6,7 +6,6 @@ nomic-embed-text (already available in Ollama). Results feed into the
 conductor as a tool: "find files about X".
 """
 
-import asyncio
 import hashlib
 import logging
 import os
@@ -30,14 +29,37 @@ INDEXED_DIRS = [
 ]
 
 SKIP_DIRS = {
-    ".git", "__pycache__", "node_modules", ".venv", "venv",
-    "dist", "build", ".next", ".cache", "coverage",
+    ".git",
+    "__pycache__",
+    "node_modules",
+    ".venv",
+    "venv",
+    "dist",
+    "build",
+    ".next",
+    ".cache",
+    "coverage",
 }
 
 TEXT_EXTENSIONS = {
-    ".txt", ".md", ".py", ".ts", ".tsx", ".js", ".jsx",
-    ".json", ".yaml", ".yml", ".toml", ".env", ".sh",
-    ".html", ".css", ".sql", ".rst", ".csv",
+    ".txt",
+    ".md",
+    ".py",
+    ".ts",
+    ".tsx",
+    ".js",
+    ".jsx",
+    ".json",
+    ".yaml",
+    ".yml",
+    ".toml",
+    ".env",
+    ".sh",
+    ".html",
+    ".css",
+    ".sql",
+    ".rst",
+    ".csv",
 }
 
 MAX_FILE_BYTES = 512_000  # skip files larger than 512KB
@@ -77,7 +99,7 @@ def _chunk_text(text: str) -> list[str]:
 
 
 def _file_id(path: Path, chunk_idx: int) -> str:
-    return hashlib.md5(f"{path}:{chunk_idx}".encode()).hexdigest()
+    return hashlib.md5(f"{path}:{chunk_idx}".encode(), usedforsecurity=False).hexdigest()
 
 
 def _should_index(path: Path) -> bool:
@@ -168,13 +190,15 @@ async def search_files(query: str, n_results: int = 8) -> list[dict]:
     for doc, meta, dist in zip(docs, metas, distances):
         path = meta.get("path", "")
         score = round(1 - dist, 3)
-        hits.append({
-            "path": path,
-            "name": meta.get("name", ""),
-            "score": score,
-            "excerpt": doc[:300].strip(),
-            "first": path not in seen_paths,
-        })
+        hits.append(
+            {
+                "path": path,
+                "name": meta.get("name", ""),
+                "score": score,
+                "excerpt": doc[:300].strip(),
+                "first": path not in seen_paths,
+            }
+        )
         seen_paths.add(path)
 
     return hits

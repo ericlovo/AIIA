@@ -6,7 +6,6 @@ GET  /v1/files/search  — semantic search over indexed local files
 GET  /v1/files/status  — indexed file count
 """
 
-import asyncio
 import logging
 
 from fastapi import APIRouter, BackgroundTasks, Query

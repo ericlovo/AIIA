@@ -11,7 +11,6 @@ If MLX_MODEL is unset or mlx-lm isn't installed, falls back to Ollama.
 import asyncio
 import logging
 import os
-from typing import AsyncGenerator
 
 logger = logging.getLogger("aiia.mlx")
 
@@ -26,6 +25,7 @@ def _load(model_path: str):
         return _generator
     try:
         import mlx_lm
+
         logger.info(f"Loading MLX model: {model_path}")
         model, tokenizer = mlx_lm.load(model_path)
         _generator = (model, tokenizer)
@@ -52,7 +52,9 @@ async def chat(
         raise RuntimeError("MLX_MODEL not configured")
 
     loop = asyncio.get_event_loop()
-    result = await loop.run_in_executor(None, _sync_chat, model_path, messages, max_tokens, temperature)
+    result = await loop.run_in_executor(
+        None, _sync_chat, model_path, messages, max_tokens, temperature
+    )
     return result
 
 
