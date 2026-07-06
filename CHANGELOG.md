@@ -7,6 +7,26 @@ All notable changes to AIIA are documented here. This project adheres to
 ## [Unreleased]
 
 ### Added
+- **Air-gap mode** (`AIIA_AIRGAP=1`) — one flag turns the Brain into a
+  local-only runtime. Inference, embeddings, retrieval, and memory stay
+  on the box; the execution engine (spawns the `claude` CLI) and the
+  research loop (web fetch) are force-disabled; every registered cloud
+  egress point is denied **fail-closed** via the new
+  `local_brain/egress.py` guard, and each denied attempt is reported to
+  Sanction as audit evidence. Denials reuse each call site's existing
+  degradation: journal distillation skips with the raw transcript
+  preserved, TTS falls back to macOS `say`, the Slack endpoint returns
+  403 `EGRESS_DENIED_AIRGAP`. Outside air-gap, egress is governed by
+  Sanction `/authorize/tool` when configured (timeout or transport
+  error ⇒ deny); unconfigured installs behave as before.
+  - `/health` gains an `airgap` block reporting every governed egress
+    point; `aiia status` shows an `AIRGAP=on` line; `aiia doctor`
+    reports cloud keys as "configured but inert under AIIA_AIRGAP".
+  - `docs/AIRGAP.md` runbook + `scripts/airgap_probe.sh` (deny probes,
+    audit-trail check, network-watch commands).
+  - `local_brain/tests/test_airgap.py` — 12 tests: config overrides,
+    fail-closed decision matrix, call-site degradation.
+
 - **Unified `aiia` CLI** — single command entry point for all AIIA workflows.
   Installs as `aiia` on PATH after `pip install aiia`. Subcommands:
   - `aiia` — show wordmark + quick-start tips
@@ -49,6 +69,12 @@ All notable changes to AIIA are documented here. This project adheres to
   filtering, subprocess executor safety (arg whitelist, timeout,
   exit handling), memory executor round-trip, and status executor
   response shape.
+
+### Security
+- arXiv Atom feeds in the literature loop are parsed with `defusedxml`
+  (new dependency) instead of stdlib `xml.etree`.
+- The file-index content hash marks MD5 `usedforsecurity=False` (it is
+  a change-detection key, not a security primitive).
 
 ## [0.5.0] — 2026-04-15
 
