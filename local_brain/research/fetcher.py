@@ -15,6 +15,8 @@ from html.parser import HTMLParser
 
 import httpx
 
+from local_brain.egress import authorize_egress
+
 logger = logging.getLogger("aiia.research.fetcher")
 
 _SKIP_TAGS = frozenset(["script", "style", "nav", "header", "footer", "aside", "noscript"])
@@ -121,6 +123,9 @@ async def fetch_url(url: str, timeout: float = 15.0, max_chars: int = 80_000) ->
     """
     Fetch a URL and return (canonical_url, plain_text). Raises on failure.
     """
+    decision = await authorize_egress("web.fetch")
+    if not decision.allowed:
+        raise RuntimeError(f"egress web.fetch {decision.reason}")
     async with httpx.AsyncClient(
         timeout=timeout, follow_redirects=True, headers=_HEADERS
     ) as client:

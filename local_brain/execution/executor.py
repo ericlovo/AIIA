@@ -83,6 +83,11 @@ class ExecutionEngine:
     async def start(self) -> None:
         if self.is_running:
             return
+        if self._config.airgap_enabled:
+            # Belt-and-suspenders: config force-disables execution_enabled
+            # under AIIA_AIRGAP; never start the loop that spawns claude.
+            logger.warning("Execution engine refused to start (AIIA_AIRGAP)")
+            return
         self._task = asyncio.create_task(self._run_loop())
         logger.info("Execution engine started")
 

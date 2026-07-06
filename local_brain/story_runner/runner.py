@@ -607,6 +607,12 @@ def main():
     if not args.story:
         parser.error("--story is required")
 
+    if os.getenv("AIIA_AIRGAP", "").lower() in ("true", "1"):
+        from local_brain.egress import report_denied_bg
+
+        report_denied_bg("anthropic.claude_code", "story_runner")
+        parser.error("story runner requires cloud egress — refused under AIIA_AIRGAP")
+
     if not os.getenv("ANTHROPIC_API_KEY"):
         parser.error("ANTHROPIC_API_KEY environment variable is required")
 

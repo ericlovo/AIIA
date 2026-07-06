@@ -19,6 +19,7 @@ from datetime import datetime
 
 import httpx
 
+from local_brain.egress import authorize_egress
 from local_brain.sanction import log_tokens_bg
 
 logger = logging.getLogger("aiia.journal.distiller")
@@ -250,6 +251,9 @@ async def distill(
             "ANTHROPIC_API_KEY / OPENAI_API_KEY / GROQ_API_KEY."
         )
     provider, model = pick
+    decision = await authorize_egress(f"{provider}.messages")
+    if not decision.allowed:
+        raise DistillationError(f"egress {provider}.messages {decision.reason}")
     handler = _DISPATCH[provider]
     system = _system_prompt(inp)
     user = _user_prompt(inp.transcript)
