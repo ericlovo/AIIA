@@ -7,7 +7,6 @@ Returns the Erdős number and the full path (if found within max depth).
 Demo use case: show AIIA doing live graph research with real data.
 """
 
-import asyncio
 import logging
 from collections import deque
 from typing import Any
@@ -147,7 +146,7 @@ async def compute_erdos_number(name: str) -> dict[str, Any]:
                         "path": full_path,
                         "found": True,
                         "searched_authors": searched,
-                        "note": f"Erdős number {depth} found via {len(full_path)-1}-hop chain.",
+                        "note": f"Erdős number {depth} found via {len(full_path) - 1}-hop chain.",
                     }
 
                 if cid not in visited:

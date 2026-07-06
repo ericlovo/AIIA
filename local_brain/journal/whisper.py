@@ -19,6 +19,8 @@ from dataclasses import dataclass
 
 import httpx
 
+from local_brain.egress import authorize_egress
+
 logger = logging.getLogger("aiia.journal.whisper")
 
 GROQ_TRANSCRIPTIONS_URL = "https://api.groq.com/openai/v1/audio/transcriptions"
@@ -76,6 +78,9 @@ async def transcribe_audio(
         TranscriptionError on any failure (missing key, HTTP error, empty
         response, malformed JSON).
     """
+    decision = await authorize_egress("groq.whisper")
+    if not decision.allowed:
+        raise TranscriptionError(f"egress groq.whisper {decision.reason}")
     api_key = _resolve_api_key()
     file_name = filename or "recording.m4a"
 

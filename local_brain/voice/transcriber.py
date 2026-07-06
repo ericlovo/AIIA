@@ -22,6 +22,7 @@ def _load_model():
         return _model
     try:
         from faster_whisper import WhisperModel
+
         logger.info(f"Loading Whisper {_model_size} model...")
         _model = WhisperModel(_model_size, device="cpu", compute_type="int8")
         logger.info("Whisper ready")

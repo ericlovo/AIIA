@@ -54,6 +54,7 @@ dependencies = [
     "supermemory>=3.12.0,<4.0.0",
     "mcp>=0.7.0,<2.0.0",
     "python-dateutil>=2.9.0,<3.0.0",
+    "defusedxml>=0.7.0,<1.0.0",
     "Jinja2>=3.1.0,<4.0.0",
     "langchain-text-splitters>=0.3.0,<1.0.0",
     "pypdf>=4.0.0,<6.0.0",

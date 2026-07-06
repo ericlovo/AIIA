@@ -302,12 +302,22 @@ def check_optional_api_keys() -> Result:
         "Google": os.environ.get("GOOGLE_API_KEY", ""),
     }
     present = [name for name, val in keys.items() if val]
+    airgap = os.environ.get("AIIA_AIRGAP", "").lower() in ("true", "1")
     if not present:
+        if airgap:
+            return Result("Cloud API keys", "ok", "none configured (air-gap mode)")
         return Result(
             "Cloud API keys",
             "warn",
             "none configured (local-only mode)",
             hint=("Optional. Set ANTHROPIC_API_KEY or GOOGLE_API_KEY in .env for cloud fallback."),
+        )
+    if airgap:
+        return Result(
+            "Cloud API keys",
+            "warn",
+            ", ".join(present) + " configured but inert under AIIA_AIRGAP",
+            hint="Air-gap mode denies all cloud egress; unset the keys to clear this warning.",
         )
     return Result("Cloud API keys", "ok", ", ".join(present) + " configured")
 

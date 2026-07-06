@@ -84,6 +84,10 @@ class LocalBrainConfig:
     pii_scanning_enabled: bool = True  # PII/PHI detection locally
     embeddings_enabled: bool = True  # Generate embeddings locally
 
+    # Air-gap mode — AIIA_AIRGAP=1 forces local-only operation; all cloud
+    # egress is denied and audited (see local_brain/egress.py)
+    airgap_enabled: bool = False
+
     # Execution engine
     execution_enabled: bool = False  # Off by default
     execution_poll_interval: int = 15  # seconds between checking for approved actions
@@ -194,6 +198,14 @@ class LocalBrainConfig:
                 str(self.execution_supervised_countdown),
             )
         )
+
+        # Air-gap mode — overrides win over the individual flags above:
+        # the execution engine spawns the claude CLI (cloud egress) and the
+        # research loop fetches arbitrary URLs (web egress).
+        self.airgap_enabled = os.getenv("AIIA_AIRGAP", "false").lower() in ("true", "1")
+        if self.airgap_enabled:
+            self.execution_enabled = False
+            self.autonomy.research_enabled = False
 
         # Default model assignments
         if not self.models:

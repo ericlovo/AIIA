@@ -180,6 +180,15 @@ def status() -> None:
     if brain and "version" in brain:
         console.print(f"\n  Brain version: [bold]{brain.get('version', '?')}[/bold]")
 
+    airgap = (brain or {}).get("airgap", {})
+    if airgap.get("enabled"):
+        disabled = ", ".join(sorted(airgap.get("egress", {})))
+        console.print(
+            f"\n  [bold yellow]AIRGAP=on[/bold yellow] — cloud egress disabled: {disabled}"
+        )
+        for permitted in airgap.get("permitted", []):
+            console.print(f"  [dim]permitted: {permitted}[/dim]")
+
 
 @app.command()
 def briefing(

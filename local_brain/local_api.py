@@ -34,6 +34,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from local_brain.config import LocalBrainConfig, get_config
+from local_brain.egress import airgap_status, authorize_egress
 from local_brain.eq_brain.brain import AIIA
 from local_brain.eq_brain.knowledge_store import KnowledgeStore
 from local_brain.eq_brain.memory import Memory
@@ -148,12 +149,17 @@ async def startup():
     _ollama = OllamaClient(_config)
     _conductor = SmartConductor(_ollama, _config)
 
-    # Initialize Google Cloud TTS (optional)
-    _google_tts = GoogleTTSService() if GoogleTTSService else None
-    if _google_tts and _google_tts.is_available:
-        logger.info("Google Cloud TTS available")
+    # Initialize Google Cloud TTS (optional; never under air-gap — the
+    # macOS `say` fallback at the call sites is the local path)
+    if _config.airgap_enabled:
+        _google_tts = None
+        logger.info("Google Cloud TTS disabled (AIIA_AIRGAP)")
     else:
-        logger.info("Google Cloud TTS not configured (no GOOGLE_API_KEY or GOOGLE_TTS_API_KEY)")
+        _google_tts = GoogleTTSService() if GoogleTTSService else None
+        if _google_tts and _google_tts.is_available:
+            logger.info("Google Cloud TTS available")
+        else:
+            logger.info("Google Cloud TTS not configured (no GOOGLE_API_KEY or GOOGLE_TTS_API_KEY)")
 
     # Check Ollama health on startup
     health = await _ollama.health()
@@ -385,6 +391,7 @@ async def health_check():
             "pii_scanning": _config.pii_scanning_enabled if _config else False,
             "embeddings": _config.embeddings_enabled if _config else False,
         },
+        "airgap": airgap_status(_config) if _config else {"enabled": False},
     }
 
 
@@ -1053,6 +1060,12 @@ class SlackPostRequest(BaseModel):
 @app.post("/v1/aiia/slack", dependencies=[Depends(verify_api_key)])
 async def aiia_slack_post(request: SlackPostRequest):
     """Post a message to Slack on behalf of AIIA."""
+    decision = await authorize_egress("slack.post")
+    if not decision.allowed:
+        raise HTTPException(
+            status_code=403,
+            detail={"code": "EGRESS_DENIED_AIRGAP", "reason": decision.reason},
+        )
     from local_brain.slack_client import _api, _resolve_channel
 
     token = os.getenv("SLACK_BOT_TOKEN", "")

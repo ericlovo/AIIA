@@ -12,7 +12,6 @@ Demo use case: show AIIA doing live literature review.
 
 import asyncio
 import logging
-from datetime import datetime, timedelta
 from typing import Any
 
 import httpx
@@ -43,7 +42,8 @@ async def _search_arxiv(query: str, max_results: int = MAX_PAPERS) -> list[dict]
 
         # Parse Atom XML
         papers = []
-        import xml.etree.ElementTree as ET
+        import defusedxml.ElementTree as ET
+
         ns = {"atom": "http://www.w3.org/2005/Atom", "arxiv": "http://arxiv.org/schemas/atom"}
         root = ET.fromstring(content)
 
@@ -60,14 +60,16 @@ async def _search_arxiv(query: str, max_results: int = MAX_PAPERS) -> list[dict]
                 if aname:
                     authors.append(aname)
 
-            papers.append({
-                "id": arxiv_id,
-                "title": title,
-                "abstract": abstract[:600],
-                "authors": authors[:5],
-                "published": published,
-                "url": f"https://arxiv.org/abs/{arxiv_id}",
-            })
+            papers.append(
+                {
+                    "id": arxiv_id,
+                    "title": title,
+                    "abstract": abstract[:600],
+                    "authors": authors[:5],
+                    "published": published,
+                    "url": f"https://arxiv.org/abs/{arxiv_id}",
+                }
+            )
 
         return papers
     except Exception as e:
@@ -93,14 +95,16 @@ async def _search_semantic_scholar(query: str, max_results: int = MAX_PAPERS) ->
         papers = []
         for p in data.get("data", []):
             arxiv_id = p.get("externalIds", {}).get("ArXiv", "")
-            papers.append({
-                "id": p.get("paperId", ""),
-                "title": p.get("title", ""),
-                "abstract": (p.get("abstract") or "")[:600],
-                "authors": [a["name"] for a in p.get("authors", [])[:5]],
-                "published": str(p.get("year", "")),
-                "url": f"https://arxiv.org/abs/{arxiv_id}" if arxiv_id else "",
-            })
+            papers.append(
+                {
+                    "id": p.get("paperId", ""),
+                    "title": p.get("title", ""),
+                    "abstract": (p.get("abstract") or "")[:600],
+                    "authors": [a["name"] for a in p.get("authors", [])[:5]],
+                    "published": str(p.get("year", "")),
+                    "url": f"https://arxiv.org/abs/{arxiv_id}" if arxiv_id else "",
+                }
+            )
         return papers
     except Exception as e:
         logger.warning(f"Semantic Scholar search failed: {e}")
@@ -156,7 +160,7 @@ async def run_literature_loop(
 
     # Step 2: Build synthesis prompt
     paper_text = "\n\n".join(
-        f"[{i+1}] **{p['title']}** ({p['published']})\n"
+        f"[{i + 1}] **{p['title']}** ({p['published']})\n"
         f"Authors: {', '.join(p['authors'])}\n"
         f"Abstract: {p['abstract']}"
         for i, p in enumerate(all_papers)
@@ -194,6 +198,7 @@ Produce the structured synthesis now."""
         content = response.get("message", {}).get("content", "")
 
         import json as _json
+
         # Parse JSON from response
         start = content.find("{")
         end = content.rfind("}") + 1

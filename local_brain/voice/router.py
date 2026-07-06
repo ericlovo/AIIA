@@ -7,9 +7,9 @@ GET  /v1/voice/status      — whether whisper model is loaded
 
 import logging
 
-from fastapi import APIRouter, HTTPException, UploadFile, File
+from fastapi import APIRouter, File, HTTPException, UploadFile
 
-from local_brain.voice.transcriber import transcribe_bytes, _model_size
+from local_brain.voice.transcriber import _model_size, transcribe_bytes
 
 logger = logging.getLogger("aiia.voice.router")
 
@@ -31,6 +31,7 @@ async def transcribe(file: UploadFile = File(...)):
 @router.get("/status")
 async def voice_status():
     from local_brain.voice.transcriber import _model
+
     return {
         "model": _model_size,
         "loaded": _model is not None,
