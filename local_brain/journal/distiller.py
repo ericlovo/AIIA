@@ -153,7 +153,12 @@ async def _distill_anthropic(
     # Routed through Sanction's gateway, it meters the call itself; logging here
     # too would double-count. Only self-report on a direct provider call.
     if not _via_gateway(base):
-        log_tokens_bg(model, usage.get("input_tokens", 0), usage.get("output_tokens", 0), task="journal-distill")
+        log_tokens_bg(
+            model,
+            usage.get("input_tokens", 0),
+            usage.get("output_tokens", 0),
+            task="journal-distill",
+        )
     return text
 
 

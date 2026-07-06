@@ -201,9 +201,7 @@ class OllamaClient:
                         # Hold the opening chunks until we know whether this
                         # model is leaking a reasoning-channel preamble.
                         buffer += content
-                        looks_channel = (
-                            "channel" in buffer or "<|" in buffer or "<turn" in buffer
-                        )
+                        looks_channel = "channel" in buffer or "<|" in buffer or "<turn" in buffer
                         if not looks_channel and len(buffer) >= 8:
                             yield buffer
                             buffer = ""

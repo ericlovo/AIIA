@@ -183,7 +183,9 @@ def status() -> None:
     airgap = (brain or {}).get("airgap", {})
     if airgap.get("enabled"):
         disabled = ", ".join(sorted(airgap.get("egress", {})))
-        console.print(f"\n  [bold yellow]AIRGAP=on[/bold yellow] — cloud egress disabled: {disabled}")
+        console.print(
+            f"\n  [bold yellow]AIRGAP=on[/bold yellow] — cloud egress disabled: {disabled}"
+        )
         for permitted in airgap.get("permitted", []):
             console.print(f"  [dim]permitted: {permitted}[/dim]")
 
