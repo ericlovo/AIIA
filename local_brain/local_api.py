@@ -34,6 +34,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from local_brain.config import LocalBrainConfig, get_config
+from local_brain.egress import airgap_status
 from local_brain.eq_brain.brain import AIIA
 from local_brain.eq_brain.knowledge_store import KnowledgeStore
 from local_brain.eq_brain.memory import Memory
@@ -385,6 +386,7 @@ async def health_check():
             "pii_scanning": _config.pii_scanning_enabled if _config else False,
             "embeddings": _config.embeddings_enabled if _config else False,
         },
+        "airgap": airgap_status(_config) if _config else {"enabled": False},
     }
 
 
