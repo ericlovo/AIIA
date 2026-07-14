@@ -31,7 +31,7 @@ from local_brain.scripts.daily_report import generate_report
 
 logger = logging.getLogger("aiia.tasks")
 
-AIIA_BASE_URL = "http://100.125.92.21:8100"
+AIIA_BASE_URL = os.getenv("AIIA_URL", "http://localhost:8100")
 TASK_DATA_FILE = Path(__file__).parent / "task_data.json"
 MAX_RUN_HISTORY = 10
 MAX_INSIGHTS = 50
@@ -792,6 +792,17 @@ class TaskRunner:
         new_sha = await self._run_git("rev-parse", "HEAD")
 
         if last_sha and last_sha != new_sha:
+            # Validate last_sha still exists in this repo — a stale SHA carried
+            # over from a different repo/checkout makes the diff fail forever.
+            try:
+                await self._run_git("cat-file", "-e", f"{last_sha}^{{commit}}")
+            except RuntimeError:
+                logger.warning(
+                    "repo_sync: stored SHA %s not in repo — re-baselining", last_sha[:8]
+                )
+                self._extra["last_commit_sha"] = new_sha
+                await self._progress("repo_sync", 100, "Complete")
+                return f"Re-baselined to {new_sha[:8]} (discarded stale SHA). No files indexed."
             # Get changed files between old and new
             diff_output = await self._run_git("diff", "--name-only", f"{last_sha}..{new_sha}")
             changed_files = [f for f in diff_output.strip().split("\n") if f]

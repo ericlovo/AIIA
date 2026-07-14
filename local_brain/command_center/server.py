@@ -189,6 +189,7 @@ MONITORED_SERVICES = {
     "aiia": {
         "name": "AIIA Local Brain",
         "url": "http://localhost:8100/v1/aiia/status",
+        "headers": {"x-api-key": os.getenv("LOCAL_BRAIN_API_KEY", "")},
         "timeout": 5.0,
         "category": "intelligence",
     },
@@ -415,7 +416,7 @@ async def check_service(client: httpx.AsyncClient, service_id: str) -> ServiceHe
 
     try:
         start = time.monotonic()
-        resp = await client.get(cfg["url"], timeout=cfg["timeout"])
+        resp = await client.get(cfg["url"], timeout=cfg["timeout"], headers=cfg.get("headers"))
         elapsed_ms = round((time.monotonic() - start) * 1000, 1)
 
         if resp.status_code == 200:
