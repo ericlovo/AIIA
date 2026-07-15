@@ -32,6 +32,11 @@ from local_brain.scripts.daily_report import generate_report
 logger = logging.getLogger("aiia.tasks")
 
 AIIA_BASE_URL = os.getenv("AIIA_URL", "http://localhost:8100")
+# Scheduled tasks call AIIA's authenticated endpoints — send the key the Brain
+# enforces (LOCAL_BRAIN_API_KEY). Without this, every LLM/memory task 401s once
+# auth is on. Empty dict if no key is configured (local Brain ignores the header).
+_AIIA_KEY = os.getenv("LOCAL_BRAIN_API_KEY", "")
+_AIIA_HEADERS = {"x-api-key": _AIIA_KEY} if _AIIA_KEY else {}
 TASK_DATA_FILE = Path(__file__).parent / "task_data.json"
 MAX_RUN_HISTORY = 10
 MAX_INSIGHTS = 50
@@ -634,7 +639,7 @@ class TaskRunner:
     ) -> dict[str, Any]:
         """HTTP request to AIIA at port 8100."""
         url = f"{AIIA_BASE_URL}{path}"
-        async with httpx.AsyncClient(timeout=timeout) as client:
+        async with httpx.AsyncClient(timeout=timeout, headers=_AIIA_HEADERS) as client:
             if method == "GET":
                 resp = await client.get(url)
             elif method == "POST":
