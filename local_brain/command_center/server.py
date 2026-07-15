@@ -2218,6 +2218,36 @@ async def roadmap_prioritize(body: dict[str, Any]):
         return {"error": str(e)}
 
 
+@app.get("/api/roadmap/recommended")
+async def roadmap_recommended(limit: int = 8):
+    """Top backlog items ranked for 'what to work on now' — the copy-paste cards.
+
+    Sorted by priority (P0 first) then priority_score, so project_pulse's
+    prioritization surfaces as a focused shortlist rather than the whole backlog.
+    """
+    order = {"P0": 0, "P1": 1, "P2": 2, "P3": 3}
+    stories = _roadmap.list(status="backlog")
+    stories.sort(
+        key=lambda s: (
+            order.get(s.get("priority", "P2"), 2),
+            -float(s.get("priority_score") or 0),
+        )
+    )
+    cards = [
+        {
+            "id": s.get("id"),
+            "title": s.get("title"),
+            "product": s.get("product"),
+            "priority": s.get("priority"),
+            "priority_score": s.get("priority_score"),
+            "reasoning": s.get("priority_reasoning", ""),
+            "prompt": s.get("description", ""),
+        }
+        for s in stories[:limit]
+    ]
+    return {"cards": cards, "count": len(cards)}
+
+
 @app.get("/api/roadmap/similar/{title}")
 async def roadmap_similar(title: str):
     """Find similar existing stories (dedup check)."""
