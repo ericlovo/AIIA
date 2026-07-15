@@ -2753,6 +2753,11 @@ async def startup():
     except Exception as e:
         logger.warning(f"Story prioritizer failed to init: {e}")
 
+    # Wire roadmap + prioritizer into the task runner so project_pulse can ingest
+    # project backlogs and rank them into RightNow cards.
+    task_runner.roadmap_store = _roadmap
+    task_runner.story_prioritizer = _story_prioritizer
+
     # Expire stale actions on startup
     expired = action_queue.expire_old(hours=72)
     if expired:

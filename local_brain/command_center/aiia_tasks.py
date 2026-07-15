@@ -19,6 +19,7 @@ import hashlib
 import json
 import logging
 import os
+import re
 import time
 from collections.abc import Callable, Coroutine
 from datetime import datetime, timezone
@@ -30,6 +31,85 @@ import httpx
 from local_brain.scripts.daily_report import generate_report
 
 logger = logging.getLogger("aiia.tasks")
+
+# ─────────────────────────────────────────────────────────────
+# project_pulse — fetch project backlogs → prioritized cards
+# ─────────────────────────────────────────────────────────────
+
+PROJECTS_REGISTRY = os.getenv(
+    "AIIA_PROJECTS_REGISTRY",
+    str(Path.home() / ".aiia" / "eq_data" / "projects.json"),
+)
+_DEFAULT_HEADINGS = ["Backlog", "Next", "Up Next", "Roadmap", "Now", "TODO"]
+
+
+def _load_project_registry() -> dict:
+    """Load the project registry (see ~/.aiia/eq_data/projects.json)."""
+    try:
+        with open(PROJECTS_REGISTRY, encoding="utf-8") as f:
+            return json.load(f)
+    except Exception as e:
+        logger.warning("project registry unreadable (%s): %s", PROJECTS_REGISTRY, e)
+        return {"projects": [], "ingest_headings": _DEFAULT_HEADINGS}
+
+
+def _parse_backlog_items(text: str, headings: list[str], max_items: int = 40) -> list[str]:
+    """Pull bullet items that live UNDER a heading matching `headings`.
+
+    The git-discipline gate: only content beneath an explicit heading (## Backlog,
+    ## Next, ...) becomes a card. Checked items (- [x]) are treated as done and
+    skipped. Capture continues into sub-headings and stops at the next heading of
+    equal-or-higher level.
+    """
+    keywords = [h.lower() for h in (headings or _DEFAULT_HEADINGS)]
+    items: list[str] = []
+    capturing = False
+    capture_level = 0
+    for raw in text.splitlines():
+        line = raw.rstrip()
+        hm = re.match(r"^(#{1,6})\s+(.*)", line)
+        if hm:
+            level = len(hm.group(1))
+            title = hm.group(2).strip().lower()
+            if any(k in title for k in keywords):
+                capturing = True
+                capture_level = level
+            elif capturing and level <= capture_level:
+                capturing = False
+            continue
+        if not capturing:
+            continue
+        bm = re.match(r"^\s*(?:[-*+]|\d+\.)\s+(.*)", line)
+        if not bm:
+            continue
+        item = bm.group(1).strip()
+        cb = re.match(r"^\[([ xX])\]\s*(.*)", item)
+        if cb:
+            if cb.group(1).lower() == "x":
+                continue  # done — don't resurface
+            item = cb.group(2).strip()
+        # strip trailing markdown emphasis / links noise, keep it readable
+        item = item.strip("*_` ")
+        if item:
+            items.append(item)
+            if len(items) >= max_items:
+                break
+    return items
+
+
+def _card_prompt(name: str, repo: str, rel: str, item: str, shipped: str) -> str:
+    """A paste-ready coding prompt for the dashboard card."""
+    parts = [
+        f"Project: {name}  ·  Repo: {repo}",
+        f"Source: {rel}",
+        "",
+        item,
+        "",
+        f"To start: cd {repo}",
+    ]
+    if shipped:
+        parts += ["", "Recently shipped (context):", shipped]
+    return "\n".join(parts)
 
 AIIA_BASE_URL = os.getenv("AIIA_URL", "http://localhost:8100")
 # Scheduled tasks call AIIA's authenticated endpoints — send the key the Brain
@@ -263,6 +343,12 @@ TASK_DEFINITIONS = {
         "schedule_seconds": 1800,  # every 30 minutes
         "uses_llm": False,
     },
+    "project_pulse": {
+        "name": "Project Pulse",
+        "description": "Fetch project backlogs → roadmap stories → prioritized copy-paste cards",
+        "schedule_seconds": 14400,  # every 4 hours
+        "uses_llm": True,
+    },
 }
 
 
@@ -285,6 +371,11 @@ class TaskRunner:
         self.repo_path = repo_path
         self.monitor_state = monitor_state
         self.action_queue = action_queue
+        # Wired post-construction in server.py (they're defined after the runner):
+        # project_pulse ingests project backlogs into the roadmap store and ranks
+        # them with the prioritizer. Both may be None (task then no-ops safely).
+        self.roadmap_store: Any = None
+        self.story_prioritizer: Any = None
         self._running_task: str | None = None
 
         # Initialize task states
@@ -324,6 +415,7 @@ class TaskRunner:
             "cross_tenant_analytics": self._task_cross_tenant_analytics,
             "security_scan": self._task_security_scan,
             "ci_monitor": self._task_ci_monitor,
+            "project_pulse": self._task_project_pulse,
         }
 
     # ─── Scheduling ──────────────────────────────────────────
@@ -650,6 +742,101 @@ class TaskRunner:
             if resp.status_code != 200:
                 raise RuntimeError(f"AIIA returned HTTP {resp.status_code}: {resp.text[:200]}")
             return resp.json()
+
+    async def _task_project_pulse(self) -> str:
+        """Fetch each project's backlog → roadmap stories → prioritized cards.
+
+        Reads the project registry, ingests backlog items found under explicit
+        headings (the git-discipline gate), upserts them as roadmap stories
+        (deduped, tagged by project), then ranks the backlog into the RightNow
+        cards. Recommends; never executes — Eric picks the work.
+        """
+        if not self.roadmap_store:
+            return "Skipped — roadmap store not wired"
+
+        await self._progress("project_pulse", 5, "Loading project registry")
+        registry = _load_project_registry()
+        projects = registry.get("projects", [])
+        headings = registry.get("ingest_headings", _DEFAULT_HEADINGS)
+        if not projects:
+            return f"No projects in registry — edit {PROJECTS_REGISTRY}"
+
+        new_count = 0
+        dedup_count = 0
+        touched: list[str] = []
+        total = max(len(projects), 1)
+
+        for i, proj in enumerate(projects):
+            name = proj.get("name", "unknown")
+            repo = os.path.expanduser(proj.get("repo", ""))
+            await self._progress(
+                "project_pulse", 10 + int(60 * i / total), f"Scanning {name}"
+            )
+            if not repo or not os.path.isdir(repo):
+                continue
+
+            # Momentum context only — we do NOT auto-close stories on fuzzy match.
+            shipped = ""
+            try:
+                proc = await asyncio.create_subprocess_exec(
+                    "git", "-C", repo, "log", "--oneline", "-5",
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.DEVNULL,
+                )
+                out, _ = await proc.communicate()
+                shipped = out.decode(errors="replace").strip()
+            except Exception:
+                pass
+
+            proj_new = 0
+            for rel in proj.get("backlog_files", []):
+                fp = os.path.join(repo, rel)
+                if not os.path.isfile(fp):
+                    continue
+                try:
+                    with open(fp, encoding="utf-8", errors="replace") as f:
+                        text = f.read()
+                except Exception:
+                    continue
+                for item in _parse_backlog_items(text, headings):
+                    story = self.roadmap_store.create(
+                        title=item[:120],
+                        product=name,
+                        description=_card_prompt(name, repo, rel, item, shipped),
+                        source_type="project-pulse",
+                        tags=["project-pulse"],
+                        dedup=True,
+                    )
+                    if story.get("_deduped"):
+                        dedup_count += 1
+                    else:
+                        new_count += 1
+                        proj_new += 1
+            if proj_new:
+                touched.append(f"{name}+{proj_new}")
+
+        # Rank the backlog into cards (LLM-scored on local models; limit caps cost).
+        await self._progress("project_pulse", 80, "Prioritizing backlog")
+        top: list[str] = []
+        if self.story_prioritizer:
+            try:
+                stories = self.roadmap_store.list(status="backlog")
+                ranked = await self.story_prioritizer.prioritize_backlog(stories, limit=8)
+                top = [
+                    f"{s.get('suggested_priority', s.get('priority', '?'))} "
+                    f"{s.get('title', '')[:48]} [{s.get('product', '')}]"
+                    for s in ranked[:3]
+                ]
+            except Exception as e:
+                logger.warning("project_pulse prioritize failed: %s", e)
+
+        await self._progress("project_pulse", 100, "Complete")
+        summary = f"{new_count} new / {dedup_count} existing across {len(touched)} project(s)"
+        if touched:
+            summary += " (" + ", ".join(touched) + ")"
+        if top:
+            summary += " · top: " + " | ".join(top)
+        return summary
 
     async def _run_git(self, *args: str) -> str:
         """Run a git command asynchronously. Returns stdout."""
