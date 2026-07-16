@@ -53,9 +53,17 @@ def _load_project_registry() -> dict:
         return {"projects": [], "ingest_headings": _DEFAULT_HEADINGS}
 
 
-# Headings that mean "already done" — never ingest under these, even if they
-# also contain a capture keyword (e.g. "Shipped / Done").
-_EXCLUDE_HEADINGS = ("shipped", "done", "complete", "changelog", "archive", "release notes")
+# Headings we must never ingest under, even if they also contain a capture
+# keyword. Two families: already-done work, and explicitly-deferred / non-goal
+# sections (a recommendation engine surfacing "Not now" items is inverted — it
+# once surfaced Sanctuary's "never make autonomous clinical decisions" non-goal
+# as work to build). Matched as substrings, checked BEFORE the include list.
+_EXCLUDE_HEADINGS = (
+    "shipped", "done", "complete", "changelog", "archive", "release notes",
+    "not now", "non-goal", "nongoal", "non goal", "not doing", "won't", "wont",
+    "out of scope", "out-of-scope", "someday", "deferred", "icebox", "parking lot",
+    "future", "later", "won't do",
+)
 
 
 def _is_actionable(item: str) -> bool:
@@ -92,7 +100,7 @@ def _parse_backlog_items(text: str, headings: list[str], max_items: int = 40) ->
             title = hm.group(2).strip().lower()
             if any(x in title for x in _EXCLUDE_HEADINGS):
                 capturing = False
-            elif any(k in title for k in keywords):
+            elif any(re.search(rf"\b{re.escape(k)}\b", title) for k in keywords):
                 capturing = True
                 capture_level = level
             elif capturing and level <= capture_level:
