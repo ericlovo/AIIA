@@ -35,6 +35,7 @@ class RecursiveConfig:
     max_depth: int = 3
     token_budget: int = 50_000
     max_parse_failures: int = 2
+    max_action_repeats: int = 3  # identical failing action N times in a row → stop early
     temperature: float = 0.15
     history_window: int = 6  # Keep last N messages (3 action-result pairs)
 
@@ -225,6 +226,11 @@ RULES:
         messages: list[dict[str, str]] = []
         parse_failures = 0
         final_answer = None
+        # Perseveration breaker: small models can lock onto one invalid action
+        # and repeat it verbatim until the budget burns down. Track consecutive
+        # identical failing actions and stop early instead.
+        last_failed_action: str | None = None
+        failed_action_streak = 0
 
         for iteration in range(config.max_iterations):
             if ledger.exhausted:
@@ -307,14 +313,19 @@ RULES:
                     )
                     break
 
-                # Tell model to try again with valid JSON
+                # Tell model to try again with valid JSON. The example must
+                # name a variable that actually exists in this session: small
+                # models copy the example verbatim, and a made-up "$document"
+                # here sends them chasing a variable the env will never have.
+                handles = env.handles()
+                example_var = f"${handles[0]['name']}" if handles else "$document"
                 messages.append({"role": "assistant", "content": raw_content})
                 messages.append(
                     {
                         "role": "user",
                         "content": "ERROR: Your response was not valid JSON. "
                         "Respond with ONLY a JSON object like: "
-                        '{"action": "peek", "var": "$document", "start": 0, "end": 4000}',
+                        f'{{"action": "peek", "var": "{example_var}", "start": 0, "end": 4000}}',
                     }
                 )
                 continue
@@ -373,6 +384,31 @@ RULES:
             # Add to message history
             messages.append({"role": "assistant", "content": raw_content})
             messages.append({"role": "user", "content": str(result["result"])})
+
+            # Perseveration check — after the result is reported, so the
+            # stream shows what the model was stuck on before we stop it.
+            if result["ok"]:
+                last_failed_action = None
+                failed_action_streak = 0
+            else:
+                action_key = json.dumps(action, sort_keys=True, default=str)
+                if action_key == last_failed_action:
+                    failed_action_streak += 1
+                else:
+                    last_failed_action = action_key
+                    failed_action_streak = 1
+                if failed_action_streak >= config.max_action_repeats:
+                    yield {
+                        "type": "error",
+                        "message": (
+                            f"Model repeated the same failing action "
+                            f"('{action_type}') {failed_action_streak} times in a row — "
+                            "stopping early instead of burning the budget. "
+                            "It may be looking for a source this session doesn't have."
+                        ),
+                        "iteration": iteration,
+                    }
+                    break
 
         # If we exhausted iterations without a final answer
         if final_answer is None:

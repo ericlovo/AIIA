@@ -237,11 +237,15 @@ async def _ensure_aiia() -> AIIA | None:
                 from local_brain.research.topic import TopicStore
 
                 _topic_store = TopicStore(data_dir=_config.eq_brain_data_dir)
+                # Research drives a tool-use REPL loop, which small chat models
+                # can't sustain (they perseverate on invalid actions). Let the
+                # research model be pinned independently of the chat model.
+                research_model = os.getenv("AIIA_RESEARCH_MODEL", "").strip() or model
                 _research_engine = ResearchEngine(
                     ollama=_ollama,
                     knowledge=knowledge,
                     topic_store=_topic_store,
-                    model=model,
+                    model=research_model,
                 )
                 init_research(_research_engine, _topic_store)
                 logger.info(f"Research harness online: {len(_topic_store.list_all())} topics")
@@ -984,6 +988,14 @@ async def aiia_remember(request: AIIARememberRequest):
         source=request.source,
         metadata=request.metadata,
     )
+    # The memory layer returns an empty dict when the quality gate rejects a
+    # fact (too short / too vague). Surface that as a 422 with a reason
+    # instead of a 200 {} that clients misread as a malformed response.
+    if not result:
+        raise HTTPException(
+            status_code=422,
+            detail="Rejected by the memory quality gate: fact is too short or too vague to store.",
+        )
     return result
 
 
