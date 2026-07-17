@@ -36,6 +36,7 @@ class RecursiveConfig:
     token_budget: int = 50_000
     max_parse_failures: int = 2
     max_action_repeats: int = 3  # identical failing action N times in a row → stop early
+    max_failure_streak: int = 6  # ANY N consecutive failing steps → stop early
     temperature: float = 0.15
     history_window: int = 6  # Keep last N messages (3 action-result pairs)
 
@@ -226,11 +227,14 @@ RULES:
         messages: list[dict[str, str]] = []
         parse_failures = 0
         final_answer = None
-        # Perseveration breaker: small models can lock onto one invalid action
-        # and repeat it verbatim until the budget burns down. Track consecutive
-        # identical failing actions and stop early instead.
+        # Perseveration breakers: small models can lock onto one invalid action
+        # and repeat it verbatim — or alternate between two failing actions —
+        # until the budget burns down. Two tiers: identical failing action
+        # (tight threshold) and any-failure streak (looser threshold, catches
+        # the alternating pattern the identical check can't see).
         last_failed_action: str | None = None
         failed_action_streak = 0
+        any_failure_streak = 0
 
         for iteration in range(config.max_iterations):
             if ledger.exhausted:
@@ -390,7 +394,9 @@ RULES:
             if result["ok"]:
                 last_failed_action = None
                 failed_action_streak = 0
+                any_failure_streak = 0
             else:
+                any_failure_streak += 1
                 action_key = json.dumps(action, sort_keys=True, default=str)
                 if action_key == last_failed_action:
                     failed_action_streak += 1
@@ -405,6 +411,17 @@ RULES:
                             f"('{action_type}') {failed_action_streak} times in a row — "
                             "stopping early instead of burning the budget. "
                             "It may be looking for a source this session doesn't have."
+                        ),
+                        "iteration": iteration,
+                    }
+                    break
+                if any_failure_streak >= config.max_failure_streak:
+                    yield {
+                        "type": "error",
+                        "message": (
+                            f"{any_failure_streak} consecutive failing steps (mixed actions) — "
+                            "the model is not managing the loop's tools; stopping early. "
+                            "This usually needs a stronger model or starting sources."
                         ),
                         "iteration": iteration,
                     }
