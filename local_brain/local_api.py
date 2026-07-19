@@ -311,6 +311,9 @@ class ChatRequest(BaseModel):
     max_tokens: int = 4096
     temperature: float = 0.7
     stream: bool = False
+    # What these tokens are for ("standup", "code-review", "digest", ...).
+    # Flows to Command Center metering as the attribution dimension.
+    purpose: str = ""
 
 
 class ChatResponse(BaseModel):
@@ -489,6 +492,23 @@ async def autonomy_status() -> dict[str, Any]:
     }
 
 
+@app.get("/v1/tokens/today")
+async def tokens_today() -> dict[str, Any]:
+    """
+    Today's token spend with purpose attribution, proxied from the Command
+    Center so the Console needs only one backend. Answers: how much, on
+    what, and whether any of it cost money.
+    """
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            resp = await client.get(f"{COMMAND_CENTER_URL}/api/tokens/today")
+            if resp.status_code == 200:
+                return resp.json()
+            return {"error": f"Command Center returned {resp.status_code}"}
+    except Exception as e:
+        return {"error": f"Command Center unreachable: {e}"}
+
+
 @app.get("/v1/loops")
 async def ops_loops() -> dict[str, Any]:
     """
@@ -592,7 +612,7 @@ async def local_chat(request: ChatRequest):
             latency_ms=response.get("_latency_ms", 0),
             input_tokens=usage.get("input_tokens", 0),
             output_tokens=usage.get("output_tokens", 0),
-            endpoint="chat",
+            endpoint=request.purpose or "chat",
         )
     )
 

@@ -110,6 +110,7 @@ class LocalBrainConfig:
         self.api_host = os.getenv("LOCAL_BRAIN_HOST", self.api_host)
         self.api_port = int(os.getenv("LOCAL_BRAIN_PORT", str(self.api_port)))
         self.api_key = os.getenv("LOCAL_BRAIN_API_KEY", self.api_key)
+        self.ollama_timeout = float(os.getenv("OLLAMA_TIMEOUT", self.ollama_timeout))
 
         # EQ Brain
         self.eq_brain_enabled = os.getenv("EQ_BRAIN_ENABLED", "true").lower() == "true"

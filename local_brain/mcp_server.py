@@ -1766,6 +1766,7 @@ async def aiia_offload(task: str, content: str = "", model: str = "") -> str:
         ),
         "max_tokens": 4096,
         "temperature": 0.3,
+        "purpose": "offload",
     }
     if model:
         body["model"] = model
@@ -1815,6 +1816,7 @@ async def aiia_digest(text: str, focus: str = "", max_words: int = 400) -> str:
         ),
         "max_tokens": max_words * 5,  # headroom: markdown + identifiers run past the word target
         "temperature": 0.2,
+        "purpose": "digest",
     }
 
     result = await _call_aiia("POST", "/v1/chat", body, timeout=600)

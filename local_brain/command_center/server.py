@@ -644,8 +644,16 @@ class TokenTrackingState:
                 )
         return 0.0  # Unknown model or local — free
 
-    def record(self, provider: str, model: str, input_tokens: int, output_tokens: int):
-        """Record a token usage event."""
+    def record(
+        self,
+        provider: str,
+        model: str,
+        input_tokens: int,
+        output_tokens: int,
+        purpose: str = "",
+    ):
+        """Record a token usage event, attributed to a purpose (which loop,
+        tool, or surface spent these tokens — the observability dimension)."""
         date = self._today()
         self._ensure_provider(date, provider)
 
@@ -654,6 +662,16 @@ class TokenTrackingState:
         entry["output_tokens"] += output_tokens
         entry["requests"] += 1
         entry["cost"] += self._calc_cost(model, input_tokens, output_tokens)
+
+        by_purpose = entry.setdefault("by_purpose", {})
+        p = by_purpose.setdefault(
+            purpose or "unattributed",
+            {"input_tokens": 0, "output_tokens": 0, "requests": 0, "model": model},
+        )
+        p["input_tokens"] += input_tokens
+        p["output_tokens"] += output_tokens
+        p["requests"] += 1
+        p["model"] = model
 
     def get_today(self) -> dict[str, Any]:
         date = self._today()
@@ -677,12 +695,28 @@ class TokenTrackingState:
                 "requests": stats["requests"],
             }
 
+        # Aggregate purposes across providers so callers see one answer to
+        # "what were these tokens for" without walking the provider tree.
+        by_purpose: dict[str, dict[str, Any]] = {}
+        for provider, stats in self.daily.get(date, {}).items():
+            for purpose, p in (stats.get("by_purpose") or {}).items():
+                agg = by_purpose.setdefault(
+                    purpose,
+                    {"tokens": 0, "requests": 0, "providers": [], "model": ""},
+                )
+                agg["tokens"] += p["input_tokens"] + p["output_tokens"]
+                agg["requests"] += p["requests"]
+                if provider not in agg["providers"]:
+                    agg["providers"].append(provider)
+                agg["model"] = p.get("model", agg["model"])
+
         return {
             "date": date,
             "total_tokens": total_tokens,
             "total_cost": round(total_cost, 6),
             "total_requests": total_requests,
             "by_provider": by_provider,
+            "by_purpose": by_purpose,
         }
 
     def get_recent(self, days: int = 7) -> list[dict[str, Any]]:
@@ -1483,6 +1517,7 @@ async def record_routing(report: RoutingReport):
             model=report.model,
             input_tokens=input_tokens,
             output_tokens=output_tokens,
+            purpose=report.domain or "",
         )
         await manager.broadcast("token_update", token_tracker.get_today())
 
