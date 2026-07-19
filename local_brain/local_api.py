@@ -489,6 +489,24 @@ async def autonomy_status() -> dict[str, Any]:
     }
 
 
+@app.get("/v1/loops")
+async def ops_loops() -> dict[str, Any]:
+    """
+    Report the launchd ops loops (ADR-008: standup, commit-telemetry, ...).
+    Read-only view over ~/.aiia/loops-registry.json, which each loop script
+    updates at the end of a run. Complements /v1/autonomy/status, which
+    covers brain-internal autonomy loops.
+    """
+    registry_path = Path.home() / ".aiia" / "loops-registry.json"
+    loops: dict[str, Any] = {}
+    if registry_path.exists():
+        try:
+            loops = json_module.loads(registry_path.read_text())
+        except (json_module.JSONDecodeError, OSError) as e:
+            return {"loops": {}, "error": f"registry unreadable: {e}"}
+    return {"loops": loops, "count": len(loops)}
+
+
 # ─────────────────────────────────────────────────────────────
 # Smart Routing (Phase 2 — replaces keyword Conductor)
 # ─────────────────────────────────────────────────────────────
