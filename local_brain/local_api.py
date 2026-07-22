@@ -509,21 +509,67 @@ async def tokens_today() -> dict[str, Any]:
         return {"error": f"Command Center unreachable: {e}"}
 
 
+# Each ops loop is an agent: a model + a plain-language job + a trigger.
+# The brain is the authority on what agents exist; the registry only records
+# their runs. Merged in /v1/loops so the Console can say what each one *does*,
+# not just when it last ran. `kind` groups them; `execution` states how much
+# the agent acts (all propose-only today; sandbox execution is the roadmap).
+AGENT_DEFS: dict[str, dict[str, Any]] = {
+    "standup": {
+        "kind": "ops",
+        "model": "qwen3:8b",
+        "does": "Writes your morning brief — last 24h of commits across every "
+        "repo plus active stories — into ranked next-best-actions.",
+        "trigger": "Runs on a schedule (daily 07:30).",
+        "execution": "propose",
+    },
+    "commit-telemetry": {
+        "kind": "ops",
+        "model": "local (git only, no LLM)",
+        "does": "Fetches every repo and records new commits into AIIA memory — "
+        "so it knows what shipped on the MacBook or phone, not just here.",
+        "trigger": "Runs on a schedule (hourly).",
+        "execution": "propose",
+    },
+    "code-review": {
+        "kind": "review",
+        "model": "gemma-4-12B-coder",
+        "does": "Reviews each new batch of commits per repo and files findings "
+        "to the vault — bugs, risks, gaps. Never edits code.",
+        "trigger": "Runs on a schedule (every 2h).",
+        "execution": "propose",
+    },
+    "backlog-steward": {
+        "kind": "ops",
+        "model": "qwen3:8b",
+        "does": "Reconciles the backlog against commits and PRs — proposes what "
+        "shipped, what's stale, what needs a story. Never auto-edits history.",
+        "trigger": "Runs on a schedule (daily 08:00).",
+        "execution": "propose",
+    },
+}
+
+
 @app.get("/v1/loops")
 async def ops_loops() -> dict[str, Any]:
     """
-    Report the launchd ops loops (ADR-008: standup, commit-telemetry, ...).
-    Read-only view over ~/.aiia/loops-registry.json, which each loop script
-    updates at the end of a run. Complements /v1/autonomy/status, which
-    covers brain-internal autonomy loops.
+    Report the ops loops as agents: each one's model, job, and trigger merged
+    with its run history. The brain owns the definitions (AGENT_DEFS); the
+    registry at ~/.aiia/loops-registry.json contributes last-run/status/output.
+    An agent shows even if it has never run.
     """
     registry_path = Path.home() / ".aiia" / "loops-registry.json"
-    loops: dict[str, Any] = {}
+    runs: dict[str, Any] = {}
     if registry_path.exists():
         try:
-            loops = json_module.loads(registry_path.read_text())
+            runs = json_module.loads(registry_path.read_text())
         except (json_module.JSONDecodeError, OSError) as e:
             return {"loops": {}, "error": f"registry unreadable: {e}"}
+
+    # Union of defined agents and anything the registry has seen run.
+    loops: dict[str, Any] = {}
+    for name in {*AGENT_DEFS, *runs}:
+        loops[name] = {**AGENT_DEFS.get(name, {}), **runs.get(name, {})}
     return {"loops": loops, "count": len(loops)}
 
 
