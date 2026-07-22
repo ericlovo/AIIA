@@ -30,8 +30,11 @@ Requires:
     pip install mcp httpx
 """
 
+import json
 import logging
 import os
+import re
+from pathlib import Path
 
 import httpx
 from mcp.server.fastmcp import FastMCP
@@ -71,7 +74,9 @@ mcp = FastMCP(
 )
 
 
-async def _call_aiia(method: str, path: str, body: dict | None = None) -> dict:
+async def _call_aiia(
+    method: str, path: str, body: dict | None = None, timeout: float | None = None
+) -> dict:
     """Make an HTTP request to the AIIA Local Brain API."""
     url = f"{AIIA_URL}{path}"
     headers = {}
@@ -79,7 +84,7 @@ async def _call_aiia(method: str, path: str, body: dict | None = None) -> dict:
         headers["X-API-Key"] = AIIA_API_KEY
 
     try:
-        async with httpx.AsyncClient(timeout=TIMEOUT) as client:
+        async with httpx.AsyncClient(timeout=timeout or TIMEOUT) as client:
             if method == "GET":
                 resp = await client.get(url, headers=headers)
             elif method == "DELETE":
@@ -1721,6 +1726,197 @@ async def aiia_active_sessions() -> str:
             lines.append(f"  {dir_short} | started {started}")
         lines.append("")
 
+    return "\n".join(lines)
+
+
+# ─────────────────────────────────────────────────────────────
+# Sidecar Tools (ADR-008 pillar 1 — token offload)
+# ─────────────────────────────────────────────────────────────
+
+_MAX_OFFLOAD_CHARS = 100_000  # defensive cap; ~25k tokens, near qwen3:8b ctx budget
+
+
+@mcp.tool()
+async def aiia_offload(task: str, content: str = "", model: str = "") -> str:
+    """Offload mechanical work to the M4's local model instead of spending
+    frontier tokens on it. Runs on Ollama via the metered brain — free, offline,
+    counted as local in the Command Center.
+
+    Worth it when the input is large and the task is mechanical: first drafts,
+    reformatting, extraction, boilerplate generation, commit-message batches.
+    NOT worth it for small inputs or judgment calls — the local 8B is slower
+    (~1-2 min) and rougher than a frontier model. Rule of thumb: offload when
+    content is >2k tokens and the task is a transformation, not a decision.
+
+    Args:
+        task: What to do, stated imperatively ("draft release notes from these
+            commits", "extract every API endpoint mentioned")
+        content: The material to work on (log, diff, doc, list). Appended to
+            the task as context.
+        model: Optional Ollama model override (default: brain's task model)
+    """
+    if len(content) > _MAX_OFFLOAD_CHARS:
+        content = content[:_MAX_OFFLOAD_CHARS] + "\n[...truncated]"
+    prompt = f"{task}\n\n---\n{content}" if content else task
+    body = {
+        "messages": [{"role": "user", "content": prompt}],
+        "system": (
+            "You are AIIA's local worker on the Mac Mini M4. Do exactly the task "
+            "requested. Output only the result — no preamble, no commentary."
+        ),
+        "max_tokens": 4096,
+        "temperature": 0.3,
+        "purpose": "offload",
+    }
+    if model:
+        body["model"] = model
+
+    result = await _call_aiia("POST", "/v1/chat", body, timeout=600)
+    if "error" in result:
+        return f"AIIA Error: {result['error']}"
+
+    content_out = result.get("content", "")
+    usage = result.get("usage", {})
+    latency = result.get("latency_ms", 0)
+    return (
+        f"{content_out}\n\n"
+        f"[Local: {result.get('model', '?')} | "
+        f"in {usage.get('prompt_tokens', usage.get('input_tokens', '?'))} / "
+        f"out {usage.get('completion_tokens', usage.get('output_tokens', '?'))} tokens | "
+        f"{latency / 1000:.0f}s | $0]"
+    )
+
+
+@mcp.tool()
+async def aiia_digest(text: str, focus: str = "", max_words: int = 400) -> str:
+    """Digest a large text (log, diff, transcript, doc) into a compact
+    structured summary using the M4's local model. The point is token
+    arbitrage: hand this 50k tokens of logs, get back a digest sized so the
+    frontier model saves far more tokens than the digest costs. Free, local,
+    metered.
+
+    Only worth it for large inputs (>2k tokens) — below that, read the text
+    directly. Takes ~1-2 min on qwen3:8b.
+
+    Args:
+        text: The material to digest
+        focus: Optional lens ("errors and their causes", "what changed in auth")
+        max_words: Target digest length (default 400)
+    """
+    if len(text) > _MAX_OFFLOAD_CHARS:
+        text = text[:_MAX_OFFLOAD_CHARS] + "\n[...truncated]"
+    focus_line = f" Focus on: {focus}." if focus else ""
+    body = {
+        "messages": [{"role": "user", "content": text}],
+        "system": (
+            f"Digest the following material into at most {max_words} words of "
+            f"structured markdown bullets.{focus_line} Preserve identifiers, "
+            "paths, numbers, and error messages verbatim — those are what the "
+            "reader needs. Drop repetition and boilerplate. No preamble."
+        ),
+        "max_tokens": max_words * 5,  # headroom: markdown + identifiers run past the word target
+        "temperature": 0.2,
+        "purpose": "digest",
+    }
+
+    result = await _call_aiia("POST", "/v1/chat", body, timeout=600)
+    if "error" in result:
+        return f"AIIA Error: {result['error']}"
+
+    usage = result.get("usage", {})
+    return (
+        f"{result.get('content', '')}\n\n"
+        f"[Digested {len(text)} chars locally on {result.get('model', '?')} | "
+        f"out {usage.get('completion_tokens', usage.get('output_tokens', '?'))} tokens | $0]"
+    )
+
+
+@mcp.tool()
+async def aiia_loops() -> str:
+    """Show the M4's scheduled ops loops (ADR-008): what each loop is, when
+    it last ran, its status, and what it produced. The quick answer to
+    "is the M4 actually working?"
+    """
+    result = await _call_aiia("GET", "/v1/loops")
+    if "error" in result:
+        return f"AIIA Error: {result['error']}"
+    loops = result.get("loops", {})
+    if not loops:
+        return "No ops loops registered yet."
+    lines = ["## M4 ops loops\n"]
+    for name, e in sorted(loops.items()):
+        status = e.get("last_status", "?")
+        mark = "OK" if status == "ok" else status.upper()
+        lines.append(
+            f"- **{name}** ({e.get('schedule', '?')}) — {mark}, "
+            f"last run {e.get('last_run', 'never')}, "
+            f"{e.get('runs', 0)} runs total"
+        )
+        if e.get("last_note"):
+            lines.append(f"  {e['last_note']}")
+        if e.get("last_output"):
+            lines.append(f"  output: {e['last_output']}")
+    return "\n".join(lines)
+
+
+@mcp.tool()
+async def aiia_commits_since(since: str = "24h", repo: str = "", limit: int = 100) -> str:
+    """List Eric's commits across every tracked repo (all machines — the
+    telemetry loop fetches origins, so MacBook/phone pushes land too).
+    Reads the commit-telemetry log maintained hourly on the Mac Mini.
+
+    Args:
+        since: Window — "24h", "7d", or an ISO date ("2026-07-15")
+        repo: Optional repo-name filter (e.g. "sanction")
+        limit: Max commits returned, newest first (default 100)
+    """
+    import datetime as _dt
+
+    log = Path.home() / ".aiia" / "commits.jsonl"
+    if not log.exists():
+        return "No commit telemetry yet — has scripts/commit_telemetry.py run?"
+
+    m = re.match(r"^(\d+)([hd])$", since.strip())
+    if m:
+        unit = {"h": "hours", "d": "days"}[m.group(2)]
+        delta = _dt.timedelta(**{unit: int(m.group(1))})
+        cutoff = (_dt.datetime.now(_dt.UTC) - delta).isoformat()
+    else:
+        cutoff = since.strip()
+
+    commits = []
+    seen_hashes = set()
+    for line in log.read_text().splitlines():
+        try:
+            c = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if c.get("date", "") < cutoff:
+            continue
+        if repo and c.get("repo") != repo:
+            continue
+        if c.get("hash") in seen_hashes:  # duplicate clones of one origin
+            continue
+        seen_hashes.add(c.get("hash"))
+        commits.append(c)
+
+    if not commits:
+        scope = f" in {repo}" if repo else ""
+        return f"No commits{scope} since {cutoff[:19]}."
+
+    commits.sort(key=lambda c: c["date"], reverse=True)
+    commits = commits[:limit]
+    by_repo: dict[str, list] = {}
+    for c in commits:
+        by_repo.setdefault(c["repo"], []).append(c)
+
+    lines = [f"## {len(commits)} commits since {cutoff[:19]}\n"]
+    for rname, cs in sorted(by_repo.items()):
+        lines.append(f"### {rname} ({len(cs)})")
+        lines.extend(
+            f"- {c['hash'][:8]} {c['date'][:16]} {c['message']}" for c in cs
+        )
+        lines.append("")
     return "\n".join(lines)
 
 
