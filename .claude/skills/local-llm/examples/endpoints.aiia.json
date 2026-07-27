@@ -1,0 +1,18 @@
+{
+  "_comment": "Copy to ~/.config/local-llm/endpoints.json. Pins the default to Ollama, the backend the AIIA Brain uses (LOCAL_LLM_URL, default http://localhost:11434). Without this file local-llm probes both ports and LM Studio wins the default when both answer. Add an entry with apiKeyEnv (never an inline key) for a remote OpenAI-compatible server.",
+  "default": "ollama",
+  "endpoints": [
+    {
+      "id": "ollama",
+      "kind": "ollama",
+      "label": "Ollama (AIIA Brain backend)",
+      "baseUrl": "http://127.0.0.1:11434"
+    },
+    {
+      "id": "lmstudio",
+      "kind": "lmstudio",
+      "label": "LM Studio (this Mac)",
+      "baseUrl": "http://127.0.0.1:1234"
+    }
+  ]
+}

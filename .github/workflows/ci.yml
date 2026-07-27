@@ -56,6 +56,28 @@ jobs:
         # --collect-only.
         run: pytest local_brain/tests/
 
+  vendored-skill:
+    name: Vendored local-llm skill (node --test)
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Test the vendored local-llm CLI
+        # .claude/skills/local-llm/vendor/ is a byte-identical copy of
+        # jhammant/local-llm-skill (MIT), pinned in that skill's UPSTREAM.md.
+        # It has ZERO runtime dependencies, so there is nothing to install --
+        # `node --test` runs the upstream suite directly (102 tests, injected
+        # clients, no live backend). This exists so an upstream sync is
+        # verified rather than assumed; it is the only Node in this repo.
+        working-directory: .claude/skills/local-llm/vendor
+        run: node --test
+
   sanitization-guard:
     name: Sanitization guard (no proprietary refs)
     runs-on: ubuntu-latest

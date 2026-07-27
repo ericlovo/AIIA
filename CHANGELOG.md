@@ -7,6 +7,34 @@ All notable changes to AIIA are documented here. This project adheres to
 ## [Unreleased]
 
 ### Added
+- **`local-llm` skill** (`.claude/skills/local-llm/`) — Claude Code skill that
+  routes bulk work onto the mini's local models instead of metered API quota.
+  Adds three things the Brain does not have: **admission control** (memory
+  ceiling minus OS reserve minus loaded sizes, with LRU eviction and pinning —
+  refuses a model that cannot fit and names the remedy), **resumable batch**
+  (JSONL in/out flushed per item; re-running the same `--out` skips completed
+  ids, so an overnight run survives a crash or a sleep), and **constrained
+  output** (`--allow a,b,c`, re-prompting on drift). Plus `plan` (ETA from
+  timed samples) and `bench`.
+  - Upstream `jhammant/local-llm-skill` (MIT) vendored byte-identical at
+    `vendor/` @ `9a8f362`; provenance, sync procedure, and the full deviation
+    list in the skill's `UPSTREAM.md`. `bin/local-llm` shim runs it with no
+    global `npm link`; `examples/endpoints.aiia.json` pins the default to
+    Ollama (upstream's auto-probe otherwise lets LM Studio win).
+  - AIIA-tuned `SKILL.md`, not a copy of upstream's: documents the boundary
+    against the Brain at `:8100` (local-llm runs bypass purpose-attributed
+    token metering and never write vault memory), warns that batch jobs share
+    a memory pool with the Brain's own resident Ollama models (pin before a
+    long run), notes that root `.gitignore` covers `*.jsonl` so batch
+    artifacts never surface in `git status`, and makes **burst-to-rented-GPU a
+    stop-and-ask under `AIIA_AIRGAP=1`** — burst is a separate Node process,
+    so `local_brain/egress.py` fail-closed denial cannot see or block it.
+  - Upstream's `local-llm agent` section deliberately dropped: no `agent` verb
+    exists in the shipped CLI, so carrying it over would have documented a
+    command that does not run. Flagged for re-check on sync.
+  - New CI job `vendored-skill` runs the upstream suite (`node --test`, 102
+    tests, zero dependencies) so a future sync is verified, not assumed.
+
 - **Air-gap mode** (`AIIA_AIRGAP=1`) — one flag turns the Brain into a
   local-only runtime. Inference, embeddings, retrieval, and memory stay
   on the box; the execution engine (spawns the `claude` CLI) and the
