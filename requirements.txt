@@ -23,7 +23,7 @@ tiktoken>=0.5.0,<1.0.0
 chromadb>=0.5.0,<1.0.0
 
 # === MCP Integration (optional — for Claude Code tool interface) ===
-mcp>=0.7.0,<2.0.0
+mcp>=0.7.0,<3.0.0
 
 # === Utilities ===
 python-dateutil>=2.9.0,<3.0.0
