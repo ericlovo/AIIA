@@ -1,0 +1,296 @@
+---
+name: update-writ
+description: "Pull the latest Writ release and decide per customized file whether to overwrite, keep, or diff. Not for use in the Writ source repo."
+problem: "Upstream ships new commands, scripts, and docs while some local files were edited on purpose, and a blanket copy would overwrite exactly those edits without asking."
+outcome: "Unmodified files match the new upstream release, each locally modified file was settled by an explicit per-file keep or overwrite choice, and the manifest re-baselines both kinds."
+exit_criteria:
+  - "every file classified CUSTOMIZED was presented and resolved by an explicit keep or overwrite decision before anything was written"
+  - "files the user chose to keep, and stale files whose local hash no longer matches the baseline, are byte-identical before and after the run"
+  - "[platform_dir]/.writ-manifest names the new upstream version hash and carries a fresh baseline for every installed file, including the ones kept"
+---
+
+# Update Writ Command (update-writ)
+
+## Overview
+
+Pull the latest Writ release from upstream and interactively decide what to do with files you've customized. Unlike `update.sh` (which silently preserves all local modifications), this command presents each customized file and lets you choose — overwrite, keep, or diff — so you stay in control of what changes.
+
+**When to use:** You want the latest commands, agents, skills, runtime scripts, Writ reference docs, and rules from upstream but have customized some files and want per-file control over what gets overwritten.
+
+## Invocation
+
+| Invocation | Behavior |
+|---|---|
+| `/update-writ` | Interactive update with per-file customization prompts |
+
+---
+
+## Command Process
+
+**Daily update awareness is platform-agnostic.** The startup cache remains `.writ/state/writ-update-check.json` for Cursor, Claude Code, and Codex CLI; when an update is available, the user-facing recommendation stays: `Writ update available. Run /update-writ when you are ready.`
+
+### Step 1: Detect Installation
+
+Read the manifest to determine what's installed and how.
+
+**Locate manifest:**
+```bash
+# Check all platforms — use whichever exists
+cat .cursor/.writ-manifest 2>/dev/null
+cat .claude/.writ-manifest 2>/dev/null
+cat .codex/.writ-manifest 2>/dev/null
+```
+
+**Extract from manifest header:**
+- `mode` — must be `copy` (linked installations must run `unlink.sh` first)
+- `platform` — `cursor`, `claude`, or `codex`
+- `version` — current installed version hash
+- `source` — upstream repo URL
+
+**Parse file baselines:** Each non-comment, non-empty line is `<sha256>  <relative-path>`. Build a lookup of baseline hashes keyed by relative path.
+
+**Guards:**
+
+| Condition | Action |
+|---|---|
+| No manifest found | Abort — "Writ doesn't appear to be installed. Run `install.sh` first." |
+| `mode: link` | Abort — "Linked installation detected. Run `unlink.sh` to convert to copies, then re-run `/update-writ`." |
+| Running in Writ source repo (SKILL.md + commands/ + agents/ + scripts/ all exist) | Abort — "This is the Writ source repository. `/update-writ` is for updating Writ in other projects." |
+
+**Platform-specific paths:**
+
+| Platform | Platform dir | Commands src | Agents src | Extra files |
+|---|---|---|---|---|
+| `cursor` | `.cursor` | `commands` | `agents` | `rules/writ.mdc`, `system-instructions.md` |
+| `claude` | `.claude` | `commands` | `claude-code/agents` | `CLAUDE.md` (project root) |
+| `codex` | `.codex` | `commands` | `codex/agents` (`*.toml`) | `AGENTS.md` Writ block, `.codex/config.toml` baseline hash, `.agents/skills/` |
+
+### Step 2: Fetch Latest Upstream
+
+```bash
+WRIT_SRC=$(mktemp -d)
+git clone --depth 1 https://github.com/sellke/writ.git "$WRIT_SRC"
+```
+
+Extract the new version: `git -C "$WRIT_SRC" log -1 --format="%h %s"`.
+
+If the clone fails, abort with a network error message and clean up the temp directory.
+
+### Step 3: Three-Way Scan
+
+For every `.md` command file in upstream `commands/`, every platform agent file (`*.md` for Cursor/Claude Code, `*.toml` for Codex CLI), every upstream `skills/*/SKILL.md`, and the installed runtime files below, classify against the local installation:
+
+**Hash each file** using SHA-256 (`shasum -a 256`).
+
+**Classification logic per file:**
+
+```
+upstream_hash = hash(upstream file)
+local_hash    = hash(local file)       — if local file exists
+baseline_hash = manifest entry         — if entry exists for this path
+
+if local file doesn't exist:
+  → NEW (will be added)
+
+if local_hash == upstream_hash:
+  → UNCHANGED (skip)
+
+if baseline_hash is empty:
+  → CUSTOMIZED (no baseline — conservatively assume modified)
+
+if local_hash == baseline_hash:
+  → UPDATED (local matches baseline — safe to overwrite)
+
+if local_hash != baseline_hash AND local_hash != upstream_hash:
+  → CUSTOMIZED (local was modified by user)
+```
+
+**Apply same logic to runtime scripts** (project-root `scripts/` — mirror `scripts/install.sh` / `scripts/update.sh`):
+
+Ship every top-level `*.py` and `*.sh` in upstream `scripts/` **except** lifecycle installers (`install.sh`, `update.sh`, `uninstall.sh`, `unlink.sh`, `migrate.sh`), eval tooling (`eval.sh`, `eval-*`), internal modules (`_*`), dev sweep utilities (`sweep-*`), and npm publish artifacts (`publish-writ-runtime.sh`, `writ-runtime-readme.md`). This includes all command-invoked runtime scripts (`story-context.py`, `spec-deps.py`, `phase-state.py`, `lint-skill.sh`, `gen-skill.sh`, etc.). Python and shell scripts are copied executable (`chmod 755`).
+
+**Apply same logic to Writ reference docs** (project-root `.writ/docs/*.md`):
+
+Ship every upstream markdown doc under `.writ/docs/`. User-authored docs that exist only locally (e.g. `tech-stack.md`, `code-style.md`, `design-system.md` from `/initialize`) are untouched — they have no upstream counterpart. Locally modified shipped docs follow the same three-way overlay as commands.
+
+**Apply same logic to platform-specific files:**
+- Cursor: `rules/writ.mdc`, `system-instructions.md` (upstream sources: `cursor/writ.mdc`, `system-instructions.md`)
+- Claude Code: `CLAUDE.md` (upstream source: `claude-code/CLAUDE.md`)
+- Codex CLI: `AGENTS.md` Writ block only (markers `<!-- writ:start -->` / `<!-- writ:end -->`); `.codex/config.toml` is install-once and never overwritten by update. See [`adapters/codex.md`](../adapters/codex.md).
+
+**Skills overlay** — folder-aware, `SKILL.md` hash-tracked. Sidecar files inside a skill folder are install-once: copied on first install, never overwritten on update (same as `install.sh` / `update.sh`).
+
+**Detect stale files** — files present in the manifest but removed upstream. Manifest paths under `scripts/` and `.writ/` resolve at project root (not under `[platform_dir]/`). If the local hash matches the baseline (user didn't modify it), mark for removal. If modified, flag but don't auto-remove.
+
+### Step 4: Present Summary
+
+Display the scan results grouped by action:
+
+```
+⚡ Writ Update Scan
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  Installed: abc1234
+  Latest:    def5678 — "Add /update-writ command"
+
+  ✨ New:        3 file(s)
+  🔄 Updated:   5 file(s) — safe to overwrite (unmodified locally)
+  ⚡ Customized: 2 file(s) — you've made local changes
+  🗑  Stale:     1 file(s) — removed upstream
+  ✅ Unchanged:  15 file(s)
+```
+
+If everything is unchanged, report "Already up to date!" and stop.
+
+### Step 5: Handle Customized Files
+
+If customized files exist, present them one at a time or as a batch depending on count.
+
+**For 1–5 customized files — per-file AskQuestion:**
+
+```
+AskQuestion({
+  title: "Customized File: commands/implement-story.md",
+  questions: [{
+    id: "action_implement_story",
+    prompt: "This file has local modifications. What should we do?",
+    options: [
+      { id: "keep", label: "Keep my version — don't overwrite" },
+      { id: "overwrite", label: "Overwrite with upstream — discard my changes" },
+      { id: "diff", label: "Show diff first — then decide" }
+    ]
+  }]
+})
+```
+
+If the user picks "diff," show a unified diff between local and upstream, then re-ask with keep/overwrite only.
+
+**For 6+ customized files — batch AskQuestion:**
+
+```
+AskQuestion({
+  title: "Customized Files (N files)",
+  questions: [{
+    id: "batch_action",
+    prompt: "N files have local modifications:\n- commands/foo.md\n- commands/bar.md\n- ...\n\nWhat should we do?",
+    options: [
+      { id: "keep_all", label: "Keep all my versions" },
+      { id: "overwrite_all", label: "Overwrite all with upstream" },
+      { id: "per_file", label: "Decide per file" }
+    ]
+  }]
+})
+```
+
+### Step 6: Apply Changes
+
+Apply in this order (mirror `scripts/update.sh`):
+
+1. **Commands** — new/updated/customized per Step 5
+2. **Runtime scripts** — all shippable files under `scripts/`
+3. **Writ reference docs** — all files under `.writ/docs/`
+4. **Agents** — new/updated/customized per Step 5
+5. **Skills** — `SKILL.md` overlay; sidecars install-once only
+6. **Stale files** — remove unmodified stale files; skip modified stale files with a warning
+7. **Platform-specific files** — same three-way logic as commands/agents
+
+### Step 7: Regenerate Manifest
+
+Write a new manifest with updated baselines for all installed files:
+
+```
+# Writ Manifest — do not edit manually
+# Tracks installed file baselines for safe overlay updates.
+# mode: copy
+# platform: [cursor|claude|codex]
+# version: [new version hash]
+# date: [ISO 8601 UTC timestamp]
+# source: https://github.com/sellke/writ.git
+<sha256>  scripts/story-context.py
+<sha256>  scripts/spec-deps.py
+...
+<sha256>  .writ/docs/phase-execution-state-format.md
+...
+<sha256>  commands/create-spec.md
+<sha256>  commands/implement-story.md
+...
+<sha256>  skills/<name>/SKILL.md
+...
+<sha256>  AGENTS.md.writ-block        # Codex only
+<sha256>  .codex/config.toml.baseline # Codex only, preserved from install
+```
+
+Every currently installed file gets a fresh hash entry — including files the user chose to keep (their current hash becomes the new baseline).
+
+### Step 8: Git Commit
+
+If the project is a git repo:
+
+```bash
+git add scripts/*.py scripts/*.sh .writ/docs/*.md
+# (only shippable scripts are staged — same exclusion filter as install/update)
+git add [platform_dir]/commands/ [platform_dir]/agents/ [manifest_file]
+# Plus skills dir when present ([platform_skills_dir]/)
+# Plus platform-specific files (rules/writ.mdc, system-instructions.md, CLAUDE.md, or AGENTS.md)
+git commit -m "chore: update Writ ([old_version] → [new_version])"
+```
+
+### Step 9: Cleanup and Summary
+
+Remove the temporary clone directory.
+
+```
+✅ Writ updated! (abc1234 → def5678)
+
+  ✨ 3 new file(s) installed
+  🔄 5 file(s) updated
+  ⚡ 2 file(s) preserved (local modifications kept)
+  🗑  1 file(s) removed (stale)
+
+  💡 Preserved files keep your local changes. To reset any file
+     to upstream, delete it and run /update-writ again.
+
+  Codex CLI: Restart your Codex session to load AGENTS.md changes.
+  Codex details: adapters/codex.md
+```
+
+Codex note: Restart your Codex session to load AGENTS.md changes after `/update-writ`. See [`adapters/codex.md`](../adapters/codex.md) for the AGENTS.md ownership convention.
+
+---
+
+## Error Handling
+
+| Condition | Response |
+|---|---|
+| Network failure (clone fails) | Abort with message, clean up temp dir |
+| No manifest | "Writ is not installed. Run install.sh first." |
+| Linked installation | "Run unlink.sh first to convert to copies." |
+| Writ source repo detected | "This command is for installed projects, not the source repo." |
+| No git repo | Skip git commit step, warn user |
+
+---
+
+## Integration with Writ
+
+| Command | Relationship |
+|---------|-------------|
+| `install.sh` | First-time installation — `/update-writ` handles subsequent updates |
+| `update.sh` | Non-interactive terminal counterpart — silently preserves all local modifications |
+| `unlink.sh` | Must run before `/update-writ` if installation uses symlinks |
+| `/reinstall-writ` | Nuclear option — removes everything and installs fresh (no three-way merge) |
+| `/uninstall-writ` | Removes Writ entirely |
+| `/status` | Could surface "Writ update available" in future iterations |
+
+## Completion
+
+This command succeeds when every file classified CUSTOMIZED was resolved by an explicit keep-or-overwrite decision, files kept are byte-identical before and after, and `.writ-manifest` re-baselines every installed file.
+
+Choosing to keep every customized file is a valid outcome. The manifest still re-baselines, so the next update compares against what is actually on disk.
+
+**Terminal constraint:** This command updates the installation. Do not run the newly updated commands to test them, and do not reconcile customizations it was told to keep.
+
+---
+
+## References
+
+- Standing instructions: [`commands/_preamble.md`](_preamble.md)
+- Identity & Prime Directive: [`system-instructions.md`](../system-instructions.md)

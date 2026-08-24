@@ -61,3 +61,6 @@ htmlcov/
 Thumbs.db
 .Spotlight-V100
 .Trashes
+
+# Writ ephemeral state
+.writ/state/
