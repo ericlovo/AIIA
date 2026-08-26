@@ -1,0 +1,199 @@
+diff --git a/scripts/phase-state.py b/scripts/phase-state.py
+index 779aaa3..f3b7c89 100644
+--- a/scripts/phase-state.py
++++ b/scripts/phase-state.py
+@@ -779,6 +779,20 @@ def _slug(title: str) -> str:
+     return re.sub(r"-+", "-", re.sub(r"[^a-z0-9]+", "-", title.lower())).strip("-")
+ 
+ 
++def _as_list(value: Any) -> list[str]:
++    """Coerce a candidate field that should be a list of strings. A bare
++    string becomes a one-entry list rather than being iterated per character;
++    `None` becomes empty. Non-string entries are rendered, not dropped, so a
++    malformed candidate stays visible in the artifact instead of vanishing."""
++    if value is None:
++        return []
++    if isinstance(value, str):
++        return [value] if value.strip() else []
++    if isinstance(value, (list, tuple)):
++        return [str(v) for v in value if str(v).strip()]
++    return [str(value)]
++
++
+ def _looks_like_path(token: str) -> bool:
+     """True when a string is a plausible repo-relative path (no spaces; has a
+     path separator or a dotted filename). Evidence entries are human-readable
+@@ -788,6 +802,11 @@ def _looks_like_path(token: str) -> bool:
+     t = token.strip()
+     if not t or " " in t:
+         return False
++    # A token of pure punctuation ("." , "/", "..") is never an artifact. This
++    # is what per-character iteration of a string `evidence` used to produce,
++    # and it must not read as a path even if such a token reaches here.
++    if not any(c.isalnum() for c in t):
++        return False
+     return "/" in t or "." in t
+ 
+ 
+@@ -803,7 +822,13 @@ def knowledge_writeback(candidates: list[dict[str, Any]], knowledge_dir: Path,
+         cid = cand.get("id")
+         if cid in already:
+             continue  # resume-safe: never write a completed lesson twice
+-        statement = cand.get("statement", "")
++        statement = cand.get("statement") or ""
++        if not statement.strip():
++            # The statement becomes the lesson's `## TL;DR`. Writing the file
++            # anyway produces a titled lesson that says nothing, and reports
++            # success — worse than not writing it.
++            rejected.append({"id": cid, "reason": "no statement (TL;DR would be empty)"})
++            continue
+         if not cand.get("generalizes"):
+             rejected.append({"id": cid, "reason": "one-off (does not generalize beyond one spec)"})
+             continue
+@@ -826,8 +851,14 @@ def knowledge_writeback(candidates: list[dict[str, Any]], knowledge_dir: Path,
+         # `related_artifacts` must hold resolvable repo paths only; the prose
+         # `evidence` becomes cited provenance in Context. Prefer an explicit
+         # `artifacts` list, else keep only path-like evidence tokens.
+-        evidence = cand.get("evidence", [])
+-        artifact_paths = cand.get("artifacts") or [e for e in evidence if _looks_like_path(e)]
++        # A str is iterable, so a candidate that passes `evidence` (or
++        # `artifacts`) as one string would be consumed one character at a
++        # time — filling `related_artifacts` with `.` and `/` and emitting a
++        # cited-evidence bullet per letter. Normalize to a list first.
++        evidence = _as_list(cand.get("evidence", []))
++        artifact_paths = _as_list(cand.get("artifacts")) or [
++            e for e in evidence if _looks_like_path(e)
++        ]
+         if artifact_paths:
+             related_block = "related_artifacts:\n" + "\n".join(f"  - {a}" for a in artifact_paths)
+         else:
+diff --git a/scripts/tests/test_phase_state_knowledge_writeback.py b/scripts/tests/test_phase_state_knowledge_writeback.py
+new file mode 100644
+index 0000000..bc99d69
+--- /dev/null
++++ b/scripts/tests/test_phase_state_knowledge_writeback.py
+@@ -0,0 +1,124 @@
++#!/usr/bin/env python3
++"""Unit tests for scripts/phase-state.py's `knowledge_writeback`.
++
++The writeback path had no unit coverage, and every one of the ten
++phase-close lessons in `.writ/knowledge/lessons/` was written malformed by
++it: a `evidence` value passed as a *string* is iterated per character, so
++`related_artifacts` fills with `.` and `/` tokens and the cited-evidence
++list becomes one bullet per letter. A candidate with no `statement` is
++written with an empty `## TL;DR` and reported as a success.
++
++These tests pin both: evidence normalization (str -> single entry) and
++rejection of a lesson that would carry no TL;DR. The module filename
++contains a hyphen, so it is imported by path — the recipe
++`test_story_deps.py` uses.
++"""
++
++from __future__ import annotations
++
++import importlib.util
++import unittest
++from pathlib import Path
++from tempfile import TemporaryDirectory
++
++MODULE_PATH = Path(__file__).resolve().parent.parent / "phase-state.py"
++_spec = importlib.util.spec_from_file_location("phase_state_kwb", MODULE_PATH)
++ps = importlib.util.module_from_spec(_spec)
++_spec.loader.exec_module(_spec and ps)  # type: ignore[union-attr]
++
++
++def writeback(candidate: dict) -> tuple[dict, str | None]:
++    """Run one candidate through writeback; return (result, file text)."""
++    with TemporaryDirectory() as tmp:
++        knowledge = Path(tmp) / "knowledge"
++        result = ps.knowledge_writeback([candidate], knowledge, set())
++        written = list((knowledge / "lessons").glob("*.md"))
++        text = written[0].read_text(encoding="utf-8") if written else None
++        return result, text
++
++
++BASE = {
++    "id": "L1",
++    "title": "A lesson",
++    "statement": "A real statement.",
++    "generalizes": True,
++}
++
++
++class EvidenceNormalizationTests(unittest.TestCase):
++    def test_string_evidence_is_not_iterated_per_character(self) -> None:
++        """A string `evidence` is one entry, not one entry per letter."""
++        _, text = writeback({**BASE, "evidence": "docs/load-report.md"})
++        self.assertIsNotNone(text)
++        self.assertIn("- docs/load-report.md", text)
++        # The corruption signature: bare punctuation as a list item.
++        for junk in ("\n  - .\n", "\n  - /\n", "\n- .\n", "\n- /\n"):
++            self.assertNotIn(junk, text, f"per-character corruption: {junk!r}")
++
++    def test_string_evidence_yields_one_related_artifact(self) -> None:
++        _, text = writeback({**BASE, "evidence": "docs/load-report.md"})
++        self.assertEqual(text.count("  - "), 1, text)
++
++    def test_string_artifacts_is_not_iterated_per_character(self) -> None:
++        _, text = writeback(
++            {**BASE, "evidence": ["e"], "artifacts": "docs/a.md"}
++        )
++        self.assertIn("  - docs/a.md", text)
++        self.assertEqual(text.count("  - "), 1, text)
++
++    def test_list_evidence_still_works(self) -> None:
++        """The already-correct path must not regress."""
++        _, text = writeback(
++            {**BASE, "evidence": ["docs/a.md", "measured 2026-08-12"]}
++        )
++        self.assertIn("  - docs/a.md", text)
++        self.assertIn("- measured 2026-08-12", text)
++        # Prose evidence is cited but is not a related artifact.
++        self.assertEqual(text.count("  - "), 1, text)
++
++    def test_non_path_string_evidence_cites_without_claiming_an_artifact(self) -> None:
++        _, text = writeback({**BASE, "evidence": "observed during phase close"})
++        self.assertIn("related_artifacts: []", text)
++        self.assertIn("- observed during phase close", text)
++
++
++class StatementRequiredTests(unittest.TestCase):
++    def test_missing_statement_is_rejected_not_written_empty(self) -> None:
++        """A lesson whose TL;DR would be empty is worthless — reject it."""
++        result, text = writeback(
++            {"id": "L3", "title": "No statement", "generalizes": True,
++             "evidence": ["a/b.md"]}
++        )
++        self.assertIsNone(text, "wrote a lesson with an empty TL;DR")
++        self.assertEqual(result["written"], [])
++        self.assertEqual(len(result["rejected"]), 1)
++        self.assertIn("statement", result["rejected"][0]["reason"])
++
++    def test_blank_statement_is_rejected(self) -> None:
++        result, text = writeback({**BASE, "statement": "   ", "evidence": ["a/b.md"]})
++        self.assertIsNone(text)
++        self.assertEqual(result["written"], [])
++
++    def test_valid_statement_still_written(self) -> None:
++        result, text = writeback({**BASE, "evidence": ["a/b.md"]})
++        self.assertIn("A real statement.", text)
++        self.assertEqual(len(result["written"]), 1)
++        self.assertEqual(result["rejected"], [])
++
++
++class PathHeuristicTests(unittest.TestCase):
++    def test_bare_punctuation_is_not_a_path(self) -> None:
++        """`.` and `/` are what per-character iteration produced. Even with
++        normalization upstream, they must never read as artifacts."""
++        for token in (".", "/", "..", "-"):
++            self.assertFalse(
++                ps._looks_like_path(token), f"{token!r} accepted as a path"
++            )
++
++    def test_real_paths_still_accepted(self) -> None:
++        for token in ("a/b.md", ".writ/specs/x/spec.md", "VERSION.txt"):
++            self.assertTrue(ps._looks_like_path(token), token)
++
++
++if __name__ == "__main__":
++    unittest.main()

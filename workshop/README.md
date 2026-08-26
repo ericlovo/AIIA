@@ -86,6 +86,7 @@ mostly holds up.
 | [01](findings/01-shallow-clone-false-fail.md) | `archive-dogfood` false-FAILs on a shallow clone; remediation text misdirects | low / high friction | confirmed |
 | [02](findings/02-ac-trace-symlink-loop.md) | `ac-trace.py` crashes on symlink loops (Python ≤3.12); its own test catches it, CI never runs it | medium | fix written + verified, **not applied** |
 | [03](findings/03-context-budget.md) | Shared base outweighs the command file in 25 of 31 commands; token ratio never validated | design tension | measured |
+| [04](findings/04-knowledge-writeback-corruption.md) | **All 10 phase-close lessons are corrupted.** String `evidence` iterated per character; missing `statement` writes an empty TL;DR and reports success | **high** | fix + 10 tests verified, **not applied**; recovery tool included |
 
 Finding 02's patch is `patches/0001-ac-trace-symlink-loop-runtimeerror.patch`.
 If he wants it in the room:
@@ -104,13 +105,18 @@ While the patch is applied, `run-harness.sh` prints
 `Tree: 1 MODIFIED file(s) — results do NOT reflect upstream`, so a patched run
 can't be mistaken for his shipped state.
 
-## Three things worth arguing about
+## Four things worth arguing about
+
+0. **The learning loop is writing garbage, and has been since day one.** All 10
+   automated lessons are malformed (finding 04) — including, with some irony,
+   the one recording what progressive disclosure costs. `phase-knowledge` and
+   `knowledge-consolidate` are green on that data. Lead with this one.
 
 1. **The CI gap.** 792 tests with nothing in front of them. The leanness ledger
    defends this deliberately — eval scenarios plus `require_literal` bindings are
-   "each checker's entire CI protection." Finding 02 is the second documented
-   escape; the ledger records the first itself. Does the model hold, or has it
-   now failed twice?
+   "each checker's entire CI protection." Findings 02 and 04 are the second and
+   third documented escapes; the ledger records the first itself. Does the model
+   hold, or has it now failed three times?
 
 2. **Progressive disclosure is running a measured loss.** Skills extraction
    bought a −35.9% floor and cost a +9.7% ceiling, at ~1,017 bytes of overhead
@@ -132,8 +138,11 @@ commands justifications." Go in curious about why, not with a verdict.
 workshop/
 ├── bootstrap.sh       clone full-depth + verify pristine (--verify, --reset)
 ├── run-harness.sh     run four layers read-only, results to baseline/
-├── findings/          three findings with repro steps
-├── patches/           0001 — verified ac-trace fix, NOT applied
+├── findings/          four findings with repro steps
+├── patches/           0001 ac-trace symlink fix        } both verified,
+│                      0002 knowledge-writeback + tests } neither applied
+├── tools/
+│   └── recover-lessons.py   repair the 10 corrupted lessons (dry-run default)
 └── baseline/          generated: eval.md, tests.txt, invocation.txt
                        (captured from the pristine tree)
 ```
