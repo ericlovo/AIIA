@@ -36,9 +36,28 @@ mkdir -p "$OUT"
 cd "$WRIT_DIR"
 
 REV="$(git rev-parse --short HEAD)"
+DIRTY="$(git status --porcelain | wc -l)"
 echo "Writ $(cat VERSION) @ $REV — python $(python3 -V 2>&1 | cut -d' ' -f2)"
+if [ "$DIRTY" -eq 0 ]; then
+  echo "Tree: pristine (as shipped)"
+else
+  echo "Tree: $DIRTY MODIFIED file(s) — results do NOT reflect upstream:"
+  git status --short | sed 's/^/      /'
+fi
 echo "Results -> $OUT"
 echo
+
+# Read-only posture: this harness must not leave anything behind in his tree.
+# .writ/state/ is gitignored but is his workspace — only remove it if we
+# were the ones who created it.
+STATE_PREEXISTED=false
+[ -d "$WRIT_DIR/.writ/state" ] && STATE_PREEXISTED=true
+cleanup() {
+  rm -rf "$WRIT_DIR/.pytest_cache" "$WRIT_DIR/scripts/__pycache__" \
+         "$WRIT_DIR/scripts/tests/__pycache__" 2>/dev/null || true
+  $STATE_PREEXISTED || rm -rf "$WRIT_DIR/.writ/state" 2>/dev/null || true
+}
+trap cleanup EXIT
 
 rc=0
 

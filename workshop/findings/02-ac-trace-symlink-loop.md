@@ -2,7 +2,8 @@
 
 **Severity:** medium — real crash, in the citation scanner `verify-spec` depends on
 **Where:** `scripts/ac-trace.py:419-423` and `:434-438`
-**Status:** confirmed, **fix written and verified** → `workshop/patches/0001-*.patch`
+**Status:** confirmed. Fix written and verified — **deliberately not applied.**
+The checkout stays pristine; the patch is a proposal for him, not a change we made.
 
 ## What happens
 
@@ -86,8 +87,18 @@ Verified on Python 3.11.15 against the real repo:
 | `pytest scripts/tests/` | 1 failed, 791 passed | **792 passed** |
 | `eval.sh --check=ac-trace` | PASS (20/20) | **PASS (20/20)** |
 
-Patch: `workshop/patches/0001-ac-trace-symlink-loop-runtimeerror.patch`
-(apply with `git -C $WRIT_DIR apply`).
+Patch: `workshop/patches/0001-ac-trace-symlink-loop-runtimeerror.patch`.
+Apply and revert, both verified on a clean clone:
+
+```bash
+# absolute path — git -C resolves relative paths against the TARGET repo
+git -C "$WRIT_DIR" apply "$PWD/workshop/patches/0001-ac-trace-symlink-loop-runtimeerror.patch"
+bash workshop/run-harness.sh tests                   # 792 passed
+git -C "$WRIT_DIR" checkout -- scripts/ac-trace.py   # pristine again
+```
+
+It is not applied by default. His tree starts and stays as shipped unless he
+says otherwise.
 
 `os.path.realpath(path)` is the alternative — it never raises for loops on any
 version — but it changes the return type and skips `Path`'s normalization, so the

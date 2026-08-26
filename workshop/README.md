@@ -1,120 +1,154 @@
 # Writ Harness Workshop Sandbox
 
-A working sandbox for the in-person session on **Writ's internals** — its
-execution harness (the gates, evals, and `scripts/`) and its authoring surface
-(`/new-command`, `/new-skill`, `/refresh-command`).
+Prep for the in-person session on **Writ's internals** — the execution harness
+(gates, evals, `scripts/`) and the authoring surface (`/new-command`,
+`/new-skill`, `/refresh-command`).
 
-Not a demo of an empty install. Everything here has been run against
-[sellke/writ](https://github.com/sellke/writ) `v0.33.0` @ `5b9082d`, and the
-findings are real.
+## Ground rule: we go in on his tree, exactly as he built it
 
-## Start here
+We're working in the author's session. The starting state is
+[sellke/writ](https://github.com/sellke/writ) `v0.33.0` @ `5b9082d` —
+`HEAD == origin/main`, zero diff, nothing applied.
+
+**Nothing in this folder is pre-applied to his checkout.** The one fix we carry
+lives as a patch file and stays there until he wants it. Everything here is
+read-only against his tree, and the harness runner cleans up after itself.
+
+Prove it before you start:
 
 ```bash
-bash workshop/bootstrap.sh      # clone Writ full-depth + install pytest
-bash workshop/run-harness.sh    # run all four layers, ~40s
+bash workshop/bootstrap.sh --verify
 ```
 
-Expected on a healthy checkout:
+```
+  version:  0.33.0  @ 5b9082d
+  modified: 0 tracked file(s)
+  stray:    0 ignored path(s)
+PRISTINE — this is Writ exactly as shipped.
+```
+
+`bootstrap.sh` (no args) clones full-depth if the checkout is missing, then
+verifies. `--reset` forces back to pristine and **discards local edits** — only
+for your own scratch clone, never his.
+
+## Run the harness
+
+```bash
+bash workshop/run-harness.sh              # four layers, ~40s
+bash workshop/run-harness.sh eval|tests|measure|parity
+WRIT_DIR=/path/to/writ bash workshop/run-harness.sh
+```
+
+It prints whether the tree is pristine before it runs, and removes
+`__pycache__`, `.pytest_cache`, and any `.writ/state/` it created. Verified:
+0 modified, 0 stray after a full run.
+
+## What pristine Writ actually does
+
+This is his shipped state, not a cleaned-up version of it:
 
 ```
 ── [1/4] eval.sh — 45 static checks (what CI runs)
     45 pass / 0 fail
 ── [2/4] pytest scripts/tests/ — unit suite (CI does NOT run this)
-    792 passed, 3 skipped in 15.93s
+    FAILED test_ac_trace.py::CitationScanTests::test_symlink_loop_does_not_crash_the_scan
+    1 failed, 791 passed, 3 skipped
 ── [3/4] measure-invocation.py — per-command context load
     shared base (every invocation): 26,437 bytes
     commands: 31   floor min/median/max: 32,388 / 40,093 / 75,433
 ── [4/4] check-agent-parity.sh — cross-platform agent alignment
     parity OK
-All green.
 ```
 
-Note the "792 passed" line is only green *because* of `patches/0001` — see
-finding 02. On a clean upstream checkout it reads `1 failed, 791 passed`.
+**CI is green and the unit suite is not.** That gap is the whole story, and it
+is visible in the first 40 seconds.
 
-Individual layers: `run-harness.sh eval|tests|measure|parity`.
-Point at a different checkout with `WRIT_DIR=/path/to/writ`.
+## The four layers, and what each protects
 
-## The four layers, and what each one actually protects
-
-| Layer | Command | Count | Wired into CI? |
+| Layer | Command | Count | In CI? |
 |---|---|---|---|
 | Static checks | `scripts/eval.sh` | 45 checks | **yes** — `.github/workflows/eval.yml` |
 | Unit tests | `pytest scripts/tests/` | 792 tests | **no** |
 | Context budget | `measure-invocation.py` | 31 commands | no |
 | Agent parity | `check-agent-parity.sh` | 3 platforms | no |
 
-That second row is the single most important fact about this harness, and it's
-where finding 02 came from.
-
-The 45 checks are not generic linting. They enforce Writ's own methodology:
+The 45 checks aren't generic linting — they enforce the methodology itself:
 `anti-sycophancy` greps the Prime Directive's banned phrases, `leanness` ratchets
-byte ceilings per surface with written justifications, `loop-bounds` proves every
-autonomous loop terminates, `ac-trace` verifies acceptance criteria are cited by
-real tests. The methodology is executable, which is the interesting claim.
+per-surface byte ceilings against written justifications, `loop-bounds` proves
+every autonomous loop terminates, `ac-trace` verifies acceptance criteria are
+cited by real tests. Executable methodology is the interesting claim, and it
+mostly holds up.
 
-## Findings
+## Findings — observations to bring, not changes to make
 
-| # | Finding | Severity | Status |
+| # | Finding | Severity | State |
 |---|---|---|---|
-| [01](findings/01-shallow-clone-false-fail.md) | `archive-dogfood` false-FAILs on a shallow clone, with misdirecting remediation | low / high friction | confirmed, unfixed |
-| [02](findings/02-ac-trace-symlink-loop.md) | `ac-trace.py` crashes on symlink loops (Python ≤3.12); its own test catches it, CI never runs it | medium | **fix verified**, `patches/0001` |
+| [01](findings/01-shallow-clone-false-fail.md) | `archive-dogfood` false-FAILs on a shallow clone; remediation text misdirects | low / high friction | confirmed |
+| [02](findings/02-ac-trace-symlink-loop.md) | `ac-trace.py` crashes on symlink loops (Python ≤3.12); its own test catches it, CI never runs it | medium | fix written + verified, **not applied** |
 | [03](findings/03-context-budget.md) | Shared base outweighs the command file in 25 of 31 commands; token ratio never validated | design tension | measured |
 
-### Applying the fix
+Finding 02's patch is `patches/0001-ac-trace-symlink-loop-runtimeerror.patch`.
+If he wants it in the room:
 
 ```bash
-git -C "${WRIT_DIR:-$HOME/sellke/writ}" apply \
-    workshop/patches/0001-ac-trace-symlink-loop-runtimeerror.patch
-bash workshop/run-harness.sh tests     # 792 passed
+# absolute path — git -C resolves relative paths against the TARGET repo
+git -C "$WRIT_DIR" apply "$PWD/workshop/patches/0001-ac-trace-symlink-loop-runtimeerror.patch"
+bash workshop/run-harness.sh tests                   # 792 passed
+git -C "$WRIT_DIR" checkout -- scripts/ac-trace.py   # back to pristine
 ```
 
-This session can't push to `sellke/writ` (cross-owner attach is blocked), so the
-fix travels as a patch. It's a two-line change plus comments — ready to be a PR
-from a machine with push rights.
+Both directions verified on his checkout: pristine → 1 modified → 792 passed →
+reverted → 0 modified, 0 diff vs `origin/main`. It's two lines plus comments.
 
-## Three things worth arguing about in the room
+While the patch is applied, `run-harness.sh` prints
+`Tree: 1 MODIFIED file(s) — results do NOT reflect upstream`, so a patched run
+can't be mistaken for his shipped state.
+
+## Three things worth arguing about
 
 1. **The CI gap.** 792 tests with nothing in front of them. The leanness ledger
-   defends this as deliberate — eval scenarios plus `require_literal` bindings are
+   defends this deliberately — eval scenarios plus `require_literal` bindings are
    "each checker's entire CI protection." Finding 02 is the second documented
-   escape through that gap; the ledger itself records the first. Does the model
-   hold, or has it now failed twice?
+   escape; the ledger records the first itself. Does the model hold, or has it
+   now failed twice?
 
-2. **Progressive disclosure is running a measured loss.** Skills extraction bought
-   a −35.9% floor and cost a +9.7% ceiling, at 1,017 bytes of overhead per
-   extracted skill. Meanwhile the 26KB shared base dominates 25 of 31 invocations
-   and nobody has cut it. The effort may be aimed at the wrong number.
+2. **Progressive disclosure is running a measured loss.** Skills extraction
+   bought a −35.9% floor and cost a +9.7% ceiling, at ~1,017 bytes of overhead
+   per extracted skill. Meanwhile the 26KB shared base dominates 25 of 31
+   invocations and nobody has cut it. The effort may be aimed at the wrong number.
 
-3. **The whole token budget is an unvalidated guess.** `chars/4`, inherited from
-   the roadmap, never checked against a tokenizer. Every leanness ceiling and every
-   ADR-021 decision inherits that. Calibrating it is a small piece of work that
-   re-prices every other decision.
+3. **The token budget is an unvalidated guess.** `chars/4`, inherited from the
+   roadmap, never checked against a tokenizer — the script says so itself. Every
+   leanness ceiling and ADR-021 decision inherits that. Calibrating it is small
+   work that re-prices everything else.
+
+These are his tradeoffs, made on purpose and documented honestly — the leanness
+ledger openly refuses to run `--update-baseline` because it "would erase the
+commands justifications." Go in curious about why, not with a verdict.
 
 ## Layout
 
 ```
 workshop/
-├── bootstrap.sh       clone Writ full-depth, install pytest
-├── run-harness.sh     run the four layers, write results to baseline/
-├── findings/          the three findings, with repro steps
-├── patches/           0001 — the verified ac-trace fix
+├── bootstrap.sh       clone full-depth + verify pristine (--verify, --reset)
+├── run-harness.sh     run four layers read-only, results to baseline/
+├── findings/          three findings with repro steps
+├── patches/           0001 — verified ac-trace fix, NOT applied
 └── baseline/          generated: eval.md, tests.txt, invocation.txt
+                       (captured from the pristine tree)
 ```
 
-## Writ is also installed in this repo
+## Separately: Writ is installed in this repo
 
-Separately from the sandbox, Writ v0.33.0 is installed into AIIA itself —
-31 commands in `.claude/commands/`, 6 subagents in `.claude/agents/`, 16 skills
-in `.claude/skills/`, workspace in `.writ/`. Try `/status` or `/create-spec`.
+AIIA has Writ v0.33.0 installed for practice — 31 commands, 6 subagents, 16
+skills, `.writ/` workspace. Try `/status` or `/create-spec` here, not in his tree.
 
-Two things to know about that install:
+Two things to know:
 
-- **It dropped 21 scripts into AIIA's top-level `scripts/`**, alongside AIIA's own.
-  Nothing was overwritten (verified), but the namespaces are now mixed. Writ's
+- The install put 21 scripts into AIIA's top-level `scripts/` alongside AIIA's
+  own. Nothing was overwritten (verified), but namespaces are mixed. Writ's
   commands hardcode `scripts/<name>.py`, so moving them breaks the commands.
-- `CLAUDE.md` gained a Writ block between `<!-- writ:start -->` / `<!-- writ:end -->`
-  markers; AIIA's original content is preserved above it.
+- `CLAUDE.md` gained a Writ block between `<!-- writ:start -->` / `<!-- writ:end -->`;
+  AIIA's original content sits above it.
 
 `/uninstall-writ` removes the platform files and keeps `.writ/`.
