@@ -21,6 +21,7 @@ import json
 import logging
 import os
 import subprocess
+import sys
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -44,7 +45,7 @@ DEFERRED_OPS = {
 }
 READY_WORKSPACE_STATUSES = frozenset({"ready", "approved"})
 TEST_COMMANDS: dict[str, list[str]] = {
-    "pytest -q": ["pytest", "-q", "--rootdir=.", "--noconftest"],
+    "pytest -q": [sys.executable, "-m", "pytest", "-q", "--rootdir=.", "--noconftest"],
     "npm test": ["npm", "test"],
     "npm test -- --watchAll=false": ["npm", "test", "--", "--watchAll=false"],
 }
@@ -278,7 +279,7 @@ class GitWriteRegistry:
             command = str(payload["command"]).strip()
             argv = TEST_COMMANDS[command]
             env = {**os.environ, "CI": "true"}
-            if argv[:1] == ["pytest"]:
+            if "pytest" in argv:
                 env["PYTEST_ADDOPTS"] = ""
                 env["PYTEST_DISABLE_PLUGIN_AUTOLOAD"] = "1"
             result = subprocess.run(
