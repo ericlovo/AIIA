@@ -408,7 +408,7 @@ aiia_session_end(
     summary="Refactored auth middleware",
     key_decisions=["Switched to jose library"],
     next_steps=["Add refresh token rotation"],
-    blockers=["Need DefaultApp staging access"]
+    blockers=["Need DefaultApp staging access"],
 )
 # ^ Auto-extracts stories from next_steps/blockers
 ```

@@ -1104,7 +1104,9 @@ def _repo_snapshot(repo_id: str) -> str:
         except (OSError, subprocess.TimeoutExpired):
             return "unavailable"
 
-    readme = next((path / name for name in ("README.md", "README.MD") if (path / name).exists()), None)
+    readme = next(
+        (path / name for name in ("README.md", "README.MD") if (path / name).exists()), None
+    )
     summary = readme.read_text(errors="ignore")[:3_000] if readme else "No README found."
     return "\n".join(
         [
@@ -1128,10 +1130,10 @@ def _agent_system_prompt(agent: dict[str, Any]) -> str:
     if "GitHub read" in tools:
         contexts.append(agent_github_read_prompt())
     tool_context = "\n\n".join(contexts) or "No external tools are mounted."
-    return f"""You are {agent['name']}, a local agent running on AIIA's Mac Mini.
+    return f"""You are {agent["name"]}, a local agent running on AIIA's Mac Mini.
 
-Mission: {agent['mission']}
-Persona: {agent['persona']}
+Mission: {agent["mission"]}
+Persona: {agent["persona"]}
 Skills: {skills}
 Mounted tools and context:
 {tool_context}
@@ -1201,11 +1203,19 @@ async def _execute_agent(agent_id: str, task: str, loop_run: bool = False) -> di
                     },
                 )
             if response.status_code != 200:
-                updated = agent_registry.finish_run(agent_id, task, error=f"local_model_error_{response.status_code}")
+                updated = agent_registry.finish_run(
+                    agent_id, task, error=f"local_model_error_{response.status_code}"
+                )
                 raise HTTPException(status_code=503, detail=updated["last_error"])
             payload = response.json()
-            updated = agent_registry.finish_run(agent_id, task, result=str(payload.get("content", "")).strip())
-            return {"agent": updated, "model": payload.get("model"), "latency_ms": payload.get("latency_ms", 0)}
+            updated = agent_registry.finish_run(
+                agent_id, task, result=str(payload.get("content", "")).strip()
+            )
+            return {
+                "agent": updated,
+                "model": payload.get("model"),
+                "latency_ms": payload.get("latency_ms", 0),
+            }
         except httpx.HTTPError as exc:
             agent_registry.finish_run(agent_id, task, error="local_model_unavailable")
             raise HTTPException(status_code=503, detail="local_model_unavailable") from exc
@@ -1771,9 +1781,7 @@ async def get_tokens_recent(days: int = 7):
 
 AIIA_BASE_URL = "http://localhost:8100"
 AIIA_HEADERS = (
-    {"x-api-key": os.getenv("LOCAL_BRAIN_API_KEY", "")}
-    if os.getenv("LOCAL_BRAIN_API_KEY")
-    else {}
+    {"x-api-key": os.getenv("LOCAL_BRAIN_API_KEY", "")} if os.getenv("LOCAL_BRAIN_API_KEY") else {}
 )
 INTERACTIVE_HISTORY_CHAR_LIMIT = 6_000
 
