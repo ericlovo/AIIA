@@ -15,3 +15,24 @@ body {
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: var(--color-neutral-700); border-radius: 3px; }
 ::-webkit-scrollbar-thumb:hover { background: var(--color-neutral-600); }
+
+.agent-field input,
+.agent-field textarea {
+  width: 100%;
+  box-sizing: border-box;
+  border: 1px solid var(--color-neutral-800);
+  background: var(--color-neutral-900);
+  padding: 0.625rem 0.75rem;
+  color: var(--color-white);
+  font: inherit;
+  font-size: 0.875rem;
+  line-height: 1.4;
+  outline: none;
+  resize: vertical;
+}
+
+.agent-field input:focus,
+.agent-field textarea:focus { border-color: rgb(34 211 238 / 0.65); }
+
+.agent-field input::placeholder,
+.agent-field textarea::placeholder { color: var(--color-neutral-700); }

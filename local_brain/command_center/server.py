@@ -15,6 +15,7 @@ import asyncio
 import json
 import logging
 import os
+import subprocess
 import time
 from collections import deque
 from dataclasses import dataclass
@@ -23,7 +24,7 @@ from pathlib import Path
 from typing import Any
 
 import httpx
-from fastapi import Body, FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import Body, FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, JSONResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
@@ -843,9 +844,12 @@ routing_history = RoutingHistoryState()
 
 # ─── Action Queue + Task Runner ───────────────────────────
 from local_brain.command_center.action_queue import ActionQueue
+from local_brain.command_center.agent_registry import AgentRegistry
 from local_brain.command_center.aiia_tasks import TaskRunner
 
 action_queue = ActionQueue()
+agent_registry = AgentRegistry()
+agent_run_lock = asyncio.Lock()
 # Git root is AIIA-public (server.py → command_center → local_brain → AIIA-public).
 # A fourth .parent pointed at the outer ~/aiia-brain wrapper repo, which dragged
 # the github-runner checkout, archives, and node externals into every report scan
@@ -1045,6 +1049,187 @@ async def get_monitor_service(service_id: str):
 
 
 # ─── Task API ─────────────────────────────────────────────
+
+
+class AgentCreateRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=80)
+    mission: str = Field(min_length=1, max_length=2_000)
+    persona: str = Field(default="Focused and pragmatic.", max_length=2_000)
+    skills: list[str] = Field(default_factory=list, max_length=12)
+    tools: list[str] = Field(default_factory=list, max_length=8)
+    repo_id: str = Field(default="", max_length=80)
+    temperature: float = Field(default=0.35, ge=0.0, le=1.0)
+    max_tokens: int = Field(default=1_200, ge=128, le=2_000)
+    loop_enabled: bool = False
+    loop_interval_minutes: int = Field(default=60, ge=15, le=1_440)
+    loop_task: str = Field(default="", max_length=8_000)
+    loop_max_runs_per_day: int = Field(default=4, ge=1, le=48)
+
+
+class AgentRunRequest(BaseModel):
+    task: str = Field(min_length=1, max_length=8_000)
+
+
+REPO_MOUNTS = {
+    "aiia": Path.home() / "aiia-brain" / "AIIA-public",
+    "mindmoor": Path.home() / "mindmoor",
+    "sanction": Path.home() / "sanction",
+    "proxy-ai": Path.home() / "proxy-ai",
+}
+
+
+def _available_repos() -> list[dict[str, str]]:
+    return [
+        {"id": repo_id, "name": path.name, "path": str(path)}
+        for repo_id, path in REPO_MOUNTS.items()
+        if (path / ".git").exists()
+    ]
+
+
+def _repo_snapshot(repo_id: str) -> str:
+    path = REPO_MOUNTS.get(repo_id)
+    if not path or not (path / ".git").exists():
+        return "No repository is mounted for this agent."
+
+    def git(*args: str) -> str:
+        try:
+            return subprocess.run(
+                ["git", "-C", str(path), *args],
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=3,
+            ).stdout.strip()
+        except (OSError, subprocess.TimeoutExpired):
+            return "unavailable"
+
+    readme = next((path / name for name in ("README.md", "README.MD") if (path / name).exists()), None)
+    summary = readme.read_text(errors="ignore")[:3_000] if readme else "No README found."
+    return "\n".join(
+        [
+            f"Mounted repository: {path.name} ({path})",
+            f"Branch: {git('branch', '--show-current') or 'unknown'}",
+            f"Recent commits:\n{git('log', '-3', '--oneline') or 'none'}",
+            f"Working tree:\n{git('status', '--short') or 'clean'}",
+            f"README context:\n{summary}",
+        ]
+    )
+
+
+def _agent_system_prompt(agent: dict[str, Any]) -> str:
+    skills = ", ".join(agent["skills"]) or "general local reasoning"
+    tools = set(agent.get("tools", []))
+    contexts = []
+    if "Local memory" in tools:
+        contexts.append("Local memory is available through the Mini's private context.")
+    if "Repository read" in tools:
+        contexts.append(_repo_snapshot(agent.get("repo_id", "")))
+    if "GitHub read" in tools:
+        contexts.append(
+            "GitHub read access is not connected. Do not claim GitHub data until the owner re-authenticates the local GitHub CLI."
+        )
+    tool_context = "\n\n".join(contexts) or "No external tools are mounted."
+    return f"""You are {agent['name']}, a local agent running on AIIA's Mac Mini.
+
+Mission: {agent['mission']}
+Persona: {agent['persona']}
+Skills: {skills}
+Mounted tools and context:
+{tool_context}
+
+Work only from the supplied task and available context. Be decisive, concrete, and
+brief. You are supervised: do not claim to have changed files, sent messages,
+browsed the web, or executed commands. Instead provide the work product, a plan,
+or the exact next action a human should approve."""
+
+
+@app.get("/api/agents")
+async def list_agents():
+    return {"agents": agent_registry.list()}
+
+
+@app.get("/api/agents/resources")
+async def agent_resources():
+    return {
+        "repos": _available_repos(),
+        "github": {"status": "disconnected", "mode": "read_only"},
+    }
+
+
+@app.post("/api/agents")
+async def create_agent(body: AgentCreateRequest):
+    try:
+        return {"agent": agent_registry.create(**body.model_dump())}
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@app.put("/api/agents/{agent_id}")
+async def update_agent(agent_id: str, body: AgentCreateRequest):
+    agent = agent_registry.update(agent_id, **body.model_dump())
+    if not agent:
+        raise HTTPException(status_code=404, detail="agent_not_found")
+    return {"agent": agent}
+
+
+@app.delete("/api/agents/{agent_id}")
+async def delete_agent(agent_id: str):
+    if not agent_registry.delete(agent_id):
+        raise HTTPException(status_code=404, detail="agent_not_found")
+    return {"deleted": True}
+
+
+async def _execute_agent(agent_id: str, task: str, loop_run: bool = False) -> dict[str, Any]:
+    agent = agent_registry.get(agent_id)
+    if not agent:
+        raise HTTPException(status_code=404, detail="agent_not_found")
+    async with agent_run_lock:
+        agent_registry.set_running(agent_id)
+        if loop_run:
+            agent_registry.record_loop_run(agent_id)
+        try:
+            async with httpx.AsyncClient(timeout=httpx.Timeout(120.0, connect=10.0)) as client:
+                response = await client.post(
+                    f"{AIIA_BASE_URL}/v1/chat",
+                    headers=AIIA_HEADERS,
+                    json={
+                        "messages": [{"role": "user", "content": task}],
+                        "system": _agent_system_prompt(agent),
+                        "model_role": "task",
+                        "max_tokens": agent.get("max_tokens", 1_200),
+                        "temperature": agent.get("temperature", 0.35),
+                        "purpose": "agent_studio_loop" if loop_run else "agent_studio",
+                    },
+                )
+            if response.status_code != 200:
+                updated = agent_registry.finish_run(agent_id, task, error=f"local_model_error_{response.status_code}")
+                raise HTTPException(status_code=503, detail=updated["last_error"])
+            payload = response.json()
+            updated = agent_registry.finish_run(agent_id, task, result=str(payload.get("content", "")).strip())
+            return {"agent": updated, "model": payload.get("model"), "latency_ms": payload.get("latency_ms", 0)}
+        except httpx.HTTPError as exc:
+            agent_registry.finish_run(agent_id, task, error="local_model_unavailable")
+            raise HTTPException(status_code=503, detail="local_model_unavailable") from exc
+
+
+@app.post("/api/agents/{agent_id}/run")
+async def run_agent(agent_id: str, body: AgentRunRequest):
+    if agent_run_lock.locked():
+        raise HTTPException(status_code=409, detail="mini_busy")
+    return await _execute_agent(agent_id, body.task)
+
+
+async def agent_loop_runner():
+    await asyncio.sleep(10)
+    while True:
+        try:
+            if not agent_run_lock.locked():
+                due_agent = agent_registry.due_loop()
+                if due_agent:
+                    await _execute_agent(due_agent["id"], due_agent["loop_task"], loop_run=True)
+        except Exception as exc:
+            logger.warning("Agent loop scheduler error: %s", exc)
+        await asyncio.sleep(15)
 
 
 @app.get("/api/tasks")
@@ -1586,6 +1771,30 @@ async def get_tokens_recent(days: int = 7):
 # ─── Memory Browser Proxy ─────────────────────────────────
 
 AIIA_BASE_URL = "http://localhost:8100"
+AIIA_HEADERS = (
+    {"x-api-key": os.getenv("LOCAL_BRAIN_API_KEY", "")}
+    if os.getenv("LOCAL_BRAIN_API_KEY")
+    else {}
+)
+INTERACTIVE_HISTORY_CHAR_LIMIT = 6_000
+
+
+def _recent_chat_context(entries: list[dict[str, Any]]) -> str:
+    """Keep interactive history useful without consuming the model context window."""
+    lines = []
+    for entry in entries[-20:]:
+        role = "User" if entry["role"] == "user" else "AIIA"
+        lines.append(f"{role}: {entry['content']}")
+    return "\n".join(lines)[-INTERACTIVE_HISTORY_CHAR_LIMIT:]
+
+
+class MemoryCreateRequest(BaseModel):
+    """A durable fact explicitly supplied through the Command Center."""
+
+    fact: str
+    category: str = "lessons"
+    source: str = "command_center"
+    metadata: dict[str, Any] | None = None
 
 
 # Shared httpx client for AIIA calls — connection pooling, avoids per-request overhead
@@ -2789,6 +2998,7 @@ async def startup():
     # Start task runner
     task_runner.load_state()
     asyncio.create_task(task_runner.run_loop())
+    asyncio.create_task(agent_loop_runner())
 
     # Start execution engine
     global _execution_engine

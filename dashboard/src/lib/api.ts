@@ -162,6 +162,37 @@ export interface ExecutionStatus {
   };
 }
 
+export interface Agent {
+  id: string;
+  name: string;
+  mission: string;
+  persona: string;
+  skills: string[];
+  tools: string[];
+  repo_id: string;
+  temperature: number;
+  max_tokens: number;
+  loop_enabled: boolean;
+  loop_interval_minutes: number;
+  loop_task: string;
+  loop_max_runs_per_day: number;
+  loop_runs_today: number;
+  loop_day: string;
+  status: 'idle' | 'running' | 'error';
+  last_run_at: string | null;
+  last_result: string;
+  last_error: string;
+  runs: { task: string; result: string; error: string; at: string }[];
+  created_at: string;
+  updated_at: string;
+}
+
+export type AgentDefinition = Pick<Agent,
+  'name' | 'mission' | 'persona' | 'skills' | 'tools' | 'repo_id' |
+  'temperature' | 'max_tokens' | 'loop_enabled' | 'loop_interval_minutes' |
+  'loop_task' | 'loop_max_runs_per_day'
+>;
+
 // API calls
 export const api = {
   health: () => get<{ aiia: { status: string }; ollama: { status: string } }>('/api/health'),
@@ -193,6 +224,16 @@ export const api = {
   tasks: () => get<TaskInfo[]>('/api/tasks'),
   runTask: (id: string) => post<{ started: boolean }>(`/api/tasks/${id}/run`),
   executionStatus: () => get<ExecutionStatus>('/api/execution/status'),
+
+  agents: () => get<{ agents: Agent[] }>('/api/agents'),
+  agentResources: () => get<{ repos: { id: string; name: string; path: string }[]; github: { status: string; mode: string } }>('/api/agents/resources'),
+  createAgent: (data: AgentDefinition) =>
+    post<{ agent: Agent }>('/api/agents', data),
+  updateAgent: (id: string, data: AgentDefinition) =>
+    put<{ agent: Agent }>(`/api/agents/${id}`, data),
+  deleteAgent: (id: string) => del<{ deleted: boolean }>(`/api/agents/${id}`),
+  runAgent: (id: string, task: string) =>
+    post<{ agent: Agent; model: string; latency_ms: number }>(`/api/agents/${id}/run`, { task }),
 
   briefingLatest: () => get<{ briefing: string; generated_at: string; source: string }>('/api/briefing/latest'),
   tokensToday: () => get<Record<string, unknown>>('/api/tokens/today'),

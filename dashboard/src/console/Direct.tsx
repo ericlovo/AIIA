@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
-import type { TeamUser } from '../lib/chatStore'
 
 type IntentKind = 'question' | 'task' | 'fact'
 
@@ -18,7 +17,7 @@ function newId() {
   return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`
 }
 
-export function Direct({ user }: { user: TeamUser }) {
+export function Direct() {
   const qc = useQueryClient()
   const [input, setInput] = useState('')
   const [log, setLog] = useState<LogEntry[]>([])
@@ -88,7 +87,7 @@ export function Direct({ user }: { user: TeamUser }) {
 
     try {
       const intent = classifyIntent(text)
-      await route(intent, text, user, thinkingId, setLog, qc, abortRef)
+      await route(intent, text, thinkingId, setLog, qc, abortRef)
     } catch (err) {
       setLog(prev =>
         prev.map(e =>
@@ -121,7 +120,7 @@ export function Direct({ user }: { user: TeamUser }) {
 
       {/* Log */}
       <div className="flex-1 min-h-0 overflow-y-auto px-5 py-4 space-y-3">
-        {log.length === 0 && <EmptyState user={user} />}
+        {log.length === 0 && <EmptyState />}
         {log.map(entry => (
           <LogBubble key={entry.id} entry={entry} />
         ))}
@@ -218,7 +217,6 @@ function classifyIntent(text: string): IntentKind {
 async function route(
   intent: IntentKind,
   text: string,
-  user: TeamUser,
   thinkingId: string,
   setLog: React.Dispatch<React.SetStateAction<LogEntry[]>>,
   qc: ReturnType<typeof useQueryClient>,
@@ -252,9 +250,8 @@ async function route(
   }
 
   if (intent === 'task') {
-    // Create a P1 story tagged with the author — this is how team attribution
-    // flows: Paul's stories get @paul, Tony's get @tony, etc. The "Pick up"
-    // button adds @<picker> so the card shows both author and owner.
+    // New work belongs to the shared workspace. Access control happens at the
+    // Cloudflare boundary, not through a browser-selected identity.
     const res = await fetch('/api/roadmap', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -263,8 +260,8 @@ async function route(
         priority: 'P1',
         status: 'backlog',
         description: text,
-        source_type: `direct:${user.toLowerCase()}`,
-        tags: [`from:${user.toLowerCase()}`],
+        source_type: 'direct:workspace',
+        tags: ['from:workspace'],
       }),
     })
     if (!res.ok) throw new Error(`Story create failed: ${res.status}`)
@@ -288,24 +285,15 @@ async function route(
     return
   }
 
-  // Question — stream chat response via Ollama
+  // Question — stream through AIIA so replies use the local memory harness.
   const controller = new AbortController()
   abortRef.current = controller
-  const res = await fetch('/ollama/api/chat', {
+  const res = await fetch('/api/chat/stream', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      model: 'gemma4:e4b',
-      messages: [
-        {
-          role: 'system',
-          content: `You are AIIA, an AI teammate at Aplora AI. You are talking to ${user}. Be concise and direct. Match the tone of a trusted colleague, not a chatbot.`,
-        },
-        { role: 'user', content: text },
-      ],
-      stream: true,
-      options: { temperature: 0.7, num_ctx: 8192, num_predict: 2048 },
-      keep_alive: '24h',
+      message: text,
+      mode: 'text',
     }),
     signal: controller.signal,
   })
@@ -332,10 +320,15 @@ async function route(
     buffer = lines.pop() ?? ''
     for (const line of lines) {
       const trimmed = line.trim()
-      if (!trimmed) continue
+      if (!trimmed.startsWith('data:')) continue
       try {
-        const frame = JSON.parse(trimmed) as { message?: { content?: string } }
-        const content = frame.message?.content
+        const frame = JSON.parse(trimmed.slice(5).trim()) as {
+          type?: string
+          content?: string
+          message?: string
+        }
+        if (frame.type === 'error') throw new Error(frame.message ?? 'AIIA request failed')
+        const content = frame.type === 'chunk' ? frame.content : undefined
         if (typeof content === 'string' && content.length > 0) {
           accumulated += content
           setLog(prev =>
@@ -344,8 +337,8 @@ async function route(
             )
           )
         }
-      } catch {
-        // partial frame
+      } catch (error) {
+        if (error instanceof Error) throw error
       }
     }
   }
@@ -358,11 +351,11 @@ async function route(
 // UI bits
 // ─────────────────────────────────────────────────────────────
 
-function EmptyState({ user }: { user: TeamUser }) {
+function EmptyState() {
   return (
     <div className="h-full flex flex-col items-center justify-center text-center">
       <div className="text-[10px] text-purple-400 tracking-[0.3em] font-semibold mb-3">
-        HI {user.toUpperCase()}
+        AIIA IS READY
       </div>
       <p className="text-sm text-neutral-500 max-w-[280px] leading-relaxed">
         Ask me a question, tell me to build something, or teach me a fact. I'll figure out
