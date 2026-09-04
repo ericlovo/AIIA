@@ -7,6 +7,12 @@ All notable changes to AIIA are documented here. This project adheres to
 ## [Unreleased]
 
 ### Added
+- **Approval-gated Git writes** on Agent Studio worktrees. After a workspace
+  is ready, agents/UI may propose `write_file`, `run_tests`, or `commit`; a
+  human approve executes the allowlisted op on the isolated worktree only
+  (never the source checkout). `push` and `open_pr` are deferred
+  (`op_deferred:push` / `op_deferred:open_pr`).
+
 - **Executable organization spec** — `docs/EXECUTABLE-ORGANIZATION.md`
   defines the v1 increment: Assignments, typed Handoffs, Specialties,
   Agent depth (`D0`–`D4` + `maxDelegationDepth`), and Sanction-gated

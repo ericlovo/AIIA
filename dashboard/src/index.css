@@ -17,7 +17,8 @@ body {
 ::-webkit-scrollbar-thumb:hover { background: var(--color-neutral-600); }
 
 .agent-field input,
-.agent-field textarea {
+.agent-field textarea,
+.agent-field select {
   width: 100%;
   box-sizing: border-box;
   border: 1px solid var(--color-neutral-800);
@@ -32,7 +33,8 @@ body {
 }
 
 .agent-field input:focus,
-.agent-field textarea:focus { border-color: rgb(34 211 238 / 0.65); }
+.agent-field textarea:focus,
+.agent-field select:focus { border-color: rgb(34 211 238 / 0.65); }
 
 .agent-field input::placeholder,
 .agent-field textarea::placeholder { color: var(--color-neutral-700); }

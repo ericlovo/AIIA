@@ -1913,9 +1913,7 @@ async def aiia_commits_since(since: str = "24h", repo: str = "", limit: int = 10
     lines = [f"## {len(commits)} commits since {cutoff[:19]}\n"]
     for rname, cs in sorted(by_repo.items()):
         lines.append(f"### {rname} ({len(cs)})")
-        lines.extend(
-            f"- {c['hash'][:8]} {c['date'][:16]} {c['message']}" for c in cs
-        )
+        lines.extend(f"- {c['hash'][:8]} {c['date'][:16]} {c['message']}" for c in cs)
         lines.append("")
     return "\n".join(lines)
 

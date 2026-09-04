@@ -1,9 +1,16 @@
 const BASE = '';
 
+async function parse<T>(res: Response): Promise<T> {
+  if (!res.ok) {
+    const payload = await res.json().catch(() => null) as { detail?: string } | null;
+    throw new Error(payload?.detail || `${res.status} ${res.statusText}`);
+  }
+  return res.json();
+}
+
 async function get<T>(path: string): Promise<T> {
   const res = await fetch(`${BASE}${path}`);
-  if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
-  return res.json();
+  return parse<T>(res);
 }
 
 async function post<T>(path: string, body?: unknown): Promise<T> {
@@ -12,8 +19,7 @@ async function post<T>(path: string, body?: unknown): Promise<T> {
     headers: { 'Content-Type': 'application/json' },
     body: body ? JSON.stringify(body) : undefined,
   });
-  if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
-  return res.json();
+  return parse<T>(res);
 }
 
 async function put<T>(path: string, body?: unknown): Promise<T> {
@@ -22,14 +28,12 @@ async function put<T>(path: string, body?: unknown): Promise<T> {
     headers: { 'Content-Type': 'application/json' },
     body: body ? JSON.stringify(body) : undefined,
   });
-  if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
-  return res.json();
+  return parse<T>(res);
 }
 
 async function del<T>(path: string): Promise<T> {
   const res = await fetch(`${BASE}${path}`, { method: 'DELETE' });
-  if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
-  return res.json();
+  return parse<T>(res);
 }
 
 // Types
@@ -187,11 +191,125 @@ export interface Agent {
   updated_at: string;
 }
 
+export interface RepositoryResource {
+  id: string;
+  name: string;
+  path: string;
+  branch: string;
+  dirty: boolean;
+  github_repo: string;
+  git_workspace?: {
+    eligible: boolean;
+    reason: string;
+  };
+}
+
+export interface GitHubResource {
+  status: 'connected' | 'disconnected';
+  mode: 'read_only';
+  provider: string;
+  account: string;
+  reason: string;
+}
+
 export type AgentDefinition = Pick<Agent,
   'name' | 'mission' | 'persona' | 'skills' | 'tools' | 'repo_id' |
   'temperature' | 'max_tokens' | 'loop_enabled' | 'loop_interval_minutes' |
   'loop_task' | 'loop_max_runs_per_day'
 >;
+
+export type AssignmentStatus = 'queued' | 'running' | 'completed' | 'failed';
+export type AssignmentPriority = 'low' | 'normal' | 'high' | 'urgent';
+
+export interface Assignment {
+  id: string;
+  title: string;
+  objective: string;
+  agent_id: string;
+  priority: AssignmentPriority;
+  context: string;
+  success_criteria: string;
+  source_handoff_id: string;
+  status: AssignmentStatus;
+  result: string;
+  error: string;
+  created_at: string;
+  updated_at: string;
+  started_at: string | null;
+  completed_at: string | null;
+}
+
+export type AssignmentDefinition = Pick<Assignment,
+  'title' | 'objective' | 'agent_id' | 'priority' | 'context' | 'success_criteria'
+>;
+
+export type HandoffArtifactType = 'brief' | 'analysis' | 'plan' | 'decision' | 'review';
+
+export interface Handoff {
+  id: string;
+  source_assignment_id: string;
+  target_assignment_id: string;
+  from_agent_id: string;
+  to_agent_id: string;
+  artifact_type: HandoffArtifactType;
+  artifact: string;
+  instructions: string;
+  status: AssignmentStatus;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface HandoffDefinition {
+  source_assignment_id: string;
+  to_agent_id: string;
+  artifact_type: HandoffArtifactType;
+  instructions: string;
+}
+
+export type GitWriteOp = 'write_file' | 'run_tests' | 'commit' | 'push' | 'open_pr';
+export type GitWriteStatus = 'pending' | 'approved' | 'completed' | 'failed' | 'rejected';
+
+export interface GitWrite {
+  id: string;
+  workspace_id: string;
+  assignment_id: string;
+  op: GitWriteOp;
+  title: string;
+  status: GitWriteStatus;
+  payload: Record<string, unknown>;
+  result: Record<string, unknown>;
+  error: string;
+  created_at: string;
+  updated_at: string;
+  approved_at: string | null;
+  events: { at: string; action: string; detail: string }[];
+}
+
+export interface GitWriteDefinition {
+  op: GitWriteOp;
+  payload: Record<string, unknown>;
+  title?: string;
+}
+
+export type GitWorkspaceStatus = 'pending' | 'preparing' | 'ready' | 'failed';
+
+export interface GitWorkspace {
+  id: string;
+  assignment_id: string;
+  agent_id: string;
+  repo_id: string;
+  title: string;
+  status: GitWorkspaceStatus;
+  branch: string;
+  base_ref: string;
+  path: string;
+  git_status: string;
+  error: string;
+  created_at: string;
+  updated_at: string;
+  approved_at: string | null;
+  events: { at: string; action: string; detail: string }[];
+}
 
 // API calls
 export const api = {
@@ -226,7 +344,7 @@ export const api = {
   executionStatus: () => get<ExecutionStatus>('/api/execution/status'),
 
   agents: () => get<{ agents: Agent[] }>('/api/agents'),
-  agentResources: () => get<{ repos: { id: string; name: string; path: string }[]; github: { status: string; mode: string } }>('/api/agents/resources'),
+  agentResources: () => get<{ repos: RepositoryResource[]; github: GitHubResource }>('/api/agents/resources'),
   createAgent: (data: AgentDefinition) =>
     post<{ agent: Agent }>('/api/agents', data),
   updateAgent: (id: string, data: AgentDefinition) =>
@@ -234,6 +352,33 @@ export const api = {
   deleteAgent: (id: string) => del<{ deleted: boolean }>(`/api/agents/${id}`),
   runAgent: (id: string, task: string) =>
     post<{ agent: Agent; model: string; latency_ms: number }>(`/api/agents/${id}/run`, { task }),
+
+  assignments: () => get<{ assignments: Assignment[] }>('/api/assignments'),
+  createAssignment: (data: AssignmentDefinition) =>
+    post<{ assignment: Assignment }>('/api/assignments', data),
+  deleteAssignment: (id: string) =>
+    del<{ deleted: boolean }>(`/api/assignments/${id}`),
+  runAssignment: (id: string) =>
+    post<{ assignment: Assignment; agent: Agent; model: string; latency_ms: number }>(`/api/assignments/${id}/run`),
+  gitWorkspaces: () => get<{ workspaces: GitWorkspace[] }>('/api/git-workspaces'),
+  requestGitWorkspace: (assignmentId: string) =>
+    post<{ workspace: GitWorkspace }>(`/api/assignments/${assignmentId}/git-workspace`),
+  approveGitWorkspace: (workspaceId: string) =>
+    post<{ workspace: GitWorkspace }>(`/api/git-workspaces/${workspaceId}/approve`),
+  gitWrites: (workspaceId?: string) => {
+    const q = workspaceId ? `?workspace_id=${encodeURIComponent(workspaceId)}` : '';
+    return get<{ writes: GitWrite[] }>(`/api/git-writes${q}`);
+  },
+  proposeGitWrite: (workspaceId: string, data: GitWriteDefinition) =>
+    post<{ write: GitWrite }>(`/api/git-workspaces/${workspaceId}/writes`, data),
+  approveGitWrite: (writeId: string) =>
+    post<{ write: GitWrite }>(`/api/git-writes/${writeId}/approve`),
+  rejectGitWrite: (writeId: string, reason = '') =>
+    post<{ write: GitWrite }>(`/api/git-writes/${writeId}/reject`, { reason }),
+  handoffs: () => get<{ handoffs: Handoff[] }>('/api/handoffs'),
+  createHandoff: (data: HandoffDefinition) =>
+    post<{ handoff: Handoff; assignment: Assignment }>('/api/handoffs', data),
+  deleteHandoff: (id: string) => del<{ deleted: boolean }>(`/api/handoffs/${id}`),
 
   briefingLatest: () => get<{ briefing: string; generated_at: string; source: string }>('/api/briefing/latest'),
   tokensToday: () => get<Record<string, unknown>>('/api/tokens/today'),
