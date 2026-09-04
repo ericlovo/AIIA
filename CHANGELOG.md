@@ -13,6 +13,11 @@ All notable changes to AIIA are documented here. This project adheres to
   (never the source checkout). `push` and `open_pr` are deferred
   (`op_deferred:push` / `op_deferred:open_pr`).
 
+- **Executable organization spec** — `docs/EXECUTABLE-ORGANIZATION.md`
+  defines the v1 increment: Assignments, typed Handoffs, Specialties,
+  Agent depth (`D0`–`D4` + `maxDelegationDepth`), and Sanction-gated
+  edge firing. Docs-only; no runtime change. Distinct from
+  `docs/HANDOFF.md` (Mini ⇄ MacBook session notebook).
 - **Air-gap mode** (`AIIA_AIRGAP=1`) — one flag turns the Brain into a
   local-only runtime. Inference, embeddings, retrieval, and memory stay
   on the box; the execution engine (spawns the `claude` CLI) and the

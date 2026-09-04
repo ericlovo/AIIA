@@ -132,3 +132,11 @@ If a finding shows up in CI that the local suite would baseline-out, add it to `
 - A scanner is added/removed from the local suite → update `docs/security.md` and reference here
 
 Don't let this doc drift. It's the one place where someone landing on the repo can understand the whole security story without grepping.
+
+## Related: organization graph
+
+Sanction-gated **Handoffs** (typed edges between agents) are specified in
+[`docs/EXECUTABLE-ORGANIZATION.md`](./EXECUTABLE-ORGANIZATION.md). That
+increment sits above this runtime: Assignments are authorized before the
+Mini runs them; side-effecting actions inside a Run still pass through
+`local_brain/execution/`. Empty grants do not fire. Not implemented yet.
