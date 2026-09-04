@@ -75,9 +75,7 @@ def _is_actionable(item: str) -> bool:
     if re.match(r"^[0-9a-f]{7,40}\b", item):  # commit hash line
         return False
     low = item.lower()
-    if low.startswith(("see ", "note:", "e.g", "http", "todo:", "~")):
-        return False
-    return True
+    return not low.startswith(("see ", "note:", "e.g", "http", "todo:", "~"))
 
 
 def _parse_backlog_items(text: str, headings: list[str], max_items: int = 40) -> list[str]:

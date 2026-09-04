@@ -845,8 +845,8 @@ routing_history = RoutingHistoryState()
 # ─── Action Queue + Task Runner ───────────────────────────
 from local_brain.command_center.action_queue import ActionQueue
 from local_brain.command_center.agent_registry import AgentRegistry
-from local_brain.command_center.assignment_registry import AssignmentRegistry
 from local_brain.command_center.aiia_tasks import TaskRunner
+from local_brain.command_center.assignment_registry import AssignmentRegistry
 
 action_queue = ActionQueue()
 agent_registry = AgentRegistry()
