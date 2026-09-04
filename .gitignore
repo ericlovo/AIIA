@@ -44,6 +44,8 @@ reports/
 
 # Monitoring snapshots
 command_center/monitor_data.json
+local_brain/command_center/agent_data.json
+local_brain/command_center/assignment_data.json
 
 # Ollama models (large binaries)
 models/

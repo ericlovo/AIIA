@@ -1,9 +1,16 @@
 const BASE = '';
 
+async function parse<T>(res: Response): Promise<T> {
+  if (!res.ok) {
+    const payload = await res.json().catch(() => null) as { detail?: string } | null;
+    throw new Error(payload?.detail || `${res.status} ${res.statusText}`);
+  }
+  return res.json();
+}
+
 async function get<T>(path: string): Promise<T> {
   const res = await fetch(`${BASE}${path}`);
-  if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
-  return res.json();
+  return parse<T>(res);
 }
 
 async function post<T>(path: string, body?: unknown): Promise<T> {
@@ -12,8 +19,7 @@ async function post<T>(path: string, body?: unknown): Promise<T> {
     headers: { 'Content-Type': 'application/json' },
     body: body ? JSON.stringify(body) : undefined,
   });
-  if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
-  return res.json();
+  return parse<T>(res);
 }
 
 async function put<T>(path: string, body?: unknown): Promise<T> {
@@ -22,14 +28,12 @@ async function put<T>(path: string, body?: unknown): Promise<T> {
     headers: { 'Content-Type': 'application/json' },
     body: body ? JSON.stringify(body) : undefined,
   });
-  if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
-  return res.json();
+  return parse<T>(res);
 }
 
 async function del<T>(path: string): Promise<T> {
   const res = await fetch(`${BASE}${path}`, { method: 'DELETE' });
-  if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
-  return res.json();
+  return parse<T>(res);
 }
 
 // Types
@@ -193,6 +197,54 @@ export type AgentDefinition = Pick<Agent,
   'loop_task' | 'loop_max_runs_per_day'
 >;
 
+export type AssignmentStatus = 'queued' | 'running' | 'completed' | 'failed';
+export type AssignmentPriority = 'low' | 'normal' | 'high' | 'urgent';
+
+export interface Assignment {
+  id: string;
+  title: string;
+  objective: string;
+  agent_id: string;
+  priority: AssignmentPriority;
+  context: string;
+  success_criteria: string;
+  source_handoff_id: string;
+  status: AssignmentStatus;
+  result: string;
+  error: string;
+  created_at: string;
+  updated_at: string;
+  started_at: string | null;
+  completed_at: string | null;
+}
+
+export type AssignmentDefinition = Pick<Assignment,
+  'title' | 'objective' | 'agent_id' | 'priority' | 'context' | 'success_criteria'
+>;
+
+export type HandoffArtifactType = 'brief' | 'analysis' | 'plan' | 'decision' | 'review';
+
+export interface Handoff {
+  id: string;
+  source_assignment_id: string;
+  target_assignment_id: string;
+  from_agent_id: string;
+  to_agent_id: string;
+  artifact_type: HandoffArtifactType;
+  artifact: string;
+  instructions: string;
+  status: AssignmentStatus;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface HandoffDefinition {
+  source_assignment_id: string;
+  to_agent_id: string;
+  artifact_type: HandoffArtifactType;
+  instructions: string;
+}
+
 // API calls
 export const api = {
   health: () => get<{ aiia: { status: string }; ollama: { status: string } }>('/api/health'),
@@ -234,6 +286,18 @@ export const api = {
   deleteAgent: (id: string) => del<{ deleted: boolean }>(`/api/agents/${id}`),
   runAgent: (id: string, task: string) =>
     post<{ agent: Agent; model: string; latency_ms: number }>(`/api/agents/${id}/run`, { task }),
+
+  assignments: () => get<{ assignments: Assignment[] }>('/api/assignments'),
+  createAssignment: (data: AssignmentDefinition) =>
+    post<{ assignment: Assignment }>('/api/assignments', data),
+  deleteAssignment: (id: string) =>
+    del<{ deleted: boolean }>(`/api/assignments/${id}`),
+  runAssignment: (id: string) =>
+    post<{ assignment: Assignment; agent: Agent; model: string; latency_ms: number }>(`/api/assignments/${id}/run`),
+  handoffs: () => get<{ handoffs: Handoff[] }>('/api/handoffs'),
+  createHandoff: (data: HandoffDefinition) =>
+    post<{ handoff: Handoff; assignment: Assignment }>('/api/handoffs', data),
+  deleteHandoff: (id: string) => del<{ deleted: boolean }>(`/api/handoffs/${id}`),
 
   briefingLatest: () => get<{ briefing: string; generated_at: string; source: string }>('/api/briefing/latest'),
   tokensToday: () => get<Record<string, unknown>>('/api/tokens/today'),

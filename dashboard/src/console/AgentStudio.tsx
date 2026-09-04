@@ -1,6 +1,8 @@
 import { useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api, type Agent, type AgentDefinition } from '../lib/api'
+import { StudioTabs, type StudioView } from './StudioTabs'
+import { WorkBoard } from './WorkBoard'
 
 type Draft = AgentDefinition
 
@@ -32,6 +34,7 @@ export function AgentStudio() {
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [draft, setDraft] = useState<Draft>(EMPTY_DRAFT)
   const [task, setTask] = useState('')
+  const [view, setView] = useState<StudioView>('agents')
   const selected = agents.find(agent => agent.id === selectedId) ?? null
 
   function selectAgent(agent: Agent | null) {
@@ -75,18 +78,25 @@ export function AgentStudio() {
 
   const activeCount = useMemo(() => agents.filter(agent => agent.status === 'running').length, [agents])
 
+  if (view !== 'agents') {
+    return <WorkBoard agents={agents} view={view} onViewChange={setView} />
+  }
+
   return (
     <main className="min-h-0 flex-1 grid grid-cols-1 overflow-y-auto bg-neutral-950 lg:grid-cols-[minmax(0,1fr)_360px] lg:overflow-hidden">
       <section className="relative min-w-0 border-b border-neutral-900 lg:overflow-hidden lg:border-r lg:border-b-0">
-        <div className="flex items-start justify-between gap-4 px-5 py-6 sm:px-7 border-b border-neutral-900">
+        <div className="flex flex-col gap-5 border-b border-neutral-900 px-5 py-6 sm:flex-row sm:items-start sm:justify-between sm:px-7">
           <div>
             <div className="text-[10px] font-semibold tracking-[0.28em] uppercase text-cyan-400">Agent Studio</div>
             <h1 className="mt-2 text-2xl font-medium text-white">Build a local team that can cook.</h1>
             <p className="mt-2 text-sm text-neutral-500">Define the role. Give it a task. The Mini runs it locally.</p>
           </div>
-          <div className="hidden shrink-0 items-center gap-3 text-xs text-neutral-500 sm:flex">
-            <span className="inline-flex items-center gap-2"><i className="w-2 h-2 rounded-full bg-green-500" />Mini online</span>
-            <span>{activeCount} running</span>
+          <div className="flex shrink-0 flex-col items-start gap-3 sm:items-end">
+            <StudioTabs view={view} onChange={setView} />
+            <div className="hidden items-center gap-3 text-xs text-neutral-500 sm:flex">
+              <span className="inline-flex items-center gap-2"><i className="h-2 w-2 rounded-full bg-green-500" />Mini online</span>
+              <span>{activeCount} running</span>
+            </div>
           </div>
         </div>
 

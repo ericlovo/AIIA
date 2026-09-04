@@ -845,10 +845,12 @@ routing_history = RoutingHistoryState()
 # ─── Action Queue + Task Runner ───────────────────────────
 from local_brain.command_center.action_queue import ActionQueue
 from local_brain.command_center.agent_registry import AgentRegistry
+from local_brain.command_center.assignment_registry import AssignmentRegistry
 from local_brain.command_center.aiia_tasks import TaskRunner
 
 action_queue = ActionQueue()
 agent_registry = AgentRegistry()
+assignment_registry = AssignmentRegistry()
 agent_run_lock = asyncio.Lock()
 # Git root is AIIA-public (server.py → command_center → local_brain → AIIA-public).
 # A fourth .parent pointed at the outer ~/aiia-brain wrapper repo, which dragged
@@ -1070,6 +1072,22 @@ class AgentRunRequest(BaseModel):
     task: str = Field(min_length=1, max_length=8_000)
 
 
+class AssignmentCreateRequest(BaseModel):
+    title: str = Field(min_length=1, max_length=120)
+    objective: str = Field(min_length=1, max_length=8_000)
+    agent_id: str = Field(min_length=1, max_length=80)
+    priority: str = Field(default="normal", max_length=20)
+    context: str = Field(default="", max_length=20_000)
+    success_criteria: str = Field(default="", max_length=4_000)
+
+
+class HandoffCreateRequest(BaseModel):
+    source_assignment_id: str = Field(min_length=1, max_length=80)
+    to_agent_id: str = Field(min_length=1, max_length=80)
+    artifact_type: str = Field(default="brief", max_length=40)
+    instructions: str = Field(min_length=1, max_length=8_000)
+
+
 REPO_MOUNTS = {
     "aiia": Path.home() / "aiia-brain" / "AIIA-public",
     "mindmoor": Path.home() / "mindmoor",
@@ -1179,7 +1197,12 @@ async def delete_agent(agent_id: str):
     return {"deleted": True}
 
 
-async def _execute_agent(agent_id: str, task: str, loop_run: bool = False) -> dict[str, Any]:
+async def _execute_agent(
+    agent_id: str,
+    task: str,
+    loop_run: bool = False,
+    purpose: str | None = None,
+) -> dict[str, Any]:
     agent = agent_registry.get(agent_id)
     if not agent:
         raise HTTPException(status_code=404, detail="agent_not_found")
@@ -1198,7 +1221,8 @@ async def _execute_agent(agent_id: str, task: str, loop_run: bool = False) -> di
                         "model_role": "task",
                         "max_tokens": agent.get("max_tokens", 1_200),
                         "temperature": agent.get("temperature", 0.35),
-                        "purpose": "agent_studio_loop" if loop_run else "agent_studio",
+                        "purpose": purpose
+                        or ("agent_studio_loop" if loop_run else "agent_studio"),
                     },
                 )
             if response.status_code != 200:
@@ -1217,6 +1241,123 @@ async def run_agent(agent_id: str, body: AgentRunRequest):
     if agent_run_lock.locked():
         raise HTTPException(status_code=409, detail="mini_busy")
     return await _execute_agent(agent_id, body.task)
+
+
+def _assignment_prompt(assignment: dict[str, Any]) -> str:
+    sections = [
+        f"Assignment: {assignment['title']}",
+        f"Objective:\n{assignment['objective']}",
+    ]
+    if assignment.get("context"):
+        sections.append(f"Context and upstream artifact:\n{assignment['context']}")
+    if assignment.get("success_criteria"):
+        sections.append(f"Success criteria:\n{assignment['success_criteria']}")
+    sections.append(
+        "Return the finished work product, not a description of how you would do it."
+    )
+    return "\n\n".join(sections)
+
+
+@app.get("/api/assignments")
+async def list_assignments():
+    return {"assignments": assignment_registry.list_assignments()}
+
+
+@app.post("/api/assignments")
+async def create_assignment(body: AssignmentCreateRequest):
+    if not agent_registry.get(body.agent_id):
+        raise HTTPException(status_code=422, detail="agent_not_found")
+    try:
+        assignment = assignment_registry.create_assignment(**body.model_dump())
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return {"assignment": assignment}
+
+
+@app.delete("/api/assignments/{assignment_id}")
+async def delete_assignment(assignment_id: str):
+    assignment = assignment_registry.get_assignment(assignment_id)
+    if not assignment:
+        raise HTTPException(status_code=404, detail="assignment_not_found")
+    if assignment["status"] == "running":
+        raise HTTPException(status_code=409, detail="assignment_running")
+    if assignment_registry.assignment_has_handoffs(assignment_id):
+        raise HTTPException(status_code=409, detail="assignment_has_handoffs")
+    assignment_registry.delete_assignment(assignment_id)
+    return {"deleted": True}
+
+
+@app.post("/api/assignments/{assignment_id}/run")
+async def run_assignment(assignment_id: str):
+    assignment = assignment_registry.get_assignment(assignment_id)
+    if not assignment:
+        raise HTTPException(status_code=404, detail="assignment_not_found")
+    if assignment["status"] not in {"queued", "failed"}:
+        raise HTTPException(status_code=409, detail="assignment_not_runnable")
+    if not agent_registry.get(assignment["agent_id"]):
+        raise HTTPException(status_code=409, detail="assigned_agent_not_found")
+    if agent_run_lock.locked():
+        raise HTTPException(status_code=409, detail="mini_busy")
+
+    assignment_registry.set_running(assignment_id)
+    try:
+        run_result = await _execute_agent(
+            assignment["agent_id"],
+            _assignment_prompt(assignment),
+            purpose="agent_studio_assignment",
+        )
+    except HTTPException as exc:
+        assignment_registry.finish_assignment(
+            assignment_id, error=str(exc.detail)
+        )
+        raise
+    except Exception as exc:
+        logger.exception("Assignment run failed: %s", assignment_id)
+        assignment_registry.finish_assignment(
+            assignment_id, error="assignment_run_failed"
+        )
+        raise HTTPException(status_code=500, detail="assignment_run_failed") from exc
+
+    work_product = run_result["agent"]["last_result"].strip()
+    if not work_product:
+        assignment_registry.finish_assignment(
+            assignment_id, error="empty_agent_result"
+        )
+        raise HTTPException(status_code=502, detail="empty_agent_result")
+    updated = assignment_registry.finish_assignment(assignment_id, result=work_product)
+    return {
+        "assignment": updated,
+        "agent": run_result["agent"],
+        "model": run_result["model"],
+        "latency_ms": run_result["latency_ms"],
+    }
+
+
+@app.get("/api/handoffs")
+async def list_handoffs():
+    return {"handoffs": assignment_registry.list_handoffs()}
+
+
+@app.post("/api/handoffs")
+async def create_handoff(body: HandoffCreateRequest):
+    if not agent_registry.get(body.to_agent_id):
+        raise HTTPException(status_code=422, detail="target_agent_not_found")
+    try:
+        handoff, assignment = assignment_registry.create_handoff(**body.model_dump())
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return {"handoff": handoff, "assignment": assignment}
+
+
+@app.delete("/api/handoffs/{handoff_id}")
+async def delete_handoff(handoff_id: str):
+    handoff = assignment_registry.get_handoff(handoff_id)
+    if not handoff:
+        raise HTTPException(status_code=404, detail="handoff_not_found")
+    if handoff["status"] == "running":
+        raise HTTPException(status_code=409, detail="handoff_running")
+    assignment_registry.delete_handoff(handoff_id)
+    return {"deleted": True}
 
 
 async def agent_loop_runner():
