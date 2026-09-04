@@ -603,6 +603,9 @@ AIIA/
 | `EXECUTION_ENABLED` | `false` | Enable execution engine |
 | `ANTHROPIC_API_KEY` | — | Claude API (for Claude strategy) |
 | `GOOGLE_API_KEY` | — | Google TTS |
+| `AIIA_GITHUB_APP_ID` | — | GitHub App id for Agent Studio read-only GitHub |
+| `AIIA_GITHUB_APP_INSTALLATION_ID` | — | GitHub App installation id |
+| `AIIA_GITHUB_APP_PRIVATE_KEY_PATH` | `~/.aiia/github-app.pem` | PEM path (never a user PAT) |
 
 ### Key Limits
 

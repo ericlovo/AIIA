@@ -70,6 +70,15 @@ The desktop app holds provider API keys (Anthropic, OpenAI, Google, DeepSeek, Mo
 - **0600 file / 0700 dir.** Keys at rest in `~/.aiia/keys.json` are readable only by the owning user (on Unix).
 - **Per-call request_id.** Streaming events are scoped per-call so JS can't conflate responses.
 
+### Agent Studio — GitHub App (read-only)
+
+Remote GitHub for Studio agents is a **GitHub App with read-only repository
+permissions**, not the human `gh` CLI / user OAuth token on the Mini. Status
+comes from `local_brain/github_app.py`. Missing App credentials stay
+`not_configured`; a logged-in CLI is reported as `cli_user_present` and does
+not flip status to connected. The helper refuses write HTTP methods. Owner
+runbook: [docs/GITHUB-APP-READONLY.md](./GITHUB-APP-READONLY.md).
+
 ### Known runtime gaps (tracked)
 
 | Area | Gap | Mitigation today | Right answer |

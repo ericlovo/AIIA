@@ -846,6 +846,7 @@ routing_history = RoutingHistoryState()
 from local_brain.command_center.action_queue import ActionQueue
 from local_brain.command_center.agent_registry import AgentRegistry
 from local_brain.command_center.aiia_tasks import TaskRunner
+from local_brain.github_app import agent_github_read_prompt, github_resource_status
 
 action_queue = ActionQueue()
 agent_registry = AgentRegistry()
@@ -1125,9 +1126,7 @@ def _agent_system_prompt(agent: dict[str, Any]) -> str:
     if "Repository read" in tools:
         contexts.append(_repo_snapshot(agent.get("repo_id", "")))
     if "GitHub read" in tools:
-        contexts.append(
-            "GitHub read access is not connected. Do not claim GitHub data until the owner re-authenticates the local GitHub CLI."
-        )
+        contexts.append(agent_github_read_prompt())
     tool_context = "\n\n".join(contexts) or "No external tools are mounted."
     return f"""You are {agent['name']}, a local agent running on AIIA's Mac Mini.
 
@@ -1152,7 +1151,7 @@ async def list_agents():
 async def agent_resources():
     return {
         "repos": _available_repos(),
-        "github": {"status": "disconnected", "mode": "read_only"},
+        "github": github_resource_status(),
     }
 
 

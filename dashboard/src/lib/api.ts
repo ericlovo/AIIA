@@ -162,6 +162,17 @@ export interface ExecutionStatus {
   };
 }
 
+export interface GitHubResource {
+  status: 'connected' | 'disconnected' | 'not_configured' | string;
+  mode: 'read_only' | string;
+  source?: 'github_app' | 'none' | string;
+  cli_user_present?: boolean;
+  detail?: string;
+  app_id?: string;
+  installation_id?: string;
+  repositories?: string[];
+}
+
 export interface Agent {
   id: string;
   name: string;
@@ -226,7 +237,7 @@ export const api = {
   executionStatus: () => get<ExecutionStatus>('/api/execution/status'),
 
   agents: () => get<{ agents: Agent[] }>('/api/agents'),
-  agentResources: () => get<{ repos: { id: string; name: string; path: string }[]; github: { status: string; mode: string } }>('/api/agents/resources'),
+  agentResources: () => get<{ repos: { id: string; name: string; path: string }[]; github: GitHubResource }>('/api/agents/resources'),
   createAgent: (data: AgentDefinition) =>
     post<{ agent: Agent }>('/api/agents', data),
   updateAgent: (id: string, data: AgentDefinition) =>
