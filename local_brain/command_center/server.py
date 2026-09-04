@@ -1343,7 +1343,6 @@ async def approve_git_workspace(workspace_id: str):
     return {"workspace": workspace}
 
 
-
 @app.get("/api/handoffs")
 async def list_handoffs():
     return {"handoffs": assignment_registry.list_handoffs()}
