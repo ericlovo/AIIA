@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { api, type Agent, type AgentDefinition } from '../lib/api'
+import { api, type Agent, type AgentDefinition, type GitHubResource } from '../lib/api'
 
 type Draft = AgentDefinition
 
@@ -164,7 +164,11 @@ export function AgentStudio() {
               <option value="">Choose a local repository</option>
               {(resources?.repos ?? []).map(repo => <option key={repo.id} value={repo.id}>{repo.name}</option>)}
             </select>}
-            {draft.tools.includes('GitHub read') && <p className="mt-2 text-xs leading-relaxed text-amber-300/80">GitHub is {resources?.github.status ?? 'checking'}; this agent cannot read GitHub until the Mini is connected.</p>}
+            {draft.tools.includes('GitHub read') && (
+              <p className={`mt-2 text-xs leading-relaxed ${resources?.github.status === 'connected' ? 'text-neutral-400' : 'text-amber-300/80'}`}>
+                {githubReadCopy(resources?.github)}
+              </p>
+            )}
           </div>
           <div className="grid grid-cols-2 gap-3">
             <Field label="Temperature"><input type="number" min="0" max="1" step="0.05" value={draft.temperature} onChange={event => setDraft({ ...draft, temperature: Number(event.target.value) })} /></Field>
@@ -187,6 +191,21 @@ export function AgentStudio() {
       </aside>
     </main>
   )
+}
+
+function githubReadCopy(github?: GitHubResource) {
+  const status = github?.status ?? 'checking'
+  if (status === 'connected') {
+    return 'GitHub App read-only is connected. This agent may read repos the App is installed on — never write, and never use the human gh session.'
+  }
+  if (status === 'not_configured') {
+    return 'GitHub App is not configured. This agent cannot read GitHub until the owner installs a read-only App. A logged-in gh CLI is not an agent credential.'
+  }
+  if (status === 'disconnected') {
+    const detail = github?.detail ? ` ${github.detail}.` : ''
+    return `GitHub App credentials are present but not usable.${detail} Agents stay fail-closed.`
+  }
+  return `GitHub is ${status}; this agent cannot read GitHub until a read-only GitHub App is connected.`
 }
 
 function Status({ status }: { status: Agent['status'] }) {

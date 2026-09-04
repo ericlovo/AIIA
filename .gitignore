@@ -42,6 +42,10 @@ logs/
 reports/
 *.jsonl
 
+# GitHub App credentials (never commit; live under ~/.aiia/)
+github-app.json
+github-app.pem
+
 # Monitoring snapshots
 command_center/monitor_data.json
 

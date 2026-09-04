@@ -161,8 +161,7 @@ class AgentRegistry:
         agent["last_error"] = error
         agent["updated_at"] = now
         agent["runs"] = (
-            [{"task": task, "result": result, "error": error, "at": now}]
-            + agent["runs"]
+            [{"task": task, "result": result, "error": error, "at": now}] + agent["runs"]
         )[:MAX_RUNS]
         self.save()
         return agent
@@ -185,9 +184,7 @@ class AgentRegistry:
     def _tools(tools: Any) -> list[str]:
         if not isinstance(tools, list):
             return []
-        return [str(tool).strip()[:80] for tool in tools if str(tool).strip()][
-            :MAX_TOOLS
-        ]
+        return [str(tool).strip()[:80] for tool in tools if str(tool).strip()][:MAX_TOOLS]
 
     @staticmethod
     def _interval(value: Any) -> int:

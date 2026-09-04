@@ -27,6 +27,15 @@ All notable changes to AIIA are documented here. This project adheres to
   - `local_brain/tests/test_airgap.py` — 12 tests: config overrides,
     fail-closed decision matrix, call-site degradation.
 
+- **Read-only GitHub App for Agent Studio** — `GET /api/agents/resources`
+  probes a dedicated GitHub App install instead of hardcoding
+  `disconnected`. Agents stay fail-closed unless App id + installation
+  id + PEM are present; a logged-in human `gh` CLI (`cli_user_present`)
+  never flips status to connected and is never used as an agent
+  credential. `local_brain.github_app.GitHubReadClient` mints an
+  installation token (App JWT → install token) and refuses write
+  methods. Runbook: `docs/GITHUB-APP-READONLY.md`.
+
 - **Unified `aiia` CLI** — single command entry point for all AIIA workflows.
   Installs as `aiia` on PATH after `pip install aiia`. Subcommands:
   - `aiia` — show wordmark + quick-start tips
