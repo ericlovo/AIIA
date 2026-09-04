@@ -36,6 +36,10 @@ export function AgentStudio() {
   const [task, setTask] = useState('')
   const [view, setView] = useState<StudioView>('agents')
   const selected = agents.find(agent => agent.id === selectedId) ?? null
+  const needsRepo = draft.tools.includes('Repository read') || draft.tools.includes('GitHub read')
+  const githubConnected = resources?.github.status === 'connected'
+  const canSave = draft.name.trim() && draft.mission.trim() && (!needsRepo || draft.repo_id)
+  const selectedRepo = resources?.repos.find(repo => repo.id === draft.repo_id)
 
   function selectAgent(agent: Agent | null) {
     setSelectedId(agent?.id ?? null)
@@ -83,8 +87,8 @@ export function AgentStudio() {
   }
 
   return (
-    <main className="min-h-0 flex-1 grid grid-cols-1 overflow-y-auto bg-neutral-950 lg:grid-cols-[minmax(0,1fr)_360px] lg:overflow-hidden">
-      <section className="relative min-w-0 border-b border-neutral-900 lg:overflow-hidden lg:border-r lg:border-b-0">
+    <main className="min-h-0 flex flex-1 flex-col overflow-y-auto bg-neutral-950 lg:grid lg:grid-cols-[minmax(0,1fr)_360px] lg:overflow-hidden">
+      <section className="relative min-w-0 shrink-0 border-b border-neutral-900 lg:overflow-hidden lg:border-r lg:border-b-0">
         <div className="flex flex-col gap-5 border-b border-neutral-900 px-5 py-6 sm:flex-row sm:items-start sm:justify-between sm:px-7">
           <div>
             <div className="text-[10px] font-semibold tracking-[0.28em] uppercase text-cyan-400">Agent Studio</div>
@@ -144,7 +148,7 @@ export function AgentStudio() {
         </div>
       </section>
 
-      <aside className="min-h-0 overflow-y-auto bg-neutral-950">
+      <aside className="shrink-0 bg-neutral-950 lg:min-h-0 lg:overflow-y-auto">
         <div className="border-b border-neutral-900 px-6 py-5">
           <div className="text-[10px] font-semibold tracking-[0.24em] uppercase text-neutral-500">{selected ? 'Agent controls' : 'New agent'}</div>
           <div className="mt-2 text-lg text-white">{selected?.name || 'Define a role'}</div>
@@ -170,11 +174,12 @@ export function AgentStudio() {
                 return <button key={tool} onClick={() => setDraft({ ...draft, tools: selectedTool ? draft.tools.filter(item => item !== tool) : [...draft.tools, tool] })} className={`border px-2.5 py-1.5 text-xs ${selectedTool ? 'border-cyan-400/60 bg-cyan-500/10 text-cyan-200' : 'border-neutral-800 text-neutral-500 hover:border-neutral-600'}`}>{tool}</button>
               })}
             </div>
-            {draft.tools.includes('Repository read') && <select className="mt-3 w-full border border-neutral-800 bg-neutral-900 px-3 py-2 text-sm text-white outline-none focus:border-cyan-500/60" value={draft.repo_id} onChange={event => setDraft({ ...draft, repo_id: event.target.value })}>
-              <option value="">Choose a local repository</option>
-              {(resources?.repos ?? []).map(repo => <option key={repo.id} value={repo.id}>{repo.name}</option>)}
+            {needsRepo && <select aria-label="Repository" className="mt-3 w-full border border-neutral-800 bg-neutral-900 px-3 py-2 text-sm text-white outline-none focus:border-cyan-500/60" value={draft.repo_id} onChange={event => setDraft({ ...draft, repo_id: event.target.value })}>
+              <option value="">Choose repository</option>
+              {(resources?.repos ?? []).map(repo => <option key={repo.id} value={repo.id}>{repo.name}{repo.dirty ? ' · modified' : ''}</option>)}
             </select>}
-            {draft.tools.includes('GitHub read') && <p className="mt-2 text-xs leading-relaxed text-amber-300/80">GitHub is {resources?.github.status ?? 'checking'}; this agent cannot read GitHub until the Mini is connected.</p>}
+            {needsRepo && selectedRepo && <p className="mt-2 break-words text-xs text-neutral-500">{selectedRepo.branch} · {selectedRepo.github_repo || 'local only'}</p>}
+            {draft.tools.includes('GitHub read') && <p className={`mt-2 text-xs ${githubConnected ? 'text-emerald-300/80' : 'text-amber-300/80'}`}>{githubConnected ? `Connected · @${resources.github.account} · read only` : `GitHub ${resources?.github.status ?? 'checking'}`}</p>}
           </div>
           <div className="grid grid-cols-2 gap-3">
             <Field label="Temperature"><input type="number" min="0" max="1" step="0.05" value={draft.temperature} onChange={event => setDraft({ ...draft, temperature: Number(event.target.value) })} /></Field>
@@ -184,7 +189,7 @@ export function AgentStudio() {
             <div className="flex items-center justify-between gap-3"><div><div className="text-[10px] font-semibold tracking-[0.16em] uppercase text-cyan-400">Loop node</div><p className="mt-1 text-xs text-neutral-500">Run a bounded recurring task on the Mini.</p></div><button onClick={() => setDraft({ ...draft, loop_enabled: !draft.loop_enabled })} className={`border px-2.5 py-1.5 text-xs ${draft.loop_enabled ? 'border-cyan-400/60 text-cyan-200' : 'border-neutral-700 text-neutral-500'}`}>{draft.loop_enabled ? 'Enabled' : 'Disabled'}</button></div>
             {draft.loop_enabled && <div className="mt-4 space-y-3"><Field label="Loop task"><textarea value={draft.loop_task} onChange={event => setDraft({ ...draft, loop_task: event.target.value })} rows={3} placeholder="Inspect the mounted repository and report only material changes." /></Field><div className="grid grid-cols-2 gap-3"><Field label="Every minutes"><input type="number" min="15" max="1440" value={draft.loop_interval_minutes} onChange={event => setDraft({ ...draft, loop_interval_minutes: Number(event.target.value) })} /></Field><Field label="Runs / day"><input type="number" min="1" max="48" value={draft.loop_max_runs_per_day} onChange={event => setDraft({ ...draft, loop_max_runs_per_day: Number(event.target.value) })} /></Field></div></div>}
           </div>
-          <button disabled={!draft.name.trim() || !draft.mission.trim() || save.isPending} onClick={() => save.mutate()} className="w-full bg-cyan-400 px-3 py-2.5 text-sm font-medium text-neutral-950 disabled:cursor-not-allowed disabled:opacity-40">{save.isPending ? 'Saving…' : selected ? 'Save agent' : 'Create agent'}</button>
+          <button disabled={!canSave || save.isPending} onClick={() => save.mutate()} className="w-full bg-cyan-400 px-3 py-2.5 text-sm font-medium text-neutral-950 disabled:cursor-not-allowed disabled:opacity-40">{save.isPending ? 'Saving…' : selected ? 'Save agent' : 'Create agent'}</button>
           {selected && <button disabled={remove.isPending} onClick={() => remove.mutate()} className="w-full px-3 py-2 text-xs text-neutral-600 hover:text-red-300">Remove agent</button>}
         </div>
 

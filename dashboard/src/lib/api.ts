@@ -191,6 +191,23 @@ export interface Agent {
   updated_at: string;
 }
 
+export interface RepositoryResource {
+  id: string;
+  name: string;
+  path: string;
+  branch: string;
+  dirty: boolean;
+  github_repo: string;
+}
+
+export interface GitHubResource {
+  status: 'connected' | 'disconnected';
+  mode: 'read_only';
+  provider: string;
+  account: string;
+  reason: string;
+}
+
 export type AgentDefinition = Pick<Agent,
   'name' | 'mission' | 'persona' | 'skills' | 'tools' | 'repo_id' |
   'temperature' | 'max_tokens' | 'loop_enabled' | 'loop_interval_minutes' |
@@ -278,7 +295,7 @@ export const api = {
   executionStatus: () => get<ExecutionStatus>('/api/execution/status'),
 
   agents: () => get<{ agents: Agent[] }>('/api/agents'),
-  agentResources: () => get<{ repos: { id: string; name: string; path: string }[]; github: { status: string; mode: string } }>('/api/agents/resources'),
+  agentResources: () => get<{ repos: RepositoryResource[]; github: GitHubResource }>('/api/agents/resources'),
   createAgent: (data: AgentDefinition) =>
     post<{ agent: Agent }>('/api/agents', data),
   updateAgent: (id: string, data: AgentDefinition) =>
