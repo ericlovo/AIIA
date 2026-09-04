@@ -198,6 +198,10 @@ export interface RepositoryResource {
   branch: string;
   dirty: boolean;
   github_repo: string;
+  git_workspace?: {
+    eligible: boolean;
+    reason: string;
+  };
 }
 
 export interface GitHubResource {
@@ -262,6 +266,26 @@ export interface HandoffDefinition {
   instructions: string;
 }
 
+export type GitWorkspaceStatus = 'pending' | 'preparing' | 'ready' | 'failed';
+
+export interface GitWorkspace {
+  id: string;
+  assignment_id: string;
+  agent_id: string;
+  repo_id: string;
+  title: string;
+  status: GitWorkspaceStatus;
+  branch: string;
+  base_ref: string;
+  path: string;
+  git_status: string;
+  error: string;
+  created_at: string;
+  updated_at: string;
+  approved_at: string | null;
+  events: { at: string; action: string; detail: string }[];
+}
+
 // API calls
 export const api = {
   health: () => get<{ aiia: { status: string }; ollama: { status: string } }>('/api/health'),
@@ -311,6 +335,11 @@ export const api = {
     del<{ deleted: boolean }>(`/api/assignments/${id}`),
   runAssignment: (id: string) =>
     post<{ assignment: Assignment; agent: Agent; model: string; latency_ms: number }>(`/api/assignments/${id}/run`),
+  gitWorkspaces: () => get<{ workspaces: GitWorkspace[] }>('/api/git-workspaces'),
+  requestGitWorkspace: (assignmentId: string) =>
+    post<{ workspace: GitWorkspace }>(`/api/assignments/${assignmentId}/git-workspace`),
+  approveGitWorkspace: (workspaceId: string) =>
+    post<{ workspace: GitWorkspace }>(`/api/git-workspaces/${workspaceId}/approve`),
   handoffs: () => get<{ handoffs: Handoff[] }>('/api/handoffs'),
   createHandoff: (data: HandoffDefinition) =>
     post<{ handoff: Handoff; assignment: Assignment }>('/api/handoffs', data),

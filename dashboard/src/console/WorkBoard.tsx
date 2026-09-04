@@ -10,11 +10,15 @@ import {
   type Handoff,
   type HandoffArtifactType,
   type HandoffDefinition,
+  type GitWorkspace,
+  type RepositoryResource,
 } from '../lib/api'
 import { StudioTabs, type StudioView } from './StudioTabs'
 
 const EMPTY_ASSIGNMENTS: Assignment[] = []
 const EMPTY_HANDOFFS: Handoff[] = []
+const EMPTY_WORKSPACES: GitWorkspace[] = []
+const EMPTY_REPOS: RepositoryResource[] = []
 const PRIORITIES: AssignmentPriority[] = ['low', 'normal', 'high', 'urgent']
 const ARTIFACT_TYPES: HandoffArtifactType[] = ['brief', 'analysis', 'plan', 'decision', 'review']
 
@@ -52,8 +56,19 @@ export function WorkBoard({ agents, view, onViewChange }: WorkBoardProps) {
     queryFn: api.handoffs,
     refetchInterval: 5_000,
   })
+  const { data: workspaceData } = useQuery({
+    queryKey: ['git-workspaces'],
+    queryFn: api.gitWorkspaces,
+    refetchInterval: 5_000,
+  })
+  const { data: resourceData } = useQuery({
+    queryKey: ['agent-resources'],
+    queryFn: api.agentResources,
+  })
   const assignments = assignmentData?.assignments ?? EMPTY_ASSIGNMENTS
   const handoffs = handoffData?.handoffs ?? EMPTY_HANDOFFS
+  const workspaces = workspaceData?.workspaces ?? EMPTY_WORKSPACES
+  const repos = resourceData?.repos ?? EMPTY_REPOS
   const [selectedAssignmentId, setSelectedAssignmentId] = useState<string | null>(null)
   const [selectedHandoffId, setSelectedHandoffId] = useState<string | null>(null)
   const [assignmentDraft, setAssignmentDraft] = useState(EMPTY_ASSIGNMENT)
@@ -101,6 +116,14 @@ export function WorkBoard({ agents, view, onViewChange }: WorkBoardProps) {
       qc.invalidateQueries({ queryKey: ['assignments'] })
       qc.invalidateQueries({ queryKey: ['handoffs'] })
     },
+  })
+  const requestWorkspace = useMutation({
+    mutationFn: api.requestGitWorkspace,
+    onSettled: () => qc.invalidateQueries({ queryKey: ['git-workspaces'] }),
+  })
+  const approveWorkspace = useMutation({
+    mutationFn: api.approveGitWorkspace,
+    onSettled: () => qc.invalidateQueries({ queryKey: ['git-workspaces'] }),
   })
 
   const completedAssignments = assignments.filter(item => item.status === 'completed' && item.result)
@@ -207,13 +230,20 @@ export function WorkBoard({ agents, view, onViewChange }: WorkBoardProps) {
           selectedAssignment ? (
             <AssignmentDetails
               assignment={selectedAssignment}
+              agent={agents.find(item => item.id === selectedAssignment.agent_id) ?? null}
               agentName={agentName(selectedAssignment.agent_id)}
+              workspace={workspaces.find(item => item.assignment_id === selectedAssignment.id) ?? null}
+              repo={repos.find(item => item.id === agents.find(agent => agent.id === selectedAssignment.agent_id)?.repo_id) ?? null}
               isRunning={runAssignment.isPending}
               isRemoving={removeAssignment.isPending}
+              isRequestingWorkspace={requestWorkspace.isPending}
+              isApprovingWorkspace={approveWorkspace.isPending}
               hasHandoff={handoffs.some(item => item.source_assignment_id === selectedAssignment.id || item.target_assignment_id === selectedAssignment.id)}
-              error={runAssignment.error ?? removeAssignment.error}
+              error={runAssignment.error ?? removeAssignment.error ?? requestWorkspace.error ?? approveWorkspace.error}
               onRun={() => runAssignment.mutate(selectedAssignment.id)}
               onHandoff={() => prepareHandoff(selectedAssignment)}
+              onRequestWorkspace={() => requestWorkspace.mutate(selectedAssignment.id)}
+              onApproveWorkspace={workspaceId => approveWorkspace.mutate(workspaceId)}
               onRemove={() => removeAssignment.mutate(selectedAssignment.id)}
             />
           ) : (
@@ -314,8 +344,28 @@ function AssignmentForm({ agents, draft, pending, error, onChange, onSubmit }: {
   )
 }
 
-function AssignmentDetails({ assignment, agentName, isRunning, isRemoving, hasHandoff, error, onRun, onHandoff, onRemove }: { assignment: Assignment; agentName: string; isRunning: boolean; isRemoving: boolean; hasHandoff: boolean; error: Error | null; onRun: () => void; onHandoff: () => void; onRemove: () => void }) {
+interface AssignmentDetailsProps {
+  assignment: Assignment
+  agent: Agent | null
+  agentName: string
+  workspace: GitWorkspace | null
+  repo: RepositoryResource | null
+  isRunning: boolean
+  isRemoving: boolean
+  isRequestingWorkspace: boolean
+  isApprovingWorkspace: boolean
+  hasHandoff: boolean
+  error: Error | null
+  onRun: () => void
+  onHandoff: () => void
+  onRequestWorkspace: () => void
+  onApproveWorkspace: (workspaceId: string) => void
+  onRemove: () => void
+}
+
+function AssignmentDetails({ assignment, agent, agentName, workspace, repo, isRunning, isRemoving, isRequestingWorkspace, isApprovingWorkspace, hasHandoff, error, onRun, onHandoff, onRequestWorkspace, onApproveWorkspace, onRemove }: AssignmentDetailsProps) {
   const runnable = assignment.status === 'queued' || assignment.status === 'failed'
+  const gitEnabled = agent?.tools.includes('Git workspace') ?? false
   return (
     <Panel title={assignment.title} eyebrow="Assignment controls">
       <Meta label="Owner" value={agentName} />
@@ -325,12 +375,76 @@ function AssignmentDetails({ assignment, agentName, isRunning, isRemoving, hasHa
       {assignment.context && <TextBlock label="Context" value={assignment.context} muted />}
       {assignment.result && <TextBlock label="Work product" value={assignment.result} />}
       {assignment.error && <div className="border border-red-900/60 bg-red-950/30 p-3 text-xs text-red-300">{assignment.error}</div>}
+      {assignment.status === 'completed' && (
+        <GitWorkspacePanel
+          agentName={agentName}
+          gitEnabled={gitEnabled}
+          repo={repo}
+          workspace={workspace}
+          isRequesting={isRequestingWorkspace}
+          isApproving={isApprovingWorkspace}
+          onRequest={onRequestWorkspace}
+          onApprove={onApproveWorkspace}
+        />
+      )}
       {error && <ErrorNotice error={error} />}
       {runnable && <button disabled={isRunning} onClick={onRun} className="w-full bg-white px-3 py-2.5 text-sm font-medium text-neutral-950 disabled:cursor-not-allowed disabled:opacity-40">{isRunning ? 'Mini is working…' : assignment.status === 'failed' ? 'Retry assignment' : 'Run assignment'}</button>}
       {assignment.status === 'completed' && <button onClick={onHandoff} className="w-full bg-cyan-400 px-3 py-2.5 text-sm font-medium text-neutral-950">Hand off work</button>}
       <button disabled={isRemoving || assignment.status === 'running' || hasHandoff} onClick={onRemove} title={hasHandoff ? 'Unlink the handoff before deleting connected work' : undefined} className="w-full px-3 py-2 text-xs text-neutral-600 hover:text-red-300 disabled:opacity-30">Delete assignment</button>
     </Panel>
   )
+}
+
+function GitWorkspacePanel({ agentName, gitEnabled, repo, workspace, isRequesting, isApproving, onRequest, onApprove }: { agentName: string; gitEnabled: boolean; repo: RepositoryResource | null; workspace: GitWorkspace | null; isRequesting: boolean; isApproving: boolean; onRequest: () => void; onApprove: (workspaceId: string) => void }) {
+  const eligible = repo?.git_workspace?.eligible ?? false
+  const blocked = repo && repo.git_workspace?.eligible === false
+  return (
+    <div className="border border-neutral-800 bg-neutral-900/50 p-4">
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <div className="text-[10px] font-semibold tracking-[0.16em] uppercase text-cyan-400">Git workspace</div>
+          <p className="mt-1 text-xs text-neutral-500">Isolated branch on the Mini. No commit or push access.</p>
+        </div>
+        {workspace && <WorkspaceStatus status={workspace.status} />}
+      </div>
+
+      {!gitEnabled && <p className="mt-4 text-xs leading-relaxed text-amber-300/80">Enable Git workspace on {agentName} before requesting implementation space.</p>}
+      {gitEnabled && !repo && <p className="mt-4 text-xs text-amber-300/80">This agent needs a mounted repository.</p>}
+      {gitEnabled && blocked && <p className="mt-4 text-xs leading-relaxed text-amber-300/80">Workspace blocked: this mount shares a GitHub remote with another repository. Correct the remote first.</p>}
+
+      {gitEnabled && eligible && !workspace && (
+        <button disabled={isRequesting} onClick={onRequest} className="mt-4 w-full border border-cyan-500/50 px-3 py-2.5 text-sm text-cyan-200 hover:bg-cyan-500/10 disabled:opacity-40">{isRequesting ? 'Requesting…' : 'Request Git workspace'}</button>
+      )}
+
+      {workspace?.status === 'pending' && (
+        <div className="mt-4 space-y-3">
+          <WorkspaceMeta label="Proposed branch" value={workspace.branch} />
+          <p className="text-xs leading-relaxed text-neutral-500">Approval creates the branch and worktree. It does not run the agent or change files.</p>
+          <button disabled={isApproving} onClick={() => onApprove(workspace.id)} className="w-full bg-cyan-400 px-3 py-2.5 text-sm font-medium text-neutral-950 disabled:opacity-40">{isApproving ? 'Preparing…' : 'Approve & create worktree'}</button>
+        </div>
+      )}
+
+      {workspace?.status === 'preparing' && <p className="mt-4 text-xs text-amber-300">Preparing isolated worktree…</p>}
+      {workspace?.status === 'failed' && <p className="mt-4 break-words text-xs leading-relaxed text-red-300">{workspace.error || 'Workspace creation failed.'}</p>}
+      {workspace?.status === 'ready' && (
+        <div className="mt-4 space-y-3">
+          <WorkspaceMeta label="Branch" value={workspace.branch} />
+          <WorkspaceMeta label="Base" value={workspace.base_ref} />
+          <WorkspaceMeta label="Mini path" value={workspace.path} />
+          <pre className="max-h-32 overflow-auto whitespace-pre-wrap border border-neutral-800 bg-neutral-950 p-3 text-[11px] leading-relaxed text-neutral-400">{workspace.git_status}</pre>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function WorkspaceMeta({ label, value }: { label: string; value: string }) {
+  return <div><div className="text-[10px] uppercase tracking-[0.14em] text-neutral-600">{label}</div><div className="mt-1 break-all font-mono text-[11px] text-neutral-300">{value}</div></div>
+}
+
+function WorkspaceStatus({ status }: { status: GitWorkspace['status'] }) {
+  const color = status === 'ready' ? 'border-green-800 text-green-300' : status === 'failed' ? 'border-red-900 text-red-300' : 'border-amber-700 text-amber-300'
+  return <span className={`shrink-0 border px-2 py-1 text-[10px] uppercase tracking-[0.12em] ${color}`}>{status}</span>
 }
 
 function HandoffForm({ agents, assignments, draft, pending, error, onChange, onSubmit }: { agents: Agent[]; assignments: Assignment[]; draft: HandoffDefinition; pending: boolean; error: Error | null; onChange: (draft: HandoffDefinition) => void; onSubmit: () => void }) {

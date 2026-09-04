@@ -846,6 +846,7 @@ from local_brain.command_center.action_queue import ActionQueue
 from local_brain.command_center.agent_registry import AgentRegistry
 from local_brain.command_center.aiia_tasks import TaskRunner
 from local_brain.command_center.assignment_registry import AssignmentRegistry
+from local_brain.command_center.git_workspace_registry import GitWorkspaceRegistry
 from local_brain.command_center.repository_tools import (
     available_repos,
     github_snapshot,
@@ -857,7 +858,9 @@ from local_brain.command_center.repository_tools import (
 action_queue = ActionQueue()
 agent_registry = AgentRegistry()
 assignment_registry = AssignmentRegistry()
+git_workspace_registry = GitWorkspaceRegistry()
 agent_run_lock = asyncio.Lock()
+git_workspace_lock = asyncio.Lock()
 # Git root is AIIA-public (server.py → command_center → local_brain → AIIA-public).
 # A fourth .parent pointed at the outer ~/aiia-brain wrapper repo, which dragged
 # the github-runner checkout, archives, and node externals into every report scan
@@ -1104,6 +1107,11 @@ def _agent_system_prompt(agent: dict[str, Any]) -> str:
         contexts.append(repo_snapshot(agent.get("repo_id", "")))
     if "GitHub read" in tools:
         contexts.append(github_snapshot(agent.get("repo_id", "")))
+    if "Git workspace" in tools:
+        contexts.append(
+            "Git workspace requests are available, but only a human can approve creation. "
+            "Do not claim a branch, worktree, file edit, commit, push, or pull request exists."
+        )
     tool_context = "\n\n".join(contexts) or "No external tools are mounted."
     return f"""You are {agent["name"]}, a local agent running on AIIA's Mac Mini.
 
@@ -1136,7 +1144,7 @@ async def agent_resources():
 
 
 def _validate_agent_repo(body: AgentCreateRequest) -> None:
-    repo_tools = {"Repository read", "GitHub read"}
+    repo_tools = {"Repository read", "GitHub read", "Git workspace"}
     if repo_tools.intersection(body.tools) and not repo_available(body.repo_id):
         raise HTTPException(status_code=422, detail="mounted_repository_required")
 
@@ -1299,6 +1307,41 @@ async def run_assignment(assignment_id: str):
         "model": run_result["model"],
         "latency_ms": run_result["latency_ms"],
     }
+
+
+@app.get("/api/git-workspaces")
+async def list_git_workspaces():
+    return {"workspaces": git_workspace_registry.list()}
+
+
+@app.post("/api/assignments/{assignment_id}/git-workspace")
+async def request_git_workspace(assignment_id: str):
+    assignment = assignment_registry.get_assignment(assignment_id)
+    if not assignment:
+        raise HTTPException(status_code=404, detail="assignment_not_found")
+    agent = agent_registry.get(assignment["agent_id"])
+    if not agent:
+        raise HTTPException(status_code=409, detail="assigned_agent_not_found")
+    try:
+        workspace = git_workspace_registry.propose(assignment, agent)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return {"workspace": workspace}
+
+
+@app.post("/api/git-workspaces/{workspace_id}/approve")
+async def approve_git_workspace(workspace_id: str):
+    if not git_workspace_registry.get(workspace_id):
+        raise HTTPException(status_code=404, detail="git_workspace_not_found")
+    if git_workspace_lock.locked():
+        raise HTTPException(status_code=409, detail="git_workspace_busy")
+    try:
+        async with git_workspace_lock:
+            workspace = await asyncio.to_thread(git_workspace_registry.approve, workspace_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return {"workspace": workspace}
+
 
 
 @app.get("/api/handoffs")

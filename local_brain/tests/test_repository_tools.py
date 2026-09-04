@@ -76,3 +76,19 @@ def test_github_api_command_is_hard_coded_to_get(monkeypatch):
 
     assert repository_tools.github_status()["status"] == "connected"
     assert captured[0][1:4] == ["api", "--method", "GET"]
+
+
+def test_duplicate_remote_is_not_git_workspace_eligible(tmp_path, monkeypatch):
+    first = tmp_path / "first"
+    second = tmp_path / "second"
+    for repo in (first, second):
+        repo.mkdir()
+        _git(repo, "init", "-b", "main")
+        _git(repo, "remote", "add", "origin", "https://github.com/example/shared.git")
+
+    monkeypatch.setattr(repository_tools, "REPO_MOUNTS", {"first": first, "second": second})
+
+    assert repository_tools.repo_write_eligibility("first") == (
+        False,
+        "ambiguous_github_remote",
+    )

@@ -68,6 +68,32 @@ def repo_available(repo_id: str) -> bool:
     return bool(path and (path / ".git").exists())
 
 
+def repo_mount(repo_id: str) -> Path | None:
+    path = REPO_MOUNTS.get(repo_id)
+    return path if path and (path / ".git").exists() else None
+
+
+def repo_write_eligibility(repo_id: str) -> tuple[bool, str]:
+    path = repo_mount(repo_id)
+    if not path:
+        return False, "repository_not_mounted"
+
+    slug = _origin_slug(path)
+    if not slug:
+        return True, ""
+
+    duplicate_ids = [
+        mounted_id
+        for mounted_id, mounted_path in REPO_MOUNTS.items()
+        if mounted_id != repo_id
+        and (mounted_path / ".git").exists()
+        and _origin_slug(mounted_path) == slug
+    ]
+    if duplicate_ids:
+        return False, "ambiguous_github_remote"
+    return True, ""
+
+
 def available_repos() -> list[dict[str, Any]]:
     repos = []
     for repo_id, path in REPO_MOUNTS.items():
@@ -76,6 +102,7 @@ def available_repos() -> list[dict[str, Any]]:
         status = _git(path, "status", "--short", "--branch")
         branch_line = status.splitlines()[0] if status else ""
         branch = branch_line.removeprefix("## ").split("...")[0].strip()
+        git_eligible, git_reason = repo_write_eligibility(repo_id)
         repos.append(
             {
                 "id": repo_id,
@@ -84,6 +111,7 @@ def available_repos() -> list[dict[str, Any]]:
                 "branch": branch or "unknown",
                 "dirty": len(status.splitlines()) > 1,
                 "github_repo": _origin_slug(path),
+                "git_workspace": {"eligible": git_eligible, "reason": git_reason},
             }
         )
     return repos

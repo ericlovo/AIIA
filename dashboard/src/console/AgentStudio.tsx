@@ -24,7 +24,7 @@ const EMPTY_DRAFT: Draft = {
 const EMPTY_AGENTS: Agent[] = []
 
 const SKILL_LIBRARY = ['Research', 'Planning', 'Writing', 'Analysis', 'Coding', 'Memory']
-const TOOL_LIBRARY = ['Local memory', 'Repository read', 'GitHub read']
+const TOOL_LIBRARY = ['Local memory', 'Repository read', 'GitHub read', 'Git workspace']
 
 export function AgentStudio() {
   const qc = useQueryClient()
@@ -36,7 +36,7 @@ export function AgentStudio() {
   const [task, setTask] = useState('')
   const [view, setView] = useState<StudioView>('agents')
   const selected = agents.find(agent => agent.id === selectedId) ?? null
-  const needsRepo = draft.tools.includes('Repository read') || draft.tools.includes('GitHub read')
+  const needsRepo = draft.tools.some(tool => ['Repository read', 'GitHub read', 'Git workspace'].includes(tool))
   const githubConnected = resources?.github.status === 'connected'
   const canSave = draft.name.trim() && draft.mission.trim() && (!needsRepo || draft.repo_id)
   const selectedRepo = resources?.repos.find(repo => repo.id === draft.repo_id)
@@ -180,6 +180,7 @@ export function AgentStudio() {
             </select>}
             {needsRepo && selectedRepo && <p className="mt-2 break-words text-xs text-neutral-500">{selectedRepo.branch} · {selectedRepo.github_repo || 'local only'}</p>}
             {draft.tools.includes('GitHub read') && <p className={`mt-2 text-xs ${githubConnected ? 'text-emerald-300/80' : 'text-amber-300/80'}`}>{githubConnected ? `Connected · @${resources.github.account} · read only` : `GitHub ${resources?.github.status ?? 'checking'}`}</p>}
+            {draft.tools.includes('Git workspace') && <p className={`mt-2 text-xs ${selectedRepo?.git_workspace?.eligible ? 'text-cyan-300/80' : 'text-amber-300/80'}`}>{selectedRepo?.git_workspace?.eligible ? 'Isolated worktrees · human approval required' : selectedRepo ? 'Git workspace blocked · verify repository remote' : 'Choose a repository for isolated worktrees'}</p>}
           </div>
           <div className="grid grid-cols-2 gap-3">
             <Field label="Temperature"><input type="number" min="0" max="1" step="0.05" value={draft.temperature} onChange={event => setDraft({ ...draft, temperature: Number(event.target.value) })} /></Field>
