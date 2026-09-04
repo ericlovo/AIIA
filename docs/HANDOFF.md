@@ -2,6 +2,8 @@
 
 Working file for passing state between the Claude Code session on the Mac Mini and the one on the MacBook. Newest entry on top. Read this after `git pull` when picking up work started on the other machine.
 
+This is **not** the product Handoff entity. Assignments + typed Handoffs (the executable organization graph) are specified in [`EXECUTABLE-ORGANIZATION.md`](./EXECUTABLE-ORGANIZATION.md).
+
 ---
 
 ## 2026-07-17 — Mini session: e2fb6ac deployed, research model fixed (from: Mini)

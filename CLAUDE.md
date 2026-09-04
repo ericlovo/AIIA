@@ -39,6 +39,8 @@ local_brain/                  # The Python package — everything lives here
 dashboard/                    # Separate Vite frontend (no Tailwind yet — see design/TODO.md)
 design/                       # Source-of-truth design tokens (aiia-console is canonical)
 docs/                         # Architecture + design docs
+                              # (EXECUTABLE-ORGANIZATION.md = Assignments + typed Handoffs;
+                              #  HANDOFF.md = Mini ⇄ MacBook session notebook — different concept)
 docker-compose.yml            # Brain + Ollama + Command Center
 ```
 
