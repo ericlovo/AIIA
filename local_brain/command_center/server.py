@@ -946,8 +946,8 @@ class ChatMessage(BaseModel):
 @app.get("/", response_class=HTMLResponse)
 async def serve_console():
     """Serve the React Command Center dashboard, or fallback to legacy."""
-    react_index = resolve_react_dist() / "index.html"
-    if react_index.exists():
+    react_index = REACT_DIST / "index.html" if REACT_DIST.exists() else None
+    if react_index and react_index.exists():
         return HTMLResponse(content=react_index.read_text())
     html_path = STATIC_DIR / "console.html"
     if html_path.exists():
