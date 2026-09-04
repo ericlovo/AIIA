@@ -1,8 +1,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { api } from '../lib/api'
-import type { TeamUser } from '../lib/chatStore'
 
-export function TopBar({ user, onSwitchUser }: { user: TeamUser; onSwitchUser: () => void }) {
+export function TopBar() {
   const { data: health } = useQuery({
     queryKey: ['health'],
     queryFn: api.health,
@@ -30,8 +29,8 @@ export function TopBar({ user, onSwitchUser }: { user: TeamUser; onSwitchUser: (
   const phase2 = phase === 'phase2'
 
   return (
-    <header className="h-14 shrink-0 border-b border-neutral-900 flex items-center justify-between px-6 bg-neutral-950">
-      <div className="flex items-center gap-8">
+    <header className="h-14 shrink-0 border-b border-neutral-900 flex items-center justify-between px-3 sm:px-6 bg-neutral-950">
+      <div className="flex min-w-0 items-center gap-3 sm:gap-8">
         {/* Brand */}
         <div className="flex items-baseline gap-2">
           <span className="text-xs font-bold text-purple-400 tracking-[0.3em]">AIIA</span>
@@ -39,7 +38,7 @@ export function TopBar({ user, onSwitchUser }: { user: TeamUser; onSwitchUser: (
         </div>
 
         {/* Status pills */}
-        <div className="flex items-center gap-4 text-xs">
+        <div className="hidden items-center gap-4 text-xs sm:flex">
           <Pill
             dot={brainState === 'up' ? 'green' : brainState === 'loading' ? 'gray' : 'red'}
             label={brainState === 'loading' ? 'checking brain…' : brainState === 'up' ? 'brain online' : 'brain down'}
@@ -59,17 +58,12 @@ export function TopBar({ user, onSwitchUser }: { user: TeamUser; onSwitchUser: (
         </div>
       </div>
 
-      {/* Identity */}
-      <button
-        onClick={onSwitchUser}
-        className="flex items-center gap-2 text-xs text-neutral-500 hover:text-white cursor-pointer"
-        title="Switch user"
-      >
-        <div className="w-6 h-6 rounded-full bg-purple-500/20 border border-purple-500/50 flex items-center justify-center text-purple-300 font-medium">
-          {user[0]}
+      <div className="flex items-center gap-2 text-xs text-neutral-500">
+        <div className="w-6 h-6 rounded-full bg-cyan-500/10 border border-cyan-500/30 flex items-center justify-center text-cyan-300 font-medium">
+          A
         </div>
-        <span>{user}</span>
-      </button>
+        <span className="hidden sm:inline">shared workspace</span>
+      </div>
     </header>
   )
 }

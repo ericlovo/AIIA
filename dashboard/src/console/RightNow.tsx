@@ -2,7 +2,6 @@ import { useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '../lib/api'
 import type { Action, Story, TaskInfo } from '../lib/api'
-import type { TeamUser } from '../lib/chatStore'
 
 // Loops whose output is genuinely "AIIA is watching/working" activity.
 // The scheduled dev loops (test_runner, health_journal) are infrastructure —
@@ -31,15 +30,15 @@ function timeAgo(iso: string | null | undefined): string {
 // Skip noise: CI failures on ephemeral branches
 const NOISE_BRANCH_RE = /\bon (claude|dependabot|fix|feat|security|chore)\//i
 
-// Author convention — tags like "from:paul" or "@paul" mean Paul wrote it.
-// "@paul" tag also means Paul is the current owner (added when someone picks up).
+// Story provenance is stored as `from:<source>`; assignment remains a separate
+// `@owner` tag so work can be shared without browser-selected identities.
 function parseAuthor(story: Story): string | null {
   const tags = story.tags ?? []
   for (const t of tags) {
     const m = t.match(/^from:(\w+)/i)
     if (m) return m[1].toLowerCase()
   }
-  // Fallback: parse from source_type "direct:paul"
+  // Fallback: parse from source_type "direct:workspace"
   if (story.source_type) {
     const m = story.source_type.match(/^direct:(\w+)/i)
     if (m) return m[1].toLowerCase()
@@ -56,8 +55,8 @@ function parseOwner(story: Story): string | null {
   return null
 }
 
-export function RightNow({ user }: { user: TeamUser }) {
-  const me = user.toLowerCase()
+export function RightNow() {
+  const me = 'workspace'
   const { data: actions } = useQuery({
     queryKey: ['rn-actions'],
     queryFn: () => api.actions(),
@@ -105,29 +104,24 @@ export function RightNow({ user }: { user: TeamUser }) {
     s => s.status === 'active' || s.status === 'in_progress'
   )
 
-  // Team inbox: unowned stories in backlog written by someone else in the last 3 days.
-  // "Unowned" = no @user tag yet. "Someone else" = author is not me.
-  const threeDaysAgo = Date.now() - 3 * 24 * 3600 * 1000
+  // Workspace inbox: every unowned backlog item, newest first.
   const fromTeam = (stories?.stories ?? [])
     .filter(s => {
       if (s.status !== 'backlog') return false
       const author = parseAuthor(s)
       const owner = parseOwner(s)
-      if (!author || author === me) return false
+      if (!author) return false
       if (owner) return false
-      const created = new Date(s.created_at).getTime()
-      return created >= threeDaysAgo
+      return true
     })
     .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
     .slice(0, 5)
 
-  // My stories — things I wrote OR picked up that aren't shipped
+  // Active workspace stories that are not yet shipped.
   const mine = (stories?.stories ?? [])
     .filter(s => {
       if (['shipped', 'cancelled'].includes(s.status)) return false
-      const author = parseAuthor(s)
-      const owner = parseOwner(s)
-      return author === me || owner === me
+      return s.status === 'active' || s.status === 'in_progress'
     })
     .sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime())
     .slice(0, 4)
@@ -165,10 +159,10 @@ export function RightNow({ user }: { user: TeamUser }) {
       </div>
 
       <div className="flex-1 min-h-0 overflow-y-auto px-6 py-4 space-y-5">
-        {/* FROM THE TEAM — stories written by other team members, awaiting pickup */}
+        {/* WORKSPACE INBOX — unowned stories awaiting pickup */}
         <TeamInboxSection stories={fromTeam} me={me} />
 
-        {/* MY WORK — stories you wrote or picked up */}
+        {/* ACTIVE WORK — stories in flight across the workspace */}
         <MyWorkSection stories={mine} />
 
         {/* IN FLIGHT — what AIIA is actively doing */}
@@ -316,17 +310,12 @@ function LiveCard({
 }
 
 // ─────────────────────────────────────────────────────────────
-// Team inbox — stories written by other team members, awaiting pickup
+// Workspace inbox — stories awaiting pickup
 // ─────────────────────────────────────────────────────────────
 
 function AuthorBadge({ name }: { name: string }) {
   const initial = name[0].toUpperCase()
-  const colors: Record<string, string> = {
-    eric: 'bg-purple-500/20 border-purple-500/50 text-purple-300',
-    paul: 'bg-emerald-500/20 border-emerald-500/50 text-emerald-300',
-    tony: 'bg-amber-500/20 border-amber-500/50 text-amber-300',
-  }
-  const color = colors[name.toLowerCase()] ?? 'bg-neutral-800 border-neutral-700 text-neutral-400'
+  const color = 'bg-neutral-800 border-neutral-700 text-neutral-400'
   return (
     <div className={`w-5 h-5 rounded-full border flex items-center justify-center text-[10px] font-medium shrink-0 ${color}`} title={name}>
       {initial}
