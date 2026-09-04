@@ -564,8 +564,23 @@ app.add_middleware(
 
 STATIC_DIR = Path(__file__).parent / "static"
 
-# React dashboard (built assets from products/command-center/frontend/dist)
-REACT_DIST = Path(__file__).parents[3] / "products" / "command-center" / "frontend" / "dist"
+
+# React dashboard dist: prefer dashboard/dist, then AIIA_DASHBOARD_DIST, then legacy products path.
+def resolve_react_dist() -> Path:
+    candidates = [Path(__file__).parents[2] / "dashboard" / "dist"]
+    env_dist = os.getenv("AIIA_DASHBOARD_DIST", "").strip()
+    if env_dist:
+        candidates.append(Path(env_dist))
+    candidates.append(
+        Path(__file__).parents[3] / "products" / "command-center" / "frontend" / "dist"
+    )
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate
+    return candidates[0]
+
+
+REACT_DIST = resolve_react_dist()
 if REACT_DIST.exists():
     app.mount(
         "/assets",
