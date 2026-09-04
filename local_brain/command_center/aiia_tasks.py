@@ -59,10 +59,28 @@ def _load_project_registry() -> dict:
 # once surfaced Sanctuary's "never make autonomous clinical decisions" non-goal
 # as work to build). Matched as substrings, checked BEFORE the include list.
 _EXCLUDE_HEADINGS = (
-    "shipped", "done", "complete", "changelog", "archive", "release notes",
-    "not now", "non-goal", "nongoal", "non goal", "not doing", "won't", "wont",
-    "out of scope", "out-of-scope", "someday", "deferred", "icebox", "parking lot",
-    "future", "later", "won't do",
+    "shipped",
+    "done",
+    "complete",
+    "changelog",
+    "archive",
+    "release notes",
+    "not now",
+    "non-goal",
+    "nongoal",
+    "non goal",
+    "not doing",
+    "won't",
+    "wont",
+    "out of scope",
+    "out-of-scope",
+    "someday",
+    "deferred",
+    "icebox",
+    "parking lot",
+    "future",
+    "later",
+    "won't do",
 )
 
 
@@ -187,6 +205,7 @@ def _render_backlog_doc(project_name: str, stories: list[dict]) -> str:
             line += "  _(in progress)_"
         out.append(line)
     return "\n".join(out).rstrip() + "\n"
+
 
 AIIA_BASE_URL = os.getenv("AIIA_URL", "http://localhost:8100")
 # Scheduled tasks call AIIA's authenticated endpoints — send the key the Brain
@@ -846,9 +865,7 @@ class TaskRunner:
         for i, proj in enumerate(projects):
             name = proj.get("name", "unknown")
             repo = os.path.expanduser(proj.get("repo", ""))
-            await self._progress(
-                "project_pulse", 10 + int(60 * i / total), f"Scanning {name}"
-            )
+            await self._progress("project_pulse", 10 + int(60 * i / total), f"Scanning {name}")
             if not repo or not os.path.isdir(repo):
                 continue
 
@@ -856,7 +873,12 @@ class TaskRunner:
             shipped = ""
             try:
                 proc = await asyncio.create_subprocess_exec(
-                    "git", "-C", repo, "log", "--oneline", "-5",
+                    "git",
+                    "-C",
+                    repo,
+                    "log",
+                    "--oneline",
+                    "-5",
                     stdout=asyncio.subprocess.PIPE,
                     stderr=asyncio.subprocess.DEVNULL,
                 )
@@ -937,9 +959,7 @@ class TaskRunner:
                     f.write(doc)
                 docs_written += 1
             except Exception as e:
-                logger.warning(
-                    "project_pulse doc render failed for %s: %s", proj.get("name"), e
-                )
+                logger.warning("project_pulse doc render failed for %s: %s", proj.get("name"), e)
 
         await self._progress("project_pulse", 100, "Complete")
         summary = f"{new_count} new / {dedup_count} existing across {len(touched)} project(s)"
@@ -1102,9 +1122,7 @@ class TaskRunner:
             try:
                 await self._run_git("cat-file", "-e", f"{last_sha}^{{commit}}")
             except RuntimeError:
-                logger.warning(
-                    "repo_sync: stored SHA %s not in repo — re-baselining", last_sha[:8]
-                )
+                logger.warning("repo_sync: stored SHA %s not in repo — re-baselining", last_sha[:8])
                 self._extra["last_commit_sha"] = new_sha
                 await self._progress("repo_sync", 100, "Complete")
                 return f"Re-baselined to {new_sha[:8]} (discarded stale SHA). No files indexed."

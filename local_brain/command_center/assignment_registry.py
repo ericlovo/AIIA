@@ -35,11 +35,7 @@ class AssignmentRegistry:
 
     def get_assignment(self, assignment_id: str) -> dict[str, Any] | None:
         return next(
-            (
-                assignment
-                for assignment in self.assignments
-                if assignment["id"] == assignment_id
-            ),
+            (assignment for assignment in self.assignments if assignment["id"] == assignment_id),
             None,
         )
 
@@ -203,9 +199,7 @@ class AssignmentRegistry:
         self.save()
         return True
 
-    def _sync_handoff_status(
-        self, assignment: dict[str, Any], status: str
-    ) -> None:
+    def _sync_handoff_status(self, assignment: dict[str, Any], status: str) -> None:
         handoff_id = assignment.get("source_handoff_id")
         if not handoff_id:
             return

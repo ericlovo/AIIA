@@ -1121,7 +1121,9 @@ def _repo_snapshot(repo_id: str) -> str:
         except (OSError, subprocess.TimeoutExpired):
             return "unavailable"
 
-    readme = next((path / name for name in ("README.md", "README.MD") if (path / name).exists()), None)
+    readme = next(
+        (path / name for name in ("README.md", "README.MD") if (path / name).exists()), None
+    )
     summary = readme.read_text(errors="ignore")[:3_000] if readme else "No README found."
     return "\n".join(
         [
@@ -1147,10 +1149,10 @@ def _agent_system_prompt(agent: dict[str, Any]) -> str:
             "GitHub read access is not connected. Do not claim GitHub data until the owner re-authenticates the local GitHub CLI."
         )
     tool_context = "\n\n".join(contexts) or "No external tools are mounted."
-    return f"""You are {agent['name']}, a local agent running on AIIA's Mac Mini.
+    return f"""You are {agent["name"]}, a local agent running on AIIA's Mac Mini.
 
-Mission: {agent['mission']}
-Persona: {agent['persona']}
+Mission: {agent["mission"]}
+Persona: {agent["persona"]}
 Skills: {skills}
 Mounted tools and context:
 {tool_context}
@@ -1221,16 +1223,23 @@ async def _execute_agent(
                         "model_role": "task",
                         "max_tokens": agent.get("max_tokens", 1_200),
                         "temperature": agent.get("temperature", 0.35),
-                        "purpose": purpose
-                        or ("agent_studio_loop" if loop_run else "agent_studio"),
+                        "purpose": purpose or ("agent_studio_loop" if loop_run else "agent_studio"),
                     },
                 )
             if response.status_code != 200:
-                updated = agent_registry.finish_run(agent_id, task, error=f"local_model_error_{response.status_code}")
+                updated = agent_registry.finish_run(
+                    agent_id, task, error=f"local_model_error_{response.status_code}"
+                )
                 raise HTTPException(status_code=503, detail=updated["last_error"])
             payload = response.json()
-            updated = agent_registry.finish_run(agent_id, task, result=str(payload.get("content", "")).strip())
-            return {"agent": updated, "model": payload.get("model"), "latency_ms": payload.get("latency_ms", 0)}
+            updated = agent_registry.finish_run(
+                agent_id, task, result=str(payload.get("content", "")).strip()
+            )
+            return {
+                "agent": updated,
+                "model": payload.get("model"),
+                "latency_ms": payload.get("latency_ms", 0),
+            }
         except httpx.HTTPError as exc:
             agent_registry.finish_run(agent_id, task, error="local_model_unavailable")
             raise HTTPException(status_code=503, detail="local_model_unavailable") from exc
@@ -1252,9 +1261,7 @@ def _assignment_prompt(assignment: dict[str, Any]) -> str:
         sections.append(f"Context and upstream artifact:\n{assignment['context']}")
     if assignment.get("success_criteria"):
         sections.append(f"Success criteria:\n{assignment['success_criteria']}")
-    sections.append(
-        "Return the finished work product, not a description of how you would do it."
-    )
+    sections.append("Return the finished work product, not a description of how you would do it.")
     return "\n\n".join(sections)
 
 
@@ -1307,22 +1314,16 @@ async def run_assignment(assignment_id: str):
             purpose="agent_studio_assignment",
         )
     except HTTPException as exc:
-        assignment_registry.finish_assignment(
-            assignment_id, error=str(exc.detail)
-        )
+        assignment_registry.finish_assignment(assignment_id, error=str(exc.detail))
         raise
     except Exception as exc:
         logger.exception("Assignment run failed: %s", assignment_id)
-        assignment_registry.finish_assignment(
-            assignment_id, error="assignment_run_failed"
-        )
+        assignment_registry.finish_assignment(assignment_id, error="assignment_run_failed")
         raise HTTPException(status_code=500, detail="assignment_run_failed") from exc
 
     work_product = run_result["agent"]["last_result"].strip()
     if not work_product:
-        assignment_registry.finish_assignment(
-            assignment_id, error="empty_agent_result"
-        )
+        assignment_registry.finish_assignment(assignment_id, error="empty_agent_result")
         raise HTTPException(status_code=502, detail="empty_agent_result")
     updated = assignment_registry.finish_assignment(assignment_id, result=work_product)
     return {
@@ -1913,9 +1914,7 @@ async def get_tokens_recent(days: int = 7):
 
 AIIA_BASE_URL = "http://localhost:8100"
 AIIA_HEADERS = (
-    {"x-api-key": os.getenv("LOCAL_BRAIN_API_KEY", "")}
-    if os.getenv("LOCAL_BRAIN_API_KEY")
-    else {}
+    {"x-api-key": os.getenv("LOCAL_BRAIN_API_KEY", "")} if os.getenv("LOCAL_BRAIN_API_KEY") else {}
 )
 INTERACTIVE_HISTORY_CHAR_LIMIT = 6_000
 
