@@ -862,6 +862,7 @@ from local_brain.command_center.agent_registry import AgentRegistry
 from local_brain.command_center.aiia_tasks import TaskRunner
 from local_brain.command_center.assignment_registry import AssignmentRegistry
 from local_brain.command_center.git_workspace_registry import GitWorkspaceRegistry
+from local_brain.command_center.git_write_registry import GitWriteRegistry
 from local_brain.command_center.repository_tools import (
     available_repos,
     github_snapshot,
@@ -874,8 +875,10 @@ action_queue = ActionQueue()
 agent_registry = AgentRegistry()
 assignment_registry = AssignmentRegistry()
 git_workspace_registry = GitWorkspaceRegistry()
+git_write_registry = GitWriteRegistry(workspace_registry=git_workspace_registry)
 agent_run_lock = asyncio.Lock()
 git_workspace_lock = asyncio.Lock()
+git_write_lock = asyncio.Lock()
 # Git root is AIIA-public (server.py → command_center → local_brain → AIIA-public).
 # A fourth .parent pointed at the outer ~/aiia-brain wrapper repo, which dragged
 # the github-runner checkout, archives, and node externals into every report scan
@@ -943,8 +946,8 @@ class ChatMessage(BaseModel):
 @app.get("/", response_class=HTMLResponse)
 async def serve_console():
     """Serve the React Command Center dashboard, or fallback to legacy."""
-    react_index = REACT_DIST / "index.html" if REACT_DIST.exists() else None
-    if react_index and react_index.exists():
+    react_index = resolve_react_dist() / "index.html"
+    if react_index.exists():
         return HTMLResponse(content=react_index.read_text())
     html_path = STATIC_DIR / "console.html"
     if html_path.exists():
@@ -1112,6 +1115,16 @@ class HandoffCreateRequest(BaseModel):
     instructions: str = Field(min_length=1, max_length=8_000)
 
 
+class GitWriteProposeRequest(BaseModel):
+    op: str = Field(min_length=1, max_length=40)
+    payload: dict[str, Any] = Field(default_factory=dict)
+    title: str = Field(default="", max_length=200)
+
+
+class GitWriteRejectRequest(BaseModel):
+    reason: str = Field(default="", max_length=2_000)
+
+
 def _agent_system_prompt(agent: dict[str, Any]) -> str:
     skills = ", ".join(agent["skills"]) or "general local reasoning"
     tools = set(agent.get("tools", []))
@@ -1125,7 +1138,9 @@ def _agent_system_prompt(agent: dict[str, Any]) -> str:
     if "Git workspace" in tools:
         contexts.append(
             "Git workspace requests are available, but only a human can approve creation. "
-            "Do not claim a branch, worktree, file edit, commit, push, or pull request exists."
+            "After a workspace is ready you may propose write_file, run_tests, or commit; "
+            "a human must approve each one. Push and open_pr are deferred. "
+            "Do not claim a file edit, commit, push, or pull request has happened."
         )
     tool_context = "\n\n".join(contexts) or "No external tools are mounted."
     return f"""You are {agent["name"]}, a local agent running on AIIA's Mac Mini.
@@ -1356,6 +1371,52 @@ async def approve_git_workspace(workspace_id: str):
     except ValueError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     return {"workspace": workspace}
+
+
+@app.get("/api/git-writes")
+async def list_git_writes(workspace_id: str | None = None):
+    return {"writes": git_write_registry.list(workspace_id=workspace_id)}
+
+
+@app.post("/api/git-workspaces/{workspace_id}/writes")
+async def propose_git_write(workspace_id: str, body: GitWriteProposeRequest):
+    if not git_workspace_registry.get(workspace_id):
+        raise HTTPException(status_code=404, detail="git_workspace_not_found")
+    try:
+        write = git_write_registry.propose(
+            workspace_id,
+            body.op,
+            body.payload,
+            title=body.title,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return {"write": write}
+
+
+@app.post("/api/git-writes/{write_id}/approve")
+async def approve_git_write(write_id: str):
+    if not git_write_registry.get(write_id):
+        raise HTTPException(status_code=404, detail="git_write_not_found")
+    if git_write_lock.locked():
+        raise HTTPException(status_code=409, detail="git_write_busy")
+    try:
+        async with git_write_lock:
+            write = await asyncio.to_thread(git_write_registry.approve, write_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return {"write": write}
+
+
+@app.post("/api/git-writes/{write_id}/reject")
+async def reject_git_write(write_id: str, body: GitWriteRejectRequest | None = None):
+    if not git_write_registry.get(write_id):
+        raise HTTPException(status_code=404, detail="git_write_not_found")
+    try:
+        write = git_write_registry.reject(write_id, reason=(body.reason if body else ""))
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return {"write": write}
 
 
 @app.get("/api/handoffs")

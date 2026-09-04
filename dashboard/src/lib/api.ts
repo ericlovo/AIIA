@@ -266,6 +266,31 @@ export interface HandoffDefinition {
   instructions: string;
 }
 
+export type GitWriteOp = 'write_file' | 'run_tests' | 'commit' | 'push' | 'open_pr';
+export type GitWriteStatus = 'pending' | 'approved' | 'completed' | 'failed' | 'rejected';
+
+export interface GitWrite {
+  id: string;
+  workspace_id: string;
+  assignment_id: string;
+  op: GitWriteOp;
+  title: string;
+  status: GitWriteStatus;
+  payload: Record<string, unknown>;
+  result: Record<string, unknown>;
+  error: string;
+  created_at: string;
+  updated_at: string;
+  approved_at: string | null;
+  events: { at: string; action: string; detail: string }[];
+}
+
+export interface GitWriteDefinition {
+  op: GitWriteOp;
+  payload: Record<string, unknown>;
+  title?: string;
+}
+
 export type GitWorkspaceStatus = 'pending' | 'preparing' | 'ready' | 'failed';
 
 export interface GitWorkspace {
@@ -340,6 +365,16 @@ export const api = {
     post<{ workspace: GitWorkspace }>(`/api/assignments/${assignmentId}/git-workspace`),
   approveGitWorkspace: (workspaceId: string) =>
     post<{ workspace: GitWorkspace }>(`/api/git-workspaces/${workspaceId}/approve`),
+  gitWrites: (workspaceId?: string) => {
+    const q = workspaceId ? `?workspace_id=${encodeURIComponent(workspaceId)}` : '';
+    return get<{ writes: GitWrite[] }>(`/api/git-writes${q}`);
+  },
+  proposeGitWrite: (workspaceId: string, data: GitWriteDefinition) =>
+    post<{ write: GitWrite }>(`/api/git-workspaces/${workspaceId}/writes`, data),
+  approveGitWrite: (writeId: string) =>
+    post<{ write: GitWrite }>(`/api/git-writes/${writeId}/approve`),
+  rejectGitWrite: (writeId: string, reason = '') =>
+    post<{ write: GitWrite }>(`/api/git-writes/${writeId}/reject`, { reason }),
   handoffs: () => get<{ handoffs: Handoff[] }>('/api/handoffs'),
   createHandoff: (data: HandoffDefinition) =>
     post<{ handoff: Handoff; assignment: Assignment }>('/api/handoffs', data),

@@ -10,6 +10,7 @@ import {
   type Handoff,
   type HandoffArtifactType,
   type HandoffDefinition,
+  type GitWrite,
   type GitWorkspace,
   type RepositoryResource,
 } from '../lib/api'
@@ -18,6 +19,7 @@ import { StudioTabs, type StudioView } from './StudioTabs'
 const EMPTY_ASSIGNMENTS: Assignment[] = []
 const EMPTY_HANDOFFS: Handoff[] = []
 const EMPTY_WORKSPACES: GitWorkspace[] = []
+const EMPTY_WRITES: GitWrite[] = []
 const EMPTY_REPOS: RepositoryResource[] = []
 const PRIORITIES: AssignmentPriority[] = ['low', 'normal', 'high', 'urgent']
 const ARTIFACT_TYPES: HandoffArtifactType[] = ['brief', 'analysis', 'plan', 'decision', 'review']
@@ -61,6 +63,11 @@ export function WorkBoard({ agents, view, onViewChange }: WorkBoardProps) {
     queryFn: api.gitWorkspaces,
     refetchInterval: 5_000,
   })
+  const { data: writeData } = useQuery({
+    queryKey: ['git-writes'],
+    queryFn: () => api.gitWrites(),
+    refetchInterval: 5_000,
+  })
   const { data: resourceData } = useQuery({
     queryKey: ['agent-resources'],
     queryFn: api.agentResources,
@@ -68,6 +75,7 @@ export function WorkBoard({ agents, view, onViewChange }: WorkBoardProps) {
   const assignments = assignmentData?.assignments ?? EMPTY_ASSIGNMENTS
   const handoffs = handoffData?.handoffs ?? EMPTY_HANDOFFS
   const workspaces = workspaceData?.workspaces ?? EMPTY_WORKSPACES
+  const writes = writeData?.writes ?? EMPTY_WRITES
   const repos = resourceData?.repos ?? EMPTY_REPOS
   const [selectedAssignmentId, setSelectedAssignmentId] = useState<string | null>(null)
   const [selectedHandoffId, setSelectedHandoffId] = useState<string | null>(null)
@@ -124,6 +132,17 @@ export function WorkBoard({ agents, view, onViewChange }: WorkBoardProps) {
   const approveWorkspace = useMutation({
     mutationFn: api.approveGitWorkspace,
     onSettled: () => qc.invalidateQueries({ queryKey: ['git-workspaces'] }),
+  })
+  const approveWrite = useMutation({
+    mutationFn: api.approveGitWrite,
+    onSettled: () => {
+      qc.invalidateQueries({ queryKey: ['git-writes'] })
+      qc.invalidateQueries({ queryKey: ['git-workspaces'] })
+    },
+  })
+  const rejectWrite = useMutation({
+    mutationFn: (writeId: string) => api.rejectGitWrite(writeId),
+    onSettled: () => qc.invalidateQueries({ queryKey: ['git-writes'] }),
   })
 
   const completedAssignments = assignments.filter(item => item.status === 'completed' && item.result)
@@ -233,17 +252,22 @@ export function WorkBoard({ agents, view, onViewChange }: WorkBoardProps) {
               agent={agents.find(item => item.id === selectedAssignment.agent_id) ?? null}
               agentName={agentName(selectedAssignment.agent_id)}
               workspace={workspaces.find(item => item.assignment_id === selectedAssignment.id) ?? null}
+              writes={writes}
               repo={repos.find(item => item.id === agents.find(agent => agent.id === selectedAssignment.agent_id)?.repo_id) ?? null}
               isRunning={runAssignment.isPending}
               isRemoving={removeAssignment.isPending}
               isRequestingWorkspace={requestWorkspace.isPending}
               isApprovingWorkspace={approveWorkspace.isPending}
+              isApprovingWrite={approveWrite.isPending}
+              isRejectingWrite={rejectWrite.isPending}
               hasHandoff={handoffs.some(item => item.source_assignment_id === selectedAssignment.id || item.target_assignment_id === selectedAssignment.id)}
-              error={runAssignment.error ?? removeAssignment.error ?? requestWorkspace.error ?? approveWorkspace.error}
+              error={runAssignment.error ?? removeAssignment.error ?? requestWorkspace.error ?? approveWorkspace.error ?? approveWrite.error ?? rejectWrite.error}
               onRun={() => runAssignment.mutate(selectedAssignment.id)}
               onHandoff={() => prepareHandoff(selectedAssignment)}
               onRequestWorkspace={() => requestWorkspace.mutate(selectedAssignment.id)}
               onApproveWorkspace={workspaceId => approveWorkspace.mutate(workspaceId)}
+              onApproveWrite={writeId => approveWrite.mutate(writeId)}
+              onRejectWrite={writeId => rejectWrite.mutate(writeId)}
               onRemove={() => removeAssignment.mutate(selectedAssignment.id)}
             />
           ) : (
@@ -349,23 +373,29 @@ interface AssignmentDetailsProps {
   agent: Agent | null
   agentName: string
   workspace: GitWorkspace | null
+  writes: GitWrite[]
   repo: RepositoryResource | null
   isRunning: boolean
   isRemoving: boolean
   isRequestingWorkspace: boolean
   isApprovingWorkspace: boolean
+  isApprovingWrite: boolean
+  isRejectingWrite: boolean
   hasHandoff: boolean
   error: Error | null
   onRun: () => void
   onHandoff: () => void
   onRequestWorkspace: () => void
   onApproveWorkspace: (workspaceId: string) => void
+  onApproveWrite: (writeId: string) => void
+  onRejectWrite: (writeId: string) => void
   onRemove: () => void
 }
 
-function AssignmentDetails({ assignment, agent, agentName, workspace, repo, isRunning, isRemoving, isRequestingWorkspace, isApprovingWorkspace, hasHandoff, error, onRun, onHandoff, onRequestWorkspace, onApproveWorkspace, onRemove }: AssignmentDetailsProps) {
+function AssignmentDetails({ assignment, agent, agentName, workspace, writes, repo, isRunning, isRemoving, isRequestingWorkspace, isApprovingWorkspace, isApprovingWrite, isRejectingWrite, hasHandoff, error, onRun, onHandoff, onRequestWorkspace, onApproveWorkspace, onApproveWrite, onRejectWrite, onRemove }: AssignmentDetailsProps) {
   const runnable = assignment.status === 'queued' || assignment.status === 'failed'
   const gitEnabled = agent?.tools.includes('Git workspace') ?? false
+  const workspaceWrites = workspace ? writes.filter(item => item.workspace_id === workspace.id) : []
   return (
     <Panel title={assignment.title} eyebrow="Assignment controls">
       <Meta label="Owner" value={agentName} />
@@ -381,10 +411,15 @@ function AssignmentDetails({ assignment, agent, agentName, workspace, repo, isRu
           gitEnabled={gitEnabled}
           repo={repo}
           workspace={workspace}
+          writes={workspaceWrites}
           isRequesting={isRequestingWorkspace}
           isApproving={isApprovingWorkspace}
+          isApprovingWrite={isApprovingWrite}
+          isRejectingWrite={isRejectingWrite}
           onRequest={onRequestWorkspace}
           onApprove={onApproveWorkspace}
+          onApproveWrite={onApproveWrite}
+          onRejectWrite={onRejectWrite}
         />
       )}
       {error && <ErrorNotice error={error} />}
@@ -395,15 +430,16 @@ function AssignmentDetails({ assignment, agent, agentName, workspace, repo, isRu
   )
 }
 
-function GitWorkspacePanel({ agentName, gitEnabled, repo, workspace, isRequesting, isApproving, onRequest, onApprove }: { agentName: string; gitEnabled: boolean; repo: RepositoryResource | null; workspace: GitWorkspace | null; isRequesting: boolean; isApproving: boolean; onRequest: () => void; onApprove: (workspaceId: string) => void }) {
+function GitWorkspacePanel({ agentName, gitEnabled, repo, workspace, writes, isRequesting, isApproving, isApprovingWrite, isRejectingWrite, onRequest, onApprove, onApproveWrite, onRejectWrite }: { agentName: string; gitEnabled: boolean; repo: RepositoryResource | null; workspace: GitWorkspace | null; writes: GitWrite[]; isRequesting: boolean; isApproving: boolean; isApprovingWrite: boolean; isRejectingWrite: boolean; onRequest: () => void; onApprove: (workspaceId: string) => void; onApproveWrite: (writeId: string) => void; onRejectWrite: (writeId: string) => void }) {
   const eligible = repo?.git_workspace?.eligible ?? false
   const blocked = repo && repo.git_workspace?.eligible === false
+  const pendingWrites = writes.filter(item => item.status === 'pending')
   return (
     <div className="border border-neutral-800 bg-neutral-900/50 p-4">
       <div className="flex items-center justify-between gap-3">
         <div>
           <div className="text-[10px] font-semibold tracking-[0.16em] uppercase text-cyan-400">Git workspace</div>
-          <p className="mt-1 text-xs text-neutral-500">Isolated branch on the Mini. No commit or push access.</p>
+          <p className="mt-1 text-xs text-neutral-500">Isolated branch on the Mini. File writes, tests, and commits are approval-gated. Push is deferred.</p>
         </div>
         {workspace && <WorkspaceStatus status={workspace.status} />}
       </div>
@@ -432,6 +468,28 @@ function GitWorkspacePanel({ agentName, gitEnabled, repo, workspace, isRequestin
           <WorkspaceMeta label="Base" value={workspace.base_ref} />
           <WorkspaceMeta label="Mini path" value={workspace.path} />
           <pre className="max-h-32 overflow-auto whitespace-pre-wrap border border-neutral-800 bg-neutral-950 p-3 text-[11px] leading-relaxed text-neutral-400">{workspace.git_status}</pre>
+          <div className="border border-neutral-800 bg-neutral-950/80 p-3">
+            <div className="text-[10px] font-semibold tracking-[0.16em] uppercase text-cyan-400">Pending writes</div>
+            {pendingWrites.length === 0 ? (
+              <p className="mt-2 text-xs text-neutral-500">No pending write, test, or commit proposals.</p>
+            ) : (
+              <div className="mt-3 space-y-3">
+                {pendingWrites.map(write => (
+                  <div key={write.id} className="border border-neutral-800 p-3">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="truncate text-xs text-neutral-200">{write.title || write.op}</div>
+                        <div className="mt-1 text-[10px] uppercase tracking-[0.14em] text-neutral-600">{write.op}</div>
+                      </div>
+                      <WorkspaceStatus status="pending" />
+                    </div>
+                    <button disabled={isApprovingWrite} onClick={() => onApproveWrite(write.id)} className="mt-3 w-full bg-cyan-400 px-3 py-2 text-sm font-medium text-neutral-950 disabled:opacity-40">{isApprovingWrite ? 'Applying…' : 'Approve'}</button>
+                    <button disabled={isRejectingWrite} onClick={() => onRejectWrite(write.id)} className="mt-2 w-full px-3 py-1.5 text-xs text-neutral-600 hover:text-red-300 disabled:opacity-30">Reject</button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
       )}
     </div>
