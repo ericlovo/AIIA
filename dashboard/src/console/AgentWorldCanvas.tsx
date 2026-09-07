@@ -42,6 +42,21 @@ function eventLabel(update: StudioUpdate) {
   return `${label} · ${update.event}`
 }
 
+function graphMinHeight(agentCount: number, assignments: Assignment[]) {
+  const assignmentCounts = new Map<string, number>()
+  for (const assignment of assignments) {
+    assignmentCounts.set(assignment.agent_id, (assignmentCounts.get(assignment.agent_id) ?? 0) + 1)
+  }
+  const visibleAssignments = [...assignmentCounts.values()].reduce(
+    (total, count) => total + Math.min(count, 3),
+    0,
+  )
+  const nodeCount = agentCount + visibleAssignments
+  const columns = Math.min(5, Math.max(1, Math.ceil(Math.sqrt(nodeCount))))
+  const rows = Math.ceil(nodeCount / columns)
+  return Math.max(620, rows * 128 + 180)
+}
+
 export function AgentWorldCanvas({
   agents,
   onViewChange,
@@ -71,6 +86,7 @@ export function AgentWorldCanvas({
   const assignments = assignmentData?.assignments ?? EMPTY_ASSIGNMENTS
   const handoffs = handoffData?.handoffs ?? EMPTY_HANDOFFS
   const layoutState = layoutData?.layout ?? EMPTY_LAYOUT
+  const mapMinHeight = graphMinHeight(agents.length, assignments)
   const activeCount = agents.filter(agent => agent.status === 'running').length
     + assignments.filter(assignment => assignment.status === 'running').length
 
@@ -187,7 +203,7 @@ export function AgentWorldCanvas({
       </header>
 
       <section className="relative min-h-[620px] max-w-full flex-1 overflow-auto bg-[#080a0d] lg:min-h-0">
-        <div className="relative h-full min-h-[620px] min-w-[1000px] lg:min-h-0 lg:min-w-0">
+        <div className="relative h-full min-w-[1000px] lg:min-w-0" style={{ minHeight: mapMinHeight }}>
           <SpatialGrid />
           <AgentGraphOverlay
           agents={agents}

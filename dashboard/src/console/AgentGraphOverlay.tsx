@@ -346,13 +346,15 @@ export function AgentGraphOverlay({
           <div
             key={node.id}
             data-graph-node={node.id}
-            className={`pointer-events-none absolute touch-none select-none ${node.kind === 'agent' ? 'w-20 sm:w-32 lg:w-36' : 'w-20 sm:w-28 lg:w-32'}`}
+            className={`pointer-events-none absolute touch-none select-none ${node.kind === 'agent' ? 'w-44 lg:w-48' : 'w-36 lg:w-40'}`}
             style={{ left: `${position.x}%`, top: `${position.y}%`, transform: 'translate(-50%, -50%)' }}
           >
             <button
               data-agent-target={node.agent?.id}
               type="button"
-              aria-label={`${node.agent?.name ?? assignment?.title} ${node.kind} node`}
+              aria-label={node.agent
+                ? `${node.agent.name}. ${node.agent.mission || 'No mission defined'}. Status: ${node.agent.status}`
+                : `${assignment?.title} assignment node`}
               onPointerDown={event => handlePointerDown(event, node)}
               onPointerMove={handlePointerMove}
               onPointerUp={() => handlePointerUp(node)}
@@ -432,11 +434,13 @@ function GraphEdge({ from, to, tone }: { from: Point; to: Point; tone: 'hierarch
 function AgentNode({ agent }: { agent: Agent }) {
   return (
     <>
-      <div className="flex items-center justify-between gap-2">
-        <span className="truncate text-xs font-medium text-white">{agent.name}</span>
-        <i className={`h-1.5 w-1.5 shrink-0 rounded-full ${agent.status === 'running' ? 'bg-amber-300' : agent.status === 'error' ? 'bg-red-400' : 'bg-emerald-400'}`} />
+      <div className="flex items-start justify-between gap-2">
+        <span title={agent.name} className="line-clamp-2 min-w-0 text-xs font-semibold leading-snug text-white">{agent.name}</span>
+        <i aria-hidden="true" className={`mt-1 h-1.5 w-1.5 shrink-0 rounded-full ${agent.status === 'running' ? 'bg-amber-300' : agent.status === 'error' ? 'bg-red-400' : 'bg-emerald-400'}`} />
       </div>
-      <div className="mt-1 truncate text-[9px] tracking-[0.14em] uppercase text-cyan-300/60">Agent node</div>
+      <div className="mt-2 text-[8px] font-semibold tracking-[0.14em] uppercase text-cyan-300/55">Mission</div>
+      <div title={agent.mission} className="mt-0.5 line-clamp-2 text-[10px] leading-relaxed text-white/55">{agent.mission || 'No mission defined'}</div>
+      <div className={`mt-2 text-[8px] font-semibold tracking-[0.14em] uppercase ${agent.status === 'running' ? 'text-amber-300' : agent.status === 'error' ? 'text-red-300' : 'text-emerald-300/60'}`}>{agent.status}</div>
     </>
   )
 }
