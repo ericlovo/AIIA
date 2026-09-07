@@ -91,7 +91,7 @@ export function VoiceConductor() {
   }, [])
 
   return (
-    <section className="shrink-0 border-t border-neutral-900 bg-neutral-950">
+    <section className="z-20 shrink-0 border-t border-neutral-900 bg-neutral-950">
       <div className="flex flex-wrap items-center gap-3 px-4 py-3 sm:px-6">
         <button
           type="button"
