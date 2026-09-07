@@ -373,7 +373,9 @@ async def test_session_mint_uses_mocked_xai(monkeypatch, tmp_path):
         async def __aexit__(self, *exc: object):
             return False
 
-        async def post(self, url: str, headers: dict[str, str] | None = None, json: dict | None = None):
+        async def post(
+            self, url: str, headers: dict[str, str] | None = None, json: dict | None = None
+        ):
             posted.append({"url": url, "headers": headers, "json": json})
             return _Resp()
 

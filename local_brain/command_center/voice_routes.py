@@ -20,7 +20,6 @@ from local_brain.command_center.voice_conductor import (
     XAI_CLIENT_SECRETS_URL,
     XAI_REALTIME_URL,
     VoiceConductorDeps,
-    airgap_blocks_voice,
     execute_tool,
     load_xai_api_key,
     session_config,

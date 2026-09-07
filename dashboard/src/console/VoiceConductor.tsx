@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { api, type VoiceSessionResponse, type VoiceStatusResponse } from '../lib/api'
+import { api, type VoiceSessionResponse, type VoiceStatusResponse, type VoiceToolResult } from '../lib/api'
 
 type Phase = 'idle' | 'connecting' | 'listening' | 'speaking' | 'tool'
 type TranscriptLine = { role: 'user' | 'assistant'; text: string }
@@ -242,17 +242,16 @@ class LiveSession {
   private ws: WebSocket
   private audioCtx: AudioContext | null = null
   private media: MediaStream | null = null
-  private processor: ScriptProcessorNode | null = None
-  private source: MediaStreamAudioSourceNode | null = None
+  private processor: ScriptProcessorNode | null = null
+  private source: MediaStreamAudioSourceNode | null = null
   private playTime = 0
   private pendingTools = 0
   private closed = false
+  private handlers: SessionHandlers
 
-  private constructor(
-    ws: WebSocket,
-    private readonly handlers: SessionHandlers,
-  ) {
+  private constructor(ws: WebSocket, handlers: SessionHandlers) {
     this.ws = ws
+    this.handlers = handlers
   }
 
   static connect(session: VoiceSessionResponse, handlers: SessionHandlers): Promise<LiveSession> {
@@ -366,7 +365,7 @@ class LiveSession {
     this.pendingTools += 1
     this.handlers.onPhase('tool')
     this.handlers.onTool({ id: callId, name, state: 'running', detail: '' })
-    let output: Record<string, unknown>
+    let output: Record<string, unknown> | VoiceToolResult
     try {
       const result = await api.voiceTool(name, args)
       output = result
@@ -400,7 +399,7 @@ class LiveSession {
     const floats = pcm16ToFloat(bytes)
     if (!floats.length) return
     const buffer = ctx.createBuffer(1, floats.length, SAMPLE_RATE)
-    buffer.copyToChannel(floats, 0)
+    buffer.getChannelData(0).set(floats)
     const node = ctx.createBufferSource()
     node.buffer = buffer
     node.connect(ctx.destination)

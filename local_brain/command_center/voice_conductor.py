@@ -187,7 +187,9 @@ def airgap_blocks_voice() -> bool:
     return os.getenv("AIIA_AIRGAP", "").strip().lower() in {"1", "true", "yes"}
 
 
-def status_payload(*, home: Path | None = None, environ: dict[str, str] | None = None) -> dict[str, Any]:
+def status_payload(
+    *, home: Path | None = None, environ: dict[str, str] | None = None
+) -> dict[str, Any]:
     configured = voice_configured(home=home, environ=environ)
     if airgap_blocks_voice():
         reason = "airgap"
@@ -257,8 +259,14 @@ def grok_tool_definitions() -> list[dict[str, Any]]:
                 "type": "object",
                 "properties": {
                     "title": {"type": "string", "description": "Short title, max 120 chars."},
-                    "objective": {"type": "string", "description": "What the agent should produce."},
-                    "agent_id": {"type": "string", "description": "Existing agent id from list_agents."},
+                    "objective": {
+                        "type": "string",
+                        "description": "What the agent should produce.",
+                    },
+                    "agent_id": {
+                        "type": "string",
+                        "description": "Existing agent id from list_agents.",
+                    },
                     "priority": {
                         "type": "string",
                         "enum": ["low", "normal", "high", "urgent"],
@@ -365,7 +373,9 @@ async def execute_tool(
     if kind == "forbidden":
         return ToolResult(ok=False, name=name, error="tool_forbidden", status=403)
     if kind != "allowed":
-        return ToolResult(ok=False, name=name or "unknown", error="tool_not_allowlisted", status=403)
+        return ToolResult(
+            ok=False, name=name or "unknown", error="tool_not_allowlisted", status=403
+        )
 
     args = arguments if isinstance(arguments, dict) else {}
     try:
@@ -374,7 +384,9 @@ async def execute_tool(
             return ToolResult(ok=True, name=name, result={"agents": agents, "count": len(agents)})
         if name == "list_assignments":
             items = [_public_assignment(item) for item in deps.list_assignments()]
-            return ToolResult(ok=True, name=name, result={"assignments": items, "count": len(items)})
+            return ToolResult(
+                ok=True, name=name, result={"assignments": items, "count": len(items)}
+            )
         if name == "list_handoffs":
             items = [_public_handoff(item) for item in deps.list_handoffs()]
             return ToolResult(ok=True, name=name, result={"handoffs": items, "count": len(items)})
@@ -409,7 +421,9 @@ def _create_assignment(args: dict[str, Any], deps: VoiceConductorDeps) -> ToolRe
     agent_id = str(args.get("agent_id") or "").strip()
     priority = str(args.get("priority") or "normal").strip().lower() or "normal"
     if not title or not objective or not agent_id:
-        return ToolResult(ok=False, name="create_assignment", error="missing_required_fields", status=422)
+        return ToolResult(
+            ok=False, name="create_assignment", error="missing_required_fields", status=422
+        )
     if priority not in VALID_PRIORITIES:
         return ToolResult(ok=False, name="create_assignment", error="invalid_priority", status=422)
     if not deps.get_agent(agent_id):
@@ -432,12 +446,16 @@ def _create_assignment(args: dict[str, Any], deps: VoiceConductorDeps) -> ToolRe
 async def _run_assignment(args: dict[str, Any], deps: VoiceConductorDeps) -> ToolResult:
     assignment_id = str(args.get("assignment_id") or "").strip()
     if not assignment_id:
-        return ToolResult(ok=False, name="run_assignment", error="missing_assignment_id", status=422)
+        return ToolResult(
+            ok=False, name="run_assignment", error="missing_assignment_id", status=422
+        )
     assignment = deps.get_assignment(assignment_id)
     if not assignment:
         return ToolResult(ok=False, name="run_assignment", error="assignment_not_found", status=404)
     if assignment.get("status") not in {"queued", "failed"}:
-        return ToolResult(ok=False, name="run_assignment", error="assignment_not_runnable", status=409)
+        return ToolResult(
+            ok=False, name="run_assignment", error="assignment_not_runnable", status=409
+        )
     if deps.mini_busy():
         return ToolResult(ok=False, name="run_assignment", error="mini_busy", status=409)
     if deps.run_assignment is None:
@@ -448,11 +466,17 @@ async def _run_assignment(args: dict[str, Any], deps: VoiceConductorDeps) -> Too
         detail = getattr(exc, "detail", None)
         status = getattr(exc, "status_code", 500)
         if detail == "mini_busy" or status == 409:
-            return ToolResult(ok=False, name="run_assignment", error=str(detail or "mini_busy"), status=409)
+            return ToolResult(
+                ok=False, name="run_assignment", error=str(detail or "mini_busy"), status=409
+            )
         if status in {404, 409, 422}:
-            return ToolResult(ok=False, name="run_assignment", error=str(detail or "run_rejected"), status=status)
+            return ToolResult(
+                ok=False, name="run_assignment", error=str(detail or "run_rejected"), status=status
+            )
         logger.exception("Voice Conductor run_assignment failed")
-        return ToolResult(ok=False, name="run_assignment", error="assignment_run_failed", status=500)
+        return ToolResult(
+            ok=False, name="run_assignment", error="assignment_run_failed", status=500
+        )
     public: dict[str, Any] = {}
     if isinstance(payload, dict):
         if isinstance(payload.get("assignment"), dict):
