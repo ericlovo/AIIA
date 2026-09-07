@@ -1,10 +1,19 @@
 import { useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api, type Agent, type AgentDefinition } from '../lib/api'
+import { AgentWorldCanvas } from './AgentWorldCanvas'
 import { StudioTabs, type StudioView } from './StudioTabs'
 import { WorkBoard } from './WorkBoard'
+import { ActivityOverview } from './ActivityOverview'
 
 type Draft = AgentDefinition
+
+interface WorkBoardIntent {
+  agentId?: string
+  assignmentId?: string
+  handoffSourceId?: string
+  handoffTargetId?: string
+}
 
 const EMPTY_DRAFT: Draft = {
   name: '',
@@ -34,7 +43,8 @@ export function AgentStudio() {
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [draft, setDraft] = useState<Draft>(EMPTY_DRAFT)
   const [task, setTask] = useState('')
-  const [view, setView] = useState<StudioView>('agents')
+  const [view, setView] = useState<StudioView>('activity')
+  const [workBoardIntent, setWorkBoardIntent] = useState<WorkBoardIntent | null>(null)
   const selected = agents.find(agent => agent.id === selectedId) ?? null
   const needsRepo = draft.tools.some(tool => ['Repository read', 'GitHub read', 'Git workspace'].includes(tool))
   const githubConnected = resources?.github.status === 'connected'
@@ -52,6 +62,31 @@ export function AgentStudio() {
           loop_max_runs_per_day: agent.loop_max_runs_per_day,
         }
       : EMPTY_DRAFT)
+  }
+
+  function changeView(nextView: StudioView) {
+    setWorkBoardIntent(null)
+    setView(nextView)
+  }
+
+  function manageAgent(agentId: string) {
+    selectAgent(agents.find(agent => agent.id === agentId) ?? null)
+    changeView('agents')
+  }
+
+  function assignAgent(agentId: string) {
+    setWorkBoardIntent({ agentId })
+    setView('assignments')
+  }
+
+  function openAssignment(assignmentId: string) {
+    setWorkBoardIntent({ assignmentId })
+    setView('assignments')
+  }
+
+  function routeHandoff(handoffSourceId: string, handoffTargetId: string) {
+    setWorkBoardIntent({ handoffSourceId, handoffTargetId })
+    setView('handoffs')
   }
 
   const save = useMutation({
@@ -82,8 +117,36 @@ export function AgentStudio() {
 
   const activeCount = useMemo(() => agents.filter(agent => agent.status === 'running').length, [agents])
 
+  if (view === 'activity') {
+    return <ActivityOverview agents={agents} isLoading={isLoading} view={view} onViewChange={changeView} />
+  }
+
+  if (view === 'world') {
+    return (
+      <AgentWorldCanvas
+        agents={agents}
+        onViewChange={changeView}
+        onManageAgent={manageAgent}
+        onAssignAgent={assignAgent}
+        onOpenAssignment={openAssignment}
+        onRouteHandoff={routeHandoff}
+      />
+    )
+  }
+
   if (view !== 'agents') {
-    return <WorkBoard agents={agents} view={view} onViewChange={setView} />
+    return (
+      <WorkBoard
+        key={`${view}:${JSON.stringify(workBoardIntent)}`}
+        agents={agents}
+        view={view}
+        onViewChange={changeView}
+        initialAgentId={workBoardIntent?.agentId}
+        initialAssignmentId={workBoardIntent?.assignmentId}
+        initialHandoffSourceId={workBoardIntent?.handoffSourceId}
+        initialHandoffTargetId={workBoardIntent?.handoffTargetId}
+      />
+    )
   }
 
   return (
@@ -96,7 +159,7 @@ export function AgentStudio() {
             <p className="mt-2 text-sm text-neutral-500">Define the role. Give it a task. The Mini runs it locally.</p>
           </div>
           <div className="flex shrink-0 flex-col items-start gap-3 sm:items-end">
-            <StudioTabs view={view} onChange={setView} />
+            <StudioTabs view={view} onChange={changeView} />
             <div className="hidden items-center gap-3 text-xs text-neutral-500 sm:flex">
               <span className="inline-flex items-center gap-2"><i className="h-2 w-2 rounded-full bg-green-500" />Mini online</span>
               <span>{activeCount} running</span>

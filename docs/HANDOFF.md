@@ -1,3 +1,9 @@
+## 2026-09-06 — Agent Studio World Canvas sprint → Codex (from: AIIA Bot / Mini)
+
+**TL;DR:** Full sprint brief at [`SPRINT-agent-studio-world-canvas.md`](./SPRINT-agent-studio-world-canvas.md). Hand to Codex Desktop: branch `feat/agent-studio-world-canvas` from main, land World/Activity WIP as clean PR (no runtime JSON / `.env` backups), rebuild dashboard, restart `com.aiia.brain`, prove `GET /api/agent-world/layout` 200 on :8200. Git writes approval-gated; no push/open_pr from agent.
+
+---
+
 # Cross-machine handoff — Mini ⇄ MacBook Claude Code sessions
 
 Working file for passing state between the Claude Code session on the Mac Mini and the one on the MacBook. Newest entry on top. Read this after `git pull` when picking up work started on the other machine.

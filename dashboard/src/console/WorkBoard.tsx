@@ -42,11 +42,23 @@ const EMPTY_HANDOFF: HandoffDefinition = {
 
 interface WorkBoardProps {
   agents: Agent[]
-  view: Exclude<StudioView, 'agents'>
+  view: Extract<StudioView, 'assignments' | 'handoffs'>
   onViewChange: (view: StudioView) => void
+  initialAgentId?: string
+  initialAssignmentId?: string
+  initialHandoffSourceId?: string
+  initialHandoffTargetId?: string
 }
 
-export function WorkBoard({ agents, view, onViewChange }: WorkBoardProps) {
+export function WorkBoard({
+  agents,
+  view,
+  onViewChange,
+  initialAgentId = '',
+  initialAssignmentId = '',
+  initialHandoffSourceId = '',
+  initialHandoffTargetId = '',
+}: WorkBoardProps) {
   const qc = useQueryClient()
   const { data: assignmentData, isLoading: assignmentsLoading } = useQuery({
     queryKey: ['assignments'],
@@ -77,10 +89,17 @@ export function WorkBoard({ agents, view, onViewChange }: WorkBoardProps) {
   const workspaces = workspaceData?.workspaces ?? EMPTY_WORKSPACES
   const writes = writeData?.writes ?? EMPTY_WRITES
   const repos = resourceData?.repos ?? EMPTY_REPOS
-  const [selectedAssignmentId, setSelectedAssignmentId] = useState<string | null>(null)
+  const [selectedAssignmentId, setSelectedAssignmentId] = useState<string | null>(initialAssignmentId || null)
   const [selectedHandoffId, setSelectedHandoffId] = useState<string | null>(null)
-  const [assignmentDraft, setAssignmentDraft] = useState(EMPTY_ASSIGNMENT)
-  const [handoffDraft, setHandoffDraft] = useState(EMPTY_HANDOFF)
+  const [assignmentDraft, setAssignmentDraft] = useState<AssignmentDefinition>(() => ({
+    ...EMPTY_ASSIGNMENT,
+    agent_id: initialAgentId,
+  }))
+  const [handoffDraft, setHandoffDraft] = useState<HandoffDefinition>(() => ({
+    ...EMPTY_HANDOFF,
+    source_assignment_id: initialHandoffSourceId,
+    to_agent_id: initialHandoffTargetId,
+  }))
   const selectedAssignment = assignments.find(item => item.id === selectedAssignmentId) ?? null
   const selectedHandoff = handoffs.find(item => item.id === selectedHandoffId) ?? null
 

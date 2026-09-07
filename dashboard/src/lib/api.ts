@@ -3,7 +3,8 @@ const BASE = '';
 async function parse<T>(res: Response): Promise<T> {
   if (!res.ok) {
     const payload = await res.json().catch(() => null) as { detail?: string } | null;
-    throw new Error(payload?.detail || `${res.status} ${res.statusText}`);
+    const detail = payload?.detail;
+    throw new Error(detail === 'mini_busy' ? 'Mini busy — wait for the active run to finish.' : detail || `${res.status} ${res.statusText}`);
   }
   return res.json();
 }
@@ -186,9 +187,20 @@ export interface Agent {
   last_run_at: string | null;
   last_result: string;
   last_error: string;
-  runs: { task: string; result: string; error: string; at: string }[];
+  runs: AgentRun[];
   created_at: string;
   updated_at: string;
+}
+
+export interface AgentRun {
+  task: string;
+  result: string;
+  error: string;
+  at: string;
+  trigger?: 'manual' | 'interval' | 'assignment';
+  assignment_id?: string;
+  model?: string;
+  latency_ms?: number;
 }
 
 export interface RepositoryResource {
@@ -264,6 +276,18 @@ export interface HandoffDefinition {
   to_agent_id: string;
   artifact_type: HandoffArtifactType;
   instructions: string;
+}
+
+export interface AgentWorldPoint {
+  x: number;
+  y: number;
+}
+
+export interface AgentWorldLayout {
+  version: 1;
+  revision: number;
+  positions: Record<string, AgentWorldPoint>;
+  updated_at: string | null;
 }
 
 export type GitWriteOp = 'write_file' | 'run_tests' | 'commit' | 'push' | 'open_pr';
@@ -438,6 +462,10 @@ export const api = {
   createHandoff: (data: HandoffDefinition) =>
     post<{ handoff: Handoff; assignment: Assignment }>('/api/handoffs', data),
   deleteHandoff: (id: string) => del<{ deleted: boolean }>(`/api/handoffs/${id}`),
+  agentWorldLayout: () => get<{ layout: AgentWorldLayout }>('/api/agent-world/layout'),
+  updateAgentWorldLayout: (positions: Record<string, AgentWorldPoint>) =>
+    put<{ layout: AgentWorldLayout }>('/api/agent-world/layout', { positions }),
+  resetAgentWorldLayout: () => del<{ layout: AgentWorldLayout }>('/api/agent-world/layout'),
 
   voiceStatus: () => get<VoiceStatusResponse>('/api/voice/status'),
   voiceSession: () => post<VoiceSessionResponse>('/api/voice/session'),
