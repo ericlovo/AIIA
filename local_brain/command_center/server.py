@@ -1285,26 +1285,43 @@ async def _execute_agent(
                         "purpose": purpose or ("agent_studio_loop" if loop_run else "agent_studio"),
                     },
                 )
+            trigger = "interval" if loop_run else "assignment" if assignment_id else "manual"
             if response.status_code != 200:
                 updated = agent_registry.finish_run(
                     agent_id,
                     task,
                     error=f"local_model_error_{response.status_code}",
-                    trigger="interval" if loop_run else "assignment" if assignment_id else "manual",
+                    trigger=trigger,
                     assignment_id=assignment_id,
                 )
                 if updated:
                     await broadcast_studio_event("agent", "failed", updated)
                 raise HTTPException(status_code=503, detail=updated["last_error"])
             payload = response.json()
+            result = str(payload.get("content") or "").strip()
+            model = str(payload.get("model", ""))
+            latency_ms = float(payload.get("latency_ms", 0) or 0)
+            if not result:
+                updated = agent_registry.finish_run(
+                    agent_id,
+                    task,
+                    error="empty_agent_result",
+                    trigger=trigger,
+                    assignment_id=assignment_id,
+                    model=model,
+                    latency_ms=latency_ms,
+                )
+                if updated:
+                    await broadcast_studio_event("agent", "failed", updated)
+                raise HTTPException(status_code=502, detail="empty_agent_result")
             updated = agent_registry.finish_run(
                 agent_id,
                 task,
-                result=str(payload.get("content", "")).strip(),
-                trigger="interval" if loop_run else "assignment" if assignment_id else "manual",
+                result=result,
+                trigger=trigger,
                 assignment_id=assignment_id,
-                model=str(payload.get("model", "")),
-                latency_ms=float(payload.get("latency_ms", 0)),
+                model=model,
+                latency_ms=latency_ms,
             )
             if updated:
                 await broadcast_studio_event("agent", "completed", updated)

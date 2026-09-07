@@ -6,6 +6,9 @@ All notable changes to AIIA are documented here. This project adheres to
 
 ## [Unreleased]
 
+### Fixed
+- **Empty agent output is a failed run.** `_execute_agent` (manual, interval, and assignment) now records `error=empty_agent_result`, broadcasts `failed`, and returns HTTP 502 instead of treating blank model content as success. Activity Overview / Needs Attention surface the failure.
+
 ### Added
 - **Voice Conductor** — first Grok Voice slice on Agent Studio (`:8200`).
   Command Center mints a short-lived xAI ephemeral token (long-lived

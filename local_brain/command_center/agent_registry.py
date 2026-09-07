@@ -165,6 +165,8 @@ class AgentRegistry:
         if not agent:
             return None
         now = datetime.now(timezone.utc).isoformat()
+        if not error and not str(result or "").strip():
+            error = "empty_agent_result"
         agent["status"] = "error" if error else "idle"
         agent["last_run_at"] = now
         agent["last_result"] = result

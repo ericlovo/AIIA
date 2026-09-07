@@ -72,9 +72,9 @@ export function ActivityOverview({ agents, isLoading, view, onViewChange }: { ag
         activity.push({
           id: `run-${agent.id}-${run.at}-${index}`,
           kind: 'run',
-          status: run.error ? 'failed' : 'completed',
-          title: `${agent.name} ${run.error ? 'failed' : 'completed'} a ${trigger} run`,
-          detail: cleanSnippet(run.error || run.result || run.task),
+          status: run.error || !run.result?.trim() ? 'failed' : 'completed',
+          title: `${agent.name} ${run.error || !run.result?.trim() ? 'failed' : 'completed'} a ${trigger} run`,
+          detail: cleanSnippet(run.error || run.result || run.task) || 'empty agent result',
           agent: agent.name,
           at: run.at,
           meta: [trigger, run.model, formatLatency(run.latency_ms)].filter(Boolean).join(' · '),
@@ -151,7 +151,8 @@ export function ActivityOverview({ agents, isLoading, view, onViewChange }: { ag
   const completedAssignments = assignments.filter(item => item.status === 'completed').length
   const running = agents.filter(agent => agent.status === 'running').length + assignments.filter(item => item.status === 'running').length
   const pendingApprovals = workspaces.filter(item => item.status === 'pending').length + writes.filter(item => item.status === 'pending').length
-  const failures = agents.filter(agent => agent.status === 'error').length + assignments.filter(item => item.status === 'failed').length + handoffs.filter(item => item.status === 'failed').length + workspaces.filter(item => item.status === 'failed').length + writes.filter(item => item.status === 'failed').length
+  const failedRuns = agents.filter(agent => agent.status === 'error' || Boolean(agent.last_error)).length
+  const failures = failedRuns + assignments.filter(item => item.status === 'failed').length + handoffs.filter(item => item.status === 'failed').length + workspaces.filter(item => item.status === 'failed').length + writes.filter(item => item.status === 'failed').length
   const attention = pendingApprovals + failures
   const scheduled = agents.filter(agent => agent.loop_enabled).length
 
@@ -272,6 +273,7 @@ function AgentLoadRow({ agent, assignments }: { agent: Agent; assignments: { sta
         {agent.runs.some(run => run.error) && <div className="flex-1 bg-red-500/70" />}
       </div>
       <div className="mt-2 text-[10px] text-neutral-700">{agent.last_run_at ? `Last activity ${relativeTime(agent.last_run_at)}` : 'No recorded activity'}</div>
+      {agent.last_error && <div className="mt-1 text-[10px] text-red-400">{formatToken(agent.last_error)}</div>}
     </div>
   )
 }
