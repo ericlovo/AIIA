@@ -45,8 +45,48 @@ interface WireDragState {
   moved: boolean
 }
 
+const MIN_SEPARATION_X = 16
+const MIN_SEPARATION_Y = 14
+
 function clamp(value: number, minimum = 8, maximum = 92) {
   return Math.max(minimum, Math.min(maximum, value))
+}
+
+function positionsOverlap(left: Point, right: Point) {
+  return Math.abs(left.x - right.x) < MIN_SEPARATION_X && Math.abs(left.y - right.y) < MIN_SEPARATION_Y
+}
+
+function laneGrid() {
+  const slots: Point[] = []
+  for (let y = 12; y <= 88; y += MIN_SEPARATION_Y) {
+    for (let x = 8; x <= 92; x += MIN_SEPARATION_X) {
+      slots.push({ x, y })
+    }
+  }
+  return slots
+}
+
+function firstFreePoint(origin: Point, placed: Record<string, Point>): Point {
+  const candidate = { x: clamp(origin.x), y: clamp(origin.y, 12, 88) }
+  if (!Object.values(placed).some(other => positionsOverlap(candidate, other))) return candidate
+  return [...laneGrid()]
+    .sort((left, right) => {
+      const leftDist = (left.x - candidate.x) ** 2 + (left.y - candidate.y) ** 2
+      const rightDist = (right.x - candidate.x) ** 2 + (right.y - candidate.y) ** 2
+      return leftDist - rightDist
+    })
+    .find(slot => !Object.values(placed).some(other => positionsOverlap(slot, other)))
+    ?? candidate
+}
+
+function reconcileLayout(layout: Record<string, Point>, nodeIds: string[]) {
+  const placed: Record<string, Point> = {}
+  for (const nodeId of [...nodeIds].sort()) {
+    const origin = layout[nodeId]
+    if (!origin) continue
+    placed[nodeId] = firstFreePoint(origin, placed)
+  }
+  return placed
 }
 
 function statusRank(status: Assignment['status']) {
@@ -56,26 +96,35 @@ function statusRank(status: Assignment['status']) {
   return 3
 }
 
-function defaultLayout(nodes: GraphNode[]) {
+function defaultLaneLayout(nodes: GraphNode[]) {
   const result: Record<string, Point> = {}
-  const columns = Math.min(5, Math.max(1, Math.ceil(Math.sqrt(nodes.length))))
-  const rows = Math.ceil(nodes.length / columns)
+  const agents = nodes.filter(node => node.kind === 'agent')
+  const columns = Math.min(4, Math.max(1, Math.ceil(Math.sqrt(agents.length || 1))))
+  const rows = Math.ceil((agents.length || 1) / columns)
 
-  nodes.forEach((node, index) => {
+  agents.forEach((node, index) => {
     const column = index % columns
     const row = Math.floor(index / columns)
-    result[node.id] = {
-      x: columns === 1 ? 50 : 10 + (column * 80) / (columns - 1),
-      y: rows === 1 ? 50 : 18 + (row * 64) / (rows - 1),
-    }
+    const x = columns === 1 ? 50 : 16 + (column * 68) / (columns - 1)
+    const y = rows === 1 ? 22 : 16 + (row * 36) / Math.max(rows - 1, 1)
+    result[node.id] = { x, y }
+    nodes
+      .filter(item => item.assignment?.agent_id === node.agent?.id)
+      .forEach((assignment, workIndex) => {
+        result[assignment.id] = {
+          x: clamp(x),
+          y: clamp(y + 14 + workIndex * 14, 12, 88),
+        }
+      })
   })
 
   return result
 }
 
-function visibleWork(assignments: Assignment[]) {
+function visibleWork(assignments: Assignment[], showCompleted: boolean) {
   const byAgent = new Map<string, Assignment[]>()
   for (const assignment of assignments) {
+    if (!showCompleted && assignment.status === 'completed') continue
     const existing = byAgent.get(assignment.agent_id) ?? []
     existing.push(assignment)
     byAgent.set(assignment.agent_id, existing)
@@ -114,8 +163,10 @@ export function AgentGraphOverlay({
   const [wireDrag, setWireDrag] = useState<WireDragState | null>(null)
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [connectFrom, setConnectFrom] = useState<string | null>(null)
+  const [showCompleted, setShowCompleted] = useState(false)
+  const [draggingId, setDraggingId] = useState<string | null>(null)
   const nodes = useMemo<GraphNode[]>(() => {
-    const work = visibleWork(assignments)
+    const work = visibleWork(assignments, showCompleted)
     return agents.flatMap(agent => [
       { id: `agent:${agent.id}`, kind: 'agent' as const, agent },
       ...work
@@ -126,12 +177,13 @@ export function AgentGraphOverlay({
           assignment,
         })),
     ])
-  }, [agents, assignments])
-  const defaults = useMemo(() => defaultLayout(nodes), [nodes])
-  const layout = useMemo(
-    () => ({ ...defaults, ...positions, ...transientPositions }),
-    [defaults, positions, transientPositions],
-  )
+  }, [agents, assignments, showCompleted])
+  const defaults = useMemo(() => defaultLaneLayout(nodes), [nodes])
+  const layout = useMemo(() => {
+    const merged = { ...defaults, ...positions, ...transientPositions }
+    if (draggingId) return merged
+    return reconcileLayout(merged, nodes.map(node => node.id))
+  }, [defaults, draggingId, nodes, positions, transientPositions])
   const selected = nodes.find(node => node.id === selectedId) ?? null
   const nodeIds = useMemo(() => new Set(nodes.map(node => node.id)), [nodes])
   const selectedSource = assignments.find(
@@ -161,6 +213,7 @@ export function AgentGraphOverlay({
       origin: position,
       moved: false,
     }
+    setDraggingId(node.id)
   }
 
   function handlePointerMove(event: React.PointerEvent<HTMLButtonElement>) {
@@ -197,6 +250,7 @@ export function AgentGraphOverlay({
   function handlePointerUp(node: GraphNode) {
     const drag = dragRef.current
     dragRef.current = null
+    setDraggingId(null)
     if (!drag?.moved) selectNode(node)
     else {
       const point = transientPositionsRef.current[drag.id]
@@ -218,6 +272,7 @@ export function AgentGraphOverlay({
   function handlePointerCancel() {
     const nodeId = dragRef.current?.id
     dragRef.current = null
+    setDraggingId(null)
     if (!nodeId) return
     setTransientPositions(current => {
       if (!current[nodeId]) return current
@@ -347,7 +402,7 @@ export function AgentGraphOverlay({
             key={node.id}
             data-graph-node={node.id}
             className={`pointer-events-none absolute touch-none select-none ${node.kind === 'agent' ? 'w-44 lg:w-48' : 'w-36 lg:w-40'}`}
-            style={{ left: `${position.x}%`, top: `${position.y}%`, transform: 'translate(-50%, -50%)' }}
+            style={{ left: `${position.x}%`, top: `${position.y}%`, transform: 'translate(-50%, -50%)', zIndex: selectedId === node.id ? 6 : node.kind === 'agent' ? 3 : 2 }}
           >
             <button
               data-agent-target={node.agent?.id}
@@ -386,6 +441,15 @@ export function AgentGraphOverlay({
         <span role="status" aria-live="polite" className={`border-r border-white/10 px-2.5 py-1.5 ${layoutStatus === 'error' ? 'text-red-300' : layoutStatus === 'saving' ? 'text-amber-300' : 'text-emerald-300/60'}`}>
           {layoutStatus === 'error' ? 'Save failed' : layoutStatus === 'saving' ? 'Saving' : 'Layout synced'}
         </span>
+        <button
+          type="button"
+          aria-pressed={showCompleted}
+          aria-label={showCompleted ? 'Hide completed assignments' : 'Show completed assignments'}
+          onClick={() => setShowCompleted(current => !current)}
+          className={`border-r border-white/10 px-2.5 py-1.5 ${showCompleted ? 'text-cyan-200' : 'text-white/45 hover:text-white'}`}
+        >
+          {showCompleted ? 'Completed shown' : 'Completed hidden'}
+        </button>
         <button type="button" aria-label="Reset layout" disabled={layoutStatus === 'saving'} onClick={resetLayout} className="px-2.5 py-1.5 text-white/45 hover:text-white disabled:opacity-30">
           Reset
         </button>

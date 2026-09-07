@@ -8,6 +8,7 @@ All notable changes to AIIA are documented here. This project adheres to
 
 ### Fixed
 - **Empty agent output is a failed run.** `_execute_agent` (manual, interval, and assignment) now records `error=empty_agent_result`, broadcasts `failed`, and returns HTTP 502 instead of treating blank model content as success. Activity Overview / Needs Attention surface the failure.
+- **Agent map collisions no longer bury click targets.** Completed assignments are hidden by default (toggle to show). `studio_layout` reconciles persisted positions into free lanes so a representative fleet has unique hit targets at 1280×800 and 1440×900.
 
 ### Added
 - **Voice Conductor** — first Grok Voice slice on Agent Studio (`:8200`).
