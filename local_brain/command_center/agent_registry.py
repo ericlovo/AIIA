@@ -9,6 +9,8 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
+from local_brain.command_center.agent_suites import apply_suite_defaults
+
 logger = logging.getLogger("aiia.agents")
 
 AGENT_DATA_FILE = Path(__file__).parent / "agent_data.json"
@@ -45,10 +47,13 @@ class AgentRegistry:
         loop_interval_minutes: int = 60,
         loop_task: str = "",
         loop_max_runs_per_day: int = 4,
+        suite: str = "",
+        memory_namespace: str = "",
     ) -> dict[str, Any]:
         if len(self.agents) >= MAX_AGENTS:
             raise ValueError("agent_limit_reached")
         now = datetime.now(timezone.utc).isoformat()
+        suite, memory_namespace = apply_suite_defaults(suite, memory_namespace)
         agent = {
             "id": uuid.uuid4().hex[:12],
             "name": name.strip(),
@@ -63,6 +68,8 @@ class AgentRegistry:
             "loop_interval_minutes": self._interval(loop_interval_minutes),
             "loop_task": str(loop_task).strip()[:8_000],
             "loop_max_runs_per_day": self._daily_limit(loop_max_runs_per_day),
+            "suite": suite,
+            "memory_namespace": memory_namespace,
             "loop_runs_today": 0,
             "loop_day": "",
             "status": "idle",
@@ -102,6 +109,15 @@ class AgentRegistry:
             agent["loop_task"] = str(changes["loop_task"]).strip()[:8_000]
         if "loop_max_runs_per_day" in changes:
             agent["loop_max_runs_per_day"] = self._daily_limit(changes["loop_max_runs_per_day"])
+        if "suite" in changes or "memory_namespace" in changes:
+            suite, memory_namespace = apply_suite_defaults(
+                changes["suite"] if "suite" in changes else agent.get("suite", ""),
+                changes["memory_namespace"]
+                if "memory_namespace" in changes
+                else agent.get("memory_namespace", ""),
+            )
+            agent["suite"] = suite
+            agent["memory_namespace"] = memory_namespace
         agent["updated_at"] = datetime.now(timezone.utc).isoformat()
         self.save()
         return agent
@@ -248,5 +264,7 @@ class AgentRegistry:
                 agent.setdefault("loop_max_runs_per_day", 4)
                 agent.setdefault("loop_runs_today", 0)
                 agent.setdefault("loop_day", "")
+                agent.setdefault("suite", "")
+                agent.setdefault("memory_namespace", "")
         except (OSError, json.JSONDecodeError) as exc:
             logger.warning("Could not load agents: %s", exc)

@@ -15,6 +15,17 @@ All notable changes to AIIA are documented here. This project adheres to
   `AIRGAP_ALLOWED_EGRESS` in `local_brain/egress.py` — do not expand it.
   Docs: `docs/AIRGAP.md`, `docs/VOICE-CONDUCTOR.md`.
 
+### Added
+- **Mindmoor Agent Suite** — spec for the first client-isolated Agent
+  Studio cluster (shared local `mindmoor` memory namespace, D0–D2,
+  typed Handoffs, Mini serial budgets) in
+  `docs/MINDMOOR-AGENT-SUITE.md`. Tune-up handoff:
+  `docs/HANDOFF-ASTRA-STUDIO-TUNEUP-2026-09-07.md`. Thin scaffold:
+  optional `suite` / `memory_namespace` on Studio agents,
+  `GET /api/agent-suites`, catalog match by name (no live Mini IDs,
+  no runtime JSON). Air-gap and Voice unchanged.
+
+
 ### Fixed
 - **Empty agent output is a failed run.** `_execute_agent` (manual, interval, and assignment) now records `error=empty_agent_result`, broadcasts `failed`, and returns HTTP 502 instead of treating blank model content as success. Activity Overview / Needs Attention surface the failure.
 - **Agent map collisions no longer bury click targets.** Completed assignments are hidden by default (toggle to show). `studio_layout` reconciles persisted positions into free lanes so a representative fleet has unique hit targets at 1280×800 and 1440×900.

@@ -858,6 +858,7 @@ routing_history = RoutingHistoryState()
 # ─── Action Queue + Task Runner ───────────────────────────
 from local_brain.command_center.action_queue import ActionQueue
 from local_brain.command_center.agent_registry import AgentRegistry
+from local_brain.command_center.agent_suites import describe_suites, suite_prompt_line
 from local_brain.command_center.aiia_tasks import TaskRunner
 from local_brain.command_center.assignment_registry import AssignmentRegistry
 from local_brain.command_center.git_workspace_registry import GitWorkspaceRegistry
@@ -1129,6 +1130,8 @@ class AgentCreateRequest(BaseModel):
     loop_interval_minutes: int = Field(default=60, ge=15, le=1_440)
     loop_task: str = Field(default="", max_length=8_000)
     loop_max_runs_per_day: int = Field(default=4, ge=1, le=48)
+    suite: str = Field(default="", max_length=64)
+    memory_namespace: str = Field(default="", max_length=64)
 
 
 class AgentRunRequest(BaseModel):
@@ -1188,9 +1191,10 @@ def _agent_system_prompt(agent: dict[str, Any]) -> str:
             "Do not claim a file edit, commit, push, or pull request has happened."
         )
     tool_context = "\n\n".join(contexts) or "No external tools are mounted."
+    suite_line = suite_prompt_line(agent)
     return f"""You are {agent["name"]}, a local agent running on AIIA's Mac Mini.
 
-Mission: {agent["mission"]}
+{suite_line}Mission: {agent["mission"]}
 Persona: {agent["persona"]}
 Skills: {skills}
 Mounted tools and context:
@@ -1209,6 +1213,11 @@ Instead provide the work product, a plan, or the exact next action a human shoul
 @app.get("/api/agents")
 async def list_agents():
     return {"agents": agent_registry.list()}
+
+
+@app.get("/api/agent-suites")
+async def list_agent_suites():
+    return {"suites": describe_suites(agent_registry.list())}
 
 
 @app.get("/api/agents/resources")
@@ -1239,7 +1248,10 @@ async def create_agent(body: AgentCreateRequest):
 @app.put("/api/agents/{agent_id}")
 async def update_agent(agent_id: str, body: AgentCreateRequest):
     _validate_agent_repo(body)
-    agent = agent_registry.update(agent_id, **body.model_dump())
+    try:
+        agent = agent_registry.update(agent_id, **body.model_dump(exclude_unset=True))
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     if not agent:
         raise HTTPException(status_code=404, detail="agent_not_found")
     await broadcast_studio_event("agent", "updated", agent)

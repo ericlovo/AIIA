@@ -12,6 +12,10 @@
 Claude Code session notebook. It is a different concept. Do not put
 Assignment/Handoff records there, and do not overwrite it.
 
+**See also:** [`MINDMOOR-AGENT-SUITE.md`](./MINDMOOR-AGENT-SUITE.md) is the
+first client-isolated Agent Studio suite (shared `mindmoor` memory
+namespace, D0–D2, air-gap on). It uses this model; it does not replace it.
+
 | Plane | Owns | Does not own |
 |---|---|---|
 | **AIIA** | Organization graph, Assignments, Runs, memory, Mini execution | Whether an edge may fire |

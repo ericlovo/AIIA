@@ -183,6 +183,8 @@ export interface Agent {
   loop_max_runs_per_day: number;
   loop_runs_today: number;
   loop_day: string;
+  suite?: string;
+  memory_namespace?: string;
   status: 'idle' | 'running' | 'error';
   last_run_at: string | null;
   last_result: string;
@@ -224,11 +226,41 @@ export interface GitHubResource {
   reason: string;
 }
 
+export interface AgentSuiteMember {
+  slug: string;
+  name: string;
+  depth: number;
+  role: string;
+  recommended_max_tokens: number;
+  produced_artifacts: string[];
+  agents: Array<{
+    id: string;
+    name: string;
+    suite: string;
+    memory_namespace: string;
+    max_tokens?: number;
+    matched_by: 'tag' | 'alias';
+  }>;
+}
+
+export interface AgentSuite {
+  slug: string;
+  name: string;
+  memory_namespace: string;
+  memory_source: string;
+  repository_id: string;
+  max_depth: number;
+  members: AgentSuiteMember[];
+}
+
 export type AgentDefinition = Pick<Agent,
   'name' | 'mission' | 'persona' | 'skills' | 'tools' | 'repo_id' |
   'temperature' | 'max_tokens' | 'loop_enabled' | 'loop_interval_minutes' |
   'loop_task' | 'loop_max_runs_per_day'
->;
+> & {
+  suite?: string;
+  memory_namespace?: string;
+};
 
 export type AssignmentStatus = 'queued' | 'running' | 'completed' | 'failed';
 export type AssignmentPriority = 'low' | 'normal' | 'high' | 'urgent';
@@ -427,6 +459,7 @@ export const api = {
   executionStatus: () => get<ExecutionStatus>('/api/execution/status'),
 
   agents: () => get<{ agents: Agent[] }>('/api/agents'),
+  agentSuites: () => get<{ suites: AgentSuite[] }>('/api/agent-suites'),
   agentResources: () => get<{ repos: RepositoryResource[]; github: GitHubResource }>('/api/agents/resources'),
   createAgent: (data: AgentDefinition) =>
     post<{ agent: Agent }>('/api/agents', data),
