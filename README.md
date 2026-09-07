@@ -76,7 +76,7 @@ Python 3.10+, ~5GB free for a local model, and either Ollama running on
 Two surfaces are running underneath:
 
 - **Brain API** on `localhost:8100` — memory, RAG, LLM routing
-- **Command Center** on `localhost:8200` — dashboard, story queue, voice
+- **Command Center** on `localhost:8200` — dashboard, story queue, Voice Conductor (Grok)
 
 The CLI is a thin client over both. Claude Code reaches AIIA over MCP.
 Your terminal reaches AIIA over `aiia`. Same brain. Both halves of the

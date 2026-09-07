@@ -34,6 +34,7 @@ Cloud API keys may remain set; they are inert. `aiia doctor` reports them as
 | `google.tts` | speak endpoints | client never initialized; macOS `say` fallback |
 | `anthropic.claude_code` | execution engine / story runner | engine refuses to start; runner exits at arg-parse |
 | `web.fetch` | research literature loop | force-disabled + fetch guard |
+| `xai.realtime` | Voice Conductor ephemeral token | status `not_configured` / `reason=airgap`; `POST /api/voice/session` denied |
 
 **Permitted egress:** the Sanction control plane only (`SANCTION_API_URL`) —
 governance metadata (tool names, token counts, decisions), never content. For

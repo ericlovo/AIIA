@@ -293,6 +293,65 @@ export interface GitWriteDefinition {
 
 export type GitWorkspaceStatus = 'pending' | 'preparing' | 'ready' | 'failed';
 
+export type VoiceStatus = 'connected' | 'not_configured'
+
+export interface VoiceToolDefinition {
+  type: 'function'
+  name: string
+  description: string
+  parameters: Record<string, unknown>
+}
+
+export interface VoiceSpecialty {
+  slug: string
+  version: string
+  name: string
+  depth: number
+  recommendedDepth: number
+  maxDelegationDepth: number
+  authority: string
+  requiredTools: string[]
+  producedArtifacts: string[]
+  requiredApprovalLevel: string
+}
+
+export interface VoiceStatusResponse {
+  status: VoiceStatus
+  configured: boolean
+  provider: string
+  model: string
+  voice: string
+  realtime_url: string
+  reason: string
+  tools: VoiceToolDefinition[]
+  allowlist: string[]
+  forbidden: string[]
+  specialty: VoiceSpecialty
+}
+
+export interface VoiceSessionResponse {
+  status: VoiceStatus
+  token: string
+  expires_at: number | string | null
+  ttl_seconds: number
+  realtime_url: string
+  session: {
+    voice: string
+    instructions: string
+    turn_detection: null
+    tools: VoiceToolDefinition[]
+    audio: Record<string, unknown>
+  }
+  specialty: VoiceSpecialty
+}
+
+export interface VoiceToolResult {
+  ok: boolean
+  name: string
+  result?: Record<string, unknown>
+  error?: string
+}
+
 export interface GitWorkspace {
   id: string;
   assignment_id: string;
@@ -379,6 +438,11 @@ export const api = {
   createHandoff: (data: HandoffDefinition) =>
     post<{ handoff: Handoff; assignment: Assignment }>('/api/handoffs', data),
   deleteHandoff: (id: string) => del<{ deleted: boolean }>(`/api/handoffs/${id}`),
+
+  voiceStatus: () => get<VoiceStatusResponse>('/api/voice/status'),
+  voiceSession: () => post<VoiceSessionResponse>('/api/voice/session'),
+  voiceTool: (name: string, arguments_: Record<string, unknown> = {}) =>
+    post<VoiceToolResult>('/api/voice/tools', { name, arguments: arguments_ }),
 
   briefingLatest: () => get<{ briefing: string; generated_at: string; source: string }>('/api/briefing/latest'),
   tokensToday: () => get<Record<string, unknown>>('/api/tokens/today'),
