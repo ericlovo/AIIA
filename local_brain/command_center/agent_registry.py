@@ -20,7 +20,8 @@ MAX_TOOLS = 8
 class AgentRegistry:
     """Store agent definitions and their bounded local run history."""
 
-    def __init__(self):
+    def __init__(self, data_file: Path | None = None):
+        self.data_file = data_file or AGENT_DATA_FILE
         self.agents: list[dict[str, Any]] = []
         self.load()
 
@@ -149,7 +150,16 @@ class AgentRegistry:
         return agent
 
     def finish_run(
-        self, agent_id: str, task: str, result: str = "", error: str = ""
+        self,
+        agent_id: str,
+        task: str,
+        result: str = "",
+        error: str = "",
+        *,
+        trigger: str = "manual",
+        assignment_id: str = "",
+        model: str = "",
+        latency_ms: float = 0,
     ) -> dict[str, Any] | None:
         agent = self.get(agent_id)
         if not agent:
@@ -161,7 +171,19 @@ class AgentRegistry:
         agent["last_error"] = error
         agent["updated_at"] = now
         agent["runs"] = (
-            [{"task": task, "result": result, "error": error, "at": now}] + agent["runs"]
+            [
+                {
+                    "task": task,
+                    "result": result,
+                    "error": error,
+                    "at": now,
+                    "trigger": trigger,
+                    "assignment_id": assignment_id,
+                    "model": model,
+                    "latency_ms": round(float(latency_ms), 1),
+                }
+            ]
+            + agent["runs"]
         )[:MAX_RUNS]
         self.save()
         return agent
@@ -204,15 +226,15 @@ class AgentRegistry:
 
     def save(self) -> None:
         try:
-            AGENT_DATA_FILE.write_text(json.dumps({"agents": self.agents}, indent=2))
+            self.data_file.write_text(json.dumps({"agents": self.agents}, indent=2))
         except OSError as exc:
             logger.error("Could not save agents: %s", exc)
 
     def load(self) -> None:
-        if not AGENT_DATA_FILE.exists():
+        if not self.data_file.exists():
             return
         try:
-            self.agents = json.loads(AGENT_DATA_FILE.read_text()).get("agents", [])[:MAX_AGENTS]
+            self.agents = json.loads(self.data_file.read_text()).get("agents", [])[:MAX_AGENTS]
             for agent in self.agents:
                 agent.setdefault("tools", [])
                 agent.setdefault("repo_id", "")
