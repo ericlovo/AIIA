@@ -5,7 +5,7 @@ const VIEWS: { id: StudioView; label: string }[] = [
   { id: 'agents', label: 'Agents' },
   { id: 'assignments', label: 'Assignments' },
   { id: 'handoffs', label: 'Handoffs' },
-  { id: 'world', label: 'World' },
+  { id: 'world', label: 'Map' },
 ]
 
 export function StudioTabs({ view, onChange }: { view: StudioView; onChange: (view: StudioView) => void }) {

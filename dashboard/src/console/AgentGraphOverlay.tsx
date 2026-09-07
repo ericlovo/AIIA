@@ -45,7 +45,7 @@ interface WireDragState {
   moved: boolean
 }
 
-function clamp(value: number, minimum = 15, maximum = 85) {
+function clamp(value: number, minimum = 8, maximum = 92) {
   return Math.max(minimum, Math.min(maximum, value))
 }
 
@@ -58,30 +58,17 @@ function statusRank(status: Assignment['status']) {
 
 function defaultLayout(nodes: GraphNode[]) {
   const result: Record<string, Point> = {}
-  const agentNodes = nodes.filter(node => node.kind === 'agent')
-  const columns = Math.min(5, Math.max(1, agentNodes.length))
+  const columns = Math.min(5, Math.max(1, Math.ceil(Math.sqrt(nodes.length))))
+  const rows = Math.ceil(nodes.length / columns)
 
-  agentNodes.forEach((node, index) => {
+  nodes.forEach((node, index) => {
     const column = index % columns
     const row = Math.floor(index / columns)
     result[node.id] = {
-      x: columns === 1 ? 50 : 17 + (column * 66) / (columns - 1),
-      y: 25 + row * 34,
+      x: columns === 1 ? 50 : 10 + (column * 80) / (columns - 1),
+      y: rows === 1 ? 50 : 18 + (row * 64) / (rows - 1),
     }
   })
-
-  const childCounts = new Map<string, number>()
-  for (const node of nodes) {
-    if (node.kind !== 'assignment' || !node.assignment) continue
-    const parentId = `agent:${node.assignment.agent_id}`
-    const parent = result[parentId] ?? { x: 50, y: 25 }
-    const childIndex = childCounts.get(parentId) ?? 0
-    childCounts.set(parentId, childIndex + 1)
-    result[node.id] = {
-      x: parent.x,
-      y: clamp(parent.y + 14 + childIndex * 12),
-    }
-  }
 
   return result
 }
@@ -127,14 +114,19 @@ export function AgentGraphOverlay({
   const [wireDrag, setWireDrag] = useState<WireDragState | null>(null)
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [connectFrom, setConnectFrom] = useState<string | null>(null)
-  const nodes = useMemo<GraphNode[]>(() => [
-    ...agents.map(agent => ({ id: `agent:${agent.id}`, kind: 'agent' as const, agent })),
-    ...visibleWork(assignments).map(assignment => ({
-      id: `assignment:${assignment.id}`,
-      kind: 'assignment' as const,
-      assignment,
-    })),
-  ], [agents, assignments])
+  const nodes = useMemo<GraphNode[]>(() => {
+    const work = visibleWork(assignments)
+    return agents.flatMap(agent => [
+      { id: `agent:${agent.id}`, kind: 'agent' as const, agent },
+      ...work
+        .filter(assignment => assignment.agent_id === agent.id)
+        .map(assignment => ({
+          id: `assignment:${assignment.id}`,
+          kind: 'assignment' as const,
+          assignment,
+        })),
+    ])
+  }, [agents, assignments])
   const defaults = useMemo(() => defaultLayout(nodes), [nodes])
   const layout = useMemo(
     () => ({ ...defaults, ...positions, ...transientPositions }),
@@ -354,7 +346,7 @@ export function AgentGraphOverlay({
           <div
             key={node.id}
             data-graph-node={node.id}
-            className={`pointer-events-none absolute touch-none select-none ${node.kind === 'agent' ? 'w-28 sm:w-36' : 'w-28 sm:w-32'}`}
+            className={`pointer-events-none absolute touch-none select-none ${node.kind === 'agent' ? 'w-20 sm:w-32 lg:w-36' : 'w-20 sm:w-28 lg:w-32'}`}
             style={{ left: `${position.x}%`, top: `${position.y}%`, transform: 'translate(-50%, -50%)' }}
           >
             <button
@@ -367,7 +359,7 @@ export function AgentGraphOverlay({
               onPointerCancel={handlePointerCancel}
               onKeyDown={event => handleNodeKeyDown(event, node)}
               onClick={event => { if (event.detail === 0) selectNode(node) }}
-              className={`pointer-events-auto w-full border text-left backdrop-blur-md transition-[border-color,background-color,box-shadow] ${node.kind === 'agent' ? 'px-2.5 py-2.5 sm:px-3' : 'px-2.5 py-2'} ${selectedId === node.id ? 'border-cyan-300 bg-neutral-950/90 shadow-[0_0_24px_rgba(34,211,238,0.2)]' : isWireTarget ? 'border-fuchsia-200 bg-fuchsia-500/25 shadow-[0_0_30px_rgba(232,121,249,0.35)]' : isTargetMode ? 'border-fuchsia-400/70 bg-fuchsia-950/50 hover:border-fuchsia-200' : 'border-white/15 bg-neutral-950/72 hover:border-white/40'}`}
+              className={`pointer-events-auto w-full border text-left transition-[border-color,background-color,box-shadow] ${node.kind === 'agent' ? 'px-2 py-2 sm:px-3 sm:py-2.5' : 'px-2 py-2 sm:px-2.5'} ${selectedId === node.id ? 'border-cyan-300 bg-[#0b1217] shadow-[0_0_24px_rgba(34,211,238,0.16)]' : isWireTarget ? 'border-fuchsia-200 bg-fuchsia-950 shadow-[0_0_24px_rgba(232,121,249,0.24)]' : isTargetMode ? 'border-fuchsia-400/70 bg-fuchsia-950 hover:border-fuchsia-200' : 'border-white/15 bg-[#0b0e12] hover:border-white/40'}`}
             >
               {node.agent ? <AgentNode agent={node.agent} /> : <AssignmentNode assignment={assignment!} />}
             </button>
@@ -388,7 +380,7 @@ export function AgentGraphOverlay({
         )
       })}
 
-      <div className="pointer-events-auto absolute bottom-20 right-4 flex items-center border border-white/10 bg-neutral-950/75 text-[9px] font-semibold tracking-[0.14em] uppercase backdrop-blur-md sm:bottom-24 sm:right-6">
+      <div className="pointer-events-auto absolute bottom-16 right-4 flex items-center border border-white/10 bg-[#080a0d]/95 text-[9px] font-semibold tracking-[0.14em] uppercase sm:right-6">
         <span role="status" aria-live="polite" className={`border-r border-white/10 px-2.5 py-1.5 ${layoutStatus === 'error' ? 'text-red-300' : layoutStatus === 'saving' ? 'text-amber-300' : 'text-emerald-300/60'}`}>
           {layoutStatus === 'error' ? 'Save failed' : layoutStatus === 'saving' ? 'Saving' : 'Layout synced'}
         </span>
@@ -398,7 +390,7 @@ export function AgentGraphOverlay({
       </div>
 
       {(connectFrom || wireDrag) && (
-        <div className="pointer-events-auto absolute left-1/2 top-20 -translate-x-1/2 border border-fuchsia-400/50 bg-fuchsia-950/85 px-4 py-2 text-center text-xs text-fuchsia-100 backdrop-blur-md">
+        <div className="pointer-events-auto absolute left-1/2 top-20 -translate-x-1/2 border border-fuchsia-400/50 bg-fuchsia-950 px-4 py-2 text-center text-xs text-fuchsia-100">
           {wireDrag ? 'Drop on a target agent' : `Select a target agent for “${selectedSource?.title}”`}
           {connectFrom && <button type="button" onClick={() => setConnectFrom(null)} className="ml-3 text-fuchsia-300/60 hover:text-white">Cancel</button>}
         </div>
@@ -477,7 +469,7 @@ function NodeInspector({ node, onClose, onManageAgent, onAssignAgent, onOpenAssi
   const runnable = assignment?.status === 'queued' || assignment?.status === 'failed'
   const isRunning = assignment?.id === runningAssignmentId
   return (
-    <aside className="pointer-events-auto absolute right-4 top-20 w-[min(280px,calc(100%-2rem))] border border-white/15 bg-neutral-950/92 p-4 text-left shadow-2xl backdrop-blur-xl sm:right-6">
+    <aside className="pointer-events-auto absolute right-4 top-20 w-[min(280px,calc(100%-2rem))] border border-white/15 bg-[#090c10] p-4 text-left shadow-2xl sm:right-6">
       <div className="flex items-start justify-between gap-3">
         <div>
           <div className="text-[9px] font-semibold tracking-[0.18em] uppercase text-cyan-300/70">{node.kind} controls</div>

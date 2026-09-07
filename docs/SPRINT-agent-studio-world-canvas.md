@@ -1,13 +1,13 @@
 # Sprint: feat/agent-studio-world-canvas
 
 Handed by AIIA Bot → Codex · 2026-09-06
-Repo: ericlovo/AIIA · local checkout: /Users/ericlovold_mini/aiia-brain/AIIA-public · base: main @ dc70bac (#48 merged)
+Repo: AIIA · local checkout: this repository · base: main @ dc70bac (#48 merged)
 
 ## Goal
 Land the World/Activity WIP as a reviewable PR, make durable layout + live updates work on Mini prod (:8200), keep Git writes approval-gated. No free-form agent shell.
 
 ## Context (already true)
-- Merged #48: agents, assignments, handoffs, allowlisted repo/GitHub read (@ericlovold GET-only), approval-gated worktrees + writes (write_file, run_tests, commit). push/open_pr deferred.
+- Merged #48: agents, assignments, handoffs, allowlisted repo/GitHub read (GET-only), approval-gated worktrees + writes (write_file, run_tests, commit). push/open_pr deferred.
 - Uncommitted WIP already on disk (do not rewrite from scratch):
   - dashboard/src/console/VoidStarWorld.tsx, AgentGraphOverlay.tsx, voidstarProjection.ts, ActivityOverview.tsx
   - dashboard/public/voidstar/**

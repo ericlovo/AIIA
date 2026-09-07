@@ -1,8 +1,8 @@
 import { useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api, type Agent, type AgentDefinition } from '../lib/api'
+import { AgentWorldCanvas } from './AgentWorldCanvas'
 import { StudioTabs, type StudioView } from './StudioTabs'
-import { VoidStarWorld } from './VoidStarWorld'
 import { WorkBoard } from './WorkBoard'
 import { ActivityOverview } from './ActivityOverview'
 
@@ -123,7 +123,7 @@ export function AgentStudio() {
 
   if (view === 'world') {
     return (
-      <VoidStarWorld
+      <AgentWorldCanvas
         agents={agents}
         onViewChange={changeView}
         onManageAgent={manageAgent}

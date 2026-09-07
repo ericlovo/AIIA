@@ -587,14 +587,6 @@ if REACT_DIST.exists():
         StaticFiles(directory=str(REACT_DIST / "assets")),
         name="react-assets",
     )
-    voidstar_dist = REACT_DIST / "voidstar"
-    if voidstar_dist.exists():
-        app.mount(
-            "/voidstar",
-            StaticFiles(directory=str(voidstar_dist)),
-            name="voidstar-renderer",
-        )
-
 if STATIC_DIR.exists():
     app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
