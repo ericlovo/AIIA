@@ -45,7 +45,9 @@ def _studio(tmp_path, monkeypatch, content: str | None = ""):
     agents = AgentRegistry(tmp_path / "agents.json")
     assignments = AssignmentRegistry(tmp_path / "assignments.json")
     events: list[tuple[str, str, dict[str, Any]]] = []
-    fake = _FakeAsyncClient(_FakeResponse(200, {"content": content, "model": "qwen3:8b", "latency_ms": 12}))
+    fake = _FakeAsyncClient(
+        _FakeResponse(200, {"content": content, "model": "qwen3:8b", "latency_ms": 12})
+    )
 
     async def capture(entity: str, event: str, item: dict[str, Any]) -> None:
         events.append((entity, event, dict(item)))
@@ -82,7 +84,10 @@ async def test_manual_empty_output_is_not_success(tmp_path, monkeypatch):
     assert updated["last_error"] == "empty_agent_result"
     assert updated["runs"][0]["trigger"] == "manual"
     assert updated["runs"][0]["error"] == "empty_agent_result"
-    assert any(entity == "agent" and event == "failed" and item["id"] == agent["id"] for entity, event, item in events)
+    assert any(
+        entity == "agent" and event == "failed" and item["id"] == agent["id"]
+        for entity, event, item in events
+    )
     assert not any(event == "completed" for _entity, event, _item in events)
 
 

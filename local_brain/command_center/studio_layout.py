@@ -71,7 +71,9 @@ def boxes_overlap(
     left: tuple[float, float, float, float],
     right: tuple[float, float, float, float],
 ) -> bool:
-    return not (left[2] <= right[0] or right[2] <= left[0] or left[3] <= right[1] or right[3] <= left[1])
+    return not (
+        left[2] <= right[0] or right[2] <= left[0] or left[3] <= right[1] or right[3] <= left[1]
+    )
 
 
 def hit_test(

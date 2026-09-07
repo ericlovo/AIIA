@@ -114,5 +114,7 @@ def _assert_unique_click_targets(layout, viewports=((1280, 800), (1440, 900))):
 def test_representative_fleet_has_no_overlap_or_buried_click_targets():
     node_ids, owners = _representative_fleet()
     stacked = {node_id: {"x": 48.0, "y": 44.0} for node_id in node_ids}
-    _assert_unique_click_targets(reconcile_positions({**default_lane_layout(node_ids, owners), **stacked}))
+    _assert_unique_click_targets(
+        reconcile_positions({**default_lane_layout(node_ids, owners), **stacked})
+    )
     _assert_unique_click_targets(reconcile_positions(default_lane_layout(node_ids, owners)))
