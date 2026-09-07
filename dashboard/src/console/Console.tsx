@@ -2,6 +2,7 @@ import { TopBar } from './TopBar'
 import { Pulse } from './Pulse'
 import { PanelBoundary } from './ErrorBoundary'
 import { AgentStudio } from './AgentStudio'
+import { VoiceConductor } from './VoiceConductor'
 
 export function Console() {
   return (
@@ -10,7 +11,15 @@ export function Console() {
         <TopBar />
       </PanelBoundary>
 
-      <PanelBoundary name="agent studio"><AgentStudio /></PanelBoundary>
+      <div className="min-h-0 min-w-0 flex-1 overflow-hidden">
+        <div className="h-full min-h-0 overflow-hidden">
+          <PanelBoundary name="agent studio"><AgentStudio /></PanelBoundary>
+        </div>
+      </div>
+
+      <PanelBoundary name="voice conductor">
+        <VoiceConductor />
+      </PanelBoundary>
 
       <PanelBoundary name="pulse">
         <Pulse />

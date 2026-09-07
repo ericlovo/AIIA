@@ -39,6 +39,7 @@ EGRESS_POINTS = {
     "google.tts": "TTS synthesis",
     "anthropic.claude_code": "execution engine / story runner",
     "web.fetch": "research literature loop",
+    "xai.realtime": "Voice Conductor ephemeral token",
 }
 
 PERMITTED_EGRESS = ["sanction control plane (metadata only)"]

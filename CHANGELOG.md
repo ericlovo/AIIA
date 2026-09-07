@@ -7,6 +7,18 @@ All notable changes to AIIA are documented here. This project adheres to
 ## [Unreleased]
 
 ### Added
+- **Voice Conductor** — first Grok Voice slice on Agent Studio (`:8200`).
+  Command Center mints a short-lived xAI ephemeral token (long-lived
+  `XAI_API_KEY` stays on the Mini in env or `~/.aiia/keys.json`). The
+  dashboard hold-to-talk bar streams speech-to-speech to
+  `grok-voice-latest` / voice `eve`. Tools are fail-closed: read agents,
+  assignments, handoffs, repo/GitHub status, Mini busy; create an
+  Assignment for an existing agent; run/retry queued or failed work
+  (`409 mini_busy` honored). Shell, git push/open_pr, file write, and
+  Sanction spend are rejected. Without a key the UI shows
+  `not_configured` and does not crash. Design + threat model:
+  `docs/VOICE-CONDUCTOR.md`.
+
 - **Approval-gated Git writes** on Agent Studio worktrees. After a workspace
   is ready, agents/UI may propose `write_file`, `run_tests`, or `commit`; a
   human approve executes the allowlisted op on the isolated worktree only

@@ -300,6 +300,7 @@ def check_optional_api_keys() -> Result:
     keys = {
         "Anthropic": os.environ.get("ANTHROPIC_API_KEY", ""),
         "Google": os.environ.get("GOOGLE_API_KEY", ""),
+        "xAI": os.environ.get("XAI_API_KEY", ""),
     }
     present = [name for name, val in keys.items() if val]
     airgap = os.environ.get("AIIA_AIRGAP", "").lower() in ("true", "1")
@@ -310,7 +311,10 @@ def check_optional_api_keys() -> Result:
             "Cloud API keys",
             "warn",
             "none configured (local-only mode)",
-            hint=("Optional. Set ANTHROPIC_API_KEY or GOOGLE_API_KEY in .env for cloud fallback."),
+            hint=(
+                "Optional. Set ANTHROPIC_API_KEY, GOOGLE_API_KEY, or XAI_API_KEY "
+                "in .env (or ~/.aiia/keys.json for xAI Voice Conductor)."
+            ),
         )
     if airgap:
         return Result(

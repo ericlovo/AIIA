@@ -87,7 +87,7 @@ export function AgentStudio() {
   }
 
   return (
-    <main className="min-h-0 flex flex-1 flex-col overflow-y-auto bg-neutral-950 lg:grid lg:grid-cols-[minmax(0,1fr)_360px] lg:overflow-hidden">
+    <main className="min-h-0 flex h-full flex-1 flex-col overflow-y-auto bg-neutral-950 lg:grid lg:grid-cols-[minmax(0,1fr)_360px] lg:overflow-hidden">
       <section className="relative min-w-0 shrink-0 border-b border-neutral-900 lg:overflow-hidden lg:border-r lg:border-b-0">
         <div className="flex flex-col gap-5 border-b border-neutral-900 px-5 py-6 sm:flex-row sm:items-start sm:justify-between sm:px-7">
           <div>

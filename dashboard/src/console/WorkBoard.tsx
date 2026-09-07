@@ -167,7 +167,7 @@ export function WorkBoard({ agents, view, onViewChange }: WorkBoardProps) {
   const items = view === 'assignments' ? assignments : handoffs
 
   return (
-    <main className="min-h-0 flex-1 grid grid-cols-1 overflow-y-auto bg-neutral-950 lg:grid-cols-[minmax(0,1fr)_390px] lg:overflow-hidden">
+    <main className="grid h-full min-h-0 max-h-full grid-cols-1 overflow-hidden bg-neutral-950 lg:grid-cols-[minmax(0,1fr)_390px]">
       <section className="min-w-0 border-b border-neutral-900 lg:overflow-hidden lg:border-r lg:border-b-0">
         <div className="flex flex-col gap-5 border-b border-neutral-900 px-5 py-5 sm:flex-row sm:items-center sm:justify-between sm:px-7">
           <div>
