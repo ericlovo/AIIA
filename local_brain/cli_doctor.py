@@ -317,12 +317,24 @@ def check_optional_api_keys() -> Result:
             ),
         )
     if airgap:
-        return Result(
-            "Cloud API keys",
-            "warn",
-            ", ".join(present) + " configured but inert under AIIA_AIRGAP",
-            hint="Air-gap mode denies all cloud egress; unset the keys to clear this warning.",
-        )
+        inert = [name for name in present if name != "xAI"]
+        voice = "xAI" in present
+        if inert:
+            detail = ", ".join(inert) + " configured but inert under AIIA_AIRGAP"
+            if voice:
+                detail += "; xAI allowed for Voice Conductor (xai.realtime)"
+            return Result(
+                "Cloud API keys",
+                "warn",
+                detail,
+                hint="Air-gap mode denies cloud egress except Voice Conductor / xai.realtime.",
+            )
+        if voice:
+            return Result(
+                "Cloud API keys",
+                "ok",
+                "xAI configured (air-gap exception: Voice Conductor / xai.realtime)",
+            )
     return Result("Cloud API keys", "ok", ", ".join(present) + " configured")
 
 

@@ -184,6 +184,15 @@ def voice_configured(*, home: Path | None = None, environ: dict[str, str] | None
 
 
 def airgap_blocks_voice() -> bool:
+    """True only when air-gap is on *and* Voice Conductor is not allowlisted.
+
+    ``xai.realtime`` is an intentional air-gap exception so Studio/PWA can
+    mint an ephemeral token while every other cloud egress stays denied.
+    """
+    from local_brain.egress import airgap_allows_tool
+
+    if airgap_allows_tool(EGRESS_TOOL):
+        return False
     return os.getenv("AIIA_AIRGAP", "").strip().lower() in {"1", "true", "yes"}
 
 

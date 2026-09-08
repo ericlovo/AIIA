@@ -6,6 +6,15 @@ All notable changes to AIIA are documented here. This project adheres to
 
 ## [Unreleased]
 
+### Changed
+- **Air-gap Voice Conductor exception** — `AIIA_AIRGAP=1` still denies every
+  registered cloud egress point except `xai.realtime`. Studio/PWA Voice
+  Conductor can report `connected` when a key is present and mint an
+  ephemeral xAI token; journal distill, whisper, Slack, TTS, research
+  fetch, and Claude Code stay fail-closed. Allowlist is
+  `AIRGAP_ALLOWED_EGRESS` in `local_brain/egress.py` — do not expand it.
+  Docs: `docs/AIRGAP.md`, `docs/VOICE-CONDUCTOR.md`.
+
 ### Fixed
 - **Empty agent output is a failed run.** `_execute_agent` (manual, interval, and assignment) now records `error=empty_agent_result`, broadcasts `failed`, and returns HTTP 502 instead of treating blank model content as success. Activity Overview / Needs Attention surface the failure.
 - **Agent map collisions no longer bury click targets.** Completed assignments are hidden by default (toggle to show). `studio_layout` reconciles persisted positions into free lanes so a representative fleet has unique hit targets at 1280×800 and 1440×900.
@@ -37,9 +46,10 @@ All notable changes to AIIA are documented here. This project adheres to
 - **Air-gap mode** (`AIIA_AIRGAP=1`) — one flag turns the Brain into a
   local-only runtime. Inference, embeddings, retrieval, and memory stay
   on the box; the execution engine (spawns the `claude` CLI) and the
-  research loop (web fetch) are force-disabled; every registered cloud
-  egress point is denied **fail-closed** via the new
-  `local_brain/egress.py` guard, and each denied attempt is reported to
+  research loop (web fetch) are force-disabled; registered cloud
+  egress points are denied **fail-closed** via the new
+  `local_brain/egress.py` guard (Voice Conductor / `xai.realtime` is the
+  sole allowlisted exception), and each denied attempt is reported to
   Sanction as audit evidence. Denials reuse each call site's existing
   degradation: journal distillation skips with the raw transcript
   preserved, TTS falls back to macOS `say`, the Slack endpoint returns
@@ -51,8 +61,8 @@ All notable changes to AIIA are documented here. This project adheres to
     reports cloud keys as "configured but inert under AIIA_AIRGAP".
   - `docs/AIRGAP.md` runbook + `scripts/airgap_probe.sh` (deny probes,
     audit-trail check, network-watch commands).
-  - `local_brain/tests/test_airgap.py` — 12 tests: config overrides,
-    fail-closed decision matrix, call-site degradation.
+  - `local_brain/tests/test_airgap.py` — config overrides, fail-closed
+    decision matrix, Voice Conductor allowlist, call-site degradation.
 
 - **Unified `aiia` CLI** — single command entry point for all AIIA workflows.
   Installs as `aiia` on PATH after `pip install aiia`. Subcommands:

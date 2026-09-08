@@ -84,8 +84,9 @@ class LocalBrainConfig:
     pii_scanning_enabled: bool = True  # PII/PHI detection locally
     embeddings_enabled: bool = True  # Generate embeddings locally
 
-    # Air-gap mode — AIIA_AIRGAP=1 forces local-only operation; all cloud
-    # egress is denied and audited (see local_brain/egress.py)
+    # Air-gap mode — AIIA_AIRGAP=1 forces local-only operation; cloud
+    # egress is denied and audited except AIRGAP_ALLOWED_EGRESS
+    # (Voice Conductor / xai.realtime). See local_brain/egress.py.
     airgap_enabled: bool = False
 
     # Execution engine

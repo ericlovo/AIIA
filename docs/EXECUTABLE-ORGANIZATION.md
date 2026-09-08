@@ -109,7 +109,7 @@ the primary source.
 |---|---|---|
 | `POST {SANCTION_API_URL}/authorize/tool` | `local_brain/egress.py` | fail-closed when Sanction is configured; allow if unconfigured (vanilla OSS) |
 | `POST {SANCTION_API_URL}/tokens` | `local_brain/sanction.py` | fire-and-forget token/cost log |
-| Air-gap | `AIIA_AIRGAP=1` | local deny + audit post; control-plane metadata only |
+| Air-gap | `AIIA_AIRGAP=1` | local deny + audit post; control-plane metadata only; `xai.realtime` Voice Conductor exception |
 
 Handoffs **do not** reuse the vanilla-OSS "allow if unconfigured" shortcut.
 See §8. Isolated loops with no Handoff still run as they do today.

@@ -149,12 +149,23 @@ def test_status_connected_when_key_present(monkeypatch, tmp_path):
     assert "XAI_API_KEY" not in json.dumps(payload)
 
 
-def test_status_not_configured_under_airgap_even_with_key(monkeypatch, tmp_path):
+def test_status_connected_under_airgap_when_key_present(monkeypatch, tmp_path):
     monkeypatch.setenv("XAI_API_KEY", "xai-test-fixture")
     monkeypatch.setenv("AIIA_AIRGAP", "1")
     payload = status_payload(home=tmp_path)
+    assert payload["status"] == "connected"
+    assert payload["configured"] is True
+    assert payload["reason"] == ""
+    assert "xai-test-fixture" not in json.dumps(payload)
+
+
+def test_status_not_configured_under_airgap_without_key(monkeypatch, tmp_path):
+    monkeypatch.delenv("XAI_API_KEY", raising=False)
+    monkeypatch.setenv("AIIA_AIRGAP", "1")
+    payload = status_payload(home=tmp_path)
     assert payload["status"] == "not_configured"
-    assert payload["reason"] == "airgap"
+    assert payload["reason"] == "missing_xai_api_key"
+    assert payload["configured"] is False
 
 
 # ---------------------------------------------------------------------------
@@ -296,6 +307,18 @@ def _client(deps: VoiceConductorDeps | None = None) -> TestClient:
     return TestClient(app)
 
 
+def test_http_status_connected_under_airgap_with_key(monkeypatch, tmp_path):
+    monkeypatch.setenv("XAI_API_KEY", "xai-test-fixture")
+    monkeypatch.setenv("AIIA_AIRGAP", "1")
+    monkeypatch.setattr("local_brain.command_center.voice_conductor.Path.home", lambda: tmp_path)
+    response = _client().get("/api/voice/status")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "connected"
+    assert body["reason"] == ""
+    assert "xai-test-fixture" not in response.text
+
+
 def test_http_status_not_configured_without_key(monkeypatch, tmp_path):
     monkeypatch.delenv("XAI_API_KEY", raising=False)
     monkeypatch.delenv("AIIA_AIRGAP", raising=False)
@@ -321,6 +344,15 @@ def test_http_forbidden_tool_rejected():
     response = _client().post("/api/voice/tools", json={"name": "open_pr", "arguments": {}})
     assert response.status_code == 403
     assert response.json()["detail"] == "tool_forbidden"
+
+
+def test_http_forbidden_tools_still_forbidden_under_airgap(monkeypatch):
+    monkeypatch.setenv("AIIA_AIRGAP", "1")
+    monkeypatch.setenv("XAI_API_KEY", "xai-test-fixture")
+    for name in ("git_push", "open_pr", "run_shell", "sanction_spend"):
+        response = _client().post("/api/voice/tools", json={"name": name, "arguments": {}})
+        assert response.status_code == 403, name
+        assert response.json()["detail"] == "tool_forbidden"
 
 
 def test_http_unknown_tool_rejected():
@@ -390,4 +422,46 @@ async def test_session_mint_uses_mocked_xai(monkeypatch, tmp_path):
     assert {tool["name"] for tool in body["session"]["tools"]} == ALLOWED_TOOLS
     assert "xai-test-fixture" not in response.text
     assert posted[0]["headers"]["Authorization"] == "Bearer xai-test-fixture"
+    assert posted[0]["url"].endswith("/v1/realtime/client_secrets")
+
+
+@pytest.mark.asyncio
+async def test_session_mint_allowed_under_airgap_with_mocked_xai(monkeypatch, tmp_path):
+    monkeypatch.setenv("XAI_API_KEY", "xai-test-fixture")
+    monkeypatch.setenv("AIIA_AIRGAP", "1")
+
+    posted: list[dict[str, Any]] = []
+
+    class _Resp:
+        status_code = 200
+
+        def json(self):
+            return {"value": "ephem-airgap-token", "expires_at": 1_778_000_000}
+
+    class _Client:
+        def __init__(self, *args: Any, **kwargs: Any):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *exc: object):
+            return False
+
+        async def post(
+            self, url: str, headers: dict[str, str] | None = None, json: dict | None = None
+        ):
+            posted.append({"url": url, "headers": headers, "json": json})
+            return _Resp()
+
+    monkeypatch.setattr(
+        "local_brain.egress.get_config", lambda: type("C", (), {"airgap_enabled": True})()
+    )
+    monkeypatch.setattr("local_brain.command_center.voice_routes.httpx.AsyncClient", _Client)
+
+    response = _client().post("/api/voice/session")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["token"] == "ephem-airgap-token"
+    assert "xai-test-fixture" not in response.text
     assert posted[0]["url"].endswith("/v1/realtime/client_secrets")
