@@ -14,6 +14,19 @@
 #                              to restart your Brain + Command Center services.
 #   AIIA_PIP                   Pip binary (default: pip)
 #   AIIA_INSTALL_EXTRAS        Pip extras spec (default: "[dev]"; pass "" to skip extras)
+#   AIIA_EXPECT_AIRGAP         Post-deploy assertion on air-gap state (1/true or
+#                              0/false). Unset = no check. See "Air-gap drift
+#                              check" below.
+#   AIIA_HEALTH_URL            Brain health endpoint for that check
+#                              (default: http://localhost:8100/health)
+#
+# NOTE: this script does NOT set AIIA_AIRGAP. It only deploys code — the Brain
+# runs as a separate launchd service, so an `export` here would apply to this
+# script and its hook, never to the Brain process. Air-gap must be set in the
+# Brain service's launchd plist <EnvironmentVariables> (or .env under Docker,
+# which is the only path that reads .env — nothing calls load_dotenv()).
+# What this script can do is notice when the setting has gone missing, which is
+# what AIIA_EXPECT_AIRGAP is for. Full runbook: docs/AIRGAP.md
 
 set -euo pipefail
 
@@ -60,6 +73,41 @@ if [[ -n "${AIIA_POST_DEPLOY_HOOK:-}" && -x "$AIIA_POST_DEPLOY_HOOK" ]]; then
     if ! "$AIIA_POST_DEPLOY_HOOK" "$remote_sha" >> "$LOG_FILE" 2>&1; then
         log "FAIL: post-deploy hook exited non-zero."
         exit 1
+    fi
+fi
+
+# Air-gap drift check — catches the case where a rebuild, a reprovisioned
+# launchd plist, or a hand-edited .env silently drops AIIA_AIRGAP and the Brain
+# comes back up with cloud egress allowed. Advisory only: the deploy itself
+# already succeeded, and a retry loop won't fix an environment misconfiguration,
+# so a mismatch logs FAIL and exits 0. Grep the log for "airgap" to audit.
+if [[ -n "${AIIA_EXPECT_AIRGAP:-}" ]]; then
+    health_url="${AIIA_HEALTH_URL:-http://localhost:8100/health}"
+    # tr, not ${x,,} — macOS ships bash 3.2, where that expansion is a syntax error.
+    expect_lc=$(printf '%s' "$AIIA_EXPECT_AIRGAP" | tr '[:upper:]' '[:lower:]')
+    case "$expect_lc" in
+        1|true)  want="True" ;;
+        0|false) want="False" ;;
+        *) want="" ; log "FAIL: AIIA_EXPECT_AIRGAP='${AIIA_EXPECT_AIRGAP}' is not 1/true/0/false" ;;
+    esac
+
+    if [[ -n "$want" ]]; then
+        health=$(curl -fsS --max-time 10 "$health_url" 2>/dev/null || true)
+        if [[ -z "$health" ]]; then
+            log "FAIL: airgap check — Brain unreachable at $health_url (is it restarted?)"
+        else
+            got=$(printf '%s' "$health" \
+                | python3 -c "import json,sys; print(json.load(sys.stdin)['airgap']['enabled'])" \
+                2>/dev/null || true)
+            if [[ -z "$got" ]]; then
+                log "FAIL: airgap check — no airgap.enabled in $health_url response"
+            elif [[ "$got" != "$want" ]]; then
+                log "FAIL: airgap DRIFT — expected enabled=$want, Brain reports enabled=$got." \
+                    "Check the Brain launchd plist <EnvironmentVariables> for AIIA_AIRGAP."
+            else
+                log "OK: airgap check — enabled=$got (as expected)"
+            fi
+        fi
     fi
 fi
 
