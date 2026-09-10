@@ -1489,6 +1489,7 @@ with Sanction mocked (same style as `test_airgap.py`).
 | Stories / roadmap | Human backlog. A D3 Lead may create Assignments *from* a story; stories are not Assignments. |
 | A2A | Ingress only. |
 | Air-gap | Isolated Runs ok; Handoffs need a grant from local Sanction or they do not fire. |
+| Knowledge spine | Commons memory / FEED routing: [`KNOWLEDGE-SPINE.md`](./KNOWLEDGE-SPINE.md). AIIA Bot commits; Elo routes. Not this file. |
 | `docs/HANDOFF.md` | Unrelated session notebook. |
 
 ---

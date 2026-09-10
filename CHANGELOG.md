@@ -31,6 +31,10 @@ All notable changes to AIIA are documented here. This project adheres to
 - **Agent map collisions no longer bury click targets.** Completed assignments are hidden by default (toggle to show). `studio_layout` reconciles persisted positions into free lanes so a representative fleet has unique hit targets at 1280×800 and 1440×900.
 
 ### Added
+- **Knowledge Spine & Relativity Map** — `docs/KNOWLEDGE-SPINE.md`.
+  Commons design: AIIA Bot is the only canonical FEED writer; Elo is
+  routing co-owner with no direct spine writes. Docs-only; no runtime
+  JSON.
 - **Voice Conductor** — first Grok Voice slice on Agent Studio (`:8200`).
   Command Center mints a short-lived xAI ephemeral token (long-lived
   `XAI_API_KEY` stays on the Mini in env or `~/.aiia/keys.json`). The
