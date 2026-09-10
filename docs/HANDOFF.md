@@ -1,3 +1,9 @@
+## 2026-09-07 — Astra / Studio tune-up → Mindmoor suite spec (from: Astra)
+
+**TL;DR:** Serial 23-agent Mini pass (22 ran / 1 skipped email / 1 fail / 8 weak / 13 ok). Hard fail: Mindmoor Cron Review Gate `empty_agent_result` at `max_tokens=600` — live Mini already 1200 + output-contract (runtime only). Spec + tagging scaffold: [`MINDMOOR-AGENT-SUITE.md`](./MINDMOOR-AGENT-SUITE.md), full notes [`HANDOFF-ASTRA-STUDIO-TUNEUP-2026-09-07.md`](./HANDOFF-ASTRA-STUDIO-TUNEUP-2026-09-07.md). Air-gap stays on; no Voice egress.
+
+---
+
 ## 2026-09-06 — Agent Studio World Canvas sprint → Codex (from: AIIA Bot / Mini)
 
 **TL;DR:** Full sprint brief at [`SPRINT-agent-studio-world-canvas.md`](./SPRINT-agent-studio-world-canvas.md). Hand to Codex Desktop: branch `feat/agent-studio-world-canvas` from main, land World/Activity WIP as clean PR (no runtime JSON / `.env` backups), rebuild dashboard, restart `com.aiia.brain`, prove `GET /api/agent-world/layout` 200 on :8200. Git writes approval-gated; no push/open_pr from agent.
