@@ -15,7 +15,15 @@ import pytest
 
 from local_brain import egress
 from local_brain.config import LocalBrainConfig
-from local_brain.egress import EgressDecision, airgap_status, authorize_egress
+from local_brain.egress import (
+    AIRGAP_ALLOWED_EGRESS,
+    EGRESS_POINTS,
+    EgressDecision,
+    airgap_allows_tool,
+    airgap_status,
+    authorize_egress,
+    authorize_egress_sync,
+)
 
 # ----------------------------------------------------------------------------
 # Config force-overrides
@@ -43,9 +51,23 @@ def test_no_airgap_leaves_flags_alone(monkeypatch):
 def test_airgap_status_shape(monkeypatch):
     on = airgap_status(SimpleNamespace(airgap_enabled=True))
     assert on["enabled"] is True
-    assert on["egress"] and all(v == "disabled" for v in on["egress"].values())
+    assert on["egress"]
+    assert on["egress"]["xai.realtime"] == "airgap-allowlisted"
+    assert all(
+        v == "disabled" for name, v in on["egress"].items() if name not in AIRGAP_ALLOWED_EGRESS
+    )
+    assert any("xai.realtime" in item for item in on["permitted"])
     off = airgap_status(SimpleNamespace(airgap_enabled=False))
     assert all(v == "sanction-governed" for v in off["egress"].values())
+    assert off["permitted"] == ["sanction control plane (metadata only)"]
+
+
+def test_airgap_allowlist_is_voice_conductor_only():
+    assert frozenset({"xai.realtime"}) == AIRGAP_ALLOWED_EGRESS
+    assert airgap_allows_tool("xai.realtime") is True
+    assert airgap_allows_tool("web.fetch") is False
+    assert airgap_allows_tool("anthropic.messages") is False
+    assert "xai.realtime" in EGRESS_POINTS
 
 
 # ----------------------------------------------------------------------------
@@ -109,6 +131,34 @@ def test_airgap_denies_even_with_all_cloud_keys_set(monkeypatch):
     _set_mode(monkeypatch, airgap=True)
     monkeypatch.setattr(egress, "report_denied_bg", lambda t, s=None: None)
     assert asyncio.run(authorize_egress("groq.whisper")).allowed is False
+
+
+def test_airgap_allows_voice_conductor_and_denies_other_egress(monkeypatch):
+    _set_mode(monkeypatch, airgap=True)
+    reported: list[tuple] = []
+    monkeypatch.setattr(egress, "report_denied_bg", lambda t, s=None: reported.append((t, s)))
+
+    voice = asyncio.run(authorize_egress("xai.realtime"))
+    assert voice.allowed is True
+    assert "air-gap exception" in voice.reason
+    assert "xai.realtime" in voice.reason
+    assert reported == []
+
+    for tool in ("anthropic.messages", "web.fetch", "slack.post", "groq.whisper"):
+        decision = asyncio.run(authorize_egress(tool))
+        assert decision.allowed is False, tool
+        assert "air-gap" in decision.reason
+    assert [t for t, _ in reported] == [
+        "anthropic.messages",
+        "web.fetch",
+        "slack.post",
+        "groq.whisper",
+    ]
+
+    sync_ok = authorize_egress_sync("xai.realtime")
+    assert sync_ok.allowed is True
+    sync_deny = authorize_egress_sync("google.tts")
+    assert sync_deny.allowed is False
 
 
 def test_hybrid_unconfigured_allows(monkeypatch):

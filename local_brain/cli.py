@@ -182,7 +182,10 @@ def status() -> None:
 
     airgap = (brain or {}).get("airgap", {})
     if airgap.get("enabled"):
-        disabled = ", ".join(sorted(airgap.get("egress", {})))
+        egress_map = airgap.get("egress", {})
+        disabled = ", ".join(
+            sorted(name for name, state in egress_map.items() if state == "disabled")
+        )
         console.print(
             f"\n  [bold yellow]AIRGAP=on[/bold yellow] — cloud egress disabled: {disabled}"
         )

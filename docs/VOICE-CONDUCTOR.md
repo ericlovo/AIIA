@@ -91,9 +91,11 @@ ephemeral token from `POST https://api.x.ai/v1/realtime/client_secrets`
 and returns only that token plus the session config (voice, tools,
 instructions).
 
-Under `AIIA_AIRGAP=1` status is `not_configured` / `reason=airgap` even
-if a key is present. Minting is an `xai.realtime` egress point and is
-denied fail-closed (`docs/AIRGAP.md`).
+Under `AIIA_AIRGAP=1`, Voice Conductor is an **intentional exception**:
+`xai.realtime` is on `AIRGAP_ALLOWED_EGRESS`. Status can be `connected`
+when a key is present, and `POST /api/voice/session` may mint an
+ephemeral token. Every other registered cloud egress point stays
+denied. This is not a global air-gap off — see `docs/AIRGAP.md`.
 
 ---
 
@@ -132,8 +134,9 @@ in `session.update`. Execution is always server-side via
 A tampered browser can send a different `session.update` (xAI ephemeral
 tokens do not bind session tools at mint time). That cannot widen
 **our** allowlist. It could enable xAI-hosted search on their side —
-mitigated by a 300s token, air-gap deny, and never shipping the
-long-lived key. A future slice can proxy the WebSocket if that gap
+mitigated by a 300s token, never shipping the long-lived key, and the
+narrow air-gap exception (mint only; Command Center tools stay
+fail-closed). A future slice can proxy the WebSocket if that gap
 must close.
 
 ---
@@ -146,14 +149,15 @@ must close.
 | Voice asks to `git push` / open a PR | Name not allowlisted; handler 403 |
 | Voice invents a new agent id | `create_assignment` requires a live registry row |
 | Voice piles work on a busy Mini | `run_assignment` returns `mini_busy` (409); Assignment stays queued |
-| Air-gapped Mini with a key still set | Status `not_configured`; mint denied as `xai.realtime` |
+| Air-gapped Mini with a key still set | `xai.realtime` is allowlisted: status `connected` if key present; mint allowed. Other egress stays denied |
 | Prompt injection via repo text | Tools do not read file contents; repo mounts are status-only |
 | Personal `gh` token leakage | `list_resources` returns connection status, never credentials |
 | Sanction spend via voice | No spend / authorize tool |
 
 Audio is processed by xAI in realtime (their retention: not stored / not
-used for training per their Voice docs). Do not treat this slice as
-air-gap compatible.
+used for training per their Voice docs). Voice Conductor is the one
+registered air-gap exception (`xai.realtime`); speech still leaves the
+box to xAI. Keep `AIIA_AIRGAP=1` for every other cloud call.
 
 ---
 
