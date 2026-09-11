@@ -77,7 +77,9 @@ Known limits, not blockers for the four contracts:
   window on the Brain side. That is an inference-layer limit and is not
   certified by this gate.
 
-The decision above stands as NO-GO until items 4 and 5 below are done: the
+Update 16:30 CDT: items 4 and 5 were completed the same day (frozen `f9e7b7e`, coordinated backup, owner-run deploy, verified build, two-call RUN smoke passed; see `docs/STUDIO-RUN-SMOKE-2026-09-11.md`). The six-call evaluation is still not run. Original text follows.
+
+The decision above stood as NO-GO until items 4 and 5 below were done: the
 candidate is still uncommitted, no revision is frozen, and the RUN smoke test
 and six-call evaluation have not run.
 
