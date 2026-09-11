@@ -5,14 +5,22 @@ ChromaDB and reduced context window changes work correctly.
 
 Run: pytest local_brain/local_brain/tests/test_streaming_chat.py -v
 Requires: Brain API on :8100, Command Center on :8200, Ollama running
+Opt in with AIIA_LIVE_TESTS=1; otherwise the module is skipped so a unit run
+never sends requests to the live services.
 """
 
 import asyncio
 import json
+import os
 import time
 
 import httpx
 import pytest
+
+pytestmark = pytest.mark.skipif(
+    os.getenv("AIIA_LIVE_TESTS") != "1",
+    reason="live-service tests; set AIIA_LIVE_TESTS=1 to run against :8100/:8200",
+)
 
 BRAIN_URL = "http://localhost:8100"
 CC_URL = "http://localhost:8200"
