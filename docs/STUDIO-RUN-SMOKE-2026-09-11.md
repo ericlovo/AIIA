@@ -139,3 +139,27 @@ budget did not allow a second timed run). Prior synthetic browser evidence
 Remaining after this slice: accept/reject/reopen review checks on existing
 synthetic assignments, then the frozen six-call baseline and FLOW-01. The seven
 `test_streaming_chat.py` live-server tests still need an opt-in gate.
+
+## Review flow verification (same day, no inference)
+
+Target: synthetic assignment `asg_de1130dad895` ("Eval FLOW-01 evidence
+audit", Test - Evidence Auditor). Deployed revision `f9e7b7e` on the Mini.
+
+| Step | Path | Result |
+| --- | --- | --- |
+| Accept with current version | API | 200, `review_status=accepted`, note saved, `reviewed_at` set, version rotated |
+| Replay with the stale version | API | 409 `review_changed_refresh_required`, state unchanged |
+| Reject with fresh version | API | 200, `rejected`, on disk immediately |
+| Review a failed assignment | API | 409 `assignment_not_reviewable` |
+| Review unknown id | API | 404 `assignment_not_found` |
+| Reopen review | UI button | "Rejected output" label cleared on card and detail panel |
+| Accept output | UI button | "Accepted output" label plus "Decision saved" timestamp |
+| Full page reload | UI + API + disk | Card still "Accepted output"; API and `assignment_data.json` agree; Switchboard attention count 48 → 47 |
+
+Observation, not a defect against the contract: the review note textarea keeps
+the previous decision's text, so accepting after a reject carried the "Rejected
+during…" note forward until it was edited. Consider clearing the draft note on
+Reopen, or labeling the note with the decision it was written for.
+
+Tooling note: an earlier API pass looked like a JSON error; it was zsh `echo`
+expanding `\n` inside the response, not the server. Raw bodies are valid JSON.
