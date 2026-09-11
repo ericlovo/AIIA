@@ -1211,6 +1211,26 @@ async def list_agents():
     return {"agents": agent_registry.list()}
 
 
+@app.get("/api/studio/activity")
+async def studio_activity(agent_id: str = "", day: str = "", status: str = ""):
+    if day:
+        try:
+            datetime.strptime(day, "%Y-%m-%d")
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail="invalid_day") from exc
+    if status not in {"", "completed", "failed"}:
+        raise HTTPException(status_code=422, detail="invalid_status")
+    return agent_registry.ledger.activity(agent_id=agent_id, day=day, status=status)
+
+
+@app.get("/api/studio/runs/{run_id}")
+async def studio_run(run_id: str):
+    run = agent_registry.ledger.get(run_id)
+    if not run:
+        raise HTTPException(status_code=404, detail="run_not_found")
+    return {"run": run}
+
+
 @app.get("/api/agents/resources")
 async def agent_resources():
     return {
@@ -1234,6 +1254,22 @@ async def create_agent(body: AgentCreateRequest):
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     await broadcast_studio_event("agent", "created", agent)
     return {"agent": agent}
+
+
+class AgentLoopState(BaseModel):
+    enabled: bool
+
+
+@app.post("/api/agents/{agent_id}/loop")
+async def set_agent_loop(agent_id: str, body: AgentLoopState):
+    agent = agent_registry.get(agent_id)
+    if not agent:
+        raise HTTPException(status_code=404, detail="agent_not_found")
+    if body.enabled and not agent.get("loop_task", "").strip():
+        raise HTTPException(status_code=422, detail="loop_task_required")
+    updated = agent_registry.update(agent_id, loop_enabled=body.enabled)
+    await broadcast_studio_event("agent", "updated", updated)
+    return {"agent": updated}
 
 
 @app.put("/api/agents/{agent_id}")

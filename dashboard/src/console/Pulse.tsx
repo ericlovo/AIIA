@@ -1,34 +1,7 @@
 import { useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { api } from '../lib/api'
-
-type LoopState = 'healthy' | 'stale' | 'failing' | 'idle'
-
-function loopState(t: {
-  run_count: number
-  fail_count: number
-  last_status: string | null
-  last_run: string | null
-  interval_seconds: number
-}): LoopState {
-  if (t.run_count === 0) return 'idle'
-  // Failing if last result was error OR fail_count > 10% of runs
-  if (t.last_status === 'error') return 'failing'
-  if (t.fail_count > 0 && t.fail_count / Math.max(t.run_count, 1) > 0.15) return 'failing'
-  // Stale if it hasn't run in 3x its interval
-  if (t.last_run && t.interval_seconds > 0) {
-    const ago = (Date.now() - new Date(t.last_run).getTime()) / 1000
-    if (ago > t.interval_seconds * 3) return 'stale'
-  }
-  return 'healthy'
-}
-
-const DOT_COLOR: Record<LoopState, string> = {
-  healthy: 'bg-green-500',
-  stale: 'bg-amber-500',
-  failing: 'bg-red-500',
-  idle: 'bg-neutral-700',
-}
+import { loopState, DOT_COLOR, type LoopState } from './taskStatus'
 
 function timeAgo(iso: string | null): string {
   if (!iso) return 'never'
@@ -46,11 +19,11 @@ export function Pulse() {
     queryFn: api.tasks,
     refetchInterval: 5_000,
   })
-  const tasks = data ?? []
+  const tasks = useMemo(() => data ?? [], [data])
   const [hovered, setHovered] = useState<string | null>(null)
 
   const counts = useMemo(() => {
-    const c: Record<LoopState, number> = { healthy: 0, stale: 0, failing: 0, idle: 0 }
+    const c: Record<LoopState, number> = { healthy: 0, stale: 0, failing: 0, idle: 0, running: 0 }
     tasks.forEach(t => { c[loopState(t)] += 1 })
     return c
   }, [tasks])
@@ -58,7 +31,7 @@ export function Pulse() {
   const hoveredTask = tasks.find(t => t.task_id === hovered)
 
   return (
-    <footer className="h-14 shrink-0 border-t border-neutral-900 bg-neutral-950 flex items-center px-6 gap-4 relative">
+    <footer className="h-14 shrink-0 border-t border-neutral-900 bg-neutral-950 flex items-center px-3 sm:px-6 gap-4 relative">
       <div className="flex items-center gap-3 text-xs shrink-0">
         <span className="text-[10px] tracking-[0.25em] text-neutral-500 font-semibold">PULSE</span>
         <div className="flex items-center gap-2">
@@ -82,9 +55,14 @@ export function Pulse() {
           return (
             <button
               key={t.task_id}
+              aria-label={`Open ${t.name}: ${state}`}
+              title={`${t.name}: ${state}`}
+              onClick={() => window.dispatchEvent(new CustomEvent('studio:switchboard', { detail: { taskId: t.task_id } }))}
+              onFocus={() => setHovered(t.task_id)}
+              onBlur={() => setHovered(null)}
               onMouseEnter={() => setHovered(t.task_id)}
               onMouseLeave={() => setHovered(null)}
-              className="relative group flex flex-col items-center gap-1 cursor-pointer"
+              className="relative group flex shrink-0 flex-col items-center gap-1 cursor-pointer px-1"
             >
               <span
                 className={`w-2.5 h-2.5 rounded-full ${DOT_COLOR[state]} ${state === 'healthy' ? '' : state === 'failing' ? 'animate-pulse' : ''} ring-1 ring-black/40 transition-transform group-hover:scale-125`}

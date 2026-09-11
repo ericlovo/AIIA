@@ -1,10 +1,11 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api, type Agent, type AgentDefinition } from '../lib/api'
 import { AgentWorldCanvas } from './AgentWorldCanvas'
 import { StudioTabs, type StudioView } from './StudioTabs'
 import { WorkBoard } from './WorkBoard'
 import { ActivityOverview } from './ActivityOverview'
+import { Switchboard } from './Switchboard'
 
 type Draft = AgentDefinition
 
@@ -37,13 +38,23 @@ const TOOL_LIBRARY = ['Local memory', 'Repository read', 'GitHub read', 'Git wor
 
 export function AgentStudio() {
   const qc = useQueryClient()
-  const { data, isLoading } = useQuery({ queryKey: ['agents'], queryFn: api.agents, refetchInterval: 10_000 })
+  const { data, isLoading, isError } = useQuery({ queryKey: ['agents'], queryFn: api.agents, refetchInterval: 10_000 })
   const { data: resources } = useQuery({ queryKey: ['agent-resources'], queryFn: api.agentResources })
   const agents = data?.agents ?? EMPTY_AGENTS
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [draft, setDraft] = useState<Draft>(EMPTY_DRAFT)
   const [task, setTask] = useState('')
-  const [view, setView] = useState<StudioView>('activity')
+  const [view, setView] = useState<StudioView>('switchboard')
+  const [switchboardIntent, setSwitchboardIntent] = useState({ taskId: '', revision: 0 })
+  useEffect(() => {
+    const open = (event: Event) => {
+      const taskId = (event as CustomEvent<{ taskId: string }>).detail.taskId
+      setSwitchboardIntent(previous => ({ taskId, revision: previous.revision + 1 }))
+      setView('switchboard')
+    }
+    window.addEventListener('studio:switchboard', open)
+    return () => window.removeEventListener('studio:switchboard', open)
+  }, [])
   const [workBoardIntent, setWorkBoardIntent] = useState<WorkBoardIntent | null>(null)
   const selected = agents.find(agent => agent.id === selectedId) ?? null
   const needsRepo = draft.tools.some(tool => ['Repository read', 'GitHub read', 'Git workspace'].includes(tool))
@@ -66,6 +77,7 @@ export function AgentStudio() {
 
   function changeView(nextView: StudioView) {
     setWorkBoardIntent(null)
+    setSwitchboardIntent(previous => ({ taskId: '', revision: previous.revision + 1 }))
     setView(nextView)
   }
 
@@ -116,6 +128,13 @@ export function AgentStudio() {
   })
 
   const activeCount = useMemo(() => agents.filter(agent => agent.status === 'running').length, [agents])
+
+  if (view === 'switchboard') {
+    return <Switchboard key={switchboardIntent.revision} agents={agents} loading={isLoading} agentError={isError}
+      onViewChange={changeView} onManageAgent={manageAgent} onAssignAgent={assignAgent}
+      onOpenAssignment={openAssignment} initialTaskId={switchboardIntent.taskId}
+      onTemplate={template => { selectAgent(null); setDraft(template); changeView('agents') }} />
+  }
 
   if (view === 'activity') {
     return <ActivityOverview agents={agents} isLoading={isLoading} view={view} onViewChange={changeView} />
@@ -254,6 +273,7 @@ export function AgentStudio() {
             {draft.loop_enabled && <div className="mt-4 space-y-3"><Field label="Loop task"><textarea value={draft.loop_task} onChange={event => setDraft({ ...draft, loop_task: event.target.value })} rows={3} placeholder="Inspect the mounted repository and report only material changes." /></Field><div className="grid grid-cols-2 gap-3"><Field label="Every minutes"><input type="number" min="15" max="1440" value={draft.loop_interval_minutes} onChange={event => setDraft({ ...draft, loop_interval_minutes: Number(event.target.value) })} /></Field><Field label="Runs / day"><input type="number" min="1" max="48" value={draft.loop_max_runs_per_day} onChange={event => setDraft({ ...draft, loop_max_runs_per_day: Number(event.target.value) })} /></Field></div></div>}
           </div>
           <button disabled={!canSave || save.isPending} onClick={() => save.mutate()} className="w-full bg-cyan-400 px-3 py-2.5 text-sm font-medium text-neutral-950 disabled:cursor-not-allowed disabled:opacity-40">{save.isPending ? 'Saving…' : selected ? 'Save agent' : 'Create agent'}</button>
+          {save.isError && <p role="alert" className="text-xs text-red-300">{save.error.message}</p>}
           {selected && <button disabled={remove.isPending} onClick={() => remove.mutate()} className="w-full px-3 py-2 text-xs text-neutral-600 hover:text-red-300">Remove agent</button>}
         </div>
 

@@ -9,6 +9,8 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
+from local_brain.command_center.run_ledger import RunLedger
+
 logger = logging.getLogger("aiia.agents")
 
 AGENT_DATA_FILE = Path(__file__).parent / "agent_data.json"
@@ -24,6 +26,8 @@ class AgentRegistry:
         self.data_file = data_file or AGENT_DATA_FILE
         self.agents: list[dict[str, Any]] = []
         self.load()
+        self.ledger = RunLedger(self.data_file.with_suffix(".runs.sqlite3"))
+        self.ledger.backfill(self.agents)
 
     def list(self) -> list[dict[str, Any]]:
         return sorted(self.agents, key=lambda agent: agent["updated_at"], reverse=True)
@@ -172,9 +176,11 @@ class AgentRegistry:
         agent["last_result"] = result
         agent["last_error"] = error
         agent["updated_at"] = now
+        run_id = uuid.uuid4().hex
         agent["runs"] = (
             [
                 {
+                    "id": run_id,
                     "task": task,
                     "result": result,
                     "error": error,
@@ -187,6 +193,7 @@ class AgentRegistry:
             ]
             + agent["runs"]
         )[:MAX_RUNS]
+        self.ledger.record(agent, agent["runs"][0])
         self.save()
         return agent
 

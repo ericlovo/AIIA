@@ -45,6 +45,8 @@ reports/
 # Monitoring snapshots
 command_center/monitor_data.json
 local_brain/command_center/agent_data.json
+local_brain/command_center/task_data.json
+local_brain/command_center/*.sqlite3*
 local_brain/command_center/assignment_data.json
 local_brain/command_center/agent_world_layout.json
 local_brain/command_center/git_workspace_data.json
