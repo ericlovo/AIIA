@@ -7,6 +7,9 @@ All notable changes to AIIA are documented here. This project adheres to
 ## [Unreleased]
 
 ### Changed
+- **Overview RUN buttons** — activity rows can rerun their recorded task with
+  the agent's current configuration. Controls disable while the Mini is busy;
+  persistent feedback shows completion or failure without automatic retries.
 - **Air-gap Voice Conductor exception** — `AIIA_AIRGAP=1` still denies every
   registered cloud egress point except `xai.realtime`. Studio/PWA Voice
   Conductor can report `connected` when a key is present and mint an

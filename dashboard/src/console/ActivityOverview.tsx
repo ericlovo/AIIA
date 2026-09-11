@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from 'react'
-import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   api,
   type Agent,
@@ -22,6 +22,7 @@ interface ActivityEvent {
   agent: string
   at: string
   meta: string
+  runTarget?: { agentId: string; task: string }
 }
 
 const FILTERS: { id: ActivityFilter; label: string }[] = [
@@ -33,6 +34,7 @@ const FILTERS: { id: ActivityFilter; label: string }[] = [
 
 export function ActivityOverview({ agents, isLoading, view, onViewChange }: { agents: Agent[]; isLoading: boolean; view: StudioView; onViewChange: (view: StudioView) => void }) {
   const queryClient = useQueryClient()
+  const runInFlight = useRef(false)
   const [filter, setFilter] = useState<ActivityFilter>('all')
   const { data: assignmentData } = useQuery({ queryKey: ['assignments'], queryFn: api.assignments, refetchInterval: 5_000 })
   const { data: handoffData } = useQuery({ queryKey: ['handoffs'], queryFn: api.handoffs, refetchInterval: 5_000 })
@@ -44,6 +46,29 @@ export function ActivityOverview({ agents, isLoading, view, onViewChange }: { ag
   const workspaces = useMemo(() => workspaceData?.workspaces ?? [], [workspaceData])
   const writes = useMemo(() => writeData?.writes ?? [], [writeData])
   const agentNames = useMemo(() => new Map(agents.map(agent => [agent.id, agent.name])), [agents])
+  const rerun = useMutation({
+    mutationFn: ({ agentId, task }: { agentId: string; task: string; agentName: string }) => api.runAgent(agentId, task),
+    retry: false,
+    onSuccess: ({ agent }) => {
+      queryClient.setQueryData<{ agents: Agent[] }>(['agents'], previous => previous ? {
+        agents: previous.agents.map(item => item.id === agent.id ? agent : item),
+      } : previous)
+    },
+    onSettled: () => {
+      runInFlight.current = false
+      for (const key of ['agents', 'assignments', 'handoffs', 'studio-activity']) {
+        void queryClient.invalidateQueries({ queryKey: [key] })
+      }
+    },
+  })
+  const miniBusy = rerun.isPending || agents.some(agent => agent.status === 'running')
+    || assignments.some(assignment => assignment.status === 'running')
+
+  function runAgain(event: ActivityEvent) {
+    if (runInFlight.current || miniBusy || !event.runTarget?.task.trim() || event.runTarget.task.length > 8000) return
+    runInFlight.current = true
+    rerun.mutate({ ...event.runTarget, agentName: event.agent })
+  }
 
   useEffect(() => {
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
@@ -72,6 +97,7 @@ export function ActivityOverview({ agents, isLoading, view, onViewChange }: { ag
         activity.push({
           id: `run-${agent.id}-${run.at}-${index}`,
           kind: 'run',
+          runTarget: { agentId: agent.id, task: run.task },
           status: run.error || !run.result?.trim() ? 'failed' : 'completed',
           title: `${agent.name} ${run.error || !run.result?.trim() ? 'failed' : 'completed'} a ${trigger} run`,
           detail: cleanSnippet(run.error || run.result || run.task) || 'empty agent result',
@@ -157,7 +183,7 @@ export function ActivityOverview({ agents, isLoading, view, onViewChange }: { ag
   const scheduled = agents.filter(agent => agent.loop_enabled).length
 
   return (
-    <main className="min-h-0 flex-1 overflow-y-auto bg-neutral-950">
+    <main className="h-full min-h-0 flex-1 overflow-y-auto bg-neutral-950">
       <header className="flex flex-col gap-5 border-b border-neutral-900 px-5 py-5 sm:flex-row sm:items-center sm:justify-between sm:px-7">
         <div>
           <div className="text-[10px] font-semibold uppercase tracking-[0.28em] text-cyan-400">Agent Studio</div>
@@ -171,6 +197,10 @@ export function ActivityOverview({ agents, isLoading, view, onViewChange }: { ag
         </div>
         <StudioTabs view={view} onChange={onViewChange} />
       </header>
+
+      {(rerun.isPending || rerun.isSuccess || rerun.isError) && <div role={rerun.isError ? 'alert' : 'status'} className={`sticky top-0 z-20 border-b border-neutral-800 bg-neutral-950 px-5 py-3 text-sm sm:px-7 ${rerun.isError ? 'text-red-300' : 'text-cyan-200'}`}>
+        {rerun.isPending ? `Running ${rerun.variables.agentName}...` : rerun.isError ? `${rerun.variables.agentName}: ${rerun.error.message}` : `${rerun.variables.agentName}: run completed.`}
+      </div>}
 
       <section aria-label="Operations summary" className="grid border-b border-neutral-900 sm:grid-cols-2 xl:grid-cols-4">
         <Metric label="Runs today" value={runsToday} detail={`${events.filter(event => event.kind === 'run').length} direct retained`} />
@@ -199,7 +229,7 @@ export function ActivityOverview({ agents, isLoading, view, onViewChange }: { ag
             <div className="px-5 py-16 text-sm text-neutral-600 sm:px-7">No activity in this stream.</div>
           ) : (
             <div className="divide-y divide-neutral-900">
-              {visibleEvents.map(event => <ActivityRow key={event.id} event={event} />)}
+              {visibleEvents.map(event => <ActivityRow key={event.id} event={event} miniBusy={miniBusy} onRun={() => runAgain(event)} />)}
             </div>
           )}
         </section>
@@ -231,10 +261,12 @@ function Metric({ label, value, detail, tone = 'neutral' }: { label: string; val
   )
 }
 
-function ActivityRow({ event }: { event: ActivityEvent }) {
+function ActivityRow({ event, miniBusy, onRun }: { event: ActivityEvent; miniBusy: boolean; onRun: () => void }) {
+  const unavailable = !event.runTarget?.task.trim() ? 'No task recorded for this run.' : event.runTarget.task.length > 8000 ? 'This recorded task exceeds the manual run limit.' : miniBusy ? 'Mini busy. Wait for the active run to finish.' : ''
   return (
     <article className="grid min-h-24 grid-cols-[40px_minmax(0,1fr)] gap-3 px-5 py-4 sm:grid-cols-[44px_minmax(0,1fr)_110px] sm:px-7">
-      <div className={`flex h-9 w-9 items-center justify-center border text-[9px] font-semibold ${kindColor(event.kind)}`}>{kindLabel(event.kind)}</div>
+      {event.kind === 'run' ? <button type="button" onClick={onRun} disabled={Boolean(unavailable)} aria-label={`Run ${event.agent} again`} title={unavailable || `Run this task again with the agent's current configuration: ${event.runTarget?.task}`} className={`flex h-11 w-10 items-center justify-center border text-[9px] font-semibold transition-colors hover:bg-cyan-500/25 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan-300 disabled:cursor-not-allowed disabled:opacity-40 sm:w-11 ${kindColor(event.kind)}`}>RUN</button>
+        : <div className={`flex h-9 w-9 items-center justify-center border text-[9px] font-semibold ${kindColor(event.kind)}`}>{kindLabel(event.kind)}</div>}
       <div className="min-w-0">
         <div className="flex min-w-0 items-center gap-2">
           <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${statusColor(event.status)}`} />
