@@ -33,6 +33,16 @@ All notable changes to AIIA are documented here. This project adheres to
 
 
 ### Fixed
+- **Assignment durability** — every assignment and handoff mutation is one
+  atomic write with exact in-memory rollback on storage failure; the API returns
+  503 and starts no inference. Restart recovery refuses to boot if it cannot
+  persist. Retention never evicts running, queued, or handoff-linked records and
+  rejects creation at capacity instead. Handoff context carries the full
+  artifact; oversize results are rejected, never clipped.
+- **Agent persistence and restart recovery** - failed definition changes roll
+  back in memory and return visible storage errors. Run starts persist status
+  and loop accounting together before inference. Interrupted agents restart in
+  error with loops paused for operator review; uncertain work is not replayed.
 - **Switchboard history recovery** — completed output is atomically saved with
   pending ledger entries before SQLite insertion. Ledger outages no longer turn
   successful assignments into empty failures; pending entries survive cache

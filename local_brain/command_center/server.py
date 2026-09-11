@@ -875,6 +875,17 @@ from local_brain.command_center.repository_tools import (
 from local_brain.command_center.studio_events import studio_event, studio_snapshot
 from local_brain.command_center.studio_layout import StudioLayoutRegistry
 
+
+@app.exception_handler(PersistenceError)
+async def registry_storage_error(request, exc):
+    return JSONResponse(
+        status_code=503,
+        content={
+            "detail": "Storage unavailable; change was not saved. Please retry after recovery."
+        },
+    )
+
+
 action_queue = ActionQueue()
 agent_registry = AgentRegistry()
 assignment_registry = AssignmentRegistry()
@@ -1334,11 +1345,14 @@ async def _execute_agent(
     if not agent:
         raise HTTPException(status_code=404, detail="agent_not_found")
     async with agent_run_lock:
-        running_agent = agent_registry.set_running(agent_id)
+        try:
+            running_agent = agent_registry.set_running(agent_id, loop_run=loop_run)
+        except PersistenceError as exc:
+            raise HTTPException(
+                status_code=503, detail="Storage unavailable; run was not saved or started."
+            ) from exc
         if running_agent:
             await broadcast_studio_event("agent", "running", running_agent)
-        if loop_run:
-            agent_registry.record_loop_run(agent_id)
         try:
             async with httpx.AsyncClient(timeout=httpx.Timeout(120.0, connect=10.0)) as client:
                 response = await client.post(
@@ -1532,7 +1546,13 @@ async def run_assignment(assignment_id: str):
         if failed:
             await broadcast_assignment_event("failed", failed)
         raise HTTPException(status_code=502, detail="empty_agent_result")
-    updated = assignment_registry.finish_assignment(assignment_id, result=work_product)
+    try:
+        updated = assignment_registry.finish_assignment(assignment_id, result=work_product)
+    except ValueError as exc:
+        failed = assignment_registry.finish_assignment(assignment_id, error=str(exc))
+        if failed:
+            await broadcast_assignment_event("failed", failed)
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
     if updated:
         await broadcast_assignment_event("completed", updated)
     return {

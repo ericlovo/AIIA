@@ -6,7 +6,9 @@ import json
 import logging
 import sqlite3
 import uuid
+from copy import deepcopy
 from datetime import datetime, timedelta, timezone
+from functools import wraps
 from pathlib import Path
 from typing import Any
 
@@ -26,6 +28,27 @@ class RunHistoryUnavailable(RuntimeError):
     """History is unavailable; completed output remains pending in the registry."""
 
 
+def _durable_mutation(method):
+    @wraps(method)
+    def mutate(self, *args, **kwargs):
+        references = list(self.agents)
+        before = deepcopy(references)
+        try:
+            result = method(self, *args, **kwargs)
+            if self.agents != before:
+                self._save_required()
+            return result
+        except Exception:
+            # Preserve references held by in-flight requests as well as list order.
+            for agent, snapshot in zip(references, before):
+                agent.clear()
+                agent.update(snapshot)
+            self.agents[:] = references
+            raise
+
+    return mutate
+
+
 class AgentRegistry:
     """Store agent definitions and their bounded local run history."""
 
@@ -36,6 +59,7 @@ class AgentRegistry:
         self.ledger: RunLedger | None = None
         self._backfill_pending = True
         self.load()
+        self._recover_interrupted_agents()
         try:
             self.recover_runs()
         except RunHistoryUnavailable:
@@ -47,6 +71,7 @@ class AgentRegistry:
     def get(self, agent_id: str) -> dict[str, Any] | None:
         return next((agent for agent in self.agents if agent["id"] == agent_id), None)
 
+    @_durable_mutation
     def create(
         self,
         name: str,
@@ -95,9 +120,9 @@ class AgentRegistry:
             "updated_at": now,
         }
         self.agents.append(agent)
-        self.save()
         return agent
 
+    @_durable_mutation
     def update(self, agent_id: str, **changes: Any) -> dict[str, Any] | None:
         agent = self.get(agent_id)
         if not agent:
@@ -133,9 +158,9 @@ class AgentRegistry:
             agent["suite"] = suite
             agent["memory_namespace"] = memory_namespace
         agent["updated_at"] = datetime.now(timezone.utc).isoformat()
-        self.save()
         return agent
 
+    @_durable_mutation
     def due_loop(self) -> dict[str, Any] | None:
         now = datetime.now(timezone.utc)
         today = now.date().isoformat()
@@ -158,25 +183,27 @@ class AgentRegistry:
                 return agent
             if elapsed >= timedelta(minutes=agent.get("loop_interval_minutes", 60)):
                 return agent
-        self.save()
         return None
 
+    @_durable_mutation
     def record_loop_run(self, agent_id: str) -> None:
         agent = self.get(agent_id)
         if not agent:
             return
         agent["loop_day"] = datetime.now(timezone.utc).date().isoformat()
         agent["loop_runs_today"] = agent.get("loop_runs_today", 0) + 1
-        self.save()
 
-    def set_running(self, agent_id: str) -> dict[str, Any] | None:
+    @_durable_mutation
+    def set_running(self, agent_id: str, *, loop_run: bool = False) -> dict[str, Any] | None:
         agent = self.get(agent_id)
         if not agent:
             return None
         agent["status"] = "running"
         agent["last_error"] = ""
         agent["updated_at"] = datetime.now(timezone.utc).isoformat()
-        self.save()
+        if loop_run:
+            agent["loop_day"] = datetime.now(timezone.utc).date().isoformat()
+            agent["loop_runs_today"] = agent.get("loop_runs_today", 0) + 1
         return agent
 
     def finish_run(
@@ -237,13 +264,22 @@ class AgentRegistry:
             logger.warning("Run history unavailable; completed output saved for recovery")
         return agent
 
+    @_durable_mutation
     def delete(self, agent_id: str) -> bool:
         agent = self.get(agent_id)
         if not agent:
             return False
         self.agents.remove(agent)
-        self.save()
         return True
+
+    @_durable_mutation
+    def _recover_interrupted_agents(self) -> None:
+        for agent in self.agents:
+            if agent.get("status") == "running":
+                agent["status"] = "error"
+                agent["last_error"] = "interrupted_agent_run; review before resuming"
+                agent["loop_enabled"] = False
+                agent["updated_at"] = datetime.now(timezone.utc).isoformat()
 
     @staticmethod
     def _skills(skills: Any) -> list[str]:
@@ -311,10 +347,7 @@ class AgentRegistry:
         )
 
     def save(self) -> None:
-        try:
-            self._save_required()
-        except PersistenceError as exc:
-            logger.error("Could not save agents: %s", exc)
+        self._save_required()
 
     def load(self) -> None:
         if not self.data_file.exists():

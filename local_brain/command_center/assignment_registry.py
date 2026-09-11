@@ -4,17 +4,21 @@ import hashlib
 import json
 import logging
 import uuid
+from copy import deepcopy
 from datetime import datetime, timezone
+from functools import wraps
 from pathlib import Path
 from typing import Any
 
-from local_brain.command_center.persistence import PersistenceError, atomic_write_json
+from local_brain.command_center.persistence import atomic_write_json
 
 logger = logging.getLogger(__name__)
 
 ASSIGNMENT_DATA_FILE = Path(__file__).parent / "assignment_data.json"
 MAX_ASSIGNMENTS = 250
 MAX_HANDOFFS = 250
+MAX_RESULT_LENGTH = 40_000
+MAX_CONTEXT_LENGTH = MAX_RESULT_LENGTH + 1_000
 VALID_PRIORITIES = {"low", "normal", "high", "urgent"}
 VALID_ARTIFACT_TYPES = {"brief", "analysis", "plan", "decision", "review"}
 
@@ -23,11 +27,40 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def _durable_mutation(method):
+    @wraps(method)
+    def mutate(self, *args, **kwargs):
+        if self._mutating:
+            return method(self, *args, **kwargs)
+        assignments, handoffs = list(self.assignments), list(self.handoffs)
+        before = deepcopy((assignments, handoffs))
+        self._mutating = True
+        try:
+            result = method(self, *args, **kwargs)
+            if (self.assignments, self.handoffs) != before:
+                self.save()
+            return result
+        except Exception:
+            # Restore referenced records and list order, including nested handoff creation.
+            for records, snapshots in zip((assignments, handoffs), before):
+                for record, snapshot in zip(records, snapshots):
+                    record.clear()
+                    record.update(snapshot)
+            self.assignments[:] = assignments
+            self.handoffs[:] = handoffs
+            raise
+        finally:
+            self._mutating = False
+
+    return mutate
+
+
 class AssignmentRegistry:
     def __init__(self, data_file: Path | None = None):
         self.data_file = data_file or ASSIGNMENT_DATA_FILE
         self.assignments: list[dict[str, Any]] = []
         self.handoffs: list[dict[str, Any]] = []
+        self._mutating = False
         self.load()
 
     def list_assignments(self) -> list[dict[str, Any]]:
@@ -48,6 +81,7 @@ class AssignmentRegistry:
             None,
         )
 
+    @_durable_mutation
     def create_assignment(
         self,
         *,
@@ -63,6 +97,9 @@ class AssignmentRegistry:
         priority = priority.strip().lower()
         if priority not in VALID_PRIORITIES:
             raise ValueError("invalid_priority")
+        if len(context) > MAX_CONTEXT_LENGTH:
+            raise ValueError("assignment_context_too_long")
+        self._make_assignment_room()
         now = _now()
         assignment = {
             "id": assignment_id or f"asg_{uuid.uuid4().hex[:12]}",
@@ -70,7 +107,7 @@ class AssignmentRegistry:
             "objective": objective.strip()[:8_000],
             "agent_id": agent_id.strip()[:80],
             "priority": priority,
-            "context": context.strip()[:20_000],
+            "context": context,
             "success_criteria": success_criteria.strip()[:4_000],
             "source_handoff_id": source_handoff_id,
             "status": "queued",
@@ -83,10 +120,25 @@ class AssignmentRegistry:
             **self._new_review(),
         }
         self.assignments.insert(0, assignment)
-        self.assignments = self.assignments[:MAX_ASSIGNMENTS]
-        self.save()
         return assignment
 
+    def _make_assignment_room(self) -> None:
+        while len(self.assignments) >= MAX_ASSIGNMENTS:
+            disposable = next(
+                (
+                    assignment
+                    for assignment in reversed(self.assignments)
+                    if assignment["status"] in {"completed", "failed"}
+                    and not assignment.get("source_handoff_id")
+                    and not self.assignment_has_handoffs(assignment["id"])
+                ),
+                None,
+            )
+            if disposable is None:
+                raise ValueError("assignment_capacity_reached")
+            self.assignments.remove(disposable)
+
+    @_durable_mutation
     def set_running(self, assignment_id: str) -> dict[str, Any] | None:
         assignment = self.get_assignment(assignment_id)
         if not assignment:
@@ -100,25 +152,26 @@ class AssignmentRegistry:
         assignment["completed_at"] = None
         assignment["updated_at"] = now
         self._sync_handoff_status(assignment, "running")
-        self.save()
         return assignment
 
+    @_durable_mutation
     def finish_assignment(
         self, assignment_id: str, *, result: str = "", error: str = ""
     ) -> dict[str, Any] | None:
         assignment = self.get_assignment(assignment_id)
         if not assignment:
             return None
+        if len(result) > MAX_RESULT_LENGTH:
+            raise ValueError("assignment_result_too_long")
         now = _now()
         status = "failed" if error else "completed"
         assignment.update(self._new_review())
         assignment["status"] = status
-        assignment["result"] = result.strip()[:40_000]
+        assignment["result"] = result
         assignment["error"] = error.strip()[:2_000]
         assignment["updated_at"] = now
         assignment["completed_at"] = now
         self._sync_handoff_status(assignment, status)
-        self.save()
         return assignment
 
     @staticmethod
@@ -130,6 +183,7 @@ class AssignmentRegistry:
             "review_version": uuid.uuid4().hex,
         }
 
+    @_durable_mutation
     def review_assignment(
         self, assignment_id: str, *, decision: str, expected_version: str, note: str = ""
     ) -> dict[str, Any]:
@@ -150,7 +204,6 @@ class AssignmentRegistry:
             raise ValueError("assignment_not_reviewable")
         if not expected_version or expected_version != assignment.get("review_version"):
             raise ValueError("review_changed_refresh_required")
-        previous = assignment.copy()
         now = _now()
         assignment.update(
             review_status=decision,
@@ -159,20 +212,9 @@ class AssignmentRegistry:
             review_version=uuid.uuid4().hex,
             updated_at=now,
         )
-        try:
-            atomic_write_json(
-                self.data_file,
-                {
-                    "assignments": self.assignments,
-                    "handoffs": self.handoffs,
-                },
-            )
-        except PersistenceError:
-            assignment.clear()
-            assignment.update(previous)
-            raise
         return assignment
 
+    @_durable_mutation
     def create_handoff(
         self,
         *,
@@ -192,6 +234,10 @@ class AssignmentRegistry:
         artifact_type = artifact_type.strip().lower()
         if artifact_type not in VALID_ARTIFACT_TYPES:
             raise ValueError("invalid_artifact_type")
+        if len(source["result"]) > MAX_RESULT_LENGTH:
+            raise ValueError("assignment_result_too_long")
+        if len(self.handoffs) >= MAX_HANDOFFS:
+            raise ValueError("handoff_capacity_reached")
 
         handoff_id = f"hof_{uuid.uuid4().hex[:12]}"
         assignment_id = f"asg_{uuid.uuid4().hex[:12]}"
@@ -203,14 +249,13 @@ class AssignmentRegistry:
             "from_agent_id": source["agent_id"],
             "to_agent_id": to_agent_id.strip()[:80],
             "artifact_type": artifact_type,
-            "artifact": source["result"][:40_000],
+            "artifact": source["result"],
             "instructions": instructions.strip()[:8_000],
             "status": "queued",
             "created_at": now,
             "updated_at": now,
         }
         self.handoffs.insert(0, handoff)
-        self.handoffs = self.handoffs[:MAX_HANDOFFS]
 
         context = (
             f"{artifact_type.title()} handed off from assignment "
@@ -228,6 +273,7 @@ class AssignmentRegistry:
         )
         return handoff, target
 
+    @_durable_mutation
     def delete_assignment(self, assignment_id: str) -> bool:
         assignment = self.get_assignment(assignment_id)
         if not assignment or assignment["status"] == "running":
@@ -235,7 +281,6 @@ class AssignmentRegistry:
         if self.assignment_has_handoffs(assignment_id):
             return False
         self.assignments.remove(assignment)
-        self.save()
         return True
 
     def assignment_has_handoffs(self, assignment_id: str) -> bool:
@@ -245,6 +290,7 @@ class AssignmentRegistry:
             for handoff in self.handoffs
         )
 
+    @_durable_mutation
     def delete_handoff(self, handoff_id: str) -> bool:
         handoff = self.get_handoff(handoff_id)
         if not handoff or handoff["status"] == "running":
@@ -254,7 +300,6 @@ class AssignmentRegistry:
             target["source_handoff_id"] = ""
             target["updated_at"] = _now()
         self.handoffs.remove(handoff)
-        self.save()
         return True
 
     def _sync_handoff_status(self, assignment: dict[str, Any], status: str) -> None:
@@ -267,23 +312,18 @@ class AssignmentRegistry:
             handoff["updated_at"] = _now()
 
     def save(self) -> None:
-        try:
-            payload = {
-                "assignments": self.assignments,
-                "handoffs": self.handoffs,
-            }
-            atomic_write_json(self.data_file, payload)
-        except PersistenceError as exc:
-            logger.error("Could not save assignments: %s", exc)
+        atomic_write_json(
+            self.data_file,
+            {"assignments": self.assignments, "handoffs": self.handoffs},
+        )
 
     def load(self) -> None:
         if not self.data_file.exists():
             return
         try:
             payload = json.loads(self.data_file.read_text())
-            self.assignments = payload.get("assignments", [])[:MAX_ASSIGNMENTS]
-            self.handoffs = payload.get("handoffs", [])[:MAX_HANDOFFS]
-            interrupted_ids = set()
+            self.assignments[:] = payload.get("assignments", [])
+            self.handoffs[:] = payload.get("handoffs", [])
             for assignment in self.assignments:
                 # Deterministic for legacy files until the first new write.
                 legacy_version = hashlib.sha256(
@@ -299,17 +339,22 @@ class AssignmentRegistry:
                 assignment.setdefault("review_note", "")
                 assignment.setdefault("reviewed_at", None)
                 assignment.setdefault("review_version", legacy_version)
-                if assignment.get("status") == "running":
-                    interrupted_ids.add(assignment["id"])
-                    assignment["status"] = "failed"
-                    assignment["error"] = "interrupted_by_restart"
-                    assignment["updated_at"] = _now()
-                    assignment["completed_at"] = assignment["updated_at"]
-            for handoff in self.handoffs:
-                if handoff.get("target_assignment_id") in interrupted_ids:
-                    handoff["status"] = "failed"
-                    handoff["updated_at"] = _now()
-            if interrupted_ids:
-                self.save()
         except (OSError, json.JSONDecodeError) as exc:
             logger.warning("Could not load assignments: %s", exc)
+            return
+        self._recover_interrupted()
+
+    @_durable_mutation
+    def _recover_interrupted(self) -> None:
+        interrupted_ids = set()
+        for assignment in self.assignments:
+            if assignment.get("status") == "running":
+                interrupted_ids.add(assignment["id"])
+                assignment["status"] = "failed"
+                assignment["error"] = "interrupted_by_restart"
+                assignment["updated_at"] = _now()
+                assignment["completed_at"] = assignment["updated_at"]
+        for handoff in self.handoffs:
+            if handoff.get("target_assignment_id") in interrupted_ids:
+                handoff["status"] = "failed"
+                handoff["updated_at"] = _now()

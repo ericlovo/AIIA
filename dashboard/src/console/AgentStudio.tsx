@@ -276,12 +276,14 @@ export function AgentStudio() {
           <button disabled={!canSave || save.isPending} onClick={() => save.mutate()} className="w-full bg-cyan-400 px-3 py-2.5 text-sm font-medium text-neutral-950 disabled:cursor-not-allowed disabled:opacity-40">{save.isPending ? 'Saving…' : selected ? 'Save agent' : 'Create agent'}</button>
           {save.isError && <p role="alert" className="text-xs text-red-300">{save.error.message}</p>}
           {selected && <button disabled={remove.isPending} onClick={() => remove.mutate()} className="w-full px-3 py-2 text-xs text-neutral-600 hover:text-red-300">Remove agent</button>}
+          {remove.isError && <p role="alert" className="text-xs text-red-300">{remove.error.message}</p>}
         </div>
 
         {selected && <div className="border-t border-neutral-900 px-6 py-6">
           <div className="text-[10px] font-semibold tracking-[0.16em] uppercase text-cyan-400">Run on the Mini</div>
           <textarea value={task} onChange={event => setTask(event.target.value)} placeholder="Give this agent a focused task…" rows={4} className="mt-3 w-full border border-neutral-800 bg-neutral-900 px-3 py-2.5 text-sm text-white outline-none placeholder:text-neutral-700 focus:border-cyan-500/60" />
           <button disabled={!task.trim() || run.isPending || selected.status === 'running'} onClick={() => run.mutate()} className="mt-3 w-full bg-white px-3 py-2.5 text-sm font-medium text-neutral-950 disabled:cursor-not-allowed disabled:opacity-40">{run.isPending || selected.status === 'running' ? 'Mini is working…' : 'Run agent'}</button>
+          {run.isError && <p role="alert" className="mt-3 text-xs text-red-300">{run.error.message}</p>}
           {(selected.last_result || selected.last_error) && <div className="mt-5 border border-neutral-800 bg-neutral-900/70 p-3"><div className="text-[10px] uppercase tracking-[0.14em] text-neutral-600">Latest run</div><p className="mt-2 whitespace-pre-wrap text-xs leading-relaxed text-neutral-300">{selected.last_error || selected.last_result}</p></div>}
         </div>}
       </aside>
