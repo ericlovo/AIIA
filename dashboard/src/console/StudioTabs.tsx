@@ -1,6 +1,7 @@
-export type StudioView = 'activity' | 'agents' | 'assignments' | 'handoffs' | 'world'
+export type StudioView = 'switchboard' | 'activity' | 'agents' | 'assignments' | 'handoffs' | 'world'
 
 const VIEWS: { id: StudioView; label: string }[] = [
+  { id: 'switchboard', label: 'Switchboard' },
   { id: 'activity', label: 'Overview' },
   { id: 'agents', label: 'Agents' },
   { id: 'assignments', label: 'Assignments' },

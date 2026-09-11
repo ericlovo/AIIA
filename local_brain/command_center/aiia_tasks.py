@@ -749,7 +749,14 @@ class TaskRunner:
 
     def get_all_tasks(self) -> list[dict[str, Any]]:
         """Return all tasks with current status."""
-        return list(self.tasks.values())
+        return [
+            {
+                **task,
+                "interval_seconds": TASK_DEFINITIONS[task_id].get("schedule_seconds", 86_400),
+                "last_status": (task["run_history"][0]["status"] if task["run_history"] else None),
+            }
+            for task_id, task in self.tasks.items()
+        ]
 
     def get_history(self) -> list[dict[str, Any]]:
         """Return recent run history across all tasks."""

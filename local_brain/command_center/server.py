@@ -15,12 +15,13 @@ import asyncio
 import json
 import logging
 import os
+import sqlite3
 import time
 from collections import deque
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import httpx
 from fastapi import Body, FastAPI, HTTPException, WebSocket, WebSocketDisconnect
@@ -857,12 +858,13 @@ routing_history = RoutingHistoryState()
 
 # ─── Action Queue + Task Runner ───────────────────────────
 from local_brain.command_center.action_queue import ActionQueue
-from local_brain.command_center.agent_registry import AgentRegistry
+from local_brain.command_center.agent_registry import AgentRegistry, RunHistoryUnavailable
 from local_brain.command_center.agent_suites import describe_suites, suite_prompt_line
 from local_brain.command_center.aiia_tasks import TaskRunner
 from local_brain.command_center.assignment_registry import AssignmentRegistry
 from local_brain.command_center.git_workspace_registry import GitWorkspaceRegistry
 from local_brain.command_center.git_write_registry import GitWriteRegistry
+from local_brain.command_center.persistence import PersistenceError
 from local_brain.command_center.repository_tools import (
     available_repos,
     github_snapshot,
@@ -1147,6 +1149,12 @@ class AssignmentCreateRequest(BaseModel):
     success_criteria: str = Field(default="", max_length=4_000)
 
 
+class AssignmentReviewRequest(BaseModel):
+    decision: Literal["unreviewed", "accepted", "rejected"]
+    expected_version: str = Field(min_length=1, max_length=64)
+    note: str = Field(default="", max_length=2_000)
+
+
 class HandoffCreateRequest(BaseModel):
     source_assignment_id: str = Field(min_length=1, max_length=80)
     to_agent_id: str = Field(min_length=1, max_length=80)
@@ -1220,6 +1228,38 @@ async def list_agent_suites():
     return {"suites": describe_suites(agent_registry.list())}
 
 
+@app.get("/api/studio/activity")
+async def studio_activity(agent_id: str = "", day: str = "", status: str = ""):
+    if day:
+        try:
+            datetime.strptime(day, "%Y-%m-%d")
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail="invalid_day") from exc
+    if status not in {"", "completed", "failed"}:
+        raise HTTPException(status_code=422, detail="invalid_status")
+    try:
+        return agent_registry.recover_runs().activity(agent_id=agent_id, day=day, status=status)
+    except (RunHistoryUnavailable, sqlite3.Error) as exc:
+        raise HTTPException(
+            status_code=503,
+            detail="Run history unavailable; saved outputs are retained for recovery.",
+        ) from exc
+
+
+@app.get("/api/studio/runs/{run_id}")
+async def studio_run(run_id: str):
+    try:
+        run = agent_registry.recover_runs().get(run_id)
+    except (RunHistoryUnavailable, sqlite3.Error) as exc:
+        raise HTTPException(
+            status_code=503,
+            detail="Run history unavailable; saved outputs are retained for recovery.",
+        ) from exc
+    if not run:
+        raise HTTPException(status_code=404, detail="run_not_found")
+    return {"run": run}
+
+
 @app.get("/api/agents/resources")
 async def agent_resources():
     return {
@@ -1243,6 +1283,22 @@ async def create_agent(body: AgentCreateRequest):
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     await broadcast_studio_event("agent", "created", agent)
     return {"agent": agent}
+
+
+class AgentLoopState(BaseModel):
+    enabled: bool
+
+
+@app.post("/api/agents/{agent_id}/loop")
+async def set_agent_loop(agent_id: str, body: AgentLoopState):
+    agent = agent_registry.get(agent_id)
+    if not agent:
+        raise HTTPException(status_code=404, detail="agent_not_found")
+    if body.enabled and not agent.get("loop_task", "").strip():
+        raise HTTPException(status_code=422, detail="loop_task_required")
+    updated = agent_registry.update(agent_id, loop_enabled=body.enabled)
+    await broadcast_studio_event("agent", "updated", updated)
+    return {"agent": updated}
 
 
 @app.put("/api/agents/{agent_id}")
@@ -1342,6 +1398,8 @@ async def _execute_agent(
                 "model": payload.get("model"),
                 "latency_ms": payload.get("latency_ms", 0),
             }
+        except PersistenceError as exc:
+            raise HTTPException(status_code=503, detail="run_output_persistence_failed") from exc
         except httpx.HTTPError as exc:
             updated = agent_registry.finish_run(
                 agent_id,
@@ -1359,7 +1417,10 @@ async def _execute_agent(
 async def run_agent(agent_id: str, body: AgentRunRequest):
     if agent_run_lock.locked():
         raise HTTPException(status_code=409, detail="mini_busy")
-    return await _execute_agent(agent_id, body.task)
+    try:
+        return await _execute_agent(agent_id, body.task)
+    except PersistenceError as exc:
+        raise HTTPException(status_code=503, detail="run_output_persistence_failed") from exc
 
 
 def _assignment_prompt(assignment: dict[str, Any]) -> str:
@@ -1378,6 +1439,24 @@ def _assignment_prompt(assignment: dict[str, Any]) -> str:
 @app.get("/api/assignments")
 async def list_assignments():
     return {"assignments": assignment_registry.list_assignments()}
+
+
+@app.post("/api/assignments/{assignment_id}/review")
+async def review_assignment(assignment_id: str, body: AssignmentReviewRequest):
+    try:
+        assignment = assignment_registry.review_assignment(
+            assignment_id,
+            decision=body.decision,
+            expected_version=body.expected_version,
+            note=body.note,
+        )
+    except PersistenceError as exc:
+        raise HTTPException(status_code=503, detail="review_persistence_failed") from exc
+    except ValueError as exc:
+        code = str(exc)
+        status = 404 if code == "assignment_not_found" else 409
+        raise HTTPException(status_code=status, detail=code) from exc
+    return {"assignment": assignment}
 
 
 @app.post("/api/assignments")
@@ -1428,6 +1507,13 @@ async def run_assignment(assignment_id: str):
             purpose="agent_studio_assignment",
             assignment_id=assignment_id,
         )
+    except PersistenceError as exc:
+        failed = assignment_registry.finish_assignment(
+            assignment_id, error="run_output_persistence_failed"
+        )
+        if failed:
+            await broadcast_assignment_event("failed", failed)
+        raise HTTPException(status_code=503, detail="run_output_persistence_failed") from exc
     except HTTPException as exc:
         failed = assignment_registry.finish_assignment(assignment_id, error=str(exc.detail))
         if failed:

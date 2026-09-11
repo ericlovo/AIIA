@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   api,
@@ -7,6 +7,7 @@ import {
   type AssignmentDefinition,
   type AssignmentPriority,
   type AssignmentStatus,
+  type ReviewStatus,
   type Handoff,
   type HandoffArtifactType,
   type HandoffDefinition,
@@ -14,6 +15,7 @@ import {
   type GitWorkspace,
   type RepositoryResource,
 } from '../lib/api'
+import { reviewLabel } from './assignmentReview'
 import { StudioTabs, type StudioView } from './StudioTabs'
 
 const EMPTY_ASSIGNMENTS: Assignment[] = []
@@ -59,6 +61,7 @@ export function WorkBoard({
   initialHandoffSourceId = '',
   initialHandoffTargetId = '',
 }: WorkBoardProps) {
+  const inspectorRef = useRef<HTMLElement>(null)
   const qc = useQueryClient()
   const { data: assignmentData, isLoading: assignmentsLoading } = useQuery({
     queryKey: ['assignments'],
@@ -100,6 +103,11 @@ export function WorkBoard({
     source_assignment_id: initialHandoffSourceId,
     to_agent_id: initialHandoffTargetId,
   }))
+  useEffect(() => {
+    if (selectedAssignmentId && window.matchMedia('(max-width:1023px)').matches) {
+      inspectorRef.current?.scrollIntoView({ block: 'start' })
+    }
+  }, [selectedAssignmentId])
   const selectedAssignment = assignments.find(item => item.id === selectedAssignmentId) ?? null
   const selectedHandoff = handoffs.find(item => item.id === selectedHandoffId) ?? null
 
@@ -186,7 +194,7 @@ export function WorkBoard({
   const items = view === 'assignments' ? assignments : handoffs
 
   return (
-    <main className="grid h-full min-h-0 max-h-full grid-cols-1 overflow-hidden bg-neutral-950 lg:grid-cols-[minmax(0,1fr)_390px]">
+    <main className="grid h-full min-h-0 max-h-full grid-cols-1 overflow-y-auto bg-neutral-950 lg:overflow-hidden lg:grid-cols-[minmax(0,1fr)_390px]">
       <section className="min-w-0 border-b border-neutral-900 lg:overflow-hidden lg:border-r lg:border-b-0">
         <div className="flex flex-col gap-5 border-b border-neutral-900 px-5 py-5 sm:flex-row sm:items-center sm:justify-between sm:px-7">
           <div>
@@ -263,7 +271,7 @@ export function WorkBoard({
         </div>
       </section>
 
-      <aside className="min-h-0 overflow-y-auto bg-neutral-950">
+      <aside ref={inspectorRef} className="min-h-0 bg-neutral-950 lg:overflow-y-auto">
         {view === 'assignments' ? (
           selectedAssignment ? (
             <AssignmentDetails
@@ -330,6 +338,7 @@ export function WorkBoard({
 function AssignmentCard({ assignment, agentName, selected, onSelect }: { assignment: Assignment; agentName: string; selected: boolean; onSelect: () => void }) {
   return (
     <button onClick={onSelect} className={`min-h-40 border p-5 text-left transition-colors ${selected ? 'border-cyan-400/70 bg-cyan-500/10' : 'border-neutral-800 bg-neutral-900/60 hover:border-neutral-600'}`}>
+      {reviewLabel(assignment) && <div className="mb-2 text-xs text-cyan-200">{reviewLabel(assignment)}</div>}
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="truncate text-base font-medium text-white">{assignment.title}</div>
@@ -423,6 +432,7 @@ function AssignmentDetails({ assignment, agent, agentName, workspace, writes, re
       {assignment.success_criteria && <TextBlock label="Success criteria" value={assignment.success_criteria} />}
       {assignment.context && <TextBlock label="Context" value={assignment.context} muted />}
       {assignment.result && <TextBlock label="Work product" value={assignment.result} />}
+      {assignment.status === 'completed' && assignment.result.trim() && <ArtifactReview key={assignment.id} assignment={assignment} />}
       {assignment.error && <div className="border border-red-900/60 bg-red-950/30 p-3 text-xs text-red-300">{assignment.error}</div>}
       {assignment.status === 'completed' && (
         <GitWorkspacePanel
@@ -447,6 +457,32 @@ function AssignmentDetails({ assignment, agent, agentName, workspace, writes, re
       <button disabled={isRemoving || assignment.status === 'running' || hasHandoff} onClick={onRemove} title={hasHandoff ? 'Unlink the handoff before deleting connected work' : undefined} className="w-full px-3 py-2 text-xs text-neutral-600 hover:text-red-300 disabled:opacity-30">Delete assignment</button>
     </Panel>
   )
+}
+
+function ArtifactReview({ assignment }: { assignment: Assignment }) {
+  const qc = useQueryClient()
+  const [draftNote, setDraftNote] = useState({ version: assignment.review_version, note: assignment.review_note ?? '' })
+  const note = draftNote.version === assignment.review_version ? draftNote.note : assignment.review_note ?? ''
+  const review = useMutation({
+    mutationFn: (decision: ReviewStatus) => api.reviewAssignment(assignment.id, decision, assignment.review_version!, note),
+    onSuccess: ({ assignment: updated }) => {
+      qc.setQueryData<{ assignments: Assignment[] }>(['assignments'], previous => previous ? {
+        assignments: previous.assignments.map(item => item.id === updated.id ? updated : item),
+      } : previous)
+    },
+    onSettled: () => qc.invalidateQueries({ queryKey: ['assignments'] }),
+  })
+  const decision = assignment.review_status ?? 'unreviewed'
+  return <section aria-label="Artifact review" className="space-y-3 border border-neutral-700 p-3">
+    <div className="text-sm text-cyan-200">{reviewLabel(assignment)}</div>
+    <p className="text-xs leading-relaxed text-neutral-400">Inspect the work product against the objective and success criteria. This decision records output quality.</p>
+    {assignment.reviewed_at && <p className="text-xs text-neutral-400">Decision saved {new Date(assignment.reviewed_at).toLocaleString()}</p>}
+    <Field label="Review note"><textarea value={note} onChange={event => setDraftNote({ version: assignment.review_version, note: event.target.value })} maxLength={2000} rows={3} placeholder="Evidence, gaps, or requested corrections" /></Field>
+    {!assignment.review_version && <p role="alert" className="text-xs text-amber-200">Review is unavailable until the server supports artifact review.</p>}
+    <div className="flex flex-wrap gap-2">{(['accepted', 'rejected', 'unreviewed'] as const).filter(value => value !== decision).map(value => <button key={value} disabled={review.isPending || !assignment.review_version} onClick={() => review.mutate(value)} className="border border-neutral-600 px-3 py-2 text-xs text-neutral-200 hover:border-cyan-300 disabled:opacity-40">{value === 'accepted' ? 'Accept output' : value === 'rejected' ? 'Reject output' : 'Reopen review'}</button>)}</div>
+    {review.isPending && <p role="status" className="text-xs text-neutral-400">Saving review...</p>}
+    {review.error && <ErrorNotice error={new Error(review.error.message.includes('review_changed_refresh_required') ? 'The output or review changed. Reload the assignment and inspect it before deciding again.' : review.error.message.includes('review_persistence_failed') ? 'Review was not saved. Your previous decision is unchanged; retry when storage is available.' : review.error.message)} />}
+  </section>
 }
 
 function GitWorkspacePanel({ agentName, gitEnabled, repo, workspace, writes, isRequesting, isApproving, isApprovingWrite, isRejectingWrite, onRequest, onApprove, onApproveWrite, onRejectWrite }: { agentName: string; gitEnabled: boolean; repo: RepositoryResource | null; workspace: GitWorkspace | null; writes: GitWrite[]; isRequesting: boolean; isApproving: boolean; isApprovingWrite: boolean; isRejectingWrite: boolean; onRequest: () => void; onApprove: (workspaceId: string) => void; onApproveWrite: (writeId: string) => void; onRejectWrite: (writeId: string) => void }) {

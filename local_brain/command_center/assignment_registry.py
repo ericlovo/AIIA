@@ -1,11 +1,14 @@
 """Durable assignments and agent-to-agent handoffs for Agent Studio."""
 
+import hashlib
 import json
 import logging
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+
+from local_brain.command_center.persistence import PersistenceError, atomic_write_json
 
 logger = logging.getLogger(__name__)
 
@@ -77,6 +80,7 @@ class AssignmentRegistry:
             "updated_at": now,
             "started_at": None,
             "completed_at": None,
+            **self._new_review(),
         }
         self.assignments.insert(0, assignment)
         self.assignments = self.assignments[:MAX_ASSIGNMENTS]
@@ -88,6 +92,7 @@ class AssignmentRegistry:
         if not assignment:
             return None
         now = _now()
+        assignment.update(self._new_review())
         assignment["status"] = "running"
         assignment["result"] = ""
         assignment["error"] = ""
@@ -106,6 +111,7 @@ class AssignmentRegistry:
             return None
         now = _now()
         status = "failed" if error else "completed"
+        assignment.update(self._new_review())
         assignment["status"] = status
         assignment["result"] = result.strip()[:40_000]
         assignment["error"] = error.strip()[:2_000]
@@ -113,6 +119,58 @@ class AssignmentRegistry:
         assignment["completed_at"] = now
         self._sync_handoff_status(assignment, status)
         self.save()
+        return assignment
+
+    @staticmethod
+    def _new_review() -> dict[str, Any]:
+        return {
+            "review_status": "unreviewed",
+            "review_note": "",
+            "reviewed_at": None,
+            "review_version": uuid.uuid4().hex,
+        }
+
+    def review_assignment(
+        self, assignment_id: str, *, decision: str, expected_version: str, note: str = ""
+    ) -> dict[str, Any]:
+        """Review the displayed artifact; never execute work or approve a Git write.
+
+        The version changes on each execution and review decision, protecting
+        against stale views in this single-process registry. It is not a lock
+        across multiple server processes or authenticated reviewer attribution.
+        """
+        assignment = self.get_assignment(assignment_id)
+        if not assignment:
+            raise ValueError("assignment_not_found")
+        if decision not in {"unreviewed", "accepted", "rejected"}:
+            raise ValueError("invalid_review_decision")
+        if len(note) > 2_000:
+            raise ValueError("review_note_too_long")
+        if assignment["status"] != "completed" or not assignment["result"].strip():
+            raise ValueError("assignment_not_reviewable")
+        if not expected_version or expected_version != assignment.get("review_version"):
+            raise ValueError("review_changed_refresh_required")
+        previous = assignment.copy()
+        now = _now()
+        assignment.update(
+            review_status=decision,
+            review_note=note.strip(),
+            reviewed_at=now if decision != "unreviewed" else None,
+            review_version=uuid.uuid4().hex,
+            updated_at=now,
+        )
+        try:
+            atomic_write_json(
+                self.data_file,
+                {
+                    "assignments": self.assignments,
+                    "handoffs": self.handoffs,
+                },
+            )
+        except PersistenceError:
+            assignment.clear()
+            assignment.update(previous)
+            raise
         return assignment
 
     def create_handoff(
@@ -214,8 +272,8 @@ class AssignmentRegistry:
                 "assignments": self.assignments,
                 "handoffs": self.handoffs,
             }
-            self.data_file.write_text(json.dumps(payload, indent=2))
-        except OSError as exc:
+            atomic_write_json(self.data_file, payload)
+        except PersistenceError as exc:
             logger.error("Could not save assignments: %s", exc)
 
     def load(self) -> None:
@@ -227,6 +285,20 @@ class AssignmentRegistry:
             self.handoffs = payload.get("handoffs", [])[:MAX_HANDOFFS]
             interrupted_ids = set()
             for assignment in self.assignments:
+                # Deterministic for legacy files until the first new write.
+                legacy_version = hashlib.sha256(
+                    json.dumps(
+                        [
+                            assignment["id"],
+                            assignment.get("completed_at"),
+                            assignment.get("result", ""),
+                        ]
+                    ).encode()
+                ).hexdigest()
+                assignment.setdefault("review_status", "unreviewed")
+                assignment.setdefault("review_note", "")
+                assignment.setdefault("reviewed_at", None)
+                assignment.setdefault("review_version", legacy_version)
                 if assignment.get("status") == "running":
                     interrupted_ids.add(assignment["id"])
                     assignment["status"] = "failed"

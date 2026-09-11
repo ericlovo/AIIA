@@ -4,12 +4,15 @@ from __future__ import annotations
 
 import json
 import logging
+import sqlite3
 import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
 from local_brain.command_center.agent_suites import apply_suite_defaults
+from local_brain.command_center.persistence import PersistenceError, atomic_write_json
+from local_brain.command_center.run_ledger import RunLedger
 
 logger = logging.getLogger("aiia.agents")
 
@@ -19,13 +22,24 @@ MAX_RUNS = 12
 MAX_TOOLS = 8
 
 
+class RunHistoryUnavailable(RuntimeError):
+    """History is unavailable; completed output remains pending in the registry."""
+
+
 class AgentRegistry:
     """Store agent definitions and their bounded local run history."""
 
     def __init__(self, data_file: Path | None = None):
         self.data_file = data_file or AGENT_DATA_FILE
         self.agents: list[dict[str, Any]] = []
+        self._pending_runs: list[dict[str, Any]] = []
+        self.ledger: RunLedger | None = None
+        self._backfill_pending = True
         self.load()
+        try:
+            self.recover_runs()
+        except RunHistoryUnavailable:
+            logger.warning("Run history unavailable; saved output retained for recovery")
 
     def list(self) -> list[dict[str, Any]]:
         return sorted(self.agents, key=lambda agent: agent["updated_at"], reverse=True)
@@ -188,9 +202,11 @@ class AgentRegistry:
         agent["last_result"] = result
         agent["last_error"] = error
         agent["updated_at"] = now
+        run_id = uuid.uuid4().hex
         agent["runs"] = (
             [
                 {
+                    "id": run_id,
                     "task": task,
                     "result": result,
                     "error": error,
@@ -203,7 +219,22 @@ class AgentRegistry:
             ]
             + agent["runs"]
         )[:MAX_RUNS]
-        self.save()
+        # This durable outbox is independent of the bounded recent-run cache.
+        # Snapshot metadata now so edits/deletion cannot change recovered history.
+        self._pending_runs.append(
+            {
+                "agent": {
+                    key: agent.get(key)
+                    for key in ("id", "name", "repo_id", "temperature", "max_tokens")
+                },
+                "run": dict(agent["runs"][0]),
+            }
+        )
+        self._save_required()
+        try:
+            self.recover_runs()
+        except RunHistoryUnavailable:
+            logger.warning("Run history unavailable; completed output saved for recovery")
         return agent
 
     def delete(self, agent_id: str) -> bool:
@@ -242,17 +273,56 @@ class AgentRegistry:
     def _max_tokens(value: Any) -> int:
         return max(128, min(int(value), 2_000))
 
+    @property
+    def pending_run_count(self) -> int:
+        return len(self._pending_runs)
+
+    def recover_runs(self) -> RunLedger:
+        """Replay saved attempts, never inference. IDs make interrupted replay safe."""
+        try:
+            if self.ledger is None:
+                self.ledger = RunLedger(self.data_file.with_suffix(".runs.sqlite3"))
+            for entry in self._pending_runs:
+                self.ledger.record(entry["agent"], entry["run"])
+            if self._pending_runs:
+                pending = self._pending_runs
+                self._pending_runs = []
+                try:
+                    self._save_required()
+                except PersistenceError:
+                    # SQLite may already contain these IDs. Leave the durable
+                    # queue intact so retry/restart is idempotent.
+                    self._pending_runs = pending
+                    raise
+            if self._backfill_pending:
+                self.ledger.backfill(self.agents)
+                self._backfill_pending = False
+        except (sqlite3.Error, OSError, PersistenceError) as exc:
+            raise RunHistoryUnavailable("run_history_unavailable") from exc
+        return self.ledger
+
+    def _save_required(self) -> None:
+        atomic_write_json(
+            self.data_file,
+            {
+                "agents": self.agents,
+                "pending_runs": self._pending_runs,
+            },
+        )
+
     def save(self) -> None:
         try:
-            self.data_file.write_text(json.dumps({"agents": self.agents}, indent=2))
-        except OSError as exc:
+            self._save_required()
+        except PersistenceError as exc:
             logger.error("Could not save agents: %s", exc)
 
     def load(self) -> None:
         if not self.data_file.exists():
             return
         try:
-            self.agents = json.loads(self.data_file.read_text()).get("agents", [])[:MAX_AGENTS]
+            stored = json.loads(self.data_file.read_text())
+            self.agents = stored.get("agents", [])[:MAX_AGENTS]
+            self._pending_runs = stored.get("pending_runs", [])
             for agent in self.agents:
                 agent.setdefault("tools", [])
                 agent.setdefault("repo_id", "")

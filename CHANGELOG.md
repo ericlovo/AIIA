@@ -16,6 +16,9 @@ All notable changes to AIIA are documented here. This project adheres to
   Docs: `docs/AIRGAP.md`, `docs/VOICE-CONDUCTOR.md`.
 
 ### Added
+- **Studio switchboard** — activity history, agent controls, and a durable local
+  run ledger with output inspection. Completed work is reviewed independently
+  from execution status; unavailable history remains visibly unknown.
 - **Mindmoor Agent Suite** — spec for the first client-isolated Agent
   Studio cluster (shared local `mindmoor` memory namespace, D0–D2,
   typed Handoffs, Mini serial budgets) in
@@ -27,10 +30,21 @@ All notable changes to AIIA are documented here. This project adheres to
 
 
 ### Fixed
+- **Switchboard history recovery** — completed output is atomically saved with
+  pending ledger entries before SQLite insertion. Ledger outages no longer turn
+  successful assignments into empty failures; pending entries survive cache
+  eviction, agent deletion and restart, and replay by stable run ID without
+  another inference. History read failures return 503 instead of appearing empty.
+- **Switchboard capability labels** — agents without a repository display
+  "No repository" rather than implying local memory is available.
 - **Empty agent output is a failed run.** `_execute_agent` (manual, interval, and assignment) now records `error=empty_agent_result`, broadcasts `failed`, and returns HTTP 502 instead of treating blank model content as success. Activity Overview / Needs Attention surface the failure.
 - **Agent map collisions no longer bury click targets.** Completed assignments are hidden by default (toggle to show). `studio_layout` reconciles persisted positions into free lanes so a representative fleet has unique hit targets at 1280×800 and 1440×900.
 
 ### Added
+- **Artifact review** — completed assignment outputs can be accepted, rejected,
+  or reopened with a saved note. Version checks prevent stale review decisions;
+  failed saves preserve the prior decision. The switchboard surfaces failed,
+  rejected, and unreviewed work above execution history.
 - **Voice Conductor** — first Grok Voice slice on Agent Studio (`:8200`).
   Command Center mints a short-lived xAI ephemeral token (long-lived
   `XAI_API_KEY` stays on the Mini in env or `~/.aiia/keys.json`). The

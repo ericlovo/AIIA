@@ -131,6 +131,8 @@ export interface WorkContext {
 }
 
 export interface TaskInfo {
+  status?: string;
+  run_history?: { status: string; summary?: string }[];
   task_id: string;
   name: string;
   description: string;
@@ -195,6 +197,7 @@ export interface Agent {
 }
 
 export interface AgentRun {
+  id?: string;
   task: string;
   result: string;
   error: string;
@@ -203,6 +206,36 @@ export interface AgentRun {
   assignment_id?: string;
   model?: string;
   latency_ms?: number;
+}
+
+export interface StudioRun {
+  id: string;
+  agent_id: string;
+  agent_name: string;
+  repo_id: string;
+  at: string;
+  status: 'completed' | 'failed';
+  trigger: string;
+  assignment_id: string;
+  model: string;
+  latency_ms: number;
+  legacy: number;
+  task?: string;
+  result?: string;
+  error?: string;
+}
+
+export interface StudioActivity {
+  agent_days: { agent_id: string; day: string; total: number; failed: number }[];
+  days: { day: string; total: number; completed: number; failed: number; latency_ms: number }[];
+  runs: StudioRun[];
+  matching: number;
+  total: number;
+  earliest: string | null;
+  imported: number;
+  start: string;
+  today: string;
+  timezone: string;
 }
 
 export interface RepositoryResource {
@@ -263,6 +296,7 @@ export type AgentDefinition = Pick<Agent,
 };
 
 export type AssignmentStatus = 'queued' | 'running' | 'completed' | 'failed';
+export type ReviewStatus = 'unreviewed' | 'accepted' | 'rejected';
 export type AssignmentPriority = 'low' | 'normal' | 'high' | 'urgent';
 
 export interface Assignment {
@@ -274,6 +308,10 @@ export interface Assignment {
   context: string;
   success_criteria: string;
   source_handoff_id: string;
+  review_status?: ReviewStatus;
+  review_note?: string;
+  reviewed_at?: string | null;
+  review_version?: string;
   status: AssignmentStatus;
   result: string;
   error: string;
@@ -428,6 +466,9 @@ export interface GitWorkspace {
 
 // API calls
 export const api = {
+  studioActivity: (agentId = '', day = '', status = '') =>
+    get<StudioActivity>(`/api/studio/activity?${new URLSearchParams({ agent_id: agentId, day, status })}`),
+  studioRun: (id: string) => get<{ run: StudioRun }>(`/api/studio/runs/${encodeURIComponent(id)}`),
   health: () => get<{ aiia: { status: string }; ollama: { status: string } }>('/api/health'),
   checkin: () => get<CheckinData>('/api/checkin'),
   workContext: () => get<WorkContext>('/api/work/context'),
@@ -463,6 +504,8 @@ export const api = {
   agentResources: () => get<{ repos: RepositoryResource[]; github: GitHubResource }>('/api/agents/resources'),
   createAgent: (data: AgentDefinition) =>
     post<{ agent: Agent }>('/api/agents', data),
+  setAgentLoop: (id: string, enabled: boolean) =>
+    post<{ agent: Agent }>(`/api/agents/${id}/loop`, { enabled }),
   updateAgent: (id: string, data: AgentDefinition) =>
     put<{ agent: Agent }>(`/api/agents/${id}`, data),
   deleteAgent: (id: string) => del<{ deleted: boolean }>(`/api/agents/${id}`),
@@ -470,6 +513,8 @@ export const api = {
     post<{ agent: Agent; model: string; latency_ms: number }>(`/api/agents/${id}/run`, { task }),
 
   assignments: () => get<{ assignments: Assignment[] }>('/api/assignments'),
+  reviewAssignment: (id: string, decision: ReviewStatus, expected_version: string, note: string) =>
+    post<{ assignment: Assignment }>(`/api/assignments/${id}/review`, { decision, expected_version, note }),
   createAssignment: (data: AssignmentDefinition) =>
     post<{ assignment: Assignment }>('/api/assignments', data),
   deleteAssignment: (id: string) =>
