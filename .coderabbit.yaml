@@ -1,0 +1,77 @@
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+language: "en-US"
+tone_instructions: "Terse. No praise, no restating the diff. Lead with the defect, cite the line, propose the fix. Skip anything ruff already enforces."
+early_access: false
+enable_free_tier: false
+reviews:
+  profile: "chill"
+  request_changes_workflow: false
+  high_level_summary: true
+  high_level_summary_in_walkthrough: true
+  poem: false
+  review_status: true
+  collapse_walkthrough: true
+  auto_review:
+    enabled: true
+    drafts: false
+    auto_incremental_review: true
+    ignore_title_keywords: ["WIP", "[skip review]"]
+    labels: ["!do-not-review"]
+  path_filters:
+    - "!**/node_modules/**"
+    - "!**/dist/**"
+    - "!dashboard/dist/**"
+    - "!eval-results/**"
+    - "!**/*.lock"
+    - "!package-lock.json"
+  path_instructions:
+    - path: "local_brain/execution/**"
+      instructions: |
+        This is the real security boundary: AUTO / SUPERVISED / GATED tiers, the pre-execution safety gate, and post-execution verification. Flag any change that lets an action skip the gate, downgrades a tier, widens an allowlist, or adds a fourth executor path. Sanction owns whether an edge may fire; this code must not decide policy itself.
+    - path: "local_brain/egress.py"
+      instructions: |
+        Airgap enforcement. Any new allowlisted host must be justified in docs/AIRGAP.md in the same PR. Default posture is fail-closed; flag any change that makes an unconfigured state permissive.
+    - path: "local_brain/**/*.py"
+      instructions: |
+        Ruff target is py310. Flag Python 3.11+ syntax (match on complex patterns, ExceptionGroup, tomllib, typing.Self, PEP 695 generics) outside guarded blocks. Prefer the existing pydantic settings in config.py over new env reads. No new hard dependencies without a pyproject entry.
+    - path: "local_brain/command_center/**"
+      instructions: |
+        Agent Studio and Command Center. Assignments, Runs, and Handoffs follow docs/EXECUTABLE-ORGANIZATION.md: the only legal agent-to-agent path is a typed Handoff with a Sanction grant. Flag side channels (direct calls, message/send, MCP tools that skip Handoff).
+    - path: "local_brain/tests/**"
+      instructions: |
+        Most tests need a live Ollama or Brain; CI runs collect-only. Flag new tests that would pass collection but silently require a live service without a skip marker.
+    - path: "dashboard/**"
+      instructions: |
+        Vite + React + TypeScript. Design tokens come from /design; flag hardcoded colors or spacing.
+    - path: "docs/**"
+      instructions: |
+        Cut prose. docs/HANDOFF.md is the Mini/MacBook session notebook, never overwritten, newest entry on top. Do not suggest moving Assignment or Handoff records into it.
+    - path: ".github/workflows/**"
+      instructions: |
+        The sanitization-guard job bans proprietary strings. A new legitimate reference must be added to its exclude list with a comment, not removed from the guard.
+  tools:
+    ruff:
+      enabled: true
+    eslint:
+      enabled: true
+    gitleaks:
+      enabled: true
+    shellcheck:
+      enabled: true
+    semgrep:
+      enabled: true
+    markdownlint:
+      enabled: false
+  finishing_touches:
+    docstrings:
+      enabled: false
+    unit_tests:
+      enabled: true
+chat:
+  auto_reply: true
+knowledge_base:
+  opt_out: false
+  learnings:
+    scope: "local"
+  code_guidelines:
+    enabled: true
