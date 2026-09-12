@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { RotateCcw } from 'lucide-react'
+import { AssignmentHistory } from './AssignmentHistory'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   api,
@@ -458,6 +459,7 @@ function AssignmentDetails({ assignment, agent, agentName, workspace, writes, re
       {assignment.status === 'completed' && assignment.result.trim() && <ArtifactReview key={assignment.id} assignment={assignment} />}
       {assignment.error && <div className="border border-red-900/60 bg-red-950/30 p-3 text-xs text-red-300">{assignment.error}</div>}
       <OutputRecovery key={`recovery-${assignment.id}`} assignment={assignment} busy={isRunning} />
+      <AssignmentHistory key={`history-${assignment.id}`} assignmentId={assignment.id} />
       {assignment.status === 'completed' && (
         <GitWorkspacePanel
           agentName={agentName}
@@ -624,6 +626,7 @@ function HandoffDetails({ handoff, assignment, fromAgent, toAgent, isRunning, is
       {assignment?.result && <TextBlock label="Downstream work product" value={assignment.result} />}
       {assignment?.error && <div className="border border-red-900/60 bg-red-950/30 p-3 text-xs text-red-300">{assignment.error}</div>}
       {assignment && <OutputRecovery key={`recovery-${assignment.id}`} assignment={assignment} busy={isRunning} />}
+      {assignment && <AssignmentHistory key={`history-${assignment.id}`} assignmentId={assignment.id} />}
       {error && <ErrorNotice error={error} />}
       {runnable && <button disabled={isRunning} onClick={onRun} className="w-full bg-white px-3 py-2.5 text-sm font-medium text-neutral-950 disabled:cursor-not-allowed disabled:opacity-40">{isRunning ? 'Mini is working…' : assignment?.status === 'failed' ? 'Retry downstream work' : 'Run downstream assignment'}</button>}
       <button disabled={isRemoving || handoff.status === 'running'} onClick={onRemove} className="w-full px-3 py-2 text-xs text-neutral-600 hover:text-red-300 disabled:opacity-30">Unlink handoff</button>

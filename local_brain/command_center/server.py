@@ -1470,6 +1470,32 @@ async def list_assignments():
     }
 
 
+@app.get("/api/assignments/{assignment_id}/history")
+async def assignment_history(assignment_id: str, offset: int = 0):
+    assignment = assignment_registry.get_assignment(assignment_id)
+    if not assignment:
+        raise HTTPException(status_code=404, detail="assignment_not_found")
+    if offset < 0:
+        raise HTTPException(status_code=422, detail="invalid_history_offset")
+    try:
+        ledger = agent_registry.recover_runs()
+        history = ledger.assignment_history(assignment_id, offset=offset)
+        attempt_id = assignment.get("attempt_id", "")
+        current = ledger.get(attempt_id) if attempt_id else None
+    except (RunHistoryUnavailable, sqlite3.Error) as exc:
+        raise HTTPException(status_code=503, detail="assignment_history_unavailable") from exc
+    return {
+        **history,
+        "attempt_id": attempt_id,
+        "current_output_saved": bool(
+            current
+            and current.get("assignment_id") == assignment_id
+            and current.get("agent_id") == assignment["agent_id"]
+        ),
+        "completed_run_id": assignment.get("completed_run_id", ""),
+    }
+
+
 def _recover_assignment_output(assignment_id: str):
     assignment = assignment_registry.get_assignment(assignment_id)
     if not assignment:

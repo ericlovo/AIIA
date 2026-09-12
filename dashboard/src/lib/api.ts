@@ -525,6 +525,8 @@ export const api = {
     post<{ assignment: Assignment; agent: Agent; model: string; latency_ms: number }>(`/api/assignments/${id}/run`),
   recoverAssignment: (id: string) =>
     post<{ assignment: Assignment }>(`/api/assignments/${id}/recover`),
+  assignmentHistory: (id: string, offset = 0) =>
+    get<{ runs: StudioRun[]; total: number; offset: number; limit: number; attempt_id: string; current_output_saved: boolean; completed_run_id: string }>(`/api/assignments/${encodeURIComponent(id)}/history?offset=${offset}`),
   gitWorkspaces: () => get<{ workspaces: GitWorkspace[] }>('/api/git-workspaces'),
   requestGitWorkspace: (assignmentId: string) =>
     post<{ workspace: GitWorkspace }>(`/api/assignments/${assignmentId}/git-workspace`),

@@ -6,6 +6,12 @@ All notable changes to AIIA are documented here. This project adheres to
 
 ## [Unreleased]
 
+### Added
+- **Assignment attempt history** - assignment and downstream handoff panels show
+  paged saved attempts with model, duration, original task, output, and failure
+  evidence. Applied output is identified separately from review acceptance;
+  missing current output and unavailable history remain explicit.
+
 ### Changed
 - **Overview RUN buttons** — activity rows can rerun their recorded task with
   the agent's current configuration. Controls disable while the Mini is busy;
