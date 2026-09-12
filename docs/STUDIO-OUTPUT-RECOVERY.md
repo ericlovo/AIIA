@@ -1,6 +1,7 @@
 # Assignment Output Recovery
 
-Implemented in the reconciliation worktree; this slice has not been deployed.
+Deployed on the Mini on 2026-09-11 at code revision
+`ccf3ea24101efc6c547e7396c9e7c191972480a3`.
 
 ## Contract
 
@@ -57,6 +58,20 @@ empty. A new attempt clears the prior recovered confirmation.
   Screenshots inspected. Exactly two intercepted recovery requests; no model or
   live backend requests. These are UI checks, not live deployment acceptance.
 
-No production restart, schedule activation, live inference, or deployment was
-performed by this slice. Previous deployment evidence describes `f9e7b7e`, not
-these new recovery changes.
+## Deployment Verification
+
+At the owner's explicit request, production was fast-forwarded from `42a5a72`
+to `ccf3ea2`. The Brain and watchdog were stopped for a coordinated backup of
+runtime JSON, SQLite files, and the previous dashboard, then restored after the
+production build. Backup: `~/aiia-local-backups/studio-output-recovery-20260911-211636`.
+
+Post-restart checks verified both API services, air-gap enabled, the recovery
+route in OpenAPI, and HTTP 404 for recovery of a nonexistent assignment. Served
+HTML and JavaScript match the on-disk production build. All 24 agent IDs and
+50 assignment IDs are preserved, along with each agent's loop-enabled setting.
+No model call or new schedule was used for deployment verification.
+
+The full backend suite was rerun before deployment: 402 passed, 9 skipped, the
+same known MIME failure. Frontend tests and production build passed. The live
+check proves routing and assets, not a real storage-failure recovery incident;
+that behavior is covered by the isolated regression and synthetic browser tests.
