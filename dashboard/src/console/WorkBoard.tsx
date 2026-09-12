@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { RotateCcw } from 'lucide-react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   api,
@@ -372,6 +373,28 @@ function HandoffCard({ handoff, fromAgent, toAgent, selected, onSelect }: { hand
   )
 }
 
+function OutputRecovery({ assignment, busy }: { assignment: Assignment; busy: boolean }) {
+  const qc = useQueryClient()
+  const recovery = useMutation({
+    mutationFn: () => api.recoverAssignment(assignment.id),
+    retry: false,
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['assignments'] })
+      qc.invalidateQueries({ queryKey: ['handoffs'] })
+    },
+  })
+  if (!assignment.recovery_pending) {
+    return assignment.recovered_at ? <div role="status" className="text-xs text-emerald-300">Saved output recovered</div> : null
+  }
+  return <div className="space-y-2 border-t border-neutral-800 pt-3">
+    <div className="text-xs text-amber-300">Output reconciliation pending</div>
+    <button onClick={() => recovery.mutate()} disabled={busy || recovery.isPending} className="flex w-full items-center justify-center gap-2 border border-neutral-700 px-3 py-2 text-sm text-white disabled:opacity-40">
+      <RotateCcw size={14} aria-hidden="true" />{recovery.isPending ? 'Recovering output…' : 'Recover saved output'}
+    </button>
+    {recovery.error && <ErrorNotice error={recovery.error} />}
+  </div>
+}
+
 function AssignmentForm({ agents, draft, pending, error, onChange, onSubmit }: { agents: Agent[]; draft: AssignmentDefinition; pending: boolean; error: Error | null; onChange: (draft: AssignmentDefinition) => void; onSubmit: () => void }) {
   return (
     <Panel title="New assignment" eyebrow="Assignment controls">
@@ -434,6 +457,7 @@ function AssignmentDetails({ assignment, agent, agentName, workspace, writes, re
       {assignment.result && <TextBlock label="Work product" value={assignment.result} />}
       {assignment.status === 'completed' && assignment.result.trim() && <ArtifactReview key={assignment.id} assignment={assignment} />}
       {assignment.error && <div className="border border-red-900/60 bg-red-950/30 p-3 text-xs text-red-300">{assignment.error}</div>}
+      <OutputRecovery key={`recovery-${assignment.id}`} assignment={assignment} busy={isRunning} />
       {assignment.status === 'completed' && (
         <GitWorkspacePanel
           agentName={agentName}
@@ -599,6 +623,7 @@ function HandoffDetails({ handoff, assignment, fromAgent, toAgent, isRunning, is
       <TextBlock label="Artifact snapshot" value={handoff.artifact} muted />
       {assignment?.result && <TextBlock label="Downstream work product" value={assignment.result} />}
       {assignment?.error && <div className="border border-red-900/60 bg-red-950/30 p-3 text-xs text-red-300">{assignment.error}</div>}
+      {assignment && <OutputRecovery key={`recovery-${assignment.id}`} assignment={assignment} busy={isRunning} />}
       {error && <ErrorNotice error={error} />}
       {runnable && <button disabled={isRunning} onClick={onRun} className="w-full bg-white px-3 py-2.5 text-sm font-medium text-neutral-950 disabled:cursor-not-allowed disabled:opacity-40">{isRunning ? 'Mini is working…' : assignment?.status === 'failed' ? 'Retry downstream work' : 'Run downstream assignment'}</button>}
       <button disabled={isRemoving || handoff.status === 'running'} onClick={onRemove} className="w-full px-3 py-2 text-xs text-neutral-600 hover:text-red-300 disabled:opacity-30">Unlink handoff</button>

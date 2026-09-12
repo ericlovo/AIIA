@@ -158,3 +158,61 @@ def test_finish_run_treats_blank_success_as_error(tmp_path):
     assert updated["status"] == "error"
     assert updated["last_error"] == "empty_agent_result"
     assert updated["runs"][0]["error"] == "empty_agent_result"
+
+
+async def test_oversize_assignment_output_is_rejected_but_agent_evidence_survives(
+    tmp_path, monkeypatch
+):
+    output = "x" * 40_001
+    cc, agents, assignments, events, fake = _studio(tmp_path, monkeypatch, content=output)
+    agent = _create_agent(agents)
+    work = assignments.create_assignment(
+        title="Synthetic", objective="Review", agent_id=agent["id"]
+    )
+    with pytest.raises(HTTPException) as exc:
+        await cc.run_assignment(work["id"])
+    assert exc.value.status_code == 502
+    assert exc.value.detail == "assignment_result_too_long"
+    assert work["status"] == "failed"
+    assert work["result"] == ""
+    assert AssignmentRegistry(assignments.data_file).get_assignment(work["id"]) == work
+    assert AgentRegistry(agents.data_file).get(agent["id"])["last_result"] == output
+    assert len(fake.posts) == 1
+    assert not any(entity == "assignment" and event == "completed" for entity, event, _ in events)
+
+
+async def test_assignment_completion_save_failure_preserves_agent_output(tmp_path, monkeypatch):
+    from local_brain.command_center import assignment_registry as module
+    from local_brain.command_center.persistence import PersistenceError
+
+    cc, agents, assignments, events, fake = _studio(tmp_path, monkeypatch, content="Full evidence")
+    agent = _create_agent(agents)
+    work = assignments.create_assignment(
+        title="Synthetic", objective="Review", agent_id=agent["id"]
+    )
+    original = module.atomic_write_json
+    writes = 0
+
+    def fail_completion(path, payload):
+        nonlocal writes
+        writes += 1
+        if writes > 1:
+            raise PersistenceError("injected completion failure")
+        original(path, payload)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(module, "atomic_write_json", fail_completion)
+        with pytest.raises(PersistenceError):
+            await cc.run_assignment(work["id"])
+    assert work["status"] == "running"
+    assert AgentRegistry(agents.data_file).get(agent["id"])["last_result"] == "Full evidence"
+    assert (
+        AssignmentRegistry(assignments.data_file).get_assignment(work["id"])["status"] == "failed"
+    )
+    assert len(fake.posts) == 1
+    assert not any(entity == "assignment" and event == "completed" for entity, event, _ in events)
+    monkeypatch.setattr(cc, "assignment_registry", AssignmentRegistry(assignments.data_file))
+    recovered = await cc.recover_assignment_output(work["id"])
+    assert recovered["assignment"]["result"] == "Full evidence"
+    assert recovered["assignment"]["completed_run_id"] == work["attempt_id"]
+    assert len(fake.posts) == 1

@@ -1,6 +1,52 @@
 # Studio Release Gate: 2026-09-11
 
-Decision: **NO-GO for production replacement or release acceptance.**
+Original decision: **NO-GO for production replacement or release acceptance.**
+
+## Follow-Up: Code Gates Passed
+
+The four failures below are historical. They were fixed in `f9e7b7e` and now
+have regression coverage. Another session recorded the owner-executed deployment
+and live verification in [RUN smoke](STUDIO-RUN-SMOKE-2026-09-11.md). Its
+[six-call results](eval-results/2026-09-11-baseline.md) report passing cases with
+an explicit deviation: two agent missions use follow-up revisions, so that run
+is not a byte-identical repeat of the frozen baseline. This continuation did not
+perform or independently repeat those live operations.
+
+Fresh deterministic verification on `42a5a72` plus the completion-error tests:
+**384 passed, 9 skipped, 1 failed**. The failure remains the previously reproduced
+macOS `.m4a` MIME baseline mismatch. Ruff and formatting pass (158 files), five
+frontend tests pass, and the dashboard production build passes.
+
+Implemented contracts:
+
+- Atomic assignment/handoff mutations restore both lists, references, versions,
+  and ordering on storage failure. Nested handoff creation uses one save.
+- Restart recovery must persist interrupted assignment and handoff states before
+  initialization succeeds; loading no longer truncates existing records.
+- Retention only evicts terminal, unlinked assignments. Active/linked work is
+  protected; unavailable capacity rejects creation. Handoffs require explicit
+  deletion at capacity rather than automatic eviction.
+- Supported artifacts up to 40,000 characters survive handoff and reload intact.
+  Oversized output is rejected, not clipped; the API reports 502 and records an
+  assignment failure while full output remains in the successfully saved agent record.
+
+Eight additional completion-error regressions verify successful, empty, oversized,
+HTTP-failed, storage-failed, and unexpectedly failed executions whose assignment
+completion writes fail. Responses are 503, no assignment completion event is sent,
+and inference is not retried. Separate tests prove oversized-result handling and
+retention of saved agent output after assignment-save failure.
+
+Remaining limitation: an unsuccessful completion write leaves the assignment in
+its last durable running state until restart recovery. The saved agent output is
+not automatically reconciled into that assignment. These changes do not establish
+cross-registry transactions, machine-wide leases, or tenant isolation.
+
+Subsequent candidate slice: [assignment output recovery](STUDIO-OUTPUT-RECOVERY.md)
+addresses this reconciliation gap for new attempts with durable attempt IDs.
+Its fresh suite has 402 passing tests and the same known MIME failure. It has
+not been deployed and does not retroactively change the live evidence above.
+
+## Original Gate Record
 
 Candidate: `codex/studio-mini-reconcile-20260911`, base `ef7d3cf`, with
 uncommitted integration and reliability changes. This is not an immutable
