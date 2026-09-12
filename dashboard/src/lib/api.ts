@@ -300,6 +300,8 @@ export type ReviewStatus = 'unreviewed' | 'accepted' | 'rejected';
 export type AssignmentPriority = 'low' | 'normal' | 'high' | 'urgent';
 
 export interface Assignment {
+  recovery_pending?: boolean;
+  recovered_at?: string;
   id: string;
   title: string;
   objective: string;
@@ -521,6 +523,8 @@ export const api = {
     del<{ deleted: boolean }>(`/api/assignments/${id}`),
   runAssignment: (id: string) =>
     post<{ assignment: Assignment; agent: Agent; model: string; latency_ms: number }>(`/api/assignments/${id}/run`),
+  recoverAssignment: (id: string) =>
+    post<{ assignment: Assignment }>(`/api/assignments/${id}/recover`),
   gitWorkspaces: () => get<{ workspaces: GitWorkspace[] }>('/api/git-workspaces'),
   requestGitWorkspace: (assignmentId: string) =>
     post<{ workspace: GitWorkspace }>(`/api/assignments/${assignmentId}/git-workspace`),

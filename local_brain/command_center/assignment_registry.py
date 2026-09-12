@@ -146,6 +146,9 @@ class AssignmentRegistry:
         now = _now()
         assignment.update(self._new_review())
         assignment["status"] = "running"
+        assignment["attempt_id"] = uuid.uuid4().hex
+        assignment["completed_run_id"] = ""
+        assignment.pop("recovered_at", None)
         assignment["result"] = ""
         assignment["error"] = ""
         assignment["started_at"] = now
@@ -171,7 +174,38 @@ class AssignmentRegistry:
         assignment["error"] = error.strip()[:2_000]
         assignment["updated_at"] = now
         assignment["completed_at"] = now
+        if assignment.get("attempt_id") and error != "run_output_persistence_failed":
+            assignment["completed_run_id"] = assignment["attempt_id"]
         self._sync_handoff_status(assignment, status)
+        return assignment
+
+    @_durable_mutation
+    def recover_output(self, assignment_id: str, run: dict) -> dict:
+        assignment = self.get_assignment(assignment_id)
+        if not assignment:
+            raise ValueError("assignment_not_found")
+        attempt_id = assignment.get("attempt_id")
+        if (
+            not attempt_id
+            or run.get("id") != attempt_id
+            or run.get("assignment_id") != assignment_id
+            or run.get("agent_id") != assignment["agent_id"]
+            or run.get("trigger") != "assignment"
+        ):
+            raise ValueError("recovery_attempt_mismatch")
+        if assignment.get("completed_run_id") == attempt_id:
+            return assignment
+        if assignment["status"] not in {"running", "failed"}:
+            raise ValueError("assignment_not_recoverable")
+        result, error = str(run.get("result") or ""), str(run.get("error") or "")
+        if not error and not result.strip():
+            error = "empty_agent_result"
+        if len(result) > MAX_RESULT_LENGTH:
+            result, error = "", "assignment_result_too_long"
+        self.finish_assignment(assignment_id, result=result, error=error)
+        assignment["completed_at"] = run["at"]
+        assignment["completed_run_id"] = attempt_id
+        assignment["recovered_at"] = _now()
         return assignment
 
     @staticmethod

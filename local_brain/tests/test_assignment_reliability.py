@@ -214,3 +214,55 @@ def test_api_storage_failure_has_no_execution_or_success_event(linked, monkeypat
             event.assert_not_called()
 
     asyncio.run(exercise())
+
+
+@pytest.mark.parametrize(
+    "outcome", ["success", "empty", "oversize", "http", "storage", "exception"]
+)
+def test_api_completion_write_failure_never_claims_completion(linked, monkeypatch, outcome):
+    from fastapi import HTTPException
+
+    from local_brain.command_center import server
+
+    registry, _, link, target, _ = linked
+    monkeypatch.setattr(server, "assignment_registry", registry)
+    monkeypatch.setattr(server.agent_registry, "get", Mock(return_value={"id": "target"}))
+    monkeypatch.setattr(server, "agent_run_lock", asyncio.Lock())
+    events = []
+
+    async def capture(event, item):
+        events.append((event, deepcopy(item)))
+
+    async def execute(*args, **kwargs):
+        monkeypatch.setattr(
+            module, "atomic_write_json", Mock(side_effect=PersistenceError("private-path"))
+        )
+        errors = {
+            "http": HTTPException(status_code=502, detail="synthetic_model_failure"),
+            "storage": PersistenceError("synthetic_output_failure"),
+            "exception": RuntimeError("synthetic_transport_failure"),
+        }
+        if outcome in errors:
+            raise errors[outcome]
+        content = {"success": "Evidence", "empty": "", "oversize": "x" * 40_001}[outcome]
+        return {"agent": {"last_result": content}, "model": "synthetic", "latency_ms": 1}
+
+    executor = AsyncMock(side_effect=execute)
+    monkeypatch.setattr(server, "_execute_agent", executor)
+    monkeypatch.setattr(server, "broadcast_assignment_event", capture)
+
+    async def exercise():
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=server.app), base_url="http://test"
+        ) as client:
+            response = await client.post(f"/api/assignments/{target['id']}/run")
+            assert response.status_code == 503
+            assert "private-path" not in response.text
+            executor.assert_awaited_once()
+
+    asyncio.run(exercise())
+    assert [event for event, _ in events] == ["running"]
+    saved = json.loads(registry.data_file.read_text())
+    assert saved["assignments"] == registry.assignments
+    assert saved["handoffs"] == registry.handoffs
+    assert target["status"] == link["status"] == "running"

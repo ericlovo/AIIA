@@ -33,9 +33,13 @@ All notable changes to AIIA are documented here. This project adheres to
 
 
 ### Fixed
+- **Assignment output reconciliation** - durable attempt IDs tie saved agent
+  output to the exact assignment run. Startup and explicit recovery restore
+  assignment/handoff state without inference; repeated recovery preserves review
+  decisions. Studio exposes pending recovery and errors instead of silent loss.
 - **Assignment durability** — every assignment and handoff mutation is one
   atomic write with exact in-memory rollback on storage failure; the API returns
-  503 and starts no inference. Restart recovery refuses to boot if it cannot
+  503 and starts no inference when persisting the start fails. Restart recovery refuses to boot if it cannot
   persist. Retention never evicts running, queued, or handoff-linked records and
   rejects creation at capacity instead. Handoff context carries the full
   artifact; oversize results are rejected, never clipped.

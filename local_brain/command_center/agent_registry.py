@@ -217,6 +217,7 @@ class AgentRegistry:
         assignment_id: str = "",
         model: str = "",
         latency_ms: float = 0,
+        run_id: str = "",
     ) -> dict[str, Any] | None:
         agent = self.get(agent_id)
         if not agent:
@@ -229,7 +230,7 @@ class AgentRegistry:
         agent["last_result"] = result
         agent["last_error"] = error
         agent["updated_at"] = now
-        run_id = uuid.uuid4().hex
+        run_id = run_id or uuid.uuid4().hex
         agent["runs"] = (
             [
                 {
@@ -345,6 +346,23 @@ class AgentRegistry:
                 "pending_runs": self._pending_runs,
             },
         )
+
+    def persisted_run(self, run_id: str) -> dict | None:
+        """Read durable evidence only; never promote unsaved in-memory output."""
+        try:
+            payload = json.loads(self.data_file.read_text()) if self.data_file.exists() else {}
+            for entry in payload.get("pending_runs", []):
+                if entry["run"].get("id") == run_id:
+                    return {**entry["run"], "agent_id": entry["agent"]["id"]}
+            for agent in payload.get("agents", []):
+                for run in agent.get("runs", []):
+                    if run.get("id") == run_id:
+                        return {**run, "agent_id": agent["id"]}
+            if self.ledger is not None:
+                return self.ledger.get(run_id)
+        except (sqlite3.Error, OSError, ValueError, KeyError, TypeError) as exc:
+            raise RunHistoryUnavailable("run_history_unavailable") from exc
+        return None
 
     def save(self) -> None:
         self._save_required()

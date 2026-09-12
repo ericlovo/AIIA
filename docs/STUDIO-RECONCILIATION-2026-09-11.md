@@ -1,11 +1,19 @@
 # Studio Reconciliation: 2026-09-11
 
-Status: integration candidate validated; **not approved for live replacement**.
+Historical status: integration candidate validated; not approved for live replacement
+at initial reconciliation.
 
-Release gate outcome: **NO-GO**. Additional temporary-registry probes confirmed
+Initial release gate outcome: **NO-GO**. Additional temporary-registry probes confirmed
 assignment persistence, recovery durability, linked retention, and downstream
 artifact truncation failures. See [release gate](STUDIO-RELEASE-GATE-2026-09-11.md)
 for evidence and the requirements to reopen rollout.
+
+Follow-up: the four assignment/handoff blockers were fixed in `f9e7b7e`. The gate
+report now records the corrected contracts and fresh completion-error regressions:
+384 passed, 9 skipped, one known baseline MIME failure. Other-session deployment
+and live-run evidence is in [RUN smoke](STUDIO-RUN-SMOKE-2026-09-11.md) and the
+[six-call results](eval-results/2026-09-11-baseline.md), including the documented
+agent-definition deviation from the frozen baseline. The history below is retained.
 
 ## Source and Scope
 

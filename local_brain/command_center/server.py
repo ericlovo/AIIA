@@ -1340,6 +1340,7 @@ async def _execute_agent(
     loop_run: bool = False,
     purpose: str | None = None,
     assignment_id: str = "",
+    run_id: str = "",
 ) -> dict[str, Any]:
     agent = agent_registry.get(agent_id)
     if not agent:
@@ -1375,6 +1376,7 @@ async def _execute_agent(
                     error=f"local_model_error_{response.status_code}",
                     trigger=trigger,
                     assignment_id=assignment_id,
+                    run_id=run_id,
                 )
                 if updated:
                     await broadcast_studio_event("agent", "failed", updated)
@@ -1390,6 +1392,7 @@ async def _execute_agent(
                     error="empty_agent_result",
                     trigger=trigger,
                     assignment_id=assignment_id,
+                    run_id=run_id,
                     model=model,
                     latency_ms=latency_ms,
                 )
@@ -1402,6 +1405,7 @@ async def _execute_agent(
                 result=result,
                 trigger=trigger,
                 assignment_id=assignment_id,
+                run_id=run_id,
                 model=model,
                 latency_ms=latency_ms,
             )
@@ -1421,6 +1425,7 @@ async def _execute_agent(
                 error="local_model_unavailable",
                 trigger="interval" if loop_run else "assignment" if assignment_id else "manual",
                 assignment_id=assignment_id,
+                run_id=run_id,
             )
             if updated:
                 await broadcast_studio_event("agent", "failed", updated)
@@ -1452,7 +1457,47 @@ def _assignment_prompt(assignment: dict[str, Any]) -> str:
 
 @app.get("/api/assignments")
 async def list_assignments():
-    return {"assignments": assignment_registry.list_assignments()}
+    return {
+        "assignments": [
+            {
+                **assignment,
+                "recovery_pending": bool(
+                    assignment.get("attempt_id") and not assignment.get("completed_run_id")
+                ),
+            }
+            for assignment in assignment_registry.list_assignments()
+        ]
+    }
+
+
+def _recover_assignment_output(assignment_id: str):
+    assignment = assignment_registry.get_assignment(assignment_id)
+    if not assignment:
+        raise HTTPException(status_code=404, detail="assignment_not_found")
+    attempt_id = assignment.get("attempt_id")
+    if not attempt_id:
+        raise HTTPException(status_code=409, detail="recovery_attempt_unavailable")
+    if assignment.get("completed_run_id") == attempt_id:
+        return assignment
+    try:
+        run = agent_registry.persisted_run(attempt_id)
+    except RunHistoryUnavailable as exc:
+        raise HTTPException(status_code=503, detail="run_history_unavailable") from exc
+    if not run:
+        raise HTTPException(status_code=409, detail="saved_output_not_found")
+    try:
+        return assignment_registry.recover_output(assignment_id, run)
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@app.post("/api/assignments/{assignment_id}/recover")
+async def recover_assignment_output(assignment_id: str):
+    if agent_run_lock.locked():
+        raise HTTPException(status_code=409, detail="mini_busy")
+    assignment = _recover_assignment_output(assignment_id)
+    await broadcast_assignment_event("recovered", assignment)
+    return {"assignment": assignment}
 
 
 @app.post("/api/assignments/{assignment_id}/review")
@@ -1511,6 +1556,13 @@ async def run_assignment(assignment_id: str):
     if agent_run_lock.locked():
         raise HTTPException(status_code=409, detail="mini_busy")
 
+    if assignment.get("attempt_id") and not assignment.get("completed_run_id"):
+        try:
+            saved = agent_registry.persisted_run(assignment["attempt_id"])
+        except RunHistoryUnavailable as exc:
+            raise HTTPException(status_code=503, detail="run_history_unavailable") from exc
+        if saved:
+            raise HTTPException(status_code=409, detail="saved_output_available_recover_first")
     running_assignment = assignment_registry.set_running(assignment_id)
     if running_assignment:
         await broadcast_assignment_event("running", running_assignment)
@@ -1520,6 +1572,7 @@ async def run_assignment(assignment_id: str):
             _assignment_prompt(assignment),
             purpose="agent_studio_assignment",
             assignment_id=assignment_id,
+            run_id=assignment["attempt_id"],
         )
     except PersistenceError as exc:
         failed = assignment_registry.finish_assignment(
@@ -3481,8 +3534,18 @@ async def execution_story_progress(story_id: str):
 # ─── Background Tasks ────────────────────────────────────────
 
 
+def recover_pending_assignment_outputs():
+    for assignment in assignment_registry.list_assignments():
+        if assignment.get("attempt_id") and not assignment.get("completed_run_id"):
+            try:
+                _recover_assignment_output(assignment["id"])
+            except (HTTPException, PersistenceError):
+                logger.warning("Assignment output recovery pending: %s", assignment["id"])
+
+
 @app.on_event("startup")
 async def startup():
+    recover_pending_assignment_outputs()
     # Load persisted monitor data if available
     if MONITOR_DATA_FILE.exists():
         try:
