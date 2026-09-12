@@ -1,0 +1,19 @@
+{
+  "display_information": {
+    "name": "AIIA",
+    "description": "Capture Performance Labs ideas in the local AIIA memory inbox",
+    "background_color": "#111111"
+  },
+  "features": {
+    "bot_user": {"display_name": "AIIA", "always_online": false},
+    "slash_commands": [{
+      "command": "/aiia-capture",
+      "url": "https://aiia.getsanction.com/api/integrations/slack/commands",
+      "description": "Save an idea to the local memory inbox",
+      "usage_hint": "your idea",
+      "should_escape": false
+    }]
+  },
+  "oauth_config": {"scopes": {"bot": ["commands"]}},
+  "settings": {"org_deploy_enabled": false, "socket_mode_enabled": false, "token_rotation_enabled": false}
+}

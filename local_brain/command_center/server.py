@@ -551,6 +551,9 @@ async def production_monitor_loop():
 from local_brain.__version__ import __version__
 
 app = FastAPI(title="AIIA Command Center", version=__version__)
+from local_brain.command_center.slack_capture import router as slack_capture_router
+
+app.include_router(slack_capture_router)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
