@@ -14,6 +14,43 @@ never copy its credentials into this repository, logs, or chat.
 
 ## First Workflow
 
+### Save acknowledgements
+
+The receipt implementation adds `chat:write` to the app's existing scopes, without
+`chat:write.public`, impersonation, history access, or an LLM/chat responder.
+It sends a fixed thread reply only after the idea and receipt have committed in
+the same SQLite transaction: "Saved to the local Mindmoor inbox for review.
+Capture ID: ...". This confirms inbox storage, not promotion to confirmed Brain
+memory. The captured text is never included in outbound receipt payloads.
+
+Enable with `AIIA_SLACK_ACK_ENABLED=1` and enter `AIIA_SLACK_BOT_TOKEN` in the
+private Mini environment after reinstalling AIIA with the added scope. Capture
+continues without a token; receipts queue durably when acknowledgements are
+enabled. Previously captured ideas without a receipt are not backfilled.
+
+The background worker sends one receipt at a time, with a two-second poll,
+ten-second HTTP timeout, fixed Slack destination, no redirects, and workspace/
+channel checks at delivery time. The separate `slack.capture_ack` egress point
+is opt-in even in air-gap mode; general `slack.post` remains denied.
+
+Delivery retries back off, honor rate limits, and stop after eight failed
+delivery attempts. Auth/scope/channel errors fail immediately. Restart recovery
+uses a two-minute lease and a stable client message ID. This is not an exactly-once
+network guarantee: a timeout after Slack accepts a message can produce a duplicate
+receipt. Memory capture and receipt enqueue are independently deduplicated by the
+original event identity.
+
+The protected inbox API includes `acknowledgement_status`,
+`acknowledgement_error`, and `acknowledgement_ts`. Integration status includes
+queue counts and configured/enabled flags. After fixing an error, an authenticated
+operator can POST `/api/memory-inbox/{idea_id}/acknowledgement/retry` to requeue
+only a failed receipt, without recapturing the idea. No extra Cloudflare exception
+is permitted for this operator endpoint.
+
+Validation for this slice: 444 backend tests passed, 9 skipped, and the known
+macOS audio MIME test failed. Live receipt delivery is pending token configuration
+and an end-to-end test; the earlier successful live test covered capture only.
+
 `/aiia-capture <idea>` explicitly saves the original text to a local SQLite inbox.
 Records include workspace, channel, author, capture time, source and project
 (`mindmoor`, the primary product repository is `tonybangert/mindmoor`). They start unreviewed. They are not automatically asserted

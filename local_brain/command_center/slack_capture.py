@@ -1,19 +1,37 @@
 """Explicit Slack idea capture with request authentication and local storage."""
 
+import asyncio
 import hashlib
 import hmac
 import json
 import os
+import re
 import sqlite3
 import time
+from contextlib import asynccontextmanager
 from pathlib import Path
 from urllib.parse import parse_qs
 
 from fastapi import APIRouter, HTTPException, Request
 
+from local_brain.command_center import slack_receipts
 from local_brain.command_center.memory_inbox import MemoryInbox
 
-router = APIRouter()
+
+@asynccontextmanager
+async def lifespan(app):
+    task = asyncio.create_task(slack_receipts.run_worker(inbox))
+    try:
+        yield
+    finally:
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
+
+
+router = APIRouter(lifespan=lifespan)
 
 
 def inbox():
@@ -45,7 +63,10 @@ def slack_status():
         "channel_ids": sorted(channels),
         "mode": "explicit_idea_capture",
         "command": "/aiia-capture",
-        "outbound_messages": False,
+        "outbound_messages": slack_receipts.configured(),
+        "acknowledgements_enabled": slack_receipts.enabled(),
+        "acknowledgements_configured": slack_receipts.configured(),
+        "acknowledgements": inbox().receipt_status() if inbox().path.exists() else {},
     }
 
 
@@ -57,6 +78,18 @@ def list_ideas(project: str = "", query: str = "", offset: int = 0):
         return inbox().list(project=project, query=query, offset=offset)
     except (OSError, sqlite3.Error) as exc:
         raise HTTPException(status_code=503, detail="memory_inbox_unavailable") from exc
+
+
+@router.post("/api/memory-inbox/{idea_id}/acknowledgement/retry")
+def retry_acknowledgement(idea_id: str):
+    if not slack_receipts.configured():
+        raise HTTPException(status_code=503, detail="slack_receipts_not_configured")
+    try:
+        if not inbox().retry_receipt(idea_id):
+            raise HTTPException(status_code=409, detail="no_failed_receipt")
+    except (OSError, sqlite3.Error) as exc:
+        raise HTTPException(status_code=503, detail="memory_inbox_unavailable") from exc
+    return {"status": "pending"}
 
 
 async def verified_body(request: Request):
@@ -117,6 +150,13 @@ async def capture_mention(request: Request):
     if any(not isinstance(value, str) or not value.strip() for value in values):
         raise HTTPException(status_code=400, detail="invalid_slack_payload")
     event_id, author, text = values
+    thread_ts = ""
+    if slack_receipts.enabled():
+        thread_ts = event.get("thread_ts") or event.get("ts")
+        if not isinstance(thread_ts, str) or not re.fullmatch(
+            r"[0-9]{1,16}\.[0-9]{1,6}", thread_ts
+        ):
+            raise HTTPException(status_code=400, detail="invalid_slack_timestamp")
     key = "slack:event:" + hashlib.sha256(f"{team}:{event_id}".encode()).hexdigest()
     try:
         inbox().capture(
@@ -127,6 +167,7 @@ async def capture_mention(request: Request):
             workspace_id=team,
             channel_id=channel,
             author_id=author,
+            receipt_thread_ts=thread_ts,
         )
     except ValueError as exc:
         raise HTTPException(status_code=422, detail="invalid_idea_length") from exc

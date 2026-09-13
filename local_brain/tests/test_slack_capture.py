@@ -17,6 +17,7 @@ from local_brain.command_center.memory_inbox import MemoryInbox
 
 @pytest.fixture
 def configured(tmp_path, monkeypatch):
+    monkeypatch.delenv("AIIA_SLACK_ACK_ENABLED", raising=False)
     monkeypatch.setenv("AIIA_SLACK_SIGNING_SECRET", "synthetic-secret")
     monkeypatch.setenv("AIIA_SLACK_TEAM_ID", "T_TEST")
     monkeypatch.setenv("AIIA_SLACK_CHANNEL_IDS", "C_TEST")
@@ -124,9 +125,12 @@ def test_oversize_or_empty_idea_is_not_saved(configured):
 def send_event(app, payload, *, bad_signature=False):
     body = json.dumps(payload).encode()
     timestamp = str(int(time.time()))
-    signature = "v0=" + hmac.new(
-        b"synthetic-secret", b"v0:" + timestamp.encode() + b":" + body, hashlib.sha256
-    ).hexdigest()
+    signature = (
+        "v0="
+        + hmac.new(
+            b"synthetic-secret", b"v0:" + timestamp.encode() + b":" + body, hashlib.sha256
+        ).hexdigest()
+    )
 
     async def exercise():
         async with httpx.AsyncClient(
@@ -146,9 +150,13 @@ def send_event(app, payload, *, bad_signature=False):
 
 def mention():
     return {
-        "type": "event_callback", "team_id": "T_TEST", "event_id": "Ev_TEST",
+        "type": "event_callback",
+        "team_id": "T_TEST",
+        "event_id": "Ev_TEST",
         "event": {
-            "type": "app_mention", "channel": "C_TEST", "user": "U_TEST",
+            "type": "app_mention",
+            "channel": "C_TEST",
+            "user": "U_TEST",
             "text": "<@U_AIIA> Remember this Mindmoor idea.",
         },
     }
@@ -170,13 +178,19 @@ def test_challenge_requires_signature(configured):
     assert not slack_capture.inbox().path.exists()
 
 
-@pytest.mark.parametrize("change,code", [
-    ({"channel": "C_OTHER"}, 403), ({"channel": []}, 403),
-    ({"user": ""}, 400), ({"text": 123}, 400),
-    ({"text": "x" * 8001}, 422),
-    ({"bot_id": "B_TEST"}, 200), ({"subtype": "bot_message"}, 200),
-    ({"type": "message"}, 200),
-])
+@pytest.mark.parametrize(
+    "change,code",
+    [
+        ({"channel": "C_OTHER"}, 403),
+        ({"channel": []}, 403),
+        ({"user": ""}, 400),
+        ({"text": 123}, 400),
+        ({"text": "x" * 8001}, 422),
+        ({"bot_id": "B_TEST"}, 200),
+        ({"subtype": "bot_message"}, 200),
+        ({"type": "message"}, 200),
+    ],
+)
 def test_mention_restrictions(configured, change, code):
     payload = mention()
     payload["event"].update(change)
@@ -201,3 +215,19 @@ def test_mention_storage_failure(configured, monkeypatch):
     result = send_event(configured, mention())
     assert result.status_code == 503
     assert "private-path" not in result.text
+
+
+def test_mention_queues_single_thread_receipt(configured, monkeypatch):
+    monkeypatch.setenv("AIIA_SLACK_ACK_ENABLED", "1")
+    payload = mention()
+    payload["event"].update(ts="1789260567.123456", thread_ts="1789260566.123456")
+    assert send_event(configured, payload).status_code == 200
+    assert send_event(configured, payload).status_code == 200
+    assert slack_capture.inbox().receipt_status() == {"pending": 1}
+    assert slack_capture.inbox().claim_receipt()["thread_ts"] == "1789260566.123456"
+
+
+def test_invalid_receipt_destination_never_saves(configured, monkeypatch):
+    monkeypatch.setenv("AIIA_SLACK_ACK_ENABLED", "1")
+    assert send_event(configured, mention()).status_code == 400
+    assert not slack_capture.inbox().path.exists()

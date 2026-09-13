@@ -14,7 +14,7 @@
       "should_escape": false
     }]
   },
-  "oauth_config": {"scopes": {"bot": ["commands", "app_mentions:read"]}},
+  "oauth_config": {"scopes": {"bot": ["commands", "app_mentions:read", "chat:write"]}},
   "settings": {
     "event_subscriptions": {
       "request_url": "https://aiia.getsanction.com/api/integrations/slack/events",
