@@ -1,6 +1,7 @@
 import asyncio
 import hashlib
 import hmac
+import json
 import sqlite3
 import time
 from unittest.mock import Mock
@@ -118,3 +119,85 @@ def test_oversize_or_empty_idea_is_not_saved(configured):
     assert "not saved" in send(configured, changes={"text": "x" * 8001}).json()["text"]
     assert "Use /aiia-capture" in send(configured, changes={"text": ""}).json()["text"]
     assert not slack_capture.inbox().path.exists()
+
+
+def send_event(app, payload, *, bad_signature=False):
+    body = json.dumps(payload).encode()
+    timestamp = str(int(time.time()))
+    signature = "v0=" + hmac.new(
+        b"synthetic-secret", b"v0:" + timestamp.encode() + b":" + body, hashlib.sha256
+    ).hexdigest()
+
+    async def exercise():
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            return await client.post(
+                "/api/integrations/slack/events",
+                content=body,
+                headers={
+                    "x-slack-request-timestamp": timestamp,
+                    "x-slack-signature": "bad" if bad_signature else signature,
+                },
+            )
+
+    return asyncio.run(exercise())
+
+
+def mention():
+    return {
+        "type": "event_callback", "team_id": "T_TEST", "event_id": "Ev_TEST",
+        "event": {
+            "type": "app_mention", "channel": "C_TEST", "user": "U_TEST",
+            "text": "<@U_AIIA> Remember this Mindmoor idea.",
+        },
+    }
+
+
+def test_mention_durable_and_deduplicated(configured):
+    assert send_event(configured, mention()).status_code == 200
+    assert send_event(configured, mention()).status_code == 200
+    data = slack_capture.inbox().list(project="mindmoor")
+    assert data["total"] == 1
+    assert data["ideas"][0]["text"] == mention()["event"]["text"]
+    assert data["ideas"][0]["status"] == "unreviewed"
+
+
+def test_challenge_requires_signature(configured):
+    payload = {"type": "url_verification", "challenge": "test-challenge"}
+    assert send_event(configured, payload, bad_signature=True).status_code == 401
+    assert send_event(configured, payload).json() == {"challenge": "test-challenge"}
+    assert not slack_capture.inbox().path.exists()
+
+
+@pytest.mark.parametrize("change,code", [
+    ({"channel": "C_OTHER"}, 403), ({"channel": []}, 403),
+    ({"user": ""}, 400), ({"text": 123}, 400),
+    ({"text": "x" * 8001}, 422),
+    ({"bot_id": "B_TEST"}, 200), ({"subtype": "bot_message"}, 200),
+    ({"type": "message"}, 200),
+])
+def test_mention_restrictions(configured, change, code):
+    payload = mention()
+    payload["event"].update(change)
+    assert send_event(configured, payload).status_code == code
+    assert not slack_capture.inbox().path.exists()
+
+
+def test_mention_wrong_team_and_missing_id(configured):
+    payload = mention()
+    payload["team_id"] = "T_OTHER"
+    assert send_event(configured, payload).status_code == 403
+    payload = mention()
+    del payload["event_id"]
+    assert send_event(configured, payload).status_code == 400
+    assert not slack_capture.inbox().path.exists()
+
+
+def test_mention_storage_failure(configured, monkeypatch):
+    monkeypatch.setattr(
+        MemoryInbox, "capture", Mock(side_effect=sqlite3.OperationalError("private-path"))
+    )
+    result = send_event(configured, mention())
+    assert result.status_code == 503
+    assert "private-path" not in result.text

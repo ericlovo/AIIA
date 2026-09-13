@@ -2,6 +2,7 @@
 
 import hashlib
 import hmac
+import json
 import os
 import sqlite3
 import time
@@ -58,8 +59,7 @@ def list_ideas(project: str = "", query: str = "", offset: int = 0):
         raise HTTPException(status_code=503, detail="memory_inbox_unavailable") from exc
 
 
-@router.post("/api/integrations/slack/commands")
-async def capture_command(request: Request):
+async def verified_body(request: Request):
     secret, team, channels = settings()
     if not secret or not team or not channels:
         raise HTTPException(status_code=503, detail="slack_capture_not_configured")
@@ -84,6 +84,60 @@ async def capture_command(request: Request):
         expected.encode(), request.headers.get("x-slack-signature", "").encode()
     ):
         raise HTTPException(status_code=401, detail="invalid_slack_signature")
+    return body, team, channels
+
+
+@router.post("/api/integrations/slack/events")
+async def capture_mention(request: Request):
+    body, team, channels = await verified_body(request)
+    try:
+        payload = json.loads(body)
+        if not isinstance(payload, dict):
+            raise ValueError()
+    except (UnicodeError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail="invalid_slack_payload") from exc
+    if payload.get("type") == "url_verification":
+        challenge = payload.get("challenge")
+        if not isinstance(challenge, str) or not challenge or len(challenge) > 1024:
+            raise HTTPException(status_code=400, detail="invalid_slack_payload")
+        return {"challenge": challenge}
+    if payload.get("team_id") != team:
+        raise HTTPException(status_code=403, detail="slack_source_not_allowed")
+    if payload.get("type") != "event_callback":
+        return {"ok": True}
+    event = payload.get("event")
+    if not isinstance(event, dict):
+        raise HTTPException(status_code=400, detail="invalid_slack_payload")
+    if event.get("type") != "app_mention" or event.get("bot_id") or event.get("subtype"):
+        return {"ok": True}
+    channel = event.get("channel")
+    if not isinstance(channel, str) or channel not in channels:
+        raise HTTPException(status_code=403, detail="slack_source_not_allowed")
+    values = [payload.get("event_id"), event.get("user"), event.get("text")]
+    if any(not isinstance(value, str) or not value.strip() for value in values):
+        raise HTTPException(status_code=400, detail="invalid_slack_payload")
+    event_id, author, text = values
+    key = "slack:event:" + hashlib.sha256(f"{team}:{event_id}".encode()).hexdigest()
+    try:
+        inbox().capture(
+            text=text,
+            source_key=key,
+            source="slack",
+            project="mindmoor",
+            workspace_id=team,
+            channel_id=channel,
+            author_id=author,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail="invalid_idea_length") from exc
+    except (OSError, sqlite3.Error) as exc:
+        raise HTTPException(status_code=503, detail="memory_inbox_unavailable") from exc
+    return {"ok": True}
+
+
+@router.post("/api/integrations/slack/commands")
+async def capture_command(request: Request):
+    body, team, channels = await verified_body(request)
     try:
         form = parse_qs(body.decode("utf-8"), keep_blank_values=True, max_num_fields=30)
         required = ("team_id", "channel_id", "user_id", "command", "text", "trigger_id")
@@ -106,7 +160,7 @@ async def capture_command(request: Request):
             text=fields["text"],
             source_key=key,
             source="slack",
-            project="performance-labs",
+            project="mindmoor",
             workspace_id=team,
             channel_id=fields["channel_id"],
             author_id=fields["user_id"],
