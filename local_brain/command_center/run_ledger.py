@@ -14,6 +14,15 @@ from pathlib import Path
 logger = logging.getLogger(__name__)
 
 
+def token_counts(usage: object) -> tuple[int | None, int | None]:
+    if not isinstance(usage, dict):
+        return None, None
+    counts = (usage.get("input_tokens"), usage.get("output_tokens"))
+    if all(type(value) is int and 0 <= value <= 2_147_483_647 for value in counts):
+        return counts
+    return None, None
+
+
 class RunLedger:
     def __init__(self, path: Path):
         self.path = path
@@ -21,6 +30,7 @@ class RunLedger:
         fd = os.open(path, os.O_CREAT | os.O_RDWR, 0o600)
         os.close(fd)
         with self.connect() as db:
+            db.execute("BEGIN IMMEDIATE")
             db.execute("""CREATE TABLE IF NOT EXISTS runs (
                 id TEXT PRIMARY KEY, agent_id TEXT NOT NULL, agent_name TEXT NOT NULL,
                 repo_id TEXT NOT NULL, at TEXT NOT NULL, status TEXT NOT NULL,
@@ -28,6 +38,10 @@ class RunLedger:
                 latency_ms REAL NOT NULL, legacy INTEGER NOT NULL, payload TEXT NOT NULL
             )""")
             db.execute("CREATE INDEX IF NOT EXISTS runs_at ON runs(at)")
+            columns = {row["name"] for row in db.execute("PRAGMA table_info(runs)")}
+            for column in ("input_tokens", "output_tokens"):
+                if column not in columns:
+                    db.execute(f"ALTER TABLE runs ADD COLUMN {column} INTEGER")
 
     @contextmanager
     def connect(self):
@@ -57,9 +71,13 @@ class RunLedger:
             "temperature": None if legacy else agent.get("temperature"),
             "max_tokens": None if legacy else agent.get("max_tokens"),
         }
+        input_tokens, output_tokens = token_counts(run)
         with self.connect() as db:
             db.execute(
-                "INSERT OR IGNORE INTO runs VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+                """INSERT OR IGNORE INTO runs
+                (id,agent_id,agent_name,repo_id,at,status,trigger,assignment_id,
+                 model,latency_ms,legacy,payload,input_tokens,output_tokens)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                 (
                     run_id,
                     agent["id"],
@@ -73,6 +91,8 @@ class RunLedger:
                     float(run.get("latency_ms", 0) or 0),
                     int(legacy),
                     json.dumps(payload),
+                    input_tokens,
+                    output_tokens,
                 ),
             )
         return run_id
@@ -132,11 +152,24 @@ class RunLedger:
                 args.append(status)
             where = " AND ".join(clauses)
             matching = db.execute(f"SELECT count(*) FROM runs WHERE {where}", args).fetchone()[0]
+            usage_by_agent = [
+                dict(row)
+                for row in db.execute(
+                    f"""SELECT agent_id, max(agent_name) AS agent_name,
+                    count(*) AS runs,
+                    sum(input_tokens IS NOT NULL AND output_tokens IS NOT NULL) AS measured_runs,
+                    sum(input_tokens) AS input_tokens, sum(output_tokens) AS output_tokens
+                    FROM runs WHERE {where} GROUP BY agent_id
+                    ORDER BY coalesce(sum(input_tokens + output_tokens),0) DESC,agent_id""",
+                    args,
+                )
+            ]
             runs = [
                 dict(row)
                 for row in db.execute(
                     f"""SELECT id,agent_id,agent_name,repo_id,
-                at,status,trigger,assignment_id,model,latency_ms,legacy FROM runs
+                at,status,trigger,assignment_id,model,latency_ms,legacy,
+                input_tokens,output_tokens FROM runs
                 WHERE {where} ORDER BY at DESC,id DESC LIMIT 200""",
                     args,
                 )
@@ -145,6 +178,7 @@ class RunLedger:
             "days": daily,
             "agent_days": agent_days,
             "runs": runs,
+            "usage_by_agent": usage_by_agent,
             "matching": matching,
             "total": total,
             "earliest": earliest,

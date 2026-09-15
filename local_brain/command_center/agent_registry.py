@@ -14,7 +14,7 @@ from typing import Any
 
 from local_brain.command_center.agent_suites import apply_suite_defaults
 from local_brain.command_center.persistence import PersistenceError, atomic_write_json
-from local_brain.command_center.run_ledger import RunLedger
+from local_brain.command_center.run_ledger import RunLedger, token_counts
 
 logger = logging.getLogger("aiia.agents")
 
@@ -218,6 +218,7 @@ class AgentRegistry:
         model: str = "",
         latency_ms: float = 0,
         run_id: str = "",
+        usage: dict | None = None,
     ) -> dict[str, Any] | None:
         agent = self.get(agent_id)
         if not agent:
@@ -231,6 +232,7 @@ class AgentRegistry:
         agent["last_error"] = error
         agent["updated_at"] = now
         run_id = run_id or uuid.uuid4().hex
+        input_tokens, output_tokens = token_counts(usage)
         agent["runs"] = (
             [
                 {
@@ -243,6 +245,8 @@ class AgentRegistry:
                     "assignment_id": assignment_id,
                     "model": model,
                     "latency_ms": round(float(latency_ms), 1),
+                    "input_tokens": input_tokens,
+                    "output_tokens": output_tokens,
                 }
             ]
             + agent["runs"]

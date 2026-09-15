@@ -23,6 +23,17 @@ const usage = {
   by_provider: { local: { tokens: 84256, input_tokens: 69950, output_tokens: 14306, requests: 29, cost: 0 } },
   by_purpose: { agent_studio_loop: { tokens: 84256, requests: 29, providers: ['local'], model: 'qwen3:8b' } },
 }
+const agentUsage = [
+  { agent_id: agents[0].id, agent_name: agents[0].name, runs: 2, measured_runs: 1, input_tokens: 1234, output_tokens: 56 },
+  { agent_id: agents[1].id, agent_name: agents[1].name, runs: 1, measured_runs: 1, input_tokens: 0, output_tokens: 0 },
+  { agent_id: agents[2].id, agent_name: agents[2].name, runs: 3, measured_runs: 0, input_tokens: null, output_tokens: null },
+]
+const measuredRun = {
+  id: 'synthetic-run', agent_id: agents[0].id, agent_name: agents[0].name,
+  repo_id: 'aiia', at: `${date}T12:00:00Z`, status: 'completed', trigger: 'manual',
+  assignment_id: '', model: 'qwen3:8b', latency_ms: 1000, legacy: 0,
+  input_tokens: 1234, output_tokens: 56, result: 'Synthetic result', task: 'Synthetic task',
+}
 
 try {
   for (const width of [1440, 653, 390]) {
@@ -58,7 +69,11 @@ try {
         status = tokenFailure ? 503 : 200
         body = tokenFailure ? { detail: 'Synthetic usage outage' } : emptyUsage ? { ...usage, total_tokens: 0, total_requests: 0, by_provider: {}, by_purpose: {} } : usage
       } else if (path === '/api/tokens/recent') body = { days: Array.from({ length: 14 }, (_, i) => ({ date: `2026-09-${String(14 - i).padStart(2, '0')}`, total_tokens: i * 1234, total_requests: i, total_cost: 0 })) }
-      else if (path === '/api/studio/activity') body = { today: date, days: [], agent_days: [], runs: [], total: 0, matching: 0, imported: 0 }
+      else if (path === '/api/studio/activity') {
+        const selected = new URL(route.request().url()).searchParams.get('agent_id')
+        body = { today: date, start: '2026-06-17', days: [], agent_days: [], runs: [measuredRun], total: 6, matching: 6, imported: 0, usage_by_agent: agentUsage.filter(row => !selected || row.agent_id === selected) }
+      }
+      else if (path === '/api/studio/runs/synthetic-run') body = { run: measuredRun }
       else if (path === '/api/tasks') body = []
       else if (path === '/api/health') body = { aiia: { status: 'online' }, ollama: { status: 'online' } }
       else if (path === '/api/monitor') body = { services: {} }
@@ -85,6 +100,22 @@ try {
     emptyUsage = true
     await tokens.getByRole('button', { name: 'Refresh token usage' }).click()
     await tokens.getByText('No attributed usage reported today.').waitFor()
+
+    const attribution = page.getByRole('region', { name: 'Agent token attribution' })
+    await attribution.getByRole('button', { name: 'CI specialist 1', exact: true }).waitFor()
+    assert.ok((await attribution.innerText()).includes('1,234'))
+    assert.ok((await attribution.innerText()).includes('0 / 3'))
+    await attribution.scrollIntoViewIfNeeded()
+    await page.screenshot({ path: join(output, `agent-tokens-${width}.png`) })
+    await attribution.getByRole('button', { name: 'CI specialist 1', exact: true }).click()
+    await page.waitForFunction(() => document.querySelectorAll('[aria-label="Agent token attribution"] tbody tr').length === 1)
+    await attribution.getByRole('button', { name: 'CI specialist 1', exact: true }).click()
+    await page.getByRole('button').filter({ hasText: '1,290 tokens' }).click()
+    const runInspector = page.getByRole('complementary', { name: 'Activity inspector' })
+    await runInspector.getByText('Input tokens', { exact: true }).waitFor()
+    assert.ok((await runInspector.innerText()).includes('1,234'))
+    await runInspector.scrollIntoViewIfNeeded()
+    await page.screenshot({ path: join(output, `run-tokens-${width}.png`) })
 
     await page.getByRole('tab', { name: 'Map', exact: true }).click()
     await page.waitForFunction(() => document.querySelectorAll('[data-graph-node]').length === 48)
@@ -124,7 +155,7 @@ try {
     await page.getByText('Layout synced', { exact: true }).waitFor()
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false)
     assert.deepEqual(errors, [])
-    console.log(`${width}px: usage, refresh failure/recovery, 96 nodes, zoom, inspector, keyboard save, save failure/recovery passed`)
+    console.log(`${width}px: platform/agent/run usage, attribution filtering, refresh failure/recovery, 96 nodes, zoom, inspector, keyboard save, save failure/recovery passed`)
     await context.close()
   }
 } finally {

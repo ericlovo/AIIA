@@ -1398,6 +1398,7 @@ async def _execute_agent(
                     run_id=run_id,
                     model=model,
                     latency_ms=latency_ms,
+                    usage=payload.get("usage"),
                 )
                 if updated:
                     await broadcast_studio_event("agent", "failed", updated)
@@ -1411,6 +1412,7 @@ async def _execute_agent(
                 run_id=run_id,
                 model=model,
                 latency_ms=latency_ms,
+                usage=payload.get("usage"),
             )
             if updated:
                 await broadcast_studio_event("agent", "completed", updated)

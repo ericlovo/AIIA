@@ -4,6 +4,8 @@ import { ArrowRight, Check, CirclePause, FileText, GitBranch, Layers3, Play, Ref
 import { api, type Agent, type AgentDefinition, type StudioRun } from '../lib/api'
 import { StudioTabs, type StudioView } from './StudioTabs'
 import { TokenUsage } from './TokenUsage'
+import { AgentTokenUsage } from './AgentTokenUsage'
+import { runTokens } from './runTokens'
 import { DEVELOPMENT_LOOPS } from './developmentLoops'
 import { loopState, DOT_COLOR } from './taskStatus'
 import { attentionAssignments, reviewLabel } from './assignmentReview'
@@ -84,6 +86,7 @@ export function Switchboard({ agents, loading, agentError, onViewChange, onManag
     <TokenUsage />
     <div className="sb-body">
       <div className="sb-main">
+        <AgentTokenUsage data={data} agents={agents} day={day} status={status} selectedAgentId={agentId} onSelectAgent={pickAgent} />
         <section className="sb-attention" aria-label="Needs attention">
           <div className="sb-section-title"><div><h2>Needs attention {assignments.data ? `(${attention.length})` : ''}</h2><p>{agent?.name || 'All agents'} · completed runs still need output review</p></div></div>
           {assignments.isError ? <p role="alert">Assignment status unavailable. {assignments.data ? 'Showing last loaded work.' : 'Retry to load work.'}</p> : assignments.isLoading ? <p>Loading assignments...</p> : null}
@@ -132,7 +135,7 @@ export function Switchboard({ agents, loading, agentError, onViewChange, onManag
           {(day || agentId) && <button className="sb-clear" onClick={() => { setDay(''); setAgentId('') }}><X size={12} /> Clear filters</button>}
           {activity.isLoading && <p className="sb-empty">Loading run history...</p>}
           {data && data.runs.length === 0 && <p className="sb-empty">No recorded attempts match these filters.</p>}
-          {data?.runs.map(run => <button key={run.id} onClick={() => { setRunId(run.id); setTaskId('') }} className={`sb-run-row ${runId === run.id ? 'sb-lane-selected' : ''}`}><span className={`sb-outcome sb-outcome-${run.status}`}>{run.status === 'completed' ? <Check size={14} /> : <X size={14} />}</span><div><strong>{run.agent_name}</strong><small>{run.trigger} · {run.model || 'Model unrecorded'}{run.legacy ? ' · imported' : ''}</small></div><span>{run.latency_ms > 0 ? `${Math.round(run.latency_ms / 1000)}s` : '--'}<small>{new Date(run.at).toLocaleString()}</small></span><ArrowRight size={14} /></button>)}
+          {data?.runs.map(run => <button key={run.id} onClick={() => { setRunId(run.id); setTaskId('') }} className={`sb-run-row ${runId === run.id ? 'sb-lane-selected' : ''}`}><span className={`sb-outcome sb-outcome-${run.status}`}>{run.status === 'completed' ? <Check size={14} /> : <X size={14} />}</span><div><strong>{run.agent_name}</strong><small>{run.trigger} · {run.model || 'Model unrecorded'}{run.legacy ? ' · imported' : ''}</small><small>{runTokens(run)}</small></div><span>{run.latency_ms > 0 ? `${Math.round(run.latency_ms / 1000)}s` : '--'}<small>{new Date(run.at).toLocaleString()}</small></span><ArrowRight size={14} /></button>)}
           {(data?.matching ?? 0) > 200 && <p className="sb-coverage">Showing the latest 200 matches. Select an agent or date to narrow the history.</p>}
         </section>
       </div>
@@ -153,7 +156,7 @@ export function Switchboard({ agents, loading, agentError, onViewChange, onManag
 }
 
 function RunDetail({ run, onOpenAssignment }: { run: StudioRun; onOpenAssignment: (id: string) => void }) {
-  return <><h2>{run.agent_name}</h2><dl><dt>Outcome</dt><dd>{run.status}</dd><dt>Trigger</dt><dd>{run.trigger}</dd><dt>Recorded</dt><dd>{new Date(run.at).toLocaleString()}</dd><dt>Model</dt><dd>{run.model || 'Unrecorded'}</dd><dt>Duration</dt><dd>{run.latency_ms ? `${(run.latency_ms / 1000).toFixed(1)}s` : 'Unrecorded'}</dd></dl>{run.assignment_id && <button className="sb-command" onClick={() => onOpenAssignment(run.assignment_id)}><FileText size={15} /> Open assignment</button>}<h3>Task</h3><pre>{run.task}</pre><h3>{run.error ? 'Failure' : 'Work product'}</h3><pre>{run.error || run.result || 'No output recorded.'}</pre></>
+  return <><h2>{run.agent_name}</h2><dl><dt>Outcome</dt><dd>{run.status}</dd><dt>Trigger</dt><dd>{run.trigger}</dd><dt>Recorded</dt><dd>{new Date(run.at).toLocaleString()}</dd><dt>Model</dt><dd>{run.model || 'Unrecorded'}</dd><dt>Duration</dt><dd>{run.latency_ms ? `${(run.latency_ms / 1000).toFixed(1)}s` : 'Unrecorded'}</dd><dt>Input tokens</dt><dd>{run.input_tokens?.toLocaleString('en-US') ?? 'Unrecorded'}</dd><dt>Output tokens</dt><dd>{run.output_tokens?.toLocaleString('en-US') ?? 'Unrecorded'}</dd><dt>Total</dt><dd>{runTokens(run)}</dd></dl>{run.assignment_id && <button className="sb-command" onClick={() => onOpenAssignment(run.assignment_id)}><FileText size={15} /> Open assignment</button>}<h3>Task</h3><pre>{run.task}</pre><h3>{run.error ? 'Failure' : 'Work product'}</h3><pre>{run.error || run.result || 'No output recorded.'}</pre></>
 }
 
 function interval(minutes: number) { return minutes >= 60 && minutes % 60 === 0 ? `${minutes / 60}h` : `${minutes}m` }

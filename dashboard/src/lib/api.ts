@@ -243,12 +243,24 @@ export interface StudioRun {
   model: string;
   latency_ms: number;
   legacy: number;
+  input_tokens?: number | null;
+  output_tokens?: number | null;
   task?: string;
   result?: string;
   error?: string;
 }
 
+export interface AgentTokenUsage {
+  agent_id: string;
+  agent_name: string;
+  runs: number;
+  measured_runs: number;
+  input_tokens: number | null;
+  output_tokens: number | null;
+}
+
 export interface StudioActivity {
+  usage_by_agent?: AgentTokenUsage[];
   agent_days: { agent_id: string; day: string; total: number; failed: number }[];
   days: { day: string; total: number; completed: number; failed: number; latency_ms: number }[];
   runs: StudioRun[];

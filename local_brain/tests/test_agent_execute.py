@@ -70,6 +70,25 @@ def _create_agent(agents: AgentRegistry, **overrides: Any) -> dict[str, Any]:
     return agents.create(**payload)
 
 
+@pytest.mark.parametrize("content", ["Evidence", ""])
+@pytest.mark.parametrize("loop_run", [False, True])
+async def test_model_usage_is_saved_even_for_empty_output(tmp_path, monkeypatch, content, loop_run):
+    cc, agents, _assignments, _events, fake = _studio(tmp_path, monkeypatch, content=content)
+    fake._response._payload["usage"] = {"input_tokens": 321, "output_tokens": 45}
+    agent = _create_agent(agents)
+    tracker_calls = []
+    monkeypatch.setattr(cc.token_tracker, "record", lambda *a, **kw: tracker_calls.append(kw))
+    try:
+        await cc._execute_agent(agent["id"], "Inspect", loop_run=loop_run, assignment_id="work" if not loop_run else "")
+    except HTTPException as exc:
+        assert not content and exc.detail == "empty_agent_result"
+    run = agents.get(agent["id"])["runs"][0]
+    assert run["input_tokens"] == 321
+    assert run["output_tokens"] == 45
+    assert agents.ledger.get(run["id"])["input_tokens"] == 321
+    assert tracker_calls == []
+
+
 async def test_manual_empty_output_is_not_success(tmp_path, monkeypatch):
     cc, agents, _assignments, events, _fake = _studio(tmp_path, monkeypatch, content="   ")
     agent = _create_agent(agents)
