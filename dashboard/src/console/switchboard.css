@@ -1,4 +1,29 @@
 .switchboard { height:100%; overflow:auto; background:#0b0d0e; color:#cbd0d3; font-size:13px; letter-spacing:0; }
+.sb-tokens { padding:20px 30px; border-bottom:1px solid #25292c; }
+.sb-tokens .sb-section-title { margin-bottom:14px; }
+.sb-token-totals { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:16px; }
+.sb-token-totals dt { font-size:11px; color:#98a2a8; }
+.sb-token-totals dd { font-size:22px; color:#f0f3f5; margin-top:4px; overflow-wrap:anywhere; }
+.sb-token-providers { display:flex; flex-wrap:wrap; gap:16px; color:#98a2a8; font-size:12px; margin:12px 0; }
+.sb-token-providers strong { color:#88d6aa; font-weight:500; }
+.sb-tokens summary { cursor:pointer; font-size:12px; color:#92dce0; padding:8px 0; }
+.sb-tokens summary:focus-visible { outline:2px solid #67d9e0; outline-offset:3px; }
+.sb-token-history { display:grid; grid-template-columns:repeat(14,minmax(0,1fr)); gap:8px; margin:16px 0; }
+.sb-token-history>div { min-width:0; text-align:center; color:#98a2a8; font-size:10px; }
+.sb-token-bar { height:70px; display:flex; align-items:end; background:#141d20; margin-bottom:6px; }
+.sb-token-bar i { display:block; width:100%; background:#5bb79d; }
+.sb-token-table { overflow-x:auto; }
+.sb-token-table table { width:100%; font-size:12px; border-collapse:collapse; }
+.sb-token-table caption { text-align:left; padding:10px 0; color:#eff2f3; }
+.sb-token-table th, .sb-token-table td { padding:10px 8px; text-align:right; border-top:1px solid #25292c; font-weight:400; }
+.sb-token-table th:first-child { text-align:left; overflow-wrap:anywhere; }
+.sb-token-table small { display:block; color:#929ea5; margin-top:4px; }
+@media (max-width:600px) {
+  .sb-tokens { padding:18px; }
+  .sb-token-totals { grid-template-columns:repeat(2,minmax(0,1fr)); }
+  .sb-token-history { gap:3px; }
+  .sb-token-history>div>span:not(.sr-only) { writing-mode:vertical-rl; }
+}
 .switchboard * { letter-spacing:0; }
 .sb-preview { padding:8px 30px; color:#f0c686; background:#292116; font-size:11px; border-bottom:1px solid #534229; }
 .switchboard button, .switchboard input, .switchboard select { font:inherit; }

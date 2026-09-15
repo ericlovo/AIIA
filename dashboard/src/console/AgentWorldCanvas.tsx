@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import { Maximize2, RotateCcw, ZoomIn, ZoomOut } from 'lucide-react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   api,
@@ -10,9 +11,12 @@ import {
 } from '../lib/api'
 import { AgentGraphOverlay } from './AgentGraphOverlay'
 import { StudioTabs, type StudioView } from './StudioTabs'
+import { GRAPH_WIDTH, graphGeometry } from './graphLayout'
 
 interface AgentWorldCanvasProps {
   agents: Agent[]
+  loading: boolean
+  agentError: boolean
   onViewChange: (view: StudioView) => void
   onManageAgent: (agentId: string) => void
   onAssignAgent: (agentId: string) => void
@@ -42,9 +46,10 @@ function eventLabel(update: StudioUpdate) {
   return `${label} · ${update.event}`
 }
 
-function graphMinHeight(agentCount: number, assignments: Assignment[]) {
+function graphMinHeight(agentCount: number, assignments: Assignment[], showCompleted: boolean) {
   const assignmentCounts = new Map<string, number>()
   for (const assignment of assignments) {
+    if (!showCompleted && assignment.status === 'completed') continue
     assignmentCounts.set(assignment.agent_id, (assignmentCounts.get(assignment.agent_id) ?? 0) + 1)
   }
   const visibleAssignments = [...assignmentCounts.values()].reduce(
@@ -52,13 +57,13 @@ function graphMinHeight(agentCount: number, assignments: Assignment[]) {
     0,
   )
   const nodeCount = agentCount + visibleAssignments
-  const columns = Math.min(5, Math.max(1, Math.ceil(Math.sqrt(nodeCount))))
-  const rows = Math.ceil(nodeCount / columns)
-  return Math.max(620, rows * 128 + 180)
+  return graphGeometry(nodeCount).height
 }
 
 export function AgentWorldCanvas({
   agents,
+  loading,
+  agentError,
   onViewChange,
   onManageAgent,
   onAssignAgent,
@@ -66,14 +71,18 @@ export function AgentWorldCanvas({
   onRouteHandoff,
 }: AgentWorldCanvasProps) {
   const queryClient = useQueryClient()
+  const [showCompleted, setShowCompleted] = useState(false)
+  const [inspectorHost, setInspectorHost] = useState<HTMLDivElement | null>(null)
+  const viewportRef = useRef<HTMLElement>(null)
+  const [zoom, setZoom] = useState(1)
   const [connection, setConnection] = useState<ConnectionState>('connecting')
   const [latestEvent, setLatestEvent] = useState('Loading agent graph')
-  const { data: assignmentData } = useQuery({
+  const { data: assignmentData, isError: assignmentLoadError, isPending: assignmentLoading } = useQuery({
     queryKey: ['assignments'],
     queryFn: api.assignments,
     refetchInterval: connection === 'live' ? false : 5_000,
   })
-  const { data: handoffData } = useQuery({
+  const { data: handoffData, isError: handoffLoadError } = useQuery({
     queryKey: ['handoffs'],
     queryFn: api.handoffs,
     refetchInterval: connection === 'live' ? false : 5_000,
@@ -86,9 +95,8 @@ export function AgentWorldCanvas({
   const assignments = assignmentData?.assignments ?? EMPTY_ASSIGNMENTS
   const handoffs = handoffData?.handoffs ?? EMPTY_HANDOFFS
   const layoutState = layoutData?.layout ?? EMPTY_LAYOUT
-  const mapMinHeight = graphMinHeight(agents.length, assignments)
+  const mapMinHeight = graphMinHeight(agents.length, assignments, showCompleted)
   const activeCount = agents.filter(agent => agent.status === 'running').length
-    + assignments.filter(assignment => assignment.status === 'running').length
 
   const saveLayout = useMutation({
     scope: { id: 'agent-world-layout' },
@@ -192,27 +200,47 @@ export function AgentWorldCanvas({
   }, [queryClient])
 
   return (
-    <main className="min-h-0 flex flex-1 flex-col overflow-y-auto bg-neutral-950 lg:overflow-hidden">
-      <header className="flex shrink-0 flex-col gap-4 border-b border-neutral-900 px-5 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-7">
-        <div>
-          <div className="text-[10px] font-semibold tracking-[0.28em] uppercase text-cyan-400">Agent Studio · Map</div>
+    <main className="h-full min-h-0 flex flex-1 flex-col overflow-hidden bg-neutral-950 [&_*]:tracking-normal">
+      <header className="flex shrink-0 flex-wrap items-center justify-between gap-4 border-b border-neutral-900 px-5 py-4 sm:px-7">
+        <div className="min-w-48">
+          <div className="text-[10px] font-semibold uppercase text-cyan-400">Agent Studio / Map</div>
           <h1 className="mt-1.5 text-xl font-medium text-white">Agent control map</h1>
-          <p className="mt-1 text-xs text-neutral-500">Drag nodes to organize work. Select a node to act.</p>
         </div>
         <StudioTabs view="world" onChange={onViewChange} />
       </header>
-
-      <section className="relative min-h-[620px] max-w-full flex-1 overflow-auto bg-[#080a0d] lg:min-h-0">
-        <div className="relative h-full min-w-[1000px] lg:min-w-0" style={{ minHeight: mapMinHeight }}>
+      <div className="flex shrink-0 flex-wrap items-center gap-4 border-b border-white/10 px-5 py-3 text-xs text-neutral-400">
+        <span>{loading ? 'Loading agents' : `${agents.length} agents / ${activeCount} running`} / {assignmentLoading ? 'Loading work' : `${assignments.length} assignments`}</span>
+        <label className="flex items-center gap-2"><input type="checkbox" checked={showCompleted} onChange={event => setShowCompleted(event.target.checked)} />Completed assignments</label>
+        <button type="button" title="Reset layout" aria-label="Reset layout" disabled={saveLayout.isPending || resetLayout.isPending} onClick={() => { saveLayout.reset(); resetLayout.mutate() }} className="flex h-8 w-8 items-center justify-center border border-neutral-700 disabled:opacity-40"><RotateCcw size={15} /></button>
+        <span role="status">{layoutLoadError ? 'Layout unavailable' : saveLayout.isError || resetLayout.isError ? 'Layout save failed' : saveLayout.isPending || resetLayout.isPending ? 'Saving layout' : layoutData ? 'Layout synced' : 'Loading layout'}</span>
+        <span title={latestEvent}>{connection === 'live' ? 'Live' : connection === 'retrying' ? 'Reconnecting' : 'Connecting'}</span>
+        <div className="flex items-center gap-2" role="group" aria-label="Map zoom">
+          <button type="button" aria-label="Zoom out" title="Zoom out" disabled={zoom <= 0.15} className="flex h-8 w-8 items-center justify-center border border-neutral-700 disabled:opacity-40" onClick={() => setZoom(value => Math.max(0.15, value - 0.15))}><ZoomOut size={15} /></button>
+          <output className="w-10 text-center">{Math.round(zoom * 100)}%</output>
+          <button type="button" aria-label="Zoom in" title="Zoom in" disabled={zoom >= 1.5} className="flex h-8 w-8 items-center justify-center border border-neutral-700 disabled:opacity-40" onClick={() => setZoom(value => Math.min(1.5, value + 0.15))}><ZoomIn size={15} /></button>
+          <button type="button" aria-label="Fit map" title="Fit map" className="flex h-8 w-8 items-center justify-center border border-neutral-700" onClick={() => {
+            const viewport = viewportRef.current
+            if (!viewport) return
+            setZoom(Math.min(1, viewport.clientWidth / GRAPH_WIDTH, viewport.clientHeight / mapMinHeight))
+            viewport.scrollTo(0, 0)
+          }}><Maximize2 size={15} /></button>
+        </div>
+      </div>
+      {(agentError || assignmentLoadError || handoffLoadError || layoutLoadError) && <div role="alert" className="px-5 py-2 text-xs text-amber-200">Map data is incomplete. <button type="button" className="underline" onClick={() => { for (const key of ['agents', 'assignments', 'handoffs', 'agent-world-layout']) void queryClient.invalidateQueries({ queryKey: [key] }) }}>Retry</button></div>}
+      {!loading && !agentError && agents.length === 0 && <p role="status" className="px-5 py-3 text-sm text-neutral-400">No agents configured.</p>}
+      <div className="relative min-h-0 flex-1">
+      <section ref={viewportRef} aria-label="Scrollable agent map" tabIndex={0} className="h-full max-w-full overflow-auto bg-[#080a0d]">
+        <div className="relative" style={{ width: GRAPH_WIDTH * zoom, height: mapMinHeight * zoom }}>
+        <div className="absolute left-0 top-0 origin-top-left" style={{ width: GRAPH_WIDTH, height: mapMinHeight, transform: `scale(${zoom})` }}>
           <SpatialGrid />
           <AgentGraphOverlay
+          inspectorHost={inspectorHost}
+          showCompleted={showCompleted}
           agents={agents}
           assignments={assignments}
           handoffs={handoffs}
           positions={layoutState.positions}
-          layoutStatus={layoutLoadError || saveLayout.isError || resetLayout.isError ? 'error' : saveLayout.isPending || resetLayout.isPending ? 'saving' : 'synced'}
-          onSavePosition={(nodeId: string, point: AgentWorldPoint) => saveLayout.mutateAsync({ [nodeId]: point }).then(() => undefined)}
-          onResetLayout={() => resetLayout.mutateAsync().then(() => undefined)}
+          onSavePosition={(nodeId: string, point: AgentWorldPoint) => { resetLayout.reset(); return saveLayout.mutateAsync({ [nodeId]: point }).then(() => undefined) }}
           runningAssignmentId={runAssignment.isPending ? runAssignment.variables : null}
           assignmentRunTargetId={runAssignment.variables ?? null}
           assignmentRunError={runAssignment.error?.message ?? ''}
@@ -223,22 +251,6 @@ export function AgentWorldCanvas({
           onRouteHandoff={onRouteHandoff}
           />
 
-          <div className="pointer-events-none absolute inset-x-0 top-0 z-10 flex items-start justify-between gap-4 p-4 sm:p-6">
-            <div className="border border-white/10 bg-[#080a0d]/90 px-3 py-2">
-              <div className="flex items-center gap-2 text-[9px] font-semibold tracking-[0.18em] uppercase text-white/70">
-                <i className={`h-1.5 w-1.5 rounded-full ${connection === 'live' ? 'bg-emerald-400' : 'bg-amber-400'}`} />
-                {connection === 'live' ? 'Live' : connection === 'retrying' ? 'Reconnecting' : 'Connecting'}
-              </div>
-              <div className="mt-1 max-w-[48vw] truncate text-[11px] text-white/35">{latestEvent}</div>
-            </div>
-
-            <div className="grid grid-cols-3 border border-white/10 bg-[#080a0d]/90">
-              <MapMetric label="Agents" value={agents.length} />
-              <MapMetric label="Active" value={activeCount} active />
-              <MapMetric label="Work" value={assignments.length} />
-            </div>
-          </div>
-
           <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 flex flex-wrap items-center justify-between gap-3 border-t border-white/8 bg-[#080a0d]/90 px-4 py-3 text-[9px] font-semibold tracking-[0.14em] uppercase text-white/35 sm:px-6">
             <div className="flex flex-wrap gap-x-5 gap-y-2">
               <span><b className="mr-1.5 text-cyan-300">Solid</b>assignment</span>
@@ -248,7 +260,10 @@ export function AgentWorldCanvas({
             <span>Click a node for controls</span>
           </div>
         </div>
+        </div>
       </section>
+      <div ref={setInspectorHost} className="pointer-events-none absolute inset-0 z-20" />
+      </div>
     </main>
   )
 }
@@ -271,15 +286,6 @@ function SpatialGrid() {
     >
       <div className="absolute inset-y-0 left-1/2 border-l border-cyan-300/10" />
       <div className="absolute inset-x-0 top-1/2 border-t border-cyan-300/10" />
-    </div>
-  )
-}
-
-function MapMetric({ label, value, active = false }: { label: string; value: number; active?: boolean }) {
-  return (
-    <div className="min-w-14 border-l border-white/10 px-2.5 py-2 text-right first:border-l-0 sm:min-w-20 sm:px-3">
-      <div className={`text-sm tabular-nums ${active && value > 0 ? 'text-amber-300' : 'text-white'}`}>{value}</div>
-      <div className="text-[8px] tracking-[0.14em] uppercase text-white/30">{label}</div>
     </div>
   )
 }

@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { ArrowRight, Check, CirclePause, FileText, GitBranch, Layers3, Play, RefreshCw, Search, X } from 'lucide-react'
 import { api, type Agent, type AgentDefinition, type StudioRun } from '../lib/api'
 import { StudioTabs, type StudioView } from './StudioTabs'
+import { TokenUsage } from './TokenUsage'
 import { DEVELOPMENT_LOOPS } from './developmentLoops'
 import { loopState, DOT_COLOR } from './taskStatus'
 import { attentionAssignments, reviewLabel } from './assignmentReview'
@@ -80,6 +81,7 @@ export function Switchboard({ agents, loading, agentError, onViewChange, onManag
       <button onClick={() => onViewChange('assignments')}><span>Work queue</span><strong>{assignments.data ? selectedWork.length : '--'}</strong><small>Open assignments <ArrowRight size={12} /></small></button>
       <div><span>Loop allowance</span><strong>{dailyCap}<em> / day</em></strong><small>Configured ceiling · {scheduled.length} schedules</small></div>
     </section>
+    <TokenUsage />
     <div className="sb-body">
       <div className="sb-main">
         <section className="sb-attention" aria-label="Needs attention">

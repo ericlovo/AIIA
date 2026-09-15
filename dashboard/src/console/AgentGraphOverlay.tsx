@@ -1,14 +1,16 @@
 import { useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
+import { reconcileLayout } from './graphLayout'
 import type { Agent, AgentWorldPoint, Assignment, Handoff } from '../lib/api'
 
 interface AgentGraphOverlayProps {
+  showCompleted: boolean
+  inspectorHost: HTMLDivElement | null
   agents: Agent[]
   assignments: Assignment[]
   handoffs: Handoff[]
   positions: Record<string, AgentWorldPoint>
-  layoutStatus: 'synced' | 'saving' | 'error'
   onSavePosition: (nodeId: string, point: AgentWorldPoint) => Promise<void>
-  onResetLayout: () => Promise<void>
   runningAssignmentId: string | null
   assignmentRunTargetId: string | null
   assignmentRunError: string
@@ -45,48 +47,8 @@ interface WireDragState {
   moved: boolean
 }
 
-const MIN_SEPARATION_X = 16
-const MIN_SEPARATION_Y = 14
-
 function clamp(value: number, minimum = 8, maximum = 92) {
   return Math.max(minimum, Math.min(maximum, value))
-}
-
-function positionsOverlap(left: Point, right: Point) {
-  return Math.abs(left.x - right.x) < MIN_SEPARATION_X && Math.abs(left.y - right.y) < MIN_SEPARATION_Y
-}
-
-function laneGrid() {
-  const slots: Point[] = []
-  for (let y = 12; y <= 88; y += MIN_SEPARATION_Y) {
-    for (let x = 8; x <= 92; x += MIN_SEPARATION_X) {
-      slots.push({ x, y })
-    }
-  }
-  return slots
-}
-
-function firstFreePoint(origin: Point, placed: Record<string, Point>): Point {
-  const candidate = { x: clamp(origin.x), y: clamp(origin.y, 12, 88) }
-  if (!Object.values(placed).some(other => positionsOverlap(candidate, other))) return candidate
-  return [...laneGrid()]
-    .sort((left, right) => {
-      const leftDist = (left.x - candidate.x) ** 2 + (left.y - candidate.y) ** 2
-      const rightDist = (right.x - candidate.x) ** 2 + (right.y - candidate.y) ** 2
-      return leftDist - rightDist
-    })
-    .find(slot => !Object.values(placed).some(other => positionsOverlap(slot, other)))
-    ?? candidate
-}
-
-function reconcileLayout(layout: Record<string, Point>, nodeIds: string[]) {
-  const placed: Record<string, Point> = {}
-  for (const nodeId of [...nodeIds].sort()) {
-    const origin = layout[nodeId]
-    if (!origin) continue
-    placed[nodeId] = firstFreePoint(origin, placed)
-  }
-  return placed
 }
 
 function statusRank(status: Assignment['status']) {
@@ -138,13 +100,13 @@ function visibleWork(assignments: Assignment[], showCompleted: boolean) {
 }
 
 export function AgentGraphOverlay({
+  showCompleted,
+  inspectorHost,
   agents,
   assignments,
   handoffs,
   positions,
-  layoutStatus,
   onSavePosition,
-  onResetLayout,
   runningAssignmentId,
   assignmentRunTargetId,
   assignmentRunError,
@@ -163,7 +125,6 @@ export function AgentGraphOverlay({
   const [wireDrag, setWireDrag] = useState<WireDragState | null>(null)
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [connectFrom, setConnectFrom] = useState<string | null>(null)
-  const [showCompleted, setShowCompleted] = useState(false)
   const [draggingId, setDraggingId] = useState<string | null>(null)
   const nodes = useMemo<GraphNode[]>(() => {
     const work = visibleWork(assignments, showCompleted)
@@ -283,11 +244,6 @@ export function AgentGraphOverlay({
     })
   }
 
-  function resetLayout() {
-    transientPositionsRef.current = {}
-    setTransientPositions({})
-    void onResetLayout().catch(() => undefined)
-  }
 
   function pointFromPointer(event: React.PointerEvent<HTMLButtonElement>) {
     const bounds = containerRef.current?.getBoundingClientRect()
@@ -437,32 +393,14 @@ export function AgentGraphOverlay({
         )
       })}
 
-      <div className="pointer-events-auto absolute bottom-16 right-4 flex items-center border border-white/10 bg-[#080a0d]/95 text-[9px] font-semibold tracking-[0.14em] uppercase sm:right-6">
-        <span role="status" aria-live="polite" className={`border-r border-white/10 px-2.5 py-1.5 ${layoutStatus === 'error' ? 'text-red-300' : layoutStatus === 'saving' ? 'text-amber-300' : 'text-emerald-300/60'}`}>
-          {layoutStatus === 'error' ? 'Save failed' : layoutStatus === 'saving' ? 'Saving' : 'Layout synced'}
-        </span>
-        <button
-          type="button"
-          aria-pressed={showCompleted}
-          aria-label={showCompleted ? 'Hide completed assignments' : 'Show completed assignments'}
-          onClick={() => setShowCompleted(current => !current)}
-          className={`border-r border-white/10 px-2.5 py-1.5 ${showCompleted ? 'text-cyan-200' : 'text-white/45 hover:text-white'}`}
-        >
-          {showCompleted ? 'Completed shown' : 'Completed hidden'}
-        </button>
-        <button type="button" aria-label="Reset layout" disabled={layoutStatus === 'saving'} onClick={resetLayout} className="px-2.5 py-1.5 text-white/45 hover:text-white disabled:opacity-30">
-          Reset
-        </button>
-      </div>
-
-      {(connectFrom || wireDrag) && (
-        <div className="pointer-events-auto absolute left-1/2 top-20 -translate-x-1/2 border border-fuchsia-400/50 bg-fuchsia-950 px-4 py-2 text-center text-xs text-fuchsia-100">
+      {(connectFrom || wireDrag) && inspectorHost && createPortal(
+        <div className="pointer-events-auto absolute inset-x-4 top-4 border border-fuchsia-400/50 bg-fuchsia-950 px-4 py-2 text-center text-xs text-fuchsia-100">
           {wireDrag ? 'Drop on a target agent' : `Select a target agent for “${selectedSource?.title}”`}
           {connectFrom && <button type="button" onClick={() => setConnectFrom(null)} className="ml-3 text-fuchsia-300/60 hover:text-white">Cancel</button>}
-        </div>
+        </div>, inspectorHost
       )}
 
-      {selected && !connectFrom && !wireDrag && (
+      {selected && !connectFrom && !wireDrag && inspectorHost && createPortal(
         <NodeInspector
           node={selected}
           onClose={() => setSelectedId(null)}
@@ -474,7 +412,7 @@ export function AgentGraphOverlay({
           assignmentRunTargetId={assignmentRunTargetId}
           runError={assignmentRunError}
           onRunAssignment={onRunAssignment}
-        />
+        />, inspectorHost
       )}
     </div>
   )
@@ -537,7 +475,7 @@ function NodeInspector({ node, onClose, onManageAgent, onAssignAgent, onOpenAssi
   const runnable = assignment?.status === 'queued' || assignment?.status === 'failed'
   const isRunning = assignment?.id === runningAssignmentId
   return (
-    <aside className="pointer-events-auto absolute right-4 top-20 w-[min(280px,calc(100%-2rem))] border border-white/15 bg-[#090c10] p-4 text-left shadow-2xl sm:right-6">
+    <aside aria-label="Node controls" className="pointer-events-auto absolute right-4 top-4 max-h-[calc(100%-2rem)] w-[min(280px,calc(100%-2rem))] overflow-y-auto border border-white/15 bg-[#090c10] p-4 text-left shadow-2xl sm:right-6">
       <div className="flex items-start justify-between gap-3">
         <div>
           <div className="text-[9px] font-semibold tracking-[0.18em] uppercase text-cyan-300/70">{node.kind} controls</div>

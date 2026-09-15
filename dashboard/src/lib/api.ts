@@ -1,5 +1,28 @@
 const BASE = '';
 
+export interface TokenUsageDay {
+  date: string;
+  total_tokens: number;
+  total_requests: number;
+  total_cost: number;
+}
+
+export interface TokenUsageToday extends TokenUsageDay {
+  by_provider: Record<string, {
+    tokens: number;
+    input_tokens: number;
+    output_tokens: number;
+    requests: number;
+    cost: number;
+  }>;
+  by_purpose: Record<string, {
+    tokens: number;
+    requests: number;
+    providers: string[];
+    model: string;
+  }>;
+}
+
 async function parse<T>(res: Response): Promise<T> {
   if (!res.ok) {
     const payload = await res.json().catch(() => null) as { detail?: string } | null;
@@ -555,7 +578,8 @@ export const api = {
     post<VoiceToolResult>('/api/voice/tools', { name, arguments: arguments_ }),
 
   briefingLatest: () => get<{ briefing: string; generated_at: string; source: string }>('/api/briefing/latest'),
-  tokensToday: () => get<Record<string, unknown>>('/api/tokens/today'),
+  tokensToday: () => get<TokenUsageToday>('/api/tokens/today'),
+  tokensRecent: () => get<{ days: TokenUsageDay[] }>('/api/tokens/recent?days=14'),
 
   // Brain overlay
   memories: () => get<{ memories: { id: string; fact: string; category: string; created_at: string }[] }>('/api/memories'),

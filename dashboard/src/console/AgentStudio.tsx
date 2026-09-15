@@ -145,6 +145,8 @@ export function AgentStudio() {
     return (
       <AgentWorldCanvas
         agents={agents}
+        loading={isLoading}
+        agentError={isError}
         onViewChange={changeView}
         onManageAgent={manageAgent}
         onAssignAgent={assignAgent}
