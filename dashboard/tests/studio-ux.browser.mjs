@@ -35,6 +35,12 @@ const measuredRun = {
   input_tokens: 1234, output_tokens: 56, result: 'Synthetic result', task: 'Synthetic task',
 }
 
+const makeIdeas = () => [
+  { id: 'idea-one-00000000', text: '<@U0C1DCQFMRC> log this EPIC for LNS', source: 'slack', project: 'mindmoor', workspace_id: 'T_TEST', channel_id: 'C_ONE', author_id: 'U_AUTHOR', created_at: `${date}T17:22:31Z`, status: 'unreviewed', memory_id: '', memory_category: '', review_note: '', reviewed_at: '', acknowledgement_status: 'sent', acknowledgement_error: '', acknowledgement_ts: '1.1', promotion_status: null, promotion_error: null, promotion_ts: null },
+  { id: 'idea-two-00000000', text: 'capture milestone from the slash command', source: 'slack', project: 'mindmoor', workspace_id: 'T_TEST', channel_id: 'C_ONE', author_id: 'U_AUTHOR', created_at: `${date}T16:43:24Z`, status: 'unreviewed', memory_id: '', memory_category: '', review_note: '', reviewed_at: '', acknowledgement_status: null, acknowledgement_error: null, acknowledgement_ts: null, promotion_status: null, promotion_error: null, promotion_ts: null },
+  { id: 'idea-three-0000000', text: '<@U0C1DCQFMRC> channel verification test only', source: 'slack', project: 'mindmoor', workspace_id: 'T_TEST', channel_id: 'C_ONE', author_id: 'U_AUTHOR', created_at: `${date}T16:35:46Z`, status: 'dismissed', memory_id: '', memory_category: '', review_note: 'test noise', reviewed_at: `${date}T18:00:00Z`, acknowledgement_status: 'sent', acknowledgement_error: '', acknowledgement_ts: '1.2', promotion_status: null, promotion_error: null, promotion_ts: null },
+]
+
 try {
   for (const width of [1440, 653, 390]) {
     const context = await browser.newContext({ viewport: { width, height: 900 } })
@@ -47,6 +53,8 @@ try {
     let layoutFailure = false
     let layout = { version: 1, revision: 0, positions: {}, updated_at: null }
     let saves = 0
+    const ideas = makeIdeas()
+    let promoteCalls = 0
     await page.routeWebSocket('**/ws', ws => ws.onMessage(() => {}))
     await page.route('**/api/**', async route => {
       const path = new URL(route.request().url()).pathname
@@ -74,6 +82,24 @@ try {
         body = { today: date, start: '2026-06-17', days: [], agent_days: [], runs: [measuredRun], total: 6, matching: 6, imported: 0, usage_by_agent: agentUsage.filter(row => !selected || row.agent_id === selected) }
       }
       else if (path === '/api/studio/runs/synthetic-run') body = { run: measuredRun }
+      else if (path === '/api/memory-inbox') {
+        const wanted = new URL(route.request().url()).searchParams.get('status')
+        const rows = ideas.filter(idea => !wanted || idea.status === wanted)
+        const counts = { unreviewed: 0, promoted: 0, dismissed: 0 }
+        for (const idea of ideas) counts[idea.status]++
+        body = { ideas: rows, total: rows.length, offset: 0, counts }
+      } else if (path.startsWith('/api/memory-inbox/')) {
+        const [, , , id, action] = path.split('/')
+        const idea = ideas.find(item => item.id === id)
+        if (!idea) status = 404
+        else if (action === 'promote') {
+          promoteCalls++
+          Object.assign(idea, { status: 'promoted', memory_id: 'decisions_9_1789', memory_category: route.request().postDataJSON().category, reviewed_at: `${date}T18:30:00Z`, promotion_status: idea.acknowledgement_status ? 'pending' : null })
+          body = { idea, memory_id: idea.memory_id }
+        } else if (action === 'dismiss') { Object.assign(idea, { status: 'dismissed', reviewed_at: `${date}T18:30:00Z` }); body = { idea } }
+        else if (action === 'restore') { Object.assign(idea, { status: 'unreviewed', reviewed_at: '', review_note: '' }); body = { idea } }
+        if (status === 404) body = { detail: 'idea_not_found' }
+      } else if (path === '/api/integrations/slack/status') body = { configured: true, workspace_id: 'T_TEST', channel_ids: ['C_ONE', 'C_TWO'], outbound_messages: true, acknowledgements_enabled: true, acknowledgements_configured: true, acknowledgements: { sent: 2 }, promotion_acknowledgements: {} }
       else if (path === '/api/tasks') body = []
       else if (path === '/api/health') body = { aiia: { status: 'online' }, ollama: { status: 'online' } }
       else if (path === '/api/monitor') body = { services: {} }
@@ -117,6 +143,28 @@ try {
     await runInspector.scrollIntoViewIfNeeded()
     await page.screenshot({ path: join(output, `run-tokens-${width}.png`) })
 
+    await page.getByRole('tab', { name: 'Memory', exact: true }).click()
+    const memory = page.getByRole('region', { name: 'Memory log' })
+    await memory.getByText('log this EPIC for LNS', { exact: true }).waitFor()
+    assert.ok(!(await memory.innerText()).includes('<@U0C1DCQFMRC>'))
+    assert.ok((await page.locator('main header').first().innerText()).includes('2 unreviewed'))
+    assert.ok((await memory.innerText()).includes('Save receipt sent to Slack'))
+    assert.ok((await memory.innerText()).includes('No Slack thread for save receipt'))
+    await page.screenshot({ path: join(output, `memory-${width}.png`) })
+    await memory.getByLabel('Memory category for capture idea-one').selectOption('decisions')
+    await memory.getByRole('listitem').filter({ hasText: 'log this EPIC for LNS' }).getByRole('button', { name: 'Log to memory' }).click()
+    await page.getByRole('status').filter({ hasText: 'Logged to AIIA memory as decisions' }).waitFor()
+    await page.waitForFunction(() => document.querySelectorAll('[data-idea-status="unreviewed"]').length === 1)
+    assert.equal(promoteCalls, 1)
+    await memory.getByRole('tab', { name: /^Logged/ }).click()
+    await memory.getByText('Memory receipt queued for Slack').waitFor()
+    assert.ok((await memory.innerText()).includes('decisions · decisions_9_1789'))
+    await memory.getByRole('tab', { name: /^Dismissed/ }).click()
+    await memory.getByRole('button', { name: 'Restore' }).click()
+    await page.getByRole('status').filter({ hasText: 'Capture restored to Unreviewed' }).waitFor()
+    await page.screenshot({ path: join(output, `memory-logged-${width}.png`) })
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false)
+
     await page.getByRole('tab', { name: 'Map', exact: true }).click()
     await page.waitForFunction(() => document.querySelectorAll('[data-graph-node]').length === 48)
     const assertNoOverlaps = async count => {
@@ -155,7 +203,7 @@ try {
     await page.getByText('Layout synced', { exact: true }).waitFor()
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false)
     assert.deepEqual(errors, [])
-    console.log(`${width}px: platform/agent/run usage, attribution filtering, refresh failure/recovery, 96 nodes, zoom, inspector, keyboard save, save failure/recovery passed`)
+    console.log(`${width}px: platform/agent/run usage, attribution filtering, memory log/promote/restore, refresh failure/recovery, 96 nodes, zoom, inspector, keyboard save, save failure/recovery passed`)
     await context.close()
   }
 } finally {

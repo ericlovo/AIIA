@@ -1,4 +1,4 @@
-"""Fixed save receipts, delivered from a durable local outbox."""
+"""Fixed save and promotion receipts, delivered from a durable local outbox."""
 
 import asyncio
 import logging
@@ -37,15 +37,25 @@ async def deliver_one(inbox, *, transport=None):
         inbox.finish_receipt(receipt, status="pending", error="egress_denied", delay=300)
         return
     # Never transmit the captured text or a caller-supplied URL/message body.
+    kind = receipt.get("kind", "capture")
+    if kind == "promotion":
+        text = (
+            "Logged to AIIA memory from the Mindmoor inbox. "
+            f"Capture ID: {receipt['idea_id']}. Memory ID: {receipt.get('memory_id') or 'unrecorded'}"
+        )
+        message_key = receipt["idea_id"] + ":promotion"
+    else:
+        text = f"Saved to the local Mindmoor inbox for review. Capture ID: {receipt['idea_id']}"
+        message_key = receipt["idea_id"]
     payload = {
         "channel": receipt["channel_id"],
         "thread_ts": receipt["thread_ts"],
-        "text": f"Saved to the local Mindmoor inbox for review. Capture ID: {receipt['idea_id']}",
+        "text": text,
         "reply_broadcast": False,
         "unfurl_links": False,
         "unfurl_media": False,
         "mrkdwn": False,
-        "client_msg_id": str(uuid.uuid5(uuid.NAMESPACE_URL, receipt["idea_id"])),
+        "client_msg_id": str(uuid.uuid5(uuid.NAMESPACE_URL, message_key)),
     }
     error, delay, permanent = (
         "delivery_unavailable",

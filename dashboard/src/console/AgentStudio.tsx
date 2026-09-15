@@ -6,6 +6,7 @@ import { StudioTabs, type StudioView } from './StudioTabs'
 import { WorkBoard } from './WorkBoard'
 import { ActivityOverview } from './ActivityOverview'
 import { Switchboard } from './Switchboard'
+import { MemoryLog } from './MemoryLog'
 
 type Draft = AgentDefinition
 
@@ -154,6 +155,10 @@ export function AgentStudio() {
         onRouteHandoff={routeHandoff}
       />
     )
+  }
+
+  if (view === 'memory') {
+    return <MemoryLog agents={agents} view={view} onViewChange={changeView} />
   }
 
   if (view !== 'agents') {

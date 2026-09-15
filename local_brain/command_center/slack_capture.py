@@ -12,10 +12,17 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from urllib.parse import parse_qs
 
+import httpx
 from fastapi import APIRouter, HTTPException, Request
+from pydantic import BaseModel, Field
 
 from local_brain.command_center import slack_receipts
-from local_brain.command_center.memory_inbox import MemoryInbox
+from local_brain.command_center.memory_inbox import IDEA_STATUSES, MemoryInbox
+
+BRAIN_URL = "http://localhost:8100"
+BRAIN_TRANSPORT = None  # tests inject an httpx transport; production dials the local Brain
+MEMORY_CATEGORIES = ("decisions", "patterns", "lessons", "project", "meta", "team", "agents")
+MENTION = re.compile(r"<@[A-Z0-9]+>")
 
 
 @asynccontextmanager
@@ -67,25 +74,159 @@ def slack_status():
         "acknowledgements_enabled": slack_receipts.enabled(),
         "acknowledgements_configured": slack_receipts.configured(),
         "acknowledgements": inbox().receipt_status() if inbox().path.exists() else {},
+        "promotion_acknowledgements": inbox().receipt_status("promotion")
+        if inbox().path.exists()
+        else {},
     }
 
 
 @router.get("/api/memory-inbox")
-def list_ideas(project: str = "", query: str = "", offset: int = 0):
+def list_ideas(project: str = "", query: str = "", offset: int = 0, status: str = ""):
     if offset < 0 or offset > 1_000_000 or len(query) > 500:
         raise HTTPException(status_code=422, detail="invalid_inbox_query")
+    if status and status not in IDEA_STATUSES:
+        raise HTTPException(status_code=422, detail="invalid_inbox_query")
     try:
-        return inbox().list(project=project, query=query, offset=offset)
+        return inbox().list(project=project, query=query, offset=offset, status=status)
+    except (OSError, sqlite3.Error) as exc:
+        raise HTTPException(status_code=503, detail="memory_inbox_unavailable") from exc
+
+
+class PromoteRequest(BaseModel):
+    category: str = "project"
+    note: str = Field(default="", max_length=2_000)
+
+
+class DismissRequest(BaseModel):
+    note: str = Field(default="", max_length=2_000)
+
+
+class MemoryRejected(Exception):
+    pass
+
+
+class MemoryUnavailable(Exception):
+    pass
+
+
+def capture_text(text: str) -> str:
+    """The idea without the leading bot mention; the original text stays stored."""
+    return MENTION.sub("", text).strip()
+
+
+async def remember_in_brain(fact: str, category: str, metadata: dict) -> dict:
+    """Store a reviewed capture as a Brain fact with provenance. Local call, no egress."""
+    key = os.getenv("LOCAL_BRAIN_API_KEY", "")
+    try:
+        async with httpx.AsyncClient(timeout=15, transport=BRAIN_TRANSPORT) as client:
+            response = await client.post(
+                f"{BRAIN_URL}/v1/aiia/remember",
+                json={
+                    "fact": fact,
+                    "category": category,
+                    "source": "slack:mindmoor",
+                    "metadata": metadata,
+                },
+                headers={"x-api-key": key} if key else {},
+            )
+    except httpx.HTTPError as exc:
+        raise MemoryUnavailable() from exc
+    if response.status_code == 422:
+        raise MemoryRejected()
+    if response.status_code != 200:
+        raise MemoryUnavailable()
+    try:
+        data = response.json()
+    except ValueError as exc:
+        raise MemoryUnavailable() from exc
+    if not isinstance(data, dict) or not isinstance(data.get("id"), str) or not data["id"]:
+        raise MemoryUnavailable()
+    return data
+
+
+def _load_idea(idea_id: str) -> dict:
+    try:
+        idea = inbox().get(idea_id)
+    except (OSError, sqlite3.Error) as exc:
+        raise HTTPException(status_code=503, detail="memory_inbox_unavailable") from exc
+    if not idea:
+        raise HTTPException(status_code=404, detail="idea_not_found")
+    return idea
+
+
+@router.post("/api/memory-inbox/{idea_id}/promote")
+async def promote_idea(idea_id: str, body: PromoteRequest):
+    if body.category not in MEMORY_CATEGORIES:
+        raise HTTPException(status_code=422, detail="invalid_memory_category")
+    idea = _load_idea(idea_id)
+    if idea["status"] == "promoted":
+        raise HTTPException(status_code=409, detail="idea_already_promoted")
+    fact = capture_text(idea["text"])
+    if not fact:
+        raise HTTPException(status_code=422, detail="idea_has_no_content")
+    metadata = {
+        "capture_id": idea["id"],
+        "project": idea["project"],
+        "source": idea["source"],
+        "workspace_id": idea["workspace_id"],
+        "channel_id": idea["channel_id"],
+        "author_id": idea["author_id"],
+        "captured_at": idea["created_at"],
+    }
+    if body.note.strip():
+        metadata["review_note"] = body.note.strip()
+    try:
+        memory = await remember_in_brain(fact, body.category, metadata)
+    except MemoryRejected as exc:
+        raise HTTPException(status_code=422, detail="memory_quality_rejected") from exc
+    except MemoryUnavailable as exc:
+        raise HTTPException(status_code=503, detail="brain_unavailable") from exc
+    try:
+        updated = inbox().promote(
+            idea_id, memory_id=memory["id"], category=body.category, note=body.note
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except (OSError, sqlite3.Error) as exc:
+        # The Brain fact exists; the inbox row did not update. Say so instead of hiding it.
+        raise HTTPException(status_code=503, detail="memory_saved_inbox_update_failed") from exc
+    return {"idea": updated, "memory_id": memory["id"]}
+
+
+@router.post("/api/memory-inbox/{idea_id}/dismiss")
+def dismiss_idea(idea_id: str, body: DismissRequest):
+    try:
+        return {"idea": inbox().dismiss(idea_id, note=body.note)}
+    except ValueError as exc:
+        code = str(exc)
+        raise HTTPException(
+            status_code=404 if code == "idea_not_found" else 409, detail=code
+        ) from exc
+    except (OSError, sqlite3.Error) as exc:
+        raise HTTPException(status_code=503, detail="memory_inbox_unavailable") from exc
+
+
+@router.post("/api/memory-inbox/{idea_id}/restore")
+def restore_idea(idea_id: str):
+    try:
+        return {"idea": inbox().restore(idea_id)}
+    except ValueError as exc:
+        code = str(exc)
+        raise HTTPException(
+            status_code=404 if code == "idea_not_found" else 409, detail=code
+        ) from exc
     except (OSError, sqlite3.Error) as exc:
         raise HTTPException(status_code=503, detail="memory_inbox_unavailable") from exc
 
 
 @router.post("/api/memory-inbox/{idea_id}/acknowledgement/retry")
-def retry_acknowledgement(idea_id: str):
+def retry_acknowledgement(idea_id: str, kind: str = "capture"):
     if not slack_receipts.configured():
         raise HTTPException(status_code=503, detail="slack_receipts_not_configured")
+    if kind not in ("capture", "promotion"):
+        raise HTTPException(status_code=422, detail="invalid_receipt_kind")
     try:
-        if not inbox().retry_receipt(idea_id):
+        if not inbox().retry_receipt(idea_id, kind):
             raise HTTPException(status_code=409, detail="no_failed_receipt")
     except (OSError, sqlite3.Error) as exc:
         raise HTTPException(status_code=503, detail="memory_inbox_unavailable") from exc

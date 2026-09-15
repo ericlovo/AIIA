@@ -6,6 +6,16 @@ All notable changes to AIIA are documented here. This project adheres to
 
 ## [Unreleased]
 
+### Added
+- **Studio Memory log** - a Memory tab lists Mindmoor captures from the Slack
+  inbox (unreviewed, logged, dismissed) with search and counts. Logging a capture
+  stores it as a Brain fact with Slack provenance (capture ID, channel, author,
+  time) through the local `/v1/aiia/remember` path and queues one fixed
+  "Logged to AIIA memory" receipt to the original Slack thread via the AIIA app's
+  existing outbox. Dismiss and restore keep the record local and send nothing.
+  Captured text is never sent outbound. Routes:
+  `POST /api/memory-inbox/{id}/promote|dismiss|restore`, `GET /api/memory-inbox?status=`.
+
 ### Changed
 - **Overview RUN buttons** — activity rows can rerun their recorded task with
   the agent's current configuration. Controls disable while the Mini is busy;

@@ -51,6 +51,46 @@ Validation for this slice: 444 backend tests passed, 9 skipped, and the known
 macOS audio MIME test failed. Live receipt delivery is pending token configuration
 and an end-to-end test; the earlier successful live test covered capture only.
 
+### Studio memory log and promotion receipts
+
+Agent Studio has a Memory tab that lists the Mindmoor inbox: unreviewed,
+logged, and dismissed captures with search, counts, and each capture's Slack
+receipt state. The stored text is unchanged; the view strips the leading bot
+mention for display and for the Brain fact.
+
+Logging a capture ("Log to memory") calls the local Brain
+`/v1/aiia/remember` with source `slack:mindmoor` and metadata carrying the
+capture ID, project, workspace, channel, author, capture time, and any review
+note, then in one SQLite transaction marks the capture `promoted` with the
+memory ID and category and, when the capture arrived through a Slack thread,
+queues one promotion receipt in `promotion_receipts`. The worker delivers it
+through the same fixed-destination path as save receipts, with the text
+"Logged to AIIA memory from the Mindmoor inbox. Capture ID: ... Memory ID: ...",
+a distinct `client_msg_id`, and the same retry, rate-limit, and permanent-error
+rules. Slash-command captures have no thread, so they get no receipt. At most
+one promotion receipt is ever queued per capture. The egress point remains
+`slack.capture_ack`; no new outbound scope, channel, or message class is added,
+and captured text is still never transmitted.
+
+If the Brain rejects the fact (quality gate, 422) or does not answer (503), the
+capture stays unreviewed and nothing is queued. If the Brain stores the fact but
+the inbox update fails, the API returns 503 `memory_saved_inbox_update_failed`
+rather than pretending nothing happened; do not log that capture again.
+
+Dismiss keeps the record locally under Dismissed and sends nothing to Slack;
+Restore returns a dismissed capture to Unreviewed. Logged captures cannot be
+dismissed or restored from Studio because the Brain fact already exists.
+
+Operator routes, all behind Studio's existing access boundary:
+`GET /api/memory-inbox?project=&query=&status=&offset=` (adds per-status
+counts), `POST /api/memory-inbox/{id}/promote` (`category`, optional `note`),
+`POST /api/memory-inbox/{id}/dismiss` (optional `note`),
+`POST /api/memory-inbox/{id}/restore`, and
+`POST /api/memory-inbox/{id}/acknowledgement/retry?kind=capture|promotion`.
+`/api/integrations/slack/status` reports `promotion_acknowledgements` counts.
+The ideas table gains `memory_id`, `memory_category`, `review_note`, and
+`reviewed_at`; the migration is additive and repeatable.
+
 `/aiia-capture <idea>` explicitly saves the original text to a local SQLite inbox.
 Records include workspace, channel, author, capture time, source and project
 (`mindmoor`, the primary product repository is `tonybangert/mindmoor`). They start unreviewed. They are not automatically asserted
