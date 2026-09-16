@@ -9,6 +9,8 @@ from pathlib import Path
 
 IDEA_STATUSES = ("unreviewed", "promoted", "dismissed")
 # Receipt kinds map to fixed tables; never interpolate caller strings into SQL.
+# Queries below carry `# nosec B608` for that reason: the only interpolated
+# identifiers are these literal table names, and every value is bound through `?`.
 RECEIPT_TABLES = {"capture": "capture_receipts", "promotion": "promotion_receipts"}
 RECEIPT_COLUMNS = """(
     idea_id TEXT PRIMARY KEY, thread_ts TEXT NOT NULL,
@@ -196,7 +198,7 @@ class MemoryInbox:
             receipt["lease"] = uuid.uuid4().hex
             receipt["attempts"] += 1
             db.execute(
-                f"UPDATE {RECEIPT_TABLES[receipt['kind']]} SET status='sending',attempts=?,"
+                f"UPDATE {RECEIPT_TABLES[receipt['kind']]} SET status='sending',attempts=?,"  # nosec B608
                 "lease=?,next_attempt=? WHERE idea_id=?",
                 (receipt["attempts"], receipt["lease"], time.time() + 120, receipt["idea_id"]),
             )
@@ -206,7 +208,7 @@ class MemoryInbox:
         table = RECEIPT_TABLES[receipt.get("kind", "capture")]
         with self.connect() as db:
             db.execute(
-                f"UPDATE {table} SET status=?,error=?,slack_ts=?,next_attempt=? "
+                f"UPDATE {table} SET status=?,error=?,slack_ts=?,next_attempt=? "  # nosec B608
                 "WHERE idea_id=? AND lease=? AND status='sending'",
                 (
                     status,
@@ -222,14 +224,16 @@ class MemoryInbox:
         table = RECEIPT_TABLES[kind]
         with self.connect() as db:
             return dict(
-                db.execute(f"SELECT status,count(*) FROM {table} GROUP BY status").fetchall()
+                db.execute(
+                    f"SELECT status,count(*) FROM {table} GROUP BY status"  # nosec B608
+                ).fetchall()
             )
 
     def retry_receipt(self, idea_id, kind: str = "capture"):
         table = RECEIPT_TABLES[kind]
         with self.connect() as db:
             result = db.execute(
-                f"UPDATE {table} SET status='pending',attempts=0,next_attempt=0,"
+                f"UPDATE {table} SET status='pending',attempts=0,next_attempt=0,"  # nosec B608
                 "error='' WHERE idea_id=? AND status='failed'",
                 (idea_id,),
             )
@@ -253,11 +257,13 @@ class MemoryInbox:
             args.append(status)
         where = " WHERE " + " AND ".join(clauses) if clauses else ""
         with self.connect() as db:
-            total = db.execute("SELECT count(*) FROM ideas" + where, args).fetchone()[0]
+            total = db.execute("SELECT count(*) FROM ideas" + where, args).fetchone()[0]  # nosec B608
             counts = {name: 0 for name in IDEA_STATUSES}
             counts.update(
                 db.execute(
-                    "SELECT ideas.status,count(*) FROM ideas" + scope + " GROUP BY ideas.status",
+                    "SELECT ideas.status,count(*) FROM ideas"  # nosec B608
+                    + scope
+                    + " GROUP BY ideas.status",
                     args[: len(args) - (1 if status else 0)],
                 ).fetchall()
             )

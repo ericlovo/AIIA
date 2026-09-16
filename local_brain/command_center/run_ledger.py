@@ -131,13 +131,15 @@ class RunLedger:
                     args[:2],
                 )
             ]
+            # B608 nosec below: `where` is joined only from fixed literal clauses with `?`
+            # placeholders; every value is bound through `args`, never interpolated.
             daily = [
                 dict(row)
                 for row in db.execute(
                     f"""SELECT substr(at,1,10) AS day,
                 count(*) AS total, sum(status='completed') AS completed,
                 sum(status='failed') AS failed, sum(latency_ms) AS latency_ms
-                FROM runs WHERE {where} GROUP BY day ORDER BY day""",
+                FROM runs WHERE {where} GROUP BY day ORDER BY day""",  # nosec B608
                     args,
                 )
             ]
@@ -151,7 +153,7 @@ class RunLedger:
                 clauses.append("status = ?")
                 args.append(status)
             where = " AND ".join(clauses)
-            matching = db.execute(f"SELECT count(*) FROM runs WHERE {where}", args).fetchone()[0]
+            matching = db.execute(f"SELECT count(*) FROM runs WHERE {where}", args).fetchone()[0]  # nosec B608
             usage_by_agent = [
                 dict(row)
                 for row in db.execute(
@@ -160,7 +162,7 @@ class RunLedger:
                     sum(input_tokens IS NOT NULL AND output_tokens IS NOT NULL) AS measured_runs,
                     sum(input_tokens) AS input_tokens, sum(output_tokens) AS output_tokens
                     FROM runs WHERE {where} GROUP BY agent_id
-                    ORDER BY coalesce(sum(input_tokens + output_tokens),0) DESC,agent_id""",
+                    ORDER BY coalesce(sum(input_tokens + output_tokens),0) DESC,agent_id""",  # nosec B608
                     args,
                 )
             ]
@@ -170,7 +172,7 @@ class RunLedger:
                     f"""SELECT id,agent_id,agent_name,repo_id,
                 at,status,trigger,assignment_id,model,latency_ms,legacy,
                 input_tokens,output_tokens FROM runs
-                WHERE {where} ORDER BY at DESC,id DESC LIMIT 200""",
+                WHERE {where} ORDER BY at DESC,id DESC LIMIT 200""",  # nosec B608
                     args,
                 )
             ]

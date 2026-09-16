@@ -79,7 +79,9 @@ async def test_model_usage_is_saved_even_for_empty_output(tmp_path, monkeypatch,
     tracker_calls = []
     monkeypatch.setattr(cc.token_tracker, "record", lambda *a, **kw: tracker_calls.append(kw))
     try:
-        await cc._execute_agent(agent["id"], "Inspect", loop_run=loop_run, assignment_id="work" if not loop_run else "")
+        await cc._execute_agent(
+            agent["id"], "Inspect", loop_run=loop_run, assignment_id="work" if not loop_run else ""
+        )
     except HTTPException as exc:
         assert not content and exc.detail == "empty_agent_result"
     run = agents.get(agent["id"])["runs"][0]

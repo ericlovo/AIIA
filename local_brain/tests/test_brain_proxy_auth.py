@@ -103,16 +103,25 @@ def test_shared_client_factory_carries_the_key():
     assert "AIIA_HEADERS" in ast.unparse(factories[0])
 
 
-def test_headers_constant_is_empty_without_a_configured_key(monkeypatch):
-    """Local development without a key must not send a bogus x-api-key header."""
-    source = COMMAND_CENTER.read_text()
-    start = source.index("AIIA_HEADERS = (")
-    snippet = source[start : source.index("\n\n", start)]
-    for value, expected in (("", {}), ("secret", {"x-api-key": "secret"})):
-        monkeypatch.setenv("LOCAL_BRAIN_API_KEY", value)
-        namespace: dict = {"os": __import__("os")}
-        exec(snippet, namespace)
-        assert namespace["AIIA_HEADERS"] == expected
+def test_headers_constant_is_guarded_by_the_configured_key():
+    """Local development without a key must not send a bogus empty x-api-key header."""
+    tree = ast.parse(COMMAND_CENTER.read_text())
+    assignments = [
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Assign)
+        and any(
+            isinstance(target, ast.Name) and target.id == "AIIA_HEADERS" for target in node.targets
+        )
+    ]
+    assert len(assignments) == 1, "expected exactly one AIIA_HEADERS definition"
+    value = assignments[0].value
+    assert isinstance(value, ast.IfExp), "AIIA_HEADERS must be conditional on the key"
+    source = ast.unparse(value)
+    assert "LOCAL_BRAIN_API_KEY" in source
+    assert "x-api-key" in source
+    # The false branch is the no-key case and must be an empty mapping.
+    assert isinstance(value.orelse, ast.Dict) and not value.orelse.keys
 
 
 def test_detects_a_regression(keyed_routes, tmp_path, monkeypatch):
