@@ -146,3 +146,93 @@ def test_review_api_validation_conflicts_and_storage_failure(tmp_path, monkeypat
             executor.assert_not_called()
 
     asyncio.run(exercise())
+
+
+def failed(registry, error="empty_agent_result"):
+    work = registry.create_assignment(
+        title="Cron gate", objective="Issue a verdict", agent_id="test"
+    )
+    registry.finish_assignment(work["id"], error=error)
+    return registry.get_assignment(work["id"])
+
+
+def test_failed_run_can_be_dismissed_and_reopened(tmp_path):
+    """A failed run has nothing to accept, but must still be clearable."""
+    registry = AssignmentRegistry(tmp_path / "assignments.json")
+    work = failed(registry)
+    assert work["status"] == "failed"
+    registry.review_assignment(
+        work["id"],
+        decision="dismissed",
+        expected_version=work["review_version"],
+        note="Upstream slice was rejected; not worth a rerun.",
+    )
+    restored = AssignmentRegistry(registry.data_file).get_assignment(work["id"])
+    assert restored["review_status"] == "dismissed"
+    assert restored["reviewed_at"]
+    assert restored["review_note"] == "Upstream slice was rejected; not worth a rerun."
+    # Dismissal records a human decision; it never rewrites the outcome.
+    assert restored["status"] == "failed"
+    assert restored["error"] == "empty_agent_result"
+
+    registry.review_assignment(
+        work["id"], decision="unreviewed", expected_version=work["review_version"]
+    )
+    reopened = AssignmentRegistry(registry.data_file).get_assignment(work["id"])
+    assert reopened["review_status"] == "unreviewed"
+    assert reopened["reviewed_at"] is None
+    assert reopened["status"] == "failed"
+
+
+def test_dismissal_still_honours_the_stale_version_guard(tmp_path):
+    registry = AssignmentRegistry(tmp_path / "assignments.json")
+    work = failed(registry)
+    stale = work["review_version"]
+    registry.review_assignment(work["id"], decision="dismissed", expected_version=stale)
+    with pytest.raises(ValueError, match="review_changed_refresh_required"):
+        registry.review_assignment(work["id"], decision="unreviewed", expected_version=stale)
+
+
+@pytest.mark.parametrize("decision", ["accepted", "rejected"])
+def test_failed_run_cannot_be_accepted_or_rejected(tmp_path, decision):
+    registry = AssignmentRegistry(tmp_path / "assignments.json")
+    work = failed(registry)
+    with pytest.raises(ValueError, match="assignment_not_reviewable"):
+        registry.review_assignment(
+            work["id"], decision=decision, expected_version=work["review_version"]
+        )
+    assert registry.get_assignment(work["id"])["review_status"] == "unreviewed"
+
+
+@pytest.mark.parametrize("state", ["queued", "running"])
+@pytest.mark.parametrize("decision", ["dismissed", "unreviewed"])
+def test_active_work_cannot_be_dismissed_or_reopened(tmp_path, state, decision):
+    registry = AssignmentRegistry(tmp_path / "assignments.json")
+    work = completed(registry)
+    work.update(status=state, result="")
+    with pytest.raises(ValueError, match="assignment_not_settled"):
+        registry.review_assignment(
+            work["id"], decision=decision, expected_version=work["review_version"]
+        )
+
+
+def test_completed_output_can_also_be_dismissed(tmp_path):
+    """Rejected work sits in attention forever otherwise."""
+    registry = AssignmentRegistry(tmp_path / "assignments.json")
+    work = completed(registry)
+    registry.review_assignment(
+        work["id"], decision="rejected", expected_version=work["review_version"]
+    )
+    registry.review_assignment(
+        work["id"], decision="dismissed", expected_version=work["review_version"]
+    )
+    assert registry.get_assignment(work["id"])["review_status"] == "dismissed"
+
+
+def test_unknown_decision_is_refused(tmp_path):
+    registry = AssignmentRegistry(tmp_path / "assignments.json")
+    work = failed(registry)
+    with pytest.raises(ValueError, match="invalid_review_decision"):
+        registry.review_assignment(
+            work["id"], decision="archived", expected_version=work["review_version"]
+        )

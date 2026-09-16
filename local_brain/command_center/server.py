@@ -1164,7 +1164,7 @@ class AssignmentCreateRequest(BaseModel):
 
 
 class AssignmentReviewRequest(BaseModel):
-    decision: Literal["unreviewed", "accepted", "rejected"]
+    decision: Literal["unreviewed", "accepted", "rejected", "dismissed"]
     expected_version: str = Field(min_length=1, max_length=64)
     note: str = Field(default="", max_length=2_000)
 

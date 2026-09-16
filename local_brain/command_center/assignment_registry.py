@@ -14,6 +14,13 @@ from local_brain.command_center.persistence import atomic_write_json
 
 logger = logging.getLogger(__name__)
 
+# Review vocabulary. "dismissed" records that a human looked and chose to stop
+# tracking the assignment; it never claims the work succeeded and is the only
+# decision available for a failed run.
+REVIEW_DECISIONS = frozenset({"unreviewed", "accepted", "rejected", "dismissed"})
+OUTPUT_DECISIONS = frozenset({"accepted", "rejected"})
+SETTLED_STATUSES = frozenset({"completed", "failed"})
+
 ASSIGNMENT_DATA_FILE = Path(__file__).parent / "assignment_data.json"
 MAX_ASSIGNMENTS = 250
 MAX_HANDOFFS = 250
@@ -230,12 +237,18 @@ class AssignmentRegistry:
         assignment = self.get_assignment(assignment_id)
         if not assignment:
             raise ValueError("assignment_not_found")
-        if decision not in {"unreviewed", "accepted", "rejected"}:
+        if decision not in REVIEW_DECISIONS:
             raise ValueError("invalid_review_decision")
         if len(note) > 2_000:
             raise ValueError("review_note_too_long")
-        if assignment["status"] != "completed" or not assignment["result"].strip():
-            raise ValueError("assignment_not_reviewable")
+        # Accepting or rejecting judges a work product, so one has to exist.
+        # Dismissing and reopening only need the run to have stopped: a failed
+        # run has nothing to accept but still has to be clearable from attention.
+        if decision in OUTPUT_DECISIONS:
+            if assignment["status"] != "completed" or not assignment["result"].strip():
+                raise ValueError("assignment_not_reviewable")
+        elif assignment["status"] not in SETTLED_STATUSES:
+            raise ValueError("assignment_not_settled")
         if not expected_version or expected_version != assignment.get("review_version"):
             raise ValueError("review_changed_refresh_required")
         now = _now()

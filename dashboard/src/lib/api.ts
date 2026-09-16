@@ -375,7 +375,7 @@ export type AgentDefinition = Pick<Agent,
 };
 
 export type AssignmentStatus = 'queued' | 'running' | 'completed' | 'failed';
-export type ReviewStatus = 'unreviewed' | 'accepted' | 'rejected';
+export type ReviewStatus = 'unreviewed' | 'accepted' | 'rejected' | 'dismissed';
 export type AssignmentPriority = 'low' | 'normal' | 'high' | 'urgent';
 
 export interface Assignment {
