@@ -1,6 +1,6 @@
-// Dismissing a failed assignment: the panel has to appear for a run with no work
-// product, offer only the decisions that apply, and drop the record out of the
-// attention count. Every response is synthetic; nothing reaches the Mini.
+// Dismissal is its own decision, separate from the review verdict. A failed run
+// has no verdict to give but must still be clearable; rejected work must keep
+// its rejection through a dismiss and a restore. Every response is synthetic.
 import assert from 'node:assert/strict'
 import { mkdir } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -17,22 +17,24 @@ const agents = [{
   loop_enabled: false, loop_max_runs_per_day: 4, runs: [],
 }]
 
+const base = {
+  agent_id: 'agent-1', priority: 'normal', context: '', success_criteria: '',
+  source_handoff_id: '', created_at: `${date}T12:00:00Z`, updated_at: `${date}T12:00:00Z`,
+  review_note: '', reviewed_at: null, dismissed_at: null, dismiss_note: '',
+}
 function seed() {
   return [
     {
-      id: 'failed-1', agent_id: 'agent-1', title: 'Review verified cron contract patch',
-      objective: 'Issue a GO or HOLD verdict.', status: 'failed', result: '', error: 'empty_agent_result',
-      priority: 'normal', context: '', success_criteria: '', source_handoff_id: '',
-      created_at: `${date}T12:00:00Z`, updated_at: `${date}T12:00:00Z`,
-      review_status: 'unreviewed', review_note: '', review_version: 'v-failed-1', reviewed_at: null,
+      ...base, id: 'failed-1', title: 'Review verified cron contract patch',
+      objective: 'Issue a GO or HOLD verdict.', status: 'failed', result: '',
+      error: 'empty_agent_result', review_status: 'unreviewed', review_version: 'v-failed-1',
     },
     {
-      id: 'done-1', agent_id: 'agent-1', title: 'Cron contract test slice',
+      ...base, id: 'rejected-1', title: 'Cron contract test slice',
       objective: 'Define the smallest PR-ready slice.', status: 'completed',
-      result: 'Synthetic evidence only.', error: '',
-      priority: 'normal', context: '', success_criteria: '', source_handoff_id: '',
-      created_at: `${date}T11:00:00Z`, updated_at: `${date}T11:00:00Z`,
-      review_status: 'unreviewed', review_note: '', review_version: 'v-done-1', reviewed_at: null,
+      result: 'Synthetic evidence only.', error: '', review_status: 'rejected',
+      review_note: 'Truncated and invented a helper.', reviewed_at: `${date}T13:00:00Z`,
+      review_version: 'v-rejected-1',
     },
   ]
 }
@@ -45,11 +47,10 @@ try {
     const errors = []
     page.on('pageerror', error => errors.push(error.message))
     let assignments = seed()
-    const reviewCalls = []
+    const dismissCalls = []
     await page.routeWebSocket('**/ws', ws => ws.onMessage(() => {}))
     await page.route('**/api/**', async route => {
-      const url = new URL(route.request().url())
-      const path = url.pathname
+      const path = new URL(route.request().url()).pathname
       let body = {}
       let status = 200
       if (path === '/api/agents') body = { agents }
@@ -58,20 +59,19 @@ try {
       else if (path === '/api/handoffs') body = { handoffs: [] }
       else if (path === '/api/git-workspaces') body = { workspaces: [] }
       else if (path === '/api/git-writes') body = { writes: [] }
-      else if (/^\/api\/assignments\/[^/]+\/review$/.test(path)) {
+      else if (/^\/api\/assignments\/[^/]+\/dismiss$/.test(path)) {
         const id = path.split('/')[3]
         const sent = route.request().postDataJSON()
-        reviewCalls.push({ id, ...sent })
+        dismissCalls.push({ id, ...sent })
         const item = assignments.find(a => a.id === id)
         if (sent.expected_version !== item.review_version) {
           status = 409
           body = { detail: 'review_changed_refresh_required' }
         } else {
-          // Mirror the server: the decision is recorded, the outcome is not rewritten.
+          // Mirror the server: only the tracking fields move.
           Object.assign(item, {
-            review_status: sent.decision,
-            review_note: sent.note ?? '',
-            reviewed_at: sent.decision === 'unreviewed' ? null : `${date}T18:00:00Z`,
+            dismissed_at: sent.dismissed ? `${date}T19:00:00Z` : null,
+            dismiss_note: sent.dismissed ? (sent.note ?? '') : '',
             review_version: `${item.review_version}-next`,
           })
           body = { assignment: item }
@@ -88,56 +88,54 @@ try {
       await route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) })
     })
 
-    await page.goto(process.env.STUDIO_URL || 'http://127.0.0.1:5184/')
+    await page.goto(process.env.STUDIO_URL || 'http://127.0.0.1:5187/')
+    await page.getByRole('heading', { name: /Needs attention \(2\)/ }).waitFor()
 
-    // Attention starts at two: one failed run and one unreviewed output.
-    const switchboard = page.getByRole('region', { name: 'Needs attention' })
-    await switchboard.getByRole('heading', { name: /Needs attention \(2\)/ }).waitFor()
-
+    // A failed run has no work product, so it gets tracking but no review panel.
     await page.getByRole('tab', { name: 'Assignments', exact: true }).click()
     await page.getByText('Review verified cron contract patch', { exact: true }).click()
+    const tracking = page.getByRole('region', { name: 'Attention tracking' })
+    await tracking.waitFor()
+    assert.equal(await page.getByRole('region', { name: 'Artifact review' }).count(), 0)
+    assert.ok((await tracking.innerText()).includes('without judging the work'))
+    await page.screenshot({ path: join(output, `failed-tracking-${width}.png`) })
 
-    // The panel must exist for a failed run, which previously never showed one.
-    const review = page.getByRole('region', { name: 'Artifact review' })
-    await review.waitFor()
-    await review.getByText('Failed run', { exact: true }).waitFor()
-    assert.ok((await review.innerText()).includes('never claims the run succeeded'))
+    await tracking.getByRole('button', { name: 'Dismiss' }).click()
+    await tracking.getByText('Dismissed', { exact: true }).waitFor()
+    assert.equal(dismissCalls.at(-1).dismissed, true)
+    assert.equal(dismissCalls.at(-1).expected_version, 'v-failed-1')
 
-    // Only the decisions that apply to a run with no work product.
-    await review.getByRole('button', { name: 'Dismiss' }).waitFor()
-    assert.equal(await review.getByRole('button', { name: 'Accept output' }).count(), 0)
-    assert.equal(await review.getByRole('button', { name: 'Reject output' }).count(), 0)
-    await page.screenshot({ path: join(output, `failed-review-${width}.png`) })
-
-    await review.getByRole('button', { name: 'Dismiss' }).click()
-    await review.getByText('Dismissed', { exact: true }).waitFor()
-    assert.equal(reviewCalls.length, 1)
-    assert.equal(reviewCalls[0].decision, 'dismissed')
-    assert.equal(reviewCalls[0].expected_version, 'v-failed-1')
-
-    // The dismissed run leaves attention; the remaining unreviewed output stays.
     await page.getByRole('tab', { name: 'Switchboard', exact: true }).click()
     await page.getByRole('heading', { name: /Needs attention \(1\)/ }).waitFor()
 
-    // Reopening puts it back, so dismissal is never a one-way door.
-    await page.getByRole('tab', { name: 'Assignments', exact: true }).click()
-    await page.getByText('Review verified cron contract patch', { exact: true }).click()
-    await review.getByRole('button', { name: 'Reopen review' }).click()
-    await review.getByText('Failed run', { exact: true }).waitFor()
-    await page.getByRole('tab', { name: 'Switchboard', exact: true }).click()
-    await page.getByRole('heading', { name: /Needs attention \(2\)/ }).waitFor()
-
-    // A completed output still offers the full set, dismissal included.
+    // Rejected work keeps its verdict through dismissal; both states show together.
     await page.getByRole('tab', { name: 'Assignments', exact: true }).click()
     await page.getByText('Cron contract test slice', { exact: true }).click()
-    await review.getByRole('button', { name: 'Accept output' }).waitFor()
-    await review.getByRole('button', { name: 'Reject output' }).waitFor()
-    await review.getByRole('button', { name: 'Dismiss' }).waitFor()
-    await page.screenshot({ path: join(output, `completed-review-${width}.png`) })
+    const review = page.getByRole('region', { name: 'Artifact review' })
+    await review.getByText('Rejected output', { exact: true }).waitFor()
+    await page.getByRole('region', { name: 'Attention tracking' }).getByRole('button', { name: 'Dismiss' }).click()
+    await page.getByRole('region', { name: 'Attention tracking' }).getByText('Dismissed', { exact: true }).waitFor()
+    // The verdict panel is untouched by the dismissal.
+    await review.getByText('Rejected output', { exact: true }).waitFor()
+    assert.equal(assignments.find(a => a.id === 'rejected-1').review_status, 'rejected')
+    assert.equal(assignments.find(a => a.id === 'rejected-1').review_note, 'Truncated and invented a helper.')
+    await page.screenshot({ path: join(output, `rejected-dismissed-${width}.png`) })
+
+    await page.getByRole('tab', { name: 'Switchboard', exact: true }).click()
+    await page.getByRole('heading', { name: /Needs attention \(0\)/ }).waitFor()
+
+    // Restoring brings it back to attention still carrying the rejection.
+    await page.getByRole('tab', { name: 'Assignments', exact: true }).click()
+    await page.getByText('Cron contract test slice', { exact: true }).click()
+    await page.getByRole('region', { name: 'Attention tracking' }).getByRole('button', { name: 'Restore to attention' }).click()
+    await page.getByRole('region', { name: 'Attention tracking' }).getByText('In the attention list', { exact: true }).waitFor()
+    await review.getByText('Rejected output', { exact: true }).waitFor()
+    await page.getByRole('tab', { name: 'Switchboard', exact: true }).click()
+    await page.getByRole('heading', { name: /Needs attention \(1\)/ }).waitFor()
 
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false)
     assert.deepEqual(errors, [])
-    console.log(`${width}px: failed-run dismiss, attention drop, reopen, completed options passed`)
+    console.log(`${width}px: failed dismiss, verdict survives dismiss and restore, attention counts passed`)
     await context.close()
   }
 } finally {

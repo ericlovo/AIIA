@@ -1164,7 +1164,13 @@ class AssignmentCreateRequest(BaseModel):
 
 
 class AssignmentReviewRequest(BaseModel):
-    decision: Literal["unreviewed", "accepted", "rejected", "dismissed"]
+    decision: Literal["unreviewed", "accepted", "rejected"]
+    expected_version: str = Field(min_length=1, max_length=64)
+    note: str = Field(default="", max_length=2_000)
+
+
+class AssignmentDismissRequest(BaseModel):
+    dismissed: bool
     expected_version: str = Field(min_length=1, max_length=64)
     note: str = Field(default="", max_length=2_000)
 
@@ -1511,6 +1517,24 @@ async def review_assignment(assignment_id: str, body: AssignmentReviewRequest):
         assignment = assignment_registry.review_assignment(
             assignment_id,
             decision=body.decision,
+            expected_version=body.expected_version,
+            note=body.note,
+        )
+    except PersistenceError as exc:
+        raise HTTPException(status_code=503, detail="review_persistence_failed") from exc
+    except ValueError as exc:
+        code = str(exc)
+        status = 404 if code == "assignment_not_found" else 409
+        raise HTTPException(status_code=status, detail=code) from exc
+    return {"assignment": assignment}
+
+
+@app.post("/api/assignments/{assignment_id}/dismiss")
+async def dismiss_assignment(assignment_id: str, body: AssignmentDismissRequest):
+    try:
+        assignment = assignment_registry.dismiss_assignment(
+            assignment_id,
+            dismissed=body.dismissed,
             expected_version=body.expected_version,
             note=body.note,
         )

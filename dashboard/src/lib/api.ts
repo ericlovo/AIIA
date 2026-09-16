@@ -375,7 +375,7 @@ export type AgentDefinition = Pick<Agent,
 };
 
 export type AssignmentStatus = 'queued' | 'running' | 'completed' | 'failed';
-export type ReviewStatus = 'unreviewed' | 'accepted' | 'rejected' | 'dismissed';
+export type ReviewStatus = 'unreviewed' | 'accepted' | 'rejected';
 export type AssignmentPriority = 'low' | 'normal' | 'high' | 'urgent';
 
 export interface Assignment {
@@ -390,6 +390,8 @@ export interface Assignment {
   success_criteria: string;
   source_handoff_id: string;
   review_status?: ReviewStatus;
+  dismissed_at?: string | null;
+  dismiss_note?: string;
   review_note?: string;
   reviewed_at?: string | null;
   review_version?: string;
@@ -611,6 +613,8 @@ export const api = {
     post<{ status: string }>(`/api/memory-inbox/${encodeURIComponent(id)}/acknowledgement/retry?kind=${kind}`),
   slackCaptureStatus: () => get<SlackCaptureStatus>('/api/integrations/slack/status'),
   assignments: () => get<{ assignments: Assignment[] }>('/api/assignments'),
+  dismissAssignment: (id: string, dismissed: boolean, expected_version: string, note = '') =>
+    post<{ assignment: Assignment }>(`/api/assignments/${encodeURIComponent(id)}/dismiss`, { dismissed, expected_version, note }),
   reviewAssignment: (id: string, decision: ReviewStatus, expected_version: string, note: string) =>
     post<{ assignment: Assignment }>(`/api/assignments/${id}/review`, { decision, expected_version, note }),
   createAssignment: (data: AssignmentDefinition) =>

@@ -7,14 +7,18 @@ All notable changes to AIIA are documented here. This project adheres to
 ## [Unreleased]
 
 ### Added
-- **Dismiss a settled assignment** - review gains a `dismissed` decision, the
-  only one available for a failed run, which has no work product to accept.
-  Dismissed records leave the Switchboard attention list but keep their status,
-  error, and history, and Reopen restores them. Completed work can be dismissed
-  too, so rejected output no longer sits in attention forever. Accepting and
-  rejecting still require a non-empty result; dismissing and reopening require
-  the run to have settled, so queued and running work is refused with
-  `assignment_not_settled`. The stale-version guard applies unchanged.
+- **Dismiss a settled assignment** - dismissal is its own decision, stored in
+  `dismissed_at` and `dismiss_note`, independent of the review verdict. A
+  dismissed record leaves the Switchboard attention list but keeps its status,
+  error, and `review_status`, so rejected work stays rejected and returns to
+  attention with that verdict when restored. Failed runs can be dismissed
+  despite having no output to review. Reviewing still requires a completed run
+  with a non-empty result; dismissing requires only that the run has settled, so
+  queued and running work is refused with `assignment_not_settled`. Both share
+  the stale-version guard. `POST /api/assignments/{id}/dismiss`.
+  Assignments dismissed by the brief earlier build that overloaded
+  `review_status` are split back apart on load, recovering the verdict and the
+  original review note; the migration is idempotent.
 
 ### Fixed
 - **Command Center authenticated its Brain calls** - eleven proxies to

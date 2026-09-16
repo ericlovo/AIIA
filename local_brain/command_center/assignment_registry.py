@@ -3,6 +3,7 @@
 import hashlib
 import json
 import logging
+import re
 import uuid
 from copy import deepcopy
 from datetime import datetime, timezone
@@ -14,12 +15,20 @@ from local_brain.command_center.persistence import atomic_write_json
 
 logger = logging.getLogger(__name__)
 
-# Review vocabulary. "dismissed" records that a human looked and chose to stop
-# tracking the assignment; it never claims the work succeeded and is the only
-# decision available for a failed run.
-REVIEW_DECISIONS = frozenset({"unreviewed", "accepted", "rejected", "dismissed"})
-OUTPUT_DECISIONS = frozenset({"accepted", "rejected"})
+# Two independent decisions. review_status judges the work product and only
+# applies to a completed run that produced one. Dismissal records that a human
+# chose to stop tracking the assignment and is orthogonal: a rejected run can be
+# dismissed without losing the rejection, and a failed run can be dismissed even
+# though it has nothing to review.
+REVIEW_DECISIONS = frozenset({"unreviewed", "accepted", "rejected"})
 SETTLED_STATUSES = frozenset({"completed", "failed"})
+# Shape written by the 2026-09-16 dismissal pass, before dismissal had its own
+# field and overwrote review_status. Parsed once on load to restore the verdict.
+_COLLAPSED = re.compile(
+    r"^Rejected (?P<day>\d{4}-\d{2}-\d{2}), dismissed \d{4}-\d{2}-\d{2}[^.]*\."
+    r"\s*Original review:\s*(?P<note>.*)$",
+    re.S,
+)
 
 ASSIGNMENT_DATA_FILE = Path(__file__).parent / "assignment_data.json"
 MAX_ASSIGNMENTS = 250
@@ -222,7 +231,38 @@ class AssignmentRegistry:
             "review_note": "",
             "reviewed_at": None,
             "review_version": uuid.uuid4().hex,
+            "dismissed_at": None,
+            "dismiss_note": "",
         }
+
+    @_durable_mutation
+    def dismiss_assignment(
+        self, assignment_id: str, *, dismissed: bool, expected_version: str, note: str = ""
+    ) -> dict[str, Any]:
+        """Stop or resume tracking a settled assignment, without judging its output.
+
+        Independent of review_status: dismissing rejected work keeps the
+        rejection, and restoring it returns the assignment to attention with
+        that verdict intact. Shares the review version guard so a stale view
+        cannot dismiss work whose output changed underneath it.
+        """
+        assignment = self.get_assignment(assignment_id)
+        if not assignment:
+            raise ValueError("assignment_not_found")
+        if len(note) > 2_000:
+            raise ValueError("review_note_too_long")
+        if assignment["status"] not in SETTLED_STATUSES:
+            raise ValueError("assignment_not_settled")
+        if not expected_version or expected_version != assignment.get("review_version"):
+            raise ValueError("review_changed_refresh_required")
+        now = _now()
+        assignment.update(
+            dismissed_at=now if dismissed else None,
+            dismiss_note=note.strip() if dismissed else "",
+            review_version=uuid.uuid4().hex,
+            updated_at=now,
+        )
+        return assignment
 
     @_durable_mutation
     def review_assignment(
@@ -241,14 +281,10 @@ class AssignmentRegistry:
             raise ValueError("invalid_review_decision")
         if len(note) > 2_000:
             raise ValueError("review_note_too_long")
-        # Accepting or rejecting judges a work product, so one has to exist.
-        # Dismissing and reopening only need the run to have stopped: a failed
-        # run has nothing to accept but still has to be clearable from attention.
-        if decision in OUTPUT_DECISIONS:
-            if assignment["status"] != "completed" or not assignment["result"].strip():
-                raise ValueError("assignment_not_reviewable")
-        elif assignment["status"] not in SETTLED_STATUSES:
-            raise ValueError("assignment_not_settled")
+        # Reviewing judges a work product, so one has to exist. Clearing the
+        # assignment from attention is a separate decision; see dismiss_assignment.
+        if assignment["status"] != "completed" or not assignment["result"].strip():
+            raise ValueError("assignment_not_reviewable")
         if not expected_version or expected_version != assignment.get("review_version"):
             raise ValueError("review_changed_refresh_required")
         now = _now()
@@ -386,10 +422,40 @@ class AssignmentRegistry:
                 assignment.setdefault("review_note", "")
                 assignment.setdefault("reviewed_at", None)
                 assignment.setdefault("review_version", legacy_version)
+                assignment.setdefault("dismissed_at", None)
+                assignment.setdefault("dismiss_note", "")
+                self._split_collapsed_dismissal(assignment)
         except (OSError, json.JSONDecodeError) as exc:
             logger.warning("Could not load assignments: %s", exc)
             return
         self._recover_interrupted()
+
+    @staticmethod
+    def _split_collapsed_dismissal(assignment: dict[str, Any]) -> None:
+        """Move a pre-field dismissal out of review_status, recovering the verdict.
+
+        Dismissal briefly shared review_status, so dismissing rejected work
+        replaced the verdict. Those writes preserved the original review inside
+        the note, which is enough to restore it. Anything that does not match
+        that shape had no verdict to recover and becomes a plain dismissal, so
+        the note is never silently reinterpreted as review feedback.
+        """
+        if assignment.get("review_status") != "dismissed":
+            return
+        note = assignment.get("review_note") or ""
+        assignment["dismissed_at"] = assignment.get("dismissed_at") or assignment.get("reviewed_at")
+        match = _COLLAPSED.match(note.strip())
+        if match:
+            assignment["review_status"] = "rejected"
+            assignment["review_note"] = match.group("note").strip()
+            # Only the date of the original review survived the collapse.
+            assignment["reviewed_at"] = match.group("day")
+            assignment["dismiss_note"] = "Cleared from the attention list."
+        else:
+            assignment["review_status"] = "unreviewed"
+            assignment["review_note"] = ""
+            assignment["reviewed_at"] = None
+            assignment["dismiss_note"] = note.strip()
 
     @_durable_mutation
     def _recover_interrupted(self) -> None:

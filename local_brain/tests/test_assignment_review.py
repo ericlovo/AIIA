@@ -156,83 +156,168 @@ def failed(registry, error="empty_agent_result"):
     return registry.get_assignment(work["id"])
 
 
-def test_failed_run_can_be_dismissed_and_reopened(tmp_path):
-    """A failed run has nothing to accept, but must still be clearable."""
+def test_dismissal_keeps_the_review_verdict(tmp_path):
+    """The whole point of the separate field: rejecting then dismissing keeps both."""
     registry = AssignmentRegistry(tmp_path / "assignments.json")
-    work = failed(registry)
-    assert work["status"] == "failed"
+    work = completed(registry)
     registry.review_assignment(
         work["id"],
-        decision="dismissed",
+        decision="rejected",
         expected_version=work["review_version"],
-        note="Upstream slice was rejected; not worth a rerun.",
+        note="Inverted logic.",
+    )
+    registry.dismiss_assignment(
+        work["id"],
+        dismissed=True,
+        expected_version=work["review_version"],
+        note="Not worth a rerun.",
     )
     restored = AssignmentRegistry(registry.data_file).get_assignment(work["id"])
-    assert restored["review_status"] == "dismissed"
+    assert restored["review_status"] == "rejected"
+    assert restored["review_note"] == "Inverted logic."
     assert restored["reviewed_at"]
-    assert restored["review_note"] == "Upstream slice was rejected; not worth a rerun."
-    # Dismissal records a human decision; it never rewrites the outcome.
-    assert restored["status"] == "failed"
-    assert restored["error"] == "empty_agent_result"
+    assert restored["dismissed_at"]
+    assert restored["dismiss_note"] == "Not worth a rerun."
 
-    registry.review_assignment(
-        work["id"], decision="unreviewed", expected_version=work["review_version"]
+    registry.dismiss_assignment(
+        work["id"], dismissed=False, expected_version=restored["review_version"]
     )
     reopened = AssignmentRegistry(registry.data_file).get_assignment(work["id"])
-    assert reopened["review_status"] == "unreviewed"
-    assert reopened["reviewed_at"] is None
-    assert reopened["status"] == "failed"
+    assert reopened["dismissed_at"] is None
+    assert reopened["dismiss_note"] == ""
+    # Restoring returns it to attention with the verdict intact.
+    assert reopened["review_status"] == "rejected"
+    assert reopened["review_note"] == "Inverted logic."
 
 
-def test_dismissal_still_honours_the_stale_version_guard(tmp_path):
+def test_failed_run_can_be_dismissed_without_a_verdict(tmp_path):
     registry = AssignmentRegistry(tmp_path / "assignments.json")
     work = failed(registry)
-    stale = work["review_version"]
-    registry.review_assignment(work["id"], decision="dismissed", expected_version=stale)
-    with pytest.raises(ValueError, match="review_changed_refresh_required"):
-        registry.review_assignment(work["id"], decision="unreviewed", expected_version=stale)
+    registry.dismiss_assignment(
+        work["id"],
+        dismissed=True,
+        expected_version=work["review_version"],
+        note="Upstream rejected.",
+    )
+    restored = AssignmentRegistry(registry.data_file).get_assignment(work["id"])
+    assert restored["dismissed_at"] and restored["dismiss_note"] == "Upstream rejected."
+    # Dismissal never claims the run succeeded or invents a verdict.
+    assert restored["status"] == "failed"
+    assert restored["error"] == "empty_agent_result"
+    assert restored["review_status"] == "unreviewed"
 
 
-@pytest.mark.parametrize("decision", ["accepted", "rejected"])
-def test_failed_run_cannot_be_accepted_or_rejected(tmp_path, decision):
+@pytest.mark.parametrize("decision", ["accepted", "rejected", "unreviewed"])
+def test_failed_run_still_has_no_reviewable_output(tmp_path, decision):
     registry = AssignmentRegistry(tmp_path / "assignments.json")
     work = failed(registry)
     with pytest.raises(ValueError, match="assignment_not_reviewable"):
         registry.review_assignment(
             work["id"], decision=decision, expected_version=work["review_version"]
         )
-    assert registry.get_assignment(work["id"])["review_status"] == "unreviewed"
 
 
 @pytest.mark.parametrize("state", ["queued", "running"])
-@pytest.mark.parametrize("decision", ["dismissed", "unreviewed"])
-def test_active_work_cannot_be_dismissed_or_reopened(tmp_path, state, decision):
+def test_active_work_cannot_be_dismissed(tmp_path, state):
     registry = AssignmentRegistry(tmp_path / "assignments.json")
     work = completed(registry)
     work.update(status=state, result="")
     with pytest.raises(ValueError, match="assignment_not_settled"):
-        registry.review_assignment(
-            work["id"], decision=decision, expected_version=work["review_version"]
+        registry.dismiss_assignment(
+            work["id"], dismissed=True, expected_version=work["review_version"]
         )
 
 
-def test_completed_output_can_also_be_dismissed(tmp_path):
-    """Rejected work sits in attention forever otherwise."""
-    registry = AssignmentRegistry(tmp_path / "assignments.json")
-    work = completed(registry)
-    registry.review_assignment(
-        work["id"], decision="rejected", expected_version=work["review_version"]
-    )
-    registry.review_assignment(
-        work["id"], decision="dismissed", expected_version=work["review_version"]
-    )
-    assert registry.get_assignment(work["id"])["review_status"] == "dismissed"
-
-
-def test_unknown_decision_is_refused(tmp_path):
+def test_dismissal_honours_the_stale_version_guard(tmp_path):
     registry = AssignmentRegistry(tmp_path / "assignments.json")
     work = failed(registry)
+    stale = work["review_version"]
+    registry.dismiss_assignment(work["id"], dismissed=True, expected_version=stale)
+    with pytest.raises(ValueError, match="review_changed_refresh_required"):
+        registry.dismiss_assignment(work["id"], dismissed=False, expected_version=stale)
+    with pytest.raises(ValueError, match="assignment_not_found"):
+        registry.dismiss_assignment("missing", dismissed=True, expected_version="x")
+
+
+def test_dismissed_is_no_longer_a_review_decision(tmp_path):
+    registry = AssignmentRegistry(tmp_path / "assignments.json")
+    work = completed(registry)
     with pytest.raises(ValueError, match="invalid_review_decision"):
         registry.review_assignment(
-            work["id"], decision="archived", expected_version=work["review_version"]
+            work["id"], decision="dismissed", expected_version=work["review_version"]
         )
+
+
+def test_collapsed_dismissals_are_split_back_out_on_load(tmp_path):
+    """Rows written while dismissal shared review_status recover their verdict."""
+    path = tmp_path / "assignments.json"
+    path.write_text(
+        json.dumps(
+            {
+                "assignments": [
+                    {
+                        "id": "rejected-then-dismissed",
+                        "title": "Eval",
+                        "objective": "o",
+                        "agent_id": "a",
+                        "priority": "normal",
+                        "context": "",
+                        "success_criteria": "",
+                        "source_handoff_id": "",
+                        "status": "completed",
+                        "result": "Evidence",
+                        "error": "",
+                        "created_at": "2026-09-10",
+                        "updated_at": "2026-09-16",
+                        "started_at": None,
+                        "completed_at": "2026-09-10",
+                        "review_status": "dismissed",
+                        "reviewed_at": "2026-09-16T19:04:05+00:00",
+                        "review_version": "v1",
+                        "review_note": "Rejected 2026-09-15, dismissed 2026-09-16 to clear the "
+                        "attention list. Original review: EVID-02: label contradicts its reasoning.",
+                    },
+                    {
+                        "id": "plain-dismissal",
+                        "title": "Cron",
+                        "objective": "o",
+                        "agent_id": "a",
+                        "priority": "normal",
+                        "context": "",
+                        "success_criteria": "",
+                        "source_handoff_id": "",
+                        "status": "failed",
+                        "result": "",
+                        "error": "empty_agent_result",
+                        "created_at": "2026-09-07",
+                        "updated_at": "2026-09-16",
+                        "started_at": None,
+                        "completed_at": "2026-09-07",
+                        "review_status": "dismissed",
+                        "reviewed_at": "2026-09-16T19:00:46+00:00",
+                        "review_version": "v2",
+                        "review_note": "Dismissed 2026-09-16: empty result.",
+                    },
+                ],
+                "handoffs": [],
+            }
+        )
+    )
+    registry = AssignmentRegistry(path)
+    recovered = registry.get_assignment("rejected-then-dismissed")
+    assert recovered["review_status"] == "rejected"
+    assert recovered["review_note"] == "EVID-02: label contradicts its reasoning."
+    assert recovered["reviewed_at"] == "2026-09-15"
+    assert recovered["dismissed_at"] == "2026-09-16T19:04:05+00:00"
+    assert recovered["dismiss_note"] == "Cleared from the attention list."
+
+    # A dismissal with no recoverable verdict must not be read as review feedback.
+    plain = registry.get_assignment("plain-dismissal")
+    assert plain["review_status"] == "unreviewed"
+    assert plain["review_note"] == ""
+    assert plain["reviewed_at"] is None
+    assert plain["dismiss_note"] == "Dismissed 2026-09-16: empty result."
+    assert plain["status"] == "failed" and plain["error"] == "empty_agent_result"
+
+    # Idempotent: a second load of the migrated file changes nothing.
+    assert AssignmentRegistry(path).list_assignments() == registry.list_assignments()

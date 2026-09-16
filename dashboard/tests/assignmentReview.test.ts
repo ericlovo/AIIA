@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import type { Assignment } from '../src/lib/api.ts'
-import { attentionAssignments, reviewLabel } from '../src/console/assignmentReview.ts'
+import { assignmentLabel, attentionAssignments, reviewLabel } from '../src/console/assignmentReview.ts'
 
 const work = (id: string, overrides: Partial<Assignment> = {}): Assignment => ({
   id, title: id, objective: 'Assess evidence', agent_id: 'agent', priority: 'normal',
@@ -24,27 +24,37 @@ test('attention keeps missing artifacts visible and scopes only to selected agen
   assert.deepEqual(attentionAssignments(records, 'agent').map(item => item.id), ['urgent', 'blank'])
 })
 
-test('dismissed work leaves the attention list without changing its outcome', () => {
+test('dismissal is independent of the verdict, which survives it', () => {
   const records = [
     work('failed-open', { status: 'failed', result: '', error: 'empty_agent_result' }),
-    work('failed-dismissed', { status: 'failed', result: '', error: 'empty_agent_result', review_status: 'dismissed' }),
-    work('rejected-dismissed', { review_status: 'dismissed' }),
+    work('failed-dismissed', { status: 'failed', result: '', error: 'empty_agent_result', dismissed_at: '2026-09-16T19:00:00Z' }),
+    work('rejected-dismissed', { review_status: 'rejected', dismissed_at: '2026-09-16T19:00:00Z' }),
     work('rejected-open', { review_status: 'rejected' }),
   ]
   assert.deepEqual(attentionAssignments(records).map(item => item.id), ['failed-open', 'rejected-open'])
-  // The label reports the human decision, while the run's own outcome is untouched.
-  assert.equal(reviewLabel(records[1]), 'Dismissed')
-  assert.equal(records[1].status, 'failed')
+  // The verdict is not overwritten by dismissing, and both read back.
+  assert.equal(records[2].review_status, 'rejected')
+  assert.equal(reviewLabel(records[2]), 'Rejected output')
+  assert.equal(assignmentLabel(records[2]), 'Rejected output · Dismissed')
+  // A failed run has no verdict to keep, so it reads as dismissed alone.
+  assert.equal(assignmentLabel(records[1]), 'Failed run · Dismissed')
   assert.equal(records[1].error, 'empty_agent_result')
-  assert.equal(reviewLabel(records[2]), 'Dismissed')
-  assert.equal(reviewLabel(records[0]), 'Failed run')
+  assert.equal(assignmentLabel(records[0]), 'Failed run')
+})
+
+test('restoring a dismissed record returns it to attention with its verdict', () => {
+  const dismissed = work('a', { review_status: 'rejected', dismissed_at: '2026-09-16T19:00:00Z' })
+  assert.deepEqual(attentionAssignments([dismissed]), [])
+  const restored = { ...dismissed, dismissed_at: null }
+  assert.deepEqual(attentionAssignments([restored]).map(item => item.id), ['a'])
+  assert.equal(reviewLabel(restored), 'Rejected output')
 })
 
 test('dismissing every flagged record empties attention', () => {
   const records = [
-    work('a', { status: 'failed', result: '', review_status: 'dismissed' }),
-    work('b', { review_status: 'dismissed' }),
-    work('c', { result: '', review_status: 'dismissed' }),
+    work('a', { status: 'failed', result: '', dismissed_at: '2026-09-16T19:00:00Z' }),
+    work('b', { review_status: 'rejected', dismissed_at: '2026-09-16T19:00:00Z' }),
+    work('c', { result: '', dismissed_at: '2026-09-16T19:00:00Z' }),
   ]
   assert.deepEqual(attentionAssignments(records), [])
 })

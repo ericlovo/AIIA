@@ -16,7 +16,7 @@ import {
   type GitWorkspace,
   type RepositoryResource,
 } from '../lib/api'
-import { reviewLabel } from './assignmentReview'
+import { assignmentLabel, reviewLabel } from './assignmentReview'
 import { StudioTabs, type StudioView } from './StudioTabs'
 
 const EMPTY_ASSIGNMENTS: Assignment[] = []
@@ -339,7 +339,7 @@ export function WorkBoard({
 function AssignmentCard({ assignment, agentName, selected, onSelect }: { assignment: Assignment; agentName: string; selected: boolean; onSelect: () => void }) {
   return (
     <button onClick={onSelect} className={`min-h-40 border p-5 text-left transition-colors ${selected ? 'border-cyan-400/70 bg-cyan-500/10' : 'border-neutral-800 bg-neutral-900/60 hover:border-neutral-600'}`}>
-      {reviewLabel(assignment) && <div className="mb-2 text-xs text-cyan-200">{reviewLabel(assignment)}</div>}
+      {assignmentLabel(assignment) && <div className="mb-2 text-xs text-cyan-200">{assignmentLabel(assignment)}</div>}
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="truncate text-base font-medium text-white">{assignment.title}</div>
@@ -455,7 +455,8 @@ function AssignmentDetails({ assignment, agent, agentName, workspace, writes, re
       {assignment.success_criteria && <TextBlock label="Success criteria" value={assignment.success_criteria} />}
       {assignment.context && <TextBlock label="Context" value={assignment.context} muted />}
       {assignment.result && <TextBlock label="Work product" value={assignment.result} />}
-      {(assignment.status === 'completed' || assignment.status === 'failed') && <ArtifactReview key={assignment.id} assignment={assignment} />}
+      {assignment.status === 'completed' && assignment.result.trim() && <ArtifactReview key={assignment.id} assignment={assignment} />}
+      {(assignment.status === 'completed' || assignment.status === 'failed') && <DismissalPanel key={`dismiss-${assignment.id}`} assignment={assignment} />}
       {assignment.error && <div className="border border-red-900/60 bg-red-950/30 p-3 text-xs text-red-300">{assignment.error}</div>}
       <OutputRecovery key={`recovery-${assignment.id}`} assignment={assignment} busy={isRunning} />
       {assignment.status === 'completed' && (
@@ -483,10 +484,37 @@ function AssignmentDetails({ assignment, agent, agentName, workspace, writes, re
   )
 }
 
+function DismissalPanel({ assignment }: { assignment: Assignment }) {
+  const qc = useQueryClient()
+  const dismissed = Boolean(assignment.dismissed_at)
+  const [note, setNote] = useState('')
+  const dismiss = useMutation({
+    mutationFn: (next: boolean) => api.dismissAssignment(assignment.id, next, assignment.review_version!, note),
+    onSuccess: ({ assignment: updated }) => {
+      qc.setQueryData<{ assignments: Assignment[] }>(['assignments'], previous => previous ? {
+        assignments: previous.assignments.map(item => item.id === updated.id ? updated : item),
+      } : previous)
+      setNote('')
+    },
+    onSettled: () => qc.invalidateQueries({ queryKey: ['assignments'] }),
+  })
+  return <section aria-label="Attention tracking" className="space-y-3 border border-neutral-700 p-3">
+    <div className="text-sm text-cyan-200">{dismissed ? 'Dismissed' : 'In the attention list'}</div>
+    <p className="text-xs leading-relaxed text-neutral-400">{dismissed
+      ? 'This assignment is hidden from the attention list. Its outcome and any review verdict are unchanged; restoring brings it back with both intact.'
+      : 'Dismissing hides this from the attention list without judging the work. The outcome, the failure and any review verdict are all kept.'}</p>
+    {dismissed && assignment.dismissed_at && <p className="text-xs text-neutral-400">Dismissed {new Date(assignment.dismissed_at).toLocaleString()}</p>}
+    {dismissed && assignment.dismiss_note && <p className="text-xs break-words text-neutral-400">{assignment.dismiss_note}</p>}
+    {!dismissed && <Field label="Dismissal reason"><textarea value={note} onChange={event => setNote(event.target.value)} maxLength={2000} rows={2} placeholder="Why this no longer needs attention" /></Field>}
+    <button type="button" disabled={dismiss.isPending || !assignment.review_version} onClick={() => dismiss.mutate(!dismissed)} className="border border-neutral-600 px-3 py-2 text-xs text-neutral-200 hover:border-cyan-300 disabled:opacity-40">{dismissed ? 'Restore to attention' : 'Dismiss'}</button>
+    {dismiss.isPending && <p role="status" className="text-xs text-neutral-400">Saving...</p>}
+    {dismiss.error && <ErrorNotice error={new Error(dismiss.error.message.includes('review_changed_refresh_required') ? 'The assignment changed. Reload it before dismissing again.' : dismiss.error.message.includes('assignment_not_settled') ? 'This assignment is still queued or running. Wait for it to finish.' : dismiss.error.message)} />}
+  </section>
+}
+
 const REVIEW_ACTION: Record<ReviewStatus, string> = {
   accepted: 'Accept output',
   rejected: 'Reject output',
-  dismissed: 'Dismiss',
   unreviewed: 'Reopen review',
 }
 
@@ -504,13 +532,10 @@ function ArtifactReview({ assignment }: { assignment: Assignment }) {
     onSettled: () => qc.invalidateQueries({ queryKey: ['assignments'] }),
   })
   const decision = assignment.review_status ?? 'unreviewed'
-  const hasOutput = assignment.status === 'completed' && Boolean(assignment.result.trim())
-  const options = (hasOutput ? ['accepted', 'rejected', 'dismissed', 'unreviewed'] : ['dismissed', 'unreviewed']) as ReviewStatus[]
+  const options = (['accepted', 'rejected', 'unreviewed'] as ReviewStatus[])
   return <section aria-label="Artifact review" className="space-y-3 border border-neutral-700 p-3">
     <div className="text-sm text-cyan-200">{reviewLabel(assignment)}</div>
-    <p className="text-xs leading-relaxed text-neutral-400">{hasOutput
-      ? 'Inspect the work product against the objective and success criteria. This decision records output quality.'
-      : 'There is no work product to judge. Dismissing clears this from the attention list and never claims the run succeeded; the record and its failure stay searchable.'}</p>
+    <p className="text-xs leading-relaxed text-neutral-400">Inspect the work product against the objective and success criteria. This decision records output quality and is kept if the assignment is later dismissed.</p>
     {assignment.reviewed_at && <p className="text-xs text-neutral-400">Decision saved {new Date(assignment.reviewed_at).toLocaleString()}</p>}
     <Field label="Review note"><textarea value={note} onChange={event => setDraftNote({ version: assignment.review_version, note: event.target.value })} maxLength={2000} rows={3} placeholder="Evidence, gaps, or requested corrections" /></Field>
     {!assignment.review_version && <p role="alert" className="text-xs text-amber-200">Review is unavailable until the server supports artifact review.</p>}
