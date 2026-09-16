@@ -18,7 +18,8 @@ All notable changes to AIIA are documented here. This project adheres to
   the stale-version guard. `POST /api/assignments/{id}/dismiss`.
   Assignments dismissed by the brief earlier build that overloaded
   `review_status` are split back apart on load, recovering the verdict and the
-  original review note; the migration is idempotent.
+  original review note. The migration is idempotent and writes once, so the
+  stored file never disagrees with what the API serves.
 
 ### Fixed
 - **Command Center authenticated its Brain calls** - eleven proxies to

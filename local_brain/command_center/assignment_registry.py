@@ -424,38 +424,45 @@ class AssignmentRegistry:
                 assignment.setdefault("review_version", legacy_version)
                 assignment.setdefault("dismissed_at", None)
                 assignment.setdefault("dismiss_note", "")
-                self._split_collapsed_dismissal(assignment)
         except (OSError, json.JSONDecodeError) as exc:
             logger.warning("Could not load assignments: %s", exc)
             return
+        self._split_collapsed_dismissals()
         self._recover_interrupted()
 
-    @staticmethod
-    def _split_collapsed_dismissal(assignment: dict[str, Any]) -> None:
-        """Move a pre-field dismissal out of review_status, recovering the verdict.
+    @_durable_mutation
+    def _split_collapsed_dismissals(self) -> None:
+        """Move pre-field dismissals out of review_status, recovering the verdict.
 
         Dismissal briefly shared review_status, so dismissing rejected work
         replaced the verdict. Those writes preserved the original review inside
         the note, which is enough to restore it. Anything that does not match
-        that shape had no verdict to recover and becomes a plain dismissal, so
-        the note is never silently reinterpreted as review feedback.
+        that shape had no verdict to recover and becomes a plain dismissal, so a
+        note is never silently reinterpreted as review feedback.
+
+        Runs as a durable mutation, so the file is rewritten once and stops
+        disagreeing with what is served. Idempotent: a migrated record no longer
+        carries the collapsed status and is skipped.
         """
-        if assignment.get("review_status") != "dismissed":
-            return
-        note = assignment.get("review_note") or ""
-        assignment["dismissed_at"] = assignment.get("dismissed_at") or assignment.get("reviewed_at")
-        match = _COLLAPSED.match(note.strip())
-        if match:
-            assignment["review_status"] = "rejected"
-            assignment["review_note"] = match.group("note").strip()
-            # Only the date of the original review survived the collapse.
-            assignment["reviewed_at"] = match.group("day")
-            assignment["dismiss_note"] = "Cleared from the attention list."
-        else:
-            assignment["review_status"] = "unreviewed"
-            assignment["review_note"] = ""
-            assignment["reviewed_at"] = None
-            assignment["dismiss_note"] = note.strip()
+        for assignment in self.assignments:
+            if assignment.get("review_status") != "dismissed":
+                continue
+            note = assignment.get("review_note") or ""
+            assignment["dismissed_at"] = assignment.get("dismissed_at") or assignment.get(
+                "reviewed_at"
+            )
+            match = _COLLAPSED.match(note.strip())
+            if match:
+                assignment["review_status"] = "rejected"
+                assignment["review_note"] = match.group("note").strip()
+                # Only the date of the original review survived the collapse.
+                assignment["reviewed_at"] = match.group("day")
+                assignment["dismiss_note"] = "Cleared from the attention list."
+            else:
+                assignment["review_status"] = "unreviewed"
+                assignment["review_note"] = ""
+                assignment["reviewed_at"] = None
+                assignment["dismiss_note"] = note.strip()
 
     @_durable_mutation
     def _recover_interrupted(self) -> None:

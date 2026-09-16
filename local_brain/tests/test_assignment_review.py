@@ -321,3 +321,57 @@ def test_collapsed_dismissals_are_split_back_out_on_load(tmp_path):
 
     # Idempotent: a second load of the migrated file changes nothing.
     assert AssignmentRegistry(path).list_assignments() == registry.list_assignments()
+
+
+def test_split_is_written_to_disk_not_just_memory(tmp_path):
+    """The file must stop disagreeing with what the API serves."""
+    path = tmp_path / "assignments.json"
+    path.write_text(
+        json.dumps(
+            {
+                "assignments": [
+                    {
+                        "id": "collapsed",
+                        "title": "Eval",
+                        "objective": "o",
+                        "agent_id": "a",
+                        "priority": "normal",
+                        "context": "",
+                        "success_criteria": "",
+                        "source_handoff_id": "",
+                        "status": "completed",
+                        "result": "Evidence",
+                        "error": "",
+                        "created_at": "2026-09-10",
+                        "updated_at": "2026-09-16",
+                        "started_at": None,
+                        "completed_at": "2026-09-10",
+                        "review_status": "dismissed",
+                        "reviewed_at": "2026-09-16T19:04:05+00:00",
+                        "review_version": "v1",
+                        "review_note": "Rejected 2026-09-15, dismissed 2026-09-16 to clear the "
+                        "attention list. Original review: Inverted logic.",
+                    }
+                ],
+                "handoffs": [],
+            }
+        )
+    )
+    AssignmentRegistry(path)
+    on_disk = json.loads(path.read_text())["assignments"][0]
+    assert on_disk["review_status"] == "rejected"
+    assert on_disk["review_note"] == "Inverted logic."
+    assert on_disk["dismissed_at"] == "2026-09-16T19:04:05+00:00"
+    assert on_disk["dismiss_note"] == "Cleared from the attention list."
+    # Nothing left to migrate, so a second load rewrites nothing.
+    before = path.read_text()
+    AssignmentRegistry(path)
+    assert path.read_text() == before
+
+
+def test_a_registry_with_nothing_to_migrate_is_left_alone(tmp_path):
+    registry = AssignmentRegistry(tmp_path / "assignments.json")
+    completed(registry)
+    before = (tmp_path / "assignments.json").read_text()
+    AssignmentRegistry(tmp_path / "assignments.json")
+    assert (tmp_path / "assignments.json").read_text() == before
