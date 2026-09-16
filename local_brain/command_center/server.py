@@ -1101,7 +1101,7 @@ async def get_aiia():
     """Proxy to AIIA status on Mac Mini."""
     try:
         async with httpx.AsyncClient(timeout=5.0) as client:
-            resp = await client.get("http://localhost:8100/v1/aiia/status")
+            resp = await client.get("http://localhost:8100/v1/aiia/status", headers=AIIA_HEADERS)
             if resp.status_code == 200:
                 data = resp.json()
                 state.aiia_status = data
@@ -2362,6 +2362,7 @@ async def get_aiia_client() -> httpx.AsyncClient:
     return httpx.AsyncClient(
         base_url=AIIA_BASE_URL,
         timeout=httpx.Timeout(60.0, connect=10.0),
+        headers=AIIA_HEADERS,
     )
 
 
@@ -2373,7 +2374,7 @@ async def get_memories(category: str | None = None, limit: int = 50):
         params += f"&category={category}"
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
-            resp = await client.get(f"{AIIA_BASE_URL}/v1/aiia/memory{params}")
+            resp = await client.get(f"{AIIA_BASE_URL}/v1/aiia/memory{params}", headers=AIIA_HEADERS)
             if resp.status_code == 200:
                 return resp.json()
             return {
@@ -2390,7 +2391,9 @@ async def delete_memory(memory_id: str):
     """Proxy delete to AIIA memory API."""
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
-            resp = await client.delete(f"{AIIA_BASE_URL}/v1/aiia/memory/{memory_id}")
+            resp = await client.delete(
+                f"{AIIA_BASE_URL}/v1/aiia/memory/{memory_id}", headers=AIIA_HEADERS
+            )
             if resp.status_code == 200:
                 return resp.json()
             return {"error": f"AIIA returned {resp.status_code}"}
@@ -2428,6 +2431,7 @@ async def chat_with_aiia(msg: ChatMessage):
             resp = await client.post(
                 AIIA_ASK_URL,
                 json={"question": msg.message, "context": context, "n_results": 5},
+                headers=AIIA_HEADERS,
             )
             if resp.status_code == 200:
                 data = resp.json()
@@ -2509,6 +2513,7 @@ async def chat_with_aiia_stream(msg: ChatMessage):
                         "max_tokens": max_tokens,
                         "num_ctx": 32768,
                     },
+                    headers=AIIA_HEADERS,
                 ) as resp,
             ):
                 async for line in resp.aiter_lines():
@@ -2704,6 +2709,7 @@ async def aiia_session_start(body: dict[str, Any] = {}):
             resp = await client.post(
                 f"{AIIA_BASE_URL}/v1/aiia/session-start",
                 json=body,
+                headers=AIIA_HEADERS,
             )
             if resp.status_code == 200:
                 return resp.json()
@@ -2720,6 +2726,7 @@ async def aiia_remember(body: dict[str, Any] = {}):
             resp = await client.post(
                 f"{AIIA_BASE_URL}/v1/aiia/remember",
                 json=body,
+                headers=AIIA_HEADERS,
             )
             if resp.status_code == 200:
                 return resp.json()
@@ -2925,6 +2932,7 @@ async def _index_story_in_aiia(story: dict[str, Any]) -> None:
             await client.post(
                 "http://localhost:8100/v1/aiia/index-story",
                 json={"story": story},
+                headers=AIIA_HEADERS,
             )
     except Exception as e:
         logger.debug(f"Story index fire-and-forget failed: {e}")
@@ -3212,7 +3220,9 @@ async def checkin():
     # 1. WIP state from AIIA memory
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
-            resp = await client.get(f"{AIIA_BASE_URL}/v1/aiia/memory?category=wip")
+            resp = await client.get(
+                f"{AIIA_BASE_URL}/v1/aiia/memory?category=wip", headers=AIIA_HEADERS
+            )
             if resp.status_code == 200:
                 result["wip"] = resp.json().get(
                     "memories", resp.json() if isinstance(resp.json(), list) else []
@@ -3225,7 +3235,9 @@ async def checkin():
     # 2. Recent sessions (last 3) from AIIA memory
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
-            resp = await client.get(f"{AIIA_BASE_URL}/v1/aiia/memory?category=sessions")
+            resp = await client.get(
+                f"{AIIA_BASE_URL}/v1/aiia/memory?category=sessions", headers=AIIA_HEADERS
+            )
             if resp.status_code == 200:
                 data = resp.json()
                 memories = data.get("memories", data if isinstance(data, list) else [])
@@ -3617,6 +3629,7 @@ async def startup():
                     resp = await client.post(
                         "http://localhost:8100/v1/aiia/index-stories",
                         json={"stories": stories},
+                        headers=AIIA_HEADERS,
                     )
                     if resp.status_code == 200:
                         logger.info(f"Indexed {len(stories)} stories in AIIA ChromaDB")

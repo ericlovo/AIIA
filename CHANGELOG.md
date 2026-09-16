@@ -6,6 +6,17 @@ All notable changes to AIIA are documented here. This project adheres to
 
 ## [Unreleased]
 
+### Fixed
+- **Command Center authenticated its Brain calls** - eleven proxies to
+  `/v1/aiia/*` routes omitted the API key and silently received 401 whenever
+  `LOCAL_BRAIN_API_KEY` was set. Console chat and streaming chat, the Mind memory
+  browser, memory delete, teach, session-start, the AIIA status tile, the morning
+  check-in WIP and sessions panels, and both story-indexing calls were affected;
+  each degraded quietly to an empty list, `status: unknown`, or a swallowed
+  fire-and-forget rather than an error. All now send `AIIA_HEADERS`, as does the
+  shared `get_aiia_client()` factory. `test_brain_proxy_auth.py` asserts the
+  invariant statically so a new proxy cannot reintroduce it.
+
 ### Added
 - **Studio Memory log** - a Memory tab lists Mindmoor captures from the Slack
   inbox (unreviewed, logged, dismissed) with search and counts. Logging a capture
