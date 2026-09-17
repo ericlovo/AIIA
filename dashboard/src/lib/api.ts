@@ -208,6 +208,7 @@ export interface Agent {
   loop_max_runs_per_day: number;
   loop_runs_today: number;
   loop_day: string;
+  model?: string;
   suite?: string;
   memory_namespace?: string;
   status: 'idle' | 'running' | 'error';
@@ -217,6 +218,15 @@ export interface Agent {
   runs: AgentRun[];
   created_at: string;
   updated_at: string;
+}
+
+export interface AgentModel {
+  id: string;
+  label: string;
+  family: string;
+  parameter_size: string;
+  size_gb: number;
+  default: boolean;
 }
 
 export interface AgentRun {
@@ -584,6 +594,7 @@ export const api = {
 
   agents: () => get<{ agents: Agent[] }>('/api/agents'),
   agentSuites: () => get<{ suites: AgentSuite[] }>('/api/agent-suites'),
+  agentModels: () => get<{ default: string; models: AgentModel[] }>('/api/agents/models'),
   agentResources: () => get<{ repos: RepositoryResource[]; github: GitHubResource }>('/api/agents/resources'),
   createAgent: (data: AgentDefinition) =>
     post<{ agent: Agent }>('/api/agents', data),
