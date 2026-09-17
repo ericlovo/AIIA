@@ -461,3 +461,72 @@ def test_router_lifespan_runs_both_workers(monkeypatch):
 
     asyncio.run(exercise())
     assert sorted(started) == sorted(stopped) == ["memory_posts", "receipts"]
+
+
+def post_text(text, **kwargs):
+    idea = {"id": "0123456789abcdef", "text": text}
+    fields = {"memory_id": "decisions_4_1789", "category": "decisions", "priority": "urgent"}
+    return slack_capture.memory_post_text(idea, **{**fields, **kwargs})
+
+
+def test_body_layout_strips_bot_mention_and_carries_priority_and_category():
+    assert post_text("<@U0BOT1>  ship the cron contract") == (
+        "[URGENT] Memory logged to decisions\n\n"
+        "ship the cron contract\n\n"
+        "Capture 01234567 · Memory decisions_4_1789"
+    )
+    assert post_text("note", priority="low", category="lessons").startswith(
+        "[LOW] Memory logged to lessons\n\nnote\n\n"
+    )
+
+
+def test_escaping_neutralizes_broadcasts_mentions_and_links():
+    body = post_text(
+        "<@U0BOT1> alert <!channel> and <!here> and <!subteam^S0TEAM|devs> "
+        "ask <@U0PERSON|ada> see <https://evil.example/x|docs> & a>b"
+    )
+    assert "<" not in body and ">" not in body
+    assert "&lt;!channel&gt;" in body and "&lt;!here&gt;" in body
+    assert "&lt;!subteam^S0TEAM|devs&gt;" in body
+    assert "&lt;@U0PERSON|ada&gt;" in body
+    assert "&lt;https://evil.example/x|docs&gt;" in body
+    assert "&amp; a&gt;b" in body
+    assert "&amp;lt;" not in body
+    assert post_text("x", memory_id="m<!here>").endswith("Memory m&lt;!here&gt;")
+
+
+def test_text_over_limit_is_truncated_and_marked():
+    exact = post_text("a" * 3_000)
+    assert "a" * 3_000 in exact and "Truncated" not in exact and "…" not in exact
+    body = post_text("b" * 3_001 + "TAIL")
+    text = body.split("\n\n")[1]
+    assert len(text) == 3_000 and text.endswith("…") and "TAIL" not in body
+    assert body.endswith("Capture 01234567 · Memory decisions_4_1789 · Truncated")
+    escaped = post_text("<" * 3_001).split("\n\n")[1]
+    assert escaped == "&lt;" * 2_999 + "…"
+
+
+def test_delivered_post_is_escaped_plain_text(app, env, monkeypatch):
+    idea = capture(env.inbox, text="<@U0BOT1> <!channel> deploy <https://evil.example|now>")
+    brain(monkeypatch, lambda r: httpx.Response(200, json={"id": "project_5_5"}))
+    response = call(
+        app,
+        "POST",
+        f"/api/memory-inbox/{idea['id']}/promote",
+        {"priority": "high", "post_to_slack": True},
+    )
+    assert response.status_code == 200, response.text
+    seen = []
+
+    def handler(request):
+        seen.append(json.loads(request.content))
+        return ok(request)
+
+    deliver(env.inbox, handler)
+    assert len(seen) == 1 and seen[0]["mrkdwn"] is False
+    assert seen[0]["text"] == (
+        "[HIGH] Memory logged to project\n\n"
+        "&lt;!channel&gt; deploy &lt;https://evil.example|now&gt;\n\n"
+        f"Capture {idea['id'][:8]} · Memory project_5_5"
+    )
+    assert "thread_ts" not in seen[0]

@@ -28,6 +28,7 @@ BRAIN_URL = "http://localhost:8100"
 BRAIN_TRANSPORT = None  # tests inject an httpx transport; production dials the local Brain
 MEMORY_CATEGORIES = ("decisions", "patterns", "lessons", "project", "meta", "team", "agents")
 MENTION = re.compile(r"<@[A-Z0-9]+>")
+MEMORY_POST_TEXT_LIMIT = 3_000
 
 
 @asynccontextmanager
@@ -146,13 +147,25 @@ def capture_text(text: str) -> str:
     return MENTION.sub("", text).strip()
 
 
+def slack_escape(text: str) -> str:
+    """Neutralize Slack control syntax: <!channel>, <!here>, <@U…> and <url|label> links."""
+    return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+
 def memory_post_text(idea: dict, *, memory_id: str, category: str, priority: str) -> str:
-    """The body approved at promote time and posted verbatim by the memory post worker."""
-    return (
-        f"[{priority.upper()}] Memory logged to {category}\n\n"
-        f"{capture_text(idea['text'])}\n\n"
-        f"Capture {idea['id'][:8]} · Memory {memory_id}"
-    )
+    """The body approved at promote time and posted verbatim by the memory post worker.
+
+    The text is capped before escaping so an entity is never cut in half; the
+    whole body is escaped because the memory id comes back from the Brain.
+    """
+    text = capture_text(idea["text"])
+    truncated = len(text) > MEMORY_POST_TEXT_LIMIT
+    if truncated:
+        text = text[: MEMORY_POST_TEXT_LIMIT - 1] + "…"
+    footer = f"Capture {idea['id'][:8]} · Memory {memory_id}"
+    if truncated:
+        footer += " · Truncated"
+    return slack_escape(f"[{priority.upper()}] Memory logged to {category}\n\n{text}\n\n{footer}")
 
 
 async def remember_in_brain(fact: str, category: str, metadata: dict) -> dict:
