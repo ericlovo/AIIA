@@ -185,6 +185,30 @@ try {
 
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false)
 
+    // A7: suites carry one colour per suite, and the legend filters the Map.
+    await page.waitForFunction(() => document.querySelectorAll('[data-graph-node]').length === 7)
+    const badgeColours = await page.locator('[data-suite-badge]').evaluateAll(nodes => nodes.map(node => [node.dataset.suiteBadge, getComputedStyle(node).color]))
+    assert.equal(badgeColours.length, 3)
+    const research = badgeColours.filter(([slug]) => slug === 'research').map(([, colour]) => colour)
+    const review = badgeColours.filter(([slug]) => slug === 'review').map(([, colour]) => colour)
+    assert.equal(research.length, 2)
+    assert.equal(research[0], research[1])
+    assert.notEqual(research[0], review[0])
+    assert.equal(await page.locator('[data-agent-target="agent-solo"] [data-suite-badge]').count(), 0)
+    const legend = page.getByRole('group', { name: 'Suite legend' })
+    await legend.getByRole('button', { name: 'research suite, 2 agents' }).click()
+    await page.waitForFunction(() => document.querySelectorAll('[data-graph-node]').length === 4)
+    assert.equal(await legend.getByRole('button', { name: 'research suite, 2 agents' }).getAttribute('aria-pressed'), 'true')
+    assert.equal(await page.locator('[data-agent-target="agent-gate"]').count(), 0)
+    assert.equal(await page.locator('[data-agent-target="agent-solo"]').count(), 0)
+    assert.equal(await page.locator('[data-edge="handoff:hof-new"]').count(), 0)
+    await page.getByText('2 of 4 agents', { exact: false }).waitFor()
+    await page.screenshot({ path: join(output, `suite-filter-${width}.png`) })
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false)
+    await legend.getByRole('button', { name: 'All agents' }).click()
+    await page.waitForFunction(() => document.querySelectorAll('[data-graph-node]').length === 7)
+    assert.equal(await page.locator('[data-edge="handoff:hof-new"]').count(), 1)
+
     // Selecting an agent-to-assignment edge opens that assignment.
     await page.locator('[data-edge="hierarchy:asg-draft"]').click()
     await page.getByRole('heading', { name: 'Assignment queue' }).waitFor()
@@ -193,7 +217,7 @@ try {
 
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false)
     assert.deepEqual(errors, [])
-    console.log(`${width}px: wire to confirmed handoff, inline error, edge inspect, keyboard edge remove with confirm, edge opens assignment passed`)
+    console.log(`${width}px: wire to confirmed handoff, inline error, edge inspect, keyboard edge remove with confirm, edge opens assignment, suite colours and filter passed`)
     await context.close()
   }
 } finally {

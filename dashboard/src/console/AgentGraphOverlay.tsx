@@ -1,6 +1,6 @@
 import { useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { reconcileLayout } from './graphLayout'
+import { orderBySuite, reconcileLayout, suiteColor, suiteOf } from './graphLayout'
 import { HandoffComposer } from './HandoffComposer'
 import { HandoffInspector } from './HandoffInspector'
 import { formatHandoffTime } from './mapRelationships'
@@ -142,7 +142,7 @@ export function AgentGraphOverlay({
   const [draggingId, setDraggingId] = useState<string | null>(null)
   const nodes = useMemo<GraphNode[]>(() => {
     const work = visibleWork(assignments, showCompleted)
-    return agents.flatMap(agent => [
+    return orderBySuite(agents).flatMap(agent => [
       { id: `agent:${agent.id}`, kind: 'agent' as const, agent },
       ...work
         .filter(assignment => assignment.agent_id === agent.id)
@@ -416,7 +416,7 @@ export function AgentGraphOverlay({
               data-agent-target={node.agent?.id}
               type="button"
               aria-label={node.agent
-                ? `${node.agent.name}. ${node.agent.mission || 'No mission defined'}. Status: ${node.agent.status}`
+                ? `${node.agent.name}. ${node.agent.mission || 'No mission defined'}. Status: ${node.agent.status}${suiteOf(node.agent) ? `. Suite: ${suiteOf(node.agent)}` : ''}`
                 : `${assignment?.title} assignment node`}
               onPointerDown={event => handlePointerDown(event, node)}
               onPointerMove={handlePointerMove}
@@ -560,15 +560,20 @@ function GraphEdge({ from, to, tone, edgeId, label, selected = false, onSelect }
 }
 
 function AgentNode({ agent }: { agent: Agent }) {
+  const suite = suiteOf(agent)
   return (
     <>
+      {suite && <i aria-hidden="true" className="absolute inset-x-0 top-0 h-0.5" style={{ background: suiteColor(suite) }} />}
       <div className="flex items-start justify-between gap-2">
         <span title={agent.name} className="line-clamp-2 min-w-0 text-xs font-semibold leading-snug text-white">{agent.name}</span>
         <i aria-hidden="true" className={`mt-1 h-1.5 w-1.5 shrink-0 rounded-full ${agent.status === 'running' ? 'bg-amber-300' : agent.status === 'error' ? 'bg-red-400' : 'bg-emerald-400'}`} />
       </div>
       <div className="mt-2 text-[8px] font-semibold tracking-[0.14em] uppercase text-cyan-300/55">Mission</div>
       <div title={agent.mission} className="mt-0.5 line-clamp-2 text-[10px] leading-relaxed text-white/55">{agent.mission || 'No mission defined'}</div>
-      <div className={`mt-2 text-[8px] font-semibold tracking-[0.14em] uppercase ${agent.status === 'running' ? 'text-amber-300' : agent.status === 'error' ? 'text-red-300' : 'text-emerald-300/60'}`}>{agent.status}</div>
+      <div className="mt-2 flex items-center justify-between gap-2">
+        <span className={`text-[8px] font-semibold tracking-[0.14em] uppercase ${agent.status === 'running' ? 'text-amber-300' : agent.status === 'error' ? 'text-red-300' : 'text-emerald-300/60'}`}>{agent.status}</span>
+        {suite && <span data-suite-badge={suite} title={`Suite: ${suite}`} className="flex min-w-0 items-center gap-1 text-[8px] font-semibold uppercase" style={{ color: suiteColor(suite) }}><i aria-hidden="true" className="h-1.5 w-1.5 shrink-0 rounded-full" style={{ background: suiteColor(suite) }} /><span className="truncate">{suite}</span></span>}
+      </div>
     </>
   )
 }
