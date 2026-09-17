@@ -218,3 +218,26 @@ def test_registry_update_many_is_all_or_nothing(tmp_path):
     assert [agent["max_tokens"] for agent in updated] == [500, 500]
     restored = AgentRegistry(registry.data_file)
     assert restored.get(good["id"])["max_tokens"] == restored.get(bad["id"])["max_tokens"] == 500
+
+
+def test_failed_save_leaves_every_member_unchanged_in_memory_and_on_disk(studio, monkeypatch):
+    server, registry, events, _ollama, ops, _outsider = studio
+    disk = registry.data_file.read_bytes()
+    memory = [dict(agent) for agent in registry.agents]
+
+    def refuse_save() -> None:
+        raise server.PersistenceError("disk full")
+
+    monkeypatch.setattr(registry, "_save_required", refuse_save)
+
+    response = _call(
+        server,
+        "PATCH",
+        "/api/agent-suites/ops/agents",
+        json={"temperature": 0.9, "max_tokens": 700},
+    )
+
+    assert response.status_code == 503
+    assert registry.data_file.read_bytes() == disk
+    assert registry.agents == memory
+    assert events == []
