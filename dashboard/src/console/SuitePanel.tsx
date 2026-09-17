@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { SuitePatchRejected, type Agent, type AgentSuitePatch } from '../lib/api'
 import type { SuiteGroup } from './graphLayout'
 import { EMPTY_SUITE_FORM, buildSuitePatch, describeSuiteSettings, suiteDetailText, type SuiteForm } from './suiteModulation'
@@ -20,6 +20,8 @@ const inputClass = 'w-full border border-white/15 bg-black/40 px-2 py-1.5 text-x
 export function SuitePanel({ group, members, onApply, onClose }: SuitePanelProps) {
   const [form, setForm] = useState<SuiteForm>(EMPTY_SUITE_FORM)
   const [pending, setPending] = useState(false)
+  // State lands on the next render; a second submit in the same task must see the first.
+  const inFlight = useRef(false)
   const [error, setError] = useState('')
   const [rejections, setRejections] = useState<Rejection[]>([])
   const [notice, setNotice] = useState('')
@@ -35,7 +37,8 @@ export function SuitePanel({ group, members, onApply, onClose }: SuitePanelProps
 
   async function apply(event: React.FormEvent) {
     event.preventDefault()
-    if (errors.length || pending) return
+    if (errors.length || inFlight.current) return
+    inFlight.current = true
     setPending(true)
     setError('')
     setRejections([])
@@ -55,6 +58,7 @@ export function SuitePanel({ group, members, onApply, onClose }: SuitePanelProps
         setError(suiteDetailText(failure instanceof Error ? failure.message : ''))
       }
     } finally {
+      inFlight.current = false
       setPending(false)
     }
   }

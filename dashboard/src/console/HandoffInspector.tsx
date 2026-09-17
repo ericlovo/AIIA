@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import type { Agent, Assignment, Handoff } from '../lib/api'
 import { formatHandoffTime, handoffErrorText } from './mapRelationships'
 
@@ -14,6 +14,7 @@ interface HandoffInspectorProps {
 export function HandoffInspector({ handoff, agents, assignments, onClose, onOpenAssignment, onDelete }: HandoffInspectorProps) {
   const [confirming, setConfirming] = useState(false)
   const [pending, setPending] = useState(false)
+  const inFlight = useRef(false)
   const [error, setError] = useState('')
   const agentName = (id: string) => agents.find(agent => agent.id === id)?.name ?? 'Removed agent'
   const assignmentTitle = (id: string) => assignments.find(item => item.id === id)?.title ?? 'Assignment not loaded'
@@ -21,12 +22,15 @@ export function HandoffInspector({ handoff, agents, assignments, onClose, onOpen
   const target = assignments.find(item => item.id === handoff.target_assignment_id)
 
   async function remove() {
+    if (inFlight.current) return
+    inFlight.current = true
     setPending(true)
     setError('')
     try {
       await onDelete(handoff.id)
     } catch (failure) {
       setError(handoffErrorText(failure instanceof Error ? failure.message : ''))
+      inFlight.current = false
       setPending(false)
       setConfirming(false)
     }

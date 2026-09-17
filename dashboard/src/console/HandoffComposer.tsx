@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import type { Agent, Assignment, Handoff } from '../lib/api'
 import { HANDOFF_INSTRUCTIONS_MAX, defaultHandoffInstructions, handoffErrorText, handoffInstructionsError } from './mapRelationships'
 
@@ -15,18 +15,22 @@ interface HandoffComposerProps {
 export function HandoffComposer({ source, fromAgent, toAgent, onCreate, onCreated, onCancel, onOpenForm }: HandoffComposerProps) {
   const [instructions, setInstructions] = useState(() => defaultHandoffInstructions(source))
   const [pending, setPending] = useState(false)
+  // State lands on the next render; a second submit in the same task must see the first.
+  const inFlight = useRef(false)
   const [error, setError] = useState('')
   const invalid = handoffInstructionsError(instructions)
 
   async function submit(event: React.FormEvent) {
     event.preventDefault()
-    if (invalid || pending) return
+    if (invalid || inFlight.current) return
+    inFlight.current = true
     setPending(true)
     setError('')
     try {
       onCreated(await onCreate(instructions.trim()))
     } catch (failure) {
       setError(handoffErrorText(failure instanceof Error ? failure.message : ''))
+      inFlight.current = false
       setPending(false)
     }
   }
