@@ -7,6 +7,18 @@ All notable changes to AIIA are documented here. This project adheres to
 ## [Unreleased]
 
 ### Added
+- **Assignment attempt history** - assignment and downstream handoff panels show
+  paged saved attempts with model, duration, original task, output, and failure
+  evidence. Applied output is identified separately from review acceptance;
+  missing current output and unavailable history remain explicit.
+- **Dismiss a settled assignment** - review gains a `dismissed` decision, the
+  only one available for a failed run, which has no work product to accept.
+  Dismissed records leave the Switchboard attention list but keep their status,
+  error, and history, and Reopen restores them. Completed work can be dismissed
+  too, so rejected output no longer sits in attention forever. Accepting and
+  rejecting still require a non-empty result; dismissing and reopening require
+  the run to have settled, so queued and running work is refused with
+  `assignment_not_settled`. The stale-version guard applies unchanged.
 - **Dismiss a settled assignment** - dismissal is its own decision, stored in
   `dismissed_at` and `dismiss_note`, independent of the review verdict. A
   dismissed record leaves the Switchboard attention list but keeps its status,
