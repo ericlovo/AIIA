@@ -17,7 +17,12 @@ from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
 
 from local_brain.command_center import slack_receipts
-from local_brain.command_center.memory_inbox import IDEA_STATUSES, MemoryInbox
+from local_brain.command_center.memory_inbox import (
+    IDEA_SORTS,
+    IDEA_STATUSES,
+    PRIORITIES,
+    MemoryInbox,
+)
 
 BRAIN_URL = "http://localhost:8100"
 BRAIN_TRANSPORT = None  # tests inject an httpx transport; production dials the local Brain
@@ -81,13 +86,29 @@ def slack_status():
 
 
 @router.get("/api/memory-inbox")
-def list_ideas(project: str = "", query: str = "", offset: int = 0, status: str = ""):
+def list_ideas(
+    project: str = "",
+    query: str = "",
+    offset: int = 0,
+    status: str = "",
+    priority: str = "",
+    sort: str = "newest",
+):
     if offset < 0 or offset > 1_000_000 or len(query) > 500:
         raise HTTPException(status_code=422, detail="invalid_inbox_query")
     if status and status not in IDEA_STATUSES:
         raise HTTPException(status_code=422, detail="invalid_inbox_query")
+    if (priority and priority not in PRIORITIES) or sort not in IDEA_SORTS:
+        raise HTTPException(status_code=422, detail="invalid_inbox_query")
     try:
-        return inbox().list(project=project, query=query, offset=offset, status=status)
+        return inbox().list(
+            project=project,
+            query=query,
+            offset=offset,
+            status=status,
+            priority=priority,
+            sort=sort,
+        )
     except (OSError, sqlite3.Error) as exc:
         raise HTTPException(status_code=503, detail="memory_inbox_unavailable") from exc
 
@@ -95,6 +116,7 @@ def list_ideas(project: str = "", query: str = "", offset: int = 0, status: str 
 class PromoteRequest(BaseModel):
     category: str = "project"
     note: str = Field(default="", max_length=2_000)
+    priority: str = "normal"
 
 
 class DismissRequest(BaseModel):
@@ -158,6 +180,8 @@ def _load_idea(idea_id: str) -> dict:
 async def promote_idea(idea_id: str, body: PromoteRequest):
     if body.category not in MEMORY_CATEGORIES:
         raise HTTPException(status_code=422, detail="invalid_memory_category")
+    if body.priority not in PRIORITIES:
+        raise HTTPException(status_code=422, detail="invalid_priority")
     idea = _load_idea(idea_id)
     if idea["status"] == "promoted":
         raise HTTPException(status_code=409, detail="idea_already_promoted")
@@ -183,7 +207,11 @@ async def promote_idea(idea_id: str, body: PromoteRequest):
         raise HTTPException(status_code=503, detail="brain_unavailable") from exc
     try:
         updated = inbox().promote(
-            idea_id, memory_id=memory["id"], category=body.category, note=body.note
+            idea_id,
+            memory_id=memory["id"],
+            category=body.category,
+            note=body.note,
+            priority=body.priority,
         )
     except ValueError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc

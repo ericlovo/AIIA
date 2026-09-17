@@ -8,6 +8,12 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 IDEA_STATUSES = ("unreviewed", "promoted", "dismissed")
+# Highest first; list sorting and memory post delivery both use this order.
+PRIORITIES = ("urgent", "high", "normal", "low")
+PRIORITY_RANK = (
+    "CASE ideas.priority WHEN 'urgent' THEN 0 WHEN 'high' THEN 1 WHEN 'normal' THEN 2 ELSE 3 END"
+)
+IDEA_SORTS = ("newest", "priority")
 # Receipt kinds map to fixed tables; never interpolate caller strings into SQL.
 # Queries below carry `# nosec B608` for that reason: the only interpolated
 # identifiers are these literal table names, and every value is bound through `?`.
@@ -19,6 +25,10 @@ RECEIPT_COLUMNS = """(
     error TEXT NOT NULL DEFAULT '', slack_ts TEXT NOT NULL DEFAULT ''
 )"""
 IDEA_REVIEW_COLUMNS = ("memory_id", "memory_category", "review_note", "reviewed_at")
+IDEA_POST_COLUMNS = {
+    "priority": "TEXT NOT NULL DEFAULT 'normal'",
+    "post_requested": "INTEGER NOT NULL DEFAULT 0",
+}
 IDEA_SELECT = (
     "SELECT ideas.*,c.status AS acknowledgement_status,"
     "c.error AS acknowledgement_error,c.slack_ts AS acknowledgement_ts,"
@@ -61,6 +71,9 @@ class MemoryInbox:
                         connection.execute(
                             f"ALTER TABLE ideas ADD COLUMN {column} TEXT NOT NULL DEFAULT ''"
                         )
+                for column, definition in IDEA_POST_COLUMNS.items():
+                    if column not in columns:
+                        connection.execute(f"ALTER TABLE ideas ADD COLUMN {column} {definition}")
                 yield connection
         finally:
             connection.close()
@@ -112,12 +125,22 @@ class MemoryInbox:
             row = db.execute(IDEA_SELECT + " WHERE ideas.id=?", (idea_id,)).fetchone()
             return dict(row) if row else None
 
-    def promote(self, idea_id: str, *, memory_id: str, category: str, note: str = "") -> dict:
+    def promote(
+        self,
+        idea_id: str,
+        *,
+        memory_id: str,
+        category: str,
+        note: str = "",
+        priority: str = "normal",
+    ) -> dict:
         """Mark a capture as logged to Brain memory and queue one fixed Slack receipt.
 
         The receipt is queued at most once per idea and only when the capture
         arrived through a Slack thread; slash-command captures have no thread.
         """
+        if priority not in PRIORITIES:
+            raise ValueError("invalid_priority")
         if not memory_id or len(note) > 2_000:
             raise ValueError("invalid_promotion")
         with self.connect() as db:
@@ -133,8 +156,8 @@ class MemoryInbox:
                 raise ValueError("idea_already_promoted")
             db.execute(
                 "UPDATE ideas SET status='promoted',memory_id=?,memory_category=?,"
-                "review_note=?,reviewed_at=? WHERE id=?",
-                (memory_id, category, note.strip(), _now(), idea_id),
+                "review_note=?,reviewed_at=?,priority=? WHERE id=?",
+                (memory_id, category, note.strip(), _now(), priority, idea_id),
             )
             if row["thread_ts"]:
                 db.execute(
@@ -240,10 +263,19 @@ class MemoryInbox:
             return result.rowcount == 1
 
     def list(
-        self, *, project: str = "", query: str = "", offset: int = 0, status: str = ""
+        self,
+        *,
+        project: str = "",
+        query: str = "",
+        offset: int = 0,
+        status: str = "",
+        priority: str = "",
+        sort: str = "newest",
     ) -> dict:
         if status and status not in IDEA_STATUSES:
             raise ValueError("invalid_idea_status")
+        if (priority and priority not in PRIORITIES) or sort not in IDEA_SORTS:
+            raise ValueError("invalid_idea_query")
         clauses, args = [], []
         if project:
             clauses.append("ideas.project=?")
@@ -251,6 +283,9 @@ class MemoryInbox:
         if query:
             clauses.append("instr(lower(ideas.text), lower(?)) > 0")
             args.append(query)
+        if priority:
+            clauses.append("ideas.priority=?")
+            args.append(priority)
         scope = " WHERE " + " AND ".join(clauses) if clauses else ""
         if status:
             clauses.append("ideas.status=?")
@@ -267,10 +302,13 @@ class MemoryInbox:
                     args[: len(args) - (1 if status else 0)],
                 ).fetchall()
             )
+            order = PRIORITY_RANK + "," if sort == "priority" else ""
             rows = db.execute(
                 IDEA_SELECT
                 + where
-                + " ORDER BY ideas.created_at DESC,ideas.id DESC LIMIT 50 OFFSET ?",
+                + " ORDER BY "
+                + order
+                + "ideas.created_at DESC,ideas.id DESC LIMIT 50 OFFSET ?",
                 [*args, offset],
             )
             return {

@@ -262,6 +262,9 @@ export interface AgentTokenUsage {
 export type MemoryIdeaStatus = 'unreviewed' | 'promoted' | 'dismissed';
 export type MemoryCategory = 'decisions' | 'patterns' | 'lessons' | 'project' | 'meta' | 'team' | 'agents';
 export const MEMORY_CATEGORIES: MemoryCategory[] = ['project', 'decisions', 'patterns', 'lessons', 'team', 'agents', 'meta'];
+export type MemoryPriority = 'urgent' | 'high' | 'normal' | 'low';
+export const MEMORY_PRIORITIES: MemoryPriority[] = ['urgent', 'high', 'normal', 'low'];
+export type MemoryInboxSort = 'newest' | 'priority';
 
 export interface MemoryIdea {
   id: string;
@@ -277,6 +280,8 @@ export interface MemoryIdea {
   memory_category: string;
   review_note: string;
   reviewed_at: string;
+  priority: MemoryPriority;
+  post_requested: number;
   acknowledgement_status: string | null;
   acknowledgement_error: string | null;
   acknowledgement_ts: string | null;
@@ -595,17 +600,19 @@ export const api = {
   runAgent: (id: string, task: string) =>
     post<{ agent: Agent; model: string; latency_ms: number }>(`/api/agents/${id}/run`, { task }),
 
-  memoryInbox: (params: { project?: string; query?: string; status?: MemoryIdeaStatus | ''; offset?: number } = {}) => {
+  memoryInbox: (params: { project?: string; query?: string; status?: MemoryIdeaStatus | ''; offset?: number; priority?: MemoryPriority | ''; sort?: MemoryInboxSort } = {}) => {
     const search = new URLSearchParams();
     if (params.project) search.set('project', params.project);
     if (params.query) search.set('query', params.query);
     if (params.status) search.set('status', params.status);
+    if (params.priority) search.set('priority', params.priority);
+    if (params.sort && params.sort !== 'newest') search.set('sort', params.sort);
     if (params.offset) search.set('offset', String(params.offset));
     const suffix = search.toString();
     return get<MemoryInboxPage>(`/api/memory-inbox${suffix ? `?${suffix}` : ''}`);
   },
-  promoteIdea: (id: string, category: MemoryCategory, note = '') =>
-    post<{ idea: MemoryIdea; memory_id: string }>(`/api/memory-inbox/${encodeURIComponent(id)}/promote`, { category, note }),
+  promoteIdea: (id: string, category: MemoryCategory, note = '', options: { priority?: MemoryPriority } = {}) =>
+    post<{ idea: MemoryIdea; memory_id: string }>(`/api/memory-inbox/${encodeURIComponent(id)}/promote`, { category, note, priority: options.priority ?? 'normal' }),
   dismissIdea: (id: string, note = '') =>
     post<{ idea: MemoryIdea }>(`/api/memory-inbox/${encodeURIComponent(id)}/dismiss`, { note }),
   restoreIdea: (id: string) => post<{ idea: MemoryIdea }>(`/api/memory-inbox/${encodeURIComponent(id)}/restore`),

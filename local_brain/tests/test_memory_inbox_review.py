@@ -75,6 +75,22 @@ def test_migration_keeps_old_rows_and_is_repeatable(tmp_path):
         assert listing["counts"] == {"unreviewed": 1, "promoted": 0, "dismissed": 0}
 
 
+def test_priority_migration_is_additive_and_repeatable(tmp_path):
+    path = tmp_path / "inbox.sqlite3"
+    idea = capture(MemoryInbox(path))
+    with sqlite3.connect(path) as db:
+        db.execute("ALTER TABLE ideas DROP COLUMN priority")
+        db.execute("ALTER TABLE ideas DROP COLUMN post_requested")
+        columns = {row[1] for row in db.execute("PRAGMA table_info(ideas)")}
+        assert "priority" not in columns and "post_requested" not in columns
+    for _ in range(2):
+        row = MemoryInbox(path).get(idea["id"])
+        assert row["text"] == idea["text"]
+        assert row["priority"] == "normal" and row["post_requested"] == 0
+    with sqlite3.connect(path) as db, pytest.raises(sqlite3.IntegrityError):
+        db.execute("UPDATE ideas SET priority=NULL")
+
+
 def test_promote_records_memory_and_queues_one_receipt(inbox):
     idea = capture(inbox)
     updated = inbox.promote(idea["id"], memory_id="project_1_1", category="project", note=" why ")
@@ -88,6 +104,36 @@ def test_promote_records_memory_and_queues_one_receipt(inbox):
     with pytest.raises(ValueError, match="idea_already_promoted"):
         inbox.promote(idea["id"], memory_id="project_1_2", category="project")
     assert inbox.receipt_status("promotion") == {"pending": 1}
+
+
+def test_promote_records_priority_and_rejects_unknown(inbox):
+    idea = capture(inbox)
+    assert idea["priority"] == "normal"
+    with pytest.raises(ValueError, match="invalid_priority"):
+        inbox.promote(idea["id"], memory_id="m", category="project", priority="critical")
+    assert inbox.get(idea["id"])["status"] == "unreviewed"
+    updated = inbox.promote(idea["id"], memory_id="m", category="project", priority="urgent")
+    assert updated["priority"] == "urgent"
+    assert inbox.get(idea["id"])["priority"] == "urgent"
+
+
+def test_list_filters_and_sorts_by_priority(inbox):
+    low = capture(inbox, key="event:1")
+    urgent = capture(inbox, key="event:2")
+    plain = capture(inbox, key="event:3")
+    inbox.promote(low["id"], memory_id="m1", category="project", priority="low")
+    inbox.promote(urgent["id"], memory_id="m2", category="project", priority="urgent")
+    newest = [row["id"] for row in inbox.list()["ideas"]]
+    ranked = [row["id"] for row in inbox.list(sort="priority")["ideas"]]
+    assert ranked[0] == urgent["id"] and ranked[-1] == low["id"]
+    assert ranked[1] == plain["id"]
+    assert sorted(newest) == sorted(ranked)
+    only = inbox.list(priority="urgent")
+    assert [row["id"] for row in only["ideas"]] == [urgent["id"]] and only["total"] == 1
+    assert only["counts"] == {"unreviewed": 0, "promoted": 1, "dismissed": 0}
+    for bad in ({"priority": "critical"}, {"sort": "oldest"}):
+        with pytest.raises(ValueError, match="invalid_idea_query"):
+            inbox.list(**bad)
 
 
 def test_promote_without_thread_queues_nothing(inbox):
@@ -308,6 +354,22 @@ def test_promote_route_validation(app, monkeypatch):
     )
     assert call(app, "POST", f"/api/memory-inbox/{empty['id']}/promote", {}).status_code == 422
     assert call(app, "GET", "/api/memory-inbox?status=weird").status_code == 422
+
+
+def test_promote_route_records_priority(app, monkeypatch):
+    idea = capture(slack_capture.inbox())
+    brain(monkeypatch, lambda r: pytest.fail("brain must not be called"))
+    bad = call(app, "POST", f"/api/memory-inbox/{idea['id']}/promote", {"priority": "asap"})
+    assert bad.status_code == 422 and bad.json()["detail"] == "invalid_priority"
+    brain(monkeypatch, lambda r: httpx.Response(200, json={"id": "project_1_1"}))
+    response = call(app, "POST", f"/api/memory-inbox/{idea['id']}/promote", {"priority": "high"})
+    assert response.status_code == 200, response.text
+    assert response.json()["idea"]["priority"] == "high"
+    assert response.json()["idea"]["post_requested"] == 0
+    listing = call(app, "GET", "/api/memory-inbox?priority=high&sort=priority").json()
+    assert listing["total"] == 1
+    assert call(app, "GET", "/api/memory-inbox?priority=asap").status_code == 422
+    assert call(app, "GET", "/api/memory-inbox?sort=oldest").status_code == 422
 
 
 def test_dismiss_and_restore_routes(app):

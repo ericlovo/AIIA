@@ -14,3 +14,11 @@ export function receiptLabel(status: string | null, error: string | null, noun: 
   if (status === 'pending' || status === 'sending') return { tone: 'pending', text: `${noun} receipt queued for Slack` }
   return { tone: 'none', text: `No Slack thread for ${noun.toLowerCase()} receipt` }
 }
+
+export type PriorityTone = 'urgent' | 'high' | 'normal' | 'low'
+
+/** Badge text for a stored priority; anything unrecognised reads as normal, matching the column default. */
+export function priorityLabel(priority: string | null | undefined): { tone: PriorityTone; text: string } {
+  const tone: PriorityTone = priority === 'urgent' || priority === 'high' || priority === 'low' ? priority : 'normal'
+  return { tone, text: tone.charAt(0).toUpperCase() + tone.slice(1) }
+}
