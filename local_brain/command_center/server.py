@@ -18,6 +18,7 @@ import os
 import sqlite3
 import time
 from collections import deque
+from copy import deepcopy
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -1142,6 +1143,7 @@ class AgentCreateRequest(BaseModel):
     repo_id: str = Field(default="", max_length=80)
     temperature: float = Field(default=0.35, ge=0.0, le=1.0)
     max_tokens: int = Field(default=1_200, ge=128, le=2_000)
+    model: str = Field(default="", max_length=120)
     loop_enabled: bool = False
     loop_interval_minutes: int = Field(default=60, ge=15, le=1_440)
     loop_task: str = Field(default="", max_length=8_000)
@@ -1167,6 +1169,7 @@ class AgentPatchRequest(BaseModel):
     repo_id: str = Field(default=None, max_length=80)
     temperature: float = Field(default=None, ge=0.0, le=1.0)
     max_tokens: int = Field(default=None, ge=128, le=2_000)
+    model: str = Field(default=None, max_length=120)
     loop_enabled: bool = Field(default=None)
     loop_interval_minutes: int = Field(default=None, ge=15, le=1_440)
     loop_task: str = Field(default=None, max_length=8_000)
@@ -1313,6 +1316,61 @@ async def agent_resources():
     }
 
 
+OLLAMA_TAGS_URL = "http://127.0.0.1:11434/api/tags"
+# Mirrors LocalBrainConfig: the Brain's task role when LOCAL_TASK_MODEL is unset.
+BRAIN_TASK_MODEL_FALLBACK = "llama3.1:8b-instruct-q8_0"
+EMBEDDING_FAMILIES = {"nomic-bert", "bert"}
+
+
+def _task_default_model() -> str:
+    return os.getenv("LOCAL_TASK_MODEL", "").strip() or BRAIN_TASK_MODEL_FALLBACK
+
+
+async def _installed_chat_models() -> list[dict[str, Any]]:
+    """Installed local chat models from Ollama on localhost; embeddings are excluded."""
+    try:
+        async with httpx.AsyncClient(timeout=httpx.Timeout(5.0, connect=2.0)) as client:
+            response = await client.get(OLLAMA_TAGS_URL)
+        if response.status_code != 200:
+            raise ValueError(f"ollama_status_{response.status_code}")
+        rows = response.json().get("models") or []
+        default = _task_default_model()
+        models = []
+        for row in rows:
+            name = str(row.get("name") or "").strip()
+            details = row.get("details") or {}
+            family = str(details.get("family") or "")
+            if not name or "embed" in name.lower() or family.lower() in EMBEDDING_FAMILIES:
+                continue
+            models.append(
+                {
+                    "id": name,
+                    "label": name,
+                    "family": family,
+                    "parameter_size": str(details.get("parameter_size") or ""),
+                    "size_gb": round(float(row.get("size") or 0) / 1_000_000_000, 1),
+                    "default": name == default,
+                }
+            )
+        return models
+    except (httpx.HTTPError, ValueError, TypeError, AttributeError) as exc:
+        raise HTTPException(status_code=503, detail="models_unavailable") from exc
+
+
+async def _validate_agent_model(model: str | None, current: str = "") -> None:
+    model = str(model or "").strip()
+    # An unchanged model is not re-verified, so an Ollama outage cannot block other edits.
+    if not model or model == current:
+        return
+    if model not in {row["id"] for row in await _installed_chat_models()}:
+        raise HTTPException(status_code=422, detail="unknown_model")
+
+
+@app.get("/api/agents/models")
+async def agent_models():
+    return {"default": _task_default_model(), "models": await _installed_chat_models()}
+
+
 def _validate_agent_repo(body: AgentCreateRequest) -> None:
     _require_mounted_repo(body.tools, body.repo_id)
 
@@ -1333,6 +1391,7 @@ def _patch_changes(body: BaseModel | None) -> dict[str, Any]:
 @app.post("/api/agents")
 async def create_agent(body: AgentCreateRequest):
     _validate_agent_repo(body)
+    await _validate_agent_model(body.model)
     try:
         agent = agent_registry.create(**body.model_dump())
     except ValueError as exc:
@@ -1360,6 +1419,9 @@ async def set_agent_loop(agent_id: str, body: AgentLoopState):
 @app.put("/api/agents/{agent_id}")
 async def update_agent(agent_id: str, body: AgentCreateRequest):
     _validate_agent_repo(body)
+    existing = agent_registry.get(agent_id)
+    if existing and "model" in body.model_fields_set:
+        await _validate_agent_model(body.model, existing.get("model", ""))
     try:
         agent = agent_registry.update(agent_id, **body.model_dump(exclude_unset=True))
     except ValueError as exc:
@@ -1382,6 +1444,8 @@ async def patch_agent(agent_id: str, body: AgentPatchRequest | None = None):
             changes.get("tools", agent.get("tools", [])),
             changes.get("repo_id", agent.get("repo_id", "")),
         )
+    if "model" in changes:
+        await _validate_agent_model(changes["model"], agent.get("model", ""))
     try:
         updated = agent_registry.update(agent_id, **changes)
     except ValueError as exc:
@@ -1417,21 +1481,28 @@ async def _execute_agent(
             raise HTTPException(
                 status_code=503, detail="Storage unavailable; run was not saved or started."
             ) from exc
+        # Settings are read once here; a PATCH during this run applies to the next one.
+        agent = deepcopy(running_agent or agent)
         if running_agent:
             await broadcast_studio_event("agent", "running", running_agent)
+        requested_model = str(agent.get("model") or "").strip()
         try:
+            chat_request: dict[str, Any] = {
+                "messages": [{"role": "user", "content": task}],
+                "system": _agent_system_prompt(agent),
+                "max_tokens": agent.get("max_tokens", 1_200),
+                "temperature": agent.get("temperature", 0.35),
+                "purpose": purpose or ("agent_studio_loop" if loop_run else "agent_studio"),
+            }
+            if requested_model:
+                chat_request["model"] = requested_model
+            else:
+                chat_request["model_role"] = "task"
             async with httpx.AsyncClient(timeout=httpx.Timeout(120.0, connect=10.0)) as client:
                 response = await client.post(
                     f"{AIIA_BASE_URL}/v1/chat",
                     headers=AIIA_HEADERS,
-                    json={
-                        "messages": [{"role": "user", "content": task}],
-                        "system": _agent_system_prompt(agent),
-                        "model_role": "task",
-                        "max_tokens": agent.get("max_tokens", 1_200),
-                        "temperature": agent.get("temperature", 0.35),
-                        "purpose": purpose or ("agent_studio_loop" if loop_run else "agent_studio"),
-                    },
+                    json=chat_request,
                 )
             trigger = "interval" if loop_run else "assignment" if assignment_id else "manual"
             if response.status_code != 200:
@@ -1448,7 +1519,7 @@ async def _execute_agent(
                 raise HTTPException(status_code=503, detail=updated["last_error"])
             payload = response.json()
             result = str(payload.get("content") or "").strip()
-            model = str(payload.get("model", ""))
+            model = str(payload.get("model") or requested_model)
             latency_ms = float(payload.get("latency_ms", 0) or 0)
             if not result:
                 updated = agent_registry.finish_run(

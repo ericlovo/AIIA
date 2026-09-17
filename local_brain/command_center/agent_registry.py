@@ -88,6 +88,7 @@ class AgentRegistry:
         loop_max_runs_per_day: int = 4,
         suite: str = "",
         memory_namespace: str = "",
+        model: str = "",
     ) -> dict[str, Any]:
         if len(self.agents) >= MAX_AGENTS:
             raise ValueError("agent_limit_reached")
@@ -103,6 +104,7 @@ class AgentRegistry:
             "repo_id": str(repo_id).strip()[:80],
             "temperature": self._temperature(temperature),
             "max_tokens": self._max_tokens(max_tokens),
+            "model": self._model(model),
             "loop_enabled": bool(loop_enabled),
             "loop_interval_minutes": self._interval(loop_interval_minutes),
             "loop_task": str(loop_task).strip()[:8_000],
@@ -145,6 +147,8 @@ class AgentRegistry:
             agent["temperature"] = self._temperature(changes["temperature"])
         if "max_tokens" in changes:
             agent["max_tokens"] = self._max_tokens(changes["max_tokens"])
+        if "model" in changes:
+            agent["model"] = self._model(changes["model"])
         if "loop_enabled" in changes:
             agent["loop_enabled"] = bool(changes["loop_enabled"])
         if "loop_interval_minutes" in changes:
@@ -310,6 +314,11 @@ class AgentRegistry:
         return [str(tool).strip()[:80] for tool in tools if str(tool).strip()][:MAX_TOOLS]
 
     @staticmethod
+    def _model(value: Any) -> str:
+        # Empty means the Brain's task-role default.
+        return str(value or "").strip()[:120]
+
+    @staticmethod
     def _interval(value: Any) -> int:
         return max(15, min(int(value), 1_440))
 
@@ -394,6 +403,7 @@ class AgentRegistry:
                 agent.setdefault("repo_id", "")
                 agent.setdefault("temperature", 0.35)
                 agent.setdefault("max_tokens", 1_200)
+                agent.setdefault("model", "")
                 agent.setdefault("loop_enabled", False)
                 agent.setdefault("loop_interval_minutes", 60)
                 agent.setdefault("loop_task", "")
