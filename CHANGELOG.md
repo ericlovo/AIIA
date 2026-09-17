@@ -7,18 +7,50 @@ All notable changes to AIIA are documented here. This project adheres to
 ## [Unreleased]
 
 ### Added
+- **Agent modulation from the Map.** The Map inspector shows an agent's real
+  configuration (model, temperature, tokens, tools, skills, repository, suite,
+  loop state, persona, last result) and edits model, temperature, max tokens,
+  suite and loop settings inline, one `PATCH` per field, with optimistic updates
+  that roll back on error. Agents can be run from the Map; a busy Mini reports
+  `mini_busy`. Dropping the handoff wire on an agent now creates the handoff in
+  place instead of switching tabs; handoff edges can be selected, inspected and
+  removed; suites are coloured, filterable, and tunable as a whole from the
+  legend. Sprint spec: `docs/SPRINT-agent-modulation.md`.
+- **Agent partial update** - `PATCH /api/agents/{id}` changes only the supplied
+  fields and returns the full record; unknown fields, explicit nulls and empty
+  bodies are refused (`empty_patch`). Enabling a loop without a `loop_task` is
+  now refused on `PATCH`, `PUT` and create alike (`loop_task_required`), which
+  closes the old `PUT` bypass.
+- **Per-agent model** - agents carry `model` (empty means the task-role default,
+  backfilled on load). `GET /api/agents/models` lists installed Ollama chat
+  models, filters embedding models, and marks the default. Runs send the
+  agent's model to the Brain when set, the run ledger records the model used,
+  and a model Ollama does not list is refused (`unknown_model`; `503
+  models_unavailable` when it cannot be checked).
+- **Suite bulk modulation** - `PATCH /api/agent-suites/{suite}/agents` applies
+  one change to every member all-or-nothing: any failing member returns `422
+  suite_patch_rejected` naming each failure and changes nothing on disk.
+  `GET /api/agent-suites` now lists every suite actually in use.
+- **Prioritized memory posts** - a capture logged from the Memory log takes a
+  `priority` (`low`, `normal`, `high`, `urgent`) and can be marked
+  `post_to_slack`. Marked memories are delivered, with their text, to one
+  allowlisted channel (`AIIA_SLACK_MEMORY_POST_CHANNEL_ID`) through a durable
+  `memory_posts` outbox that claims higher priority first and reuses the
+  receipt worker's lease, backoff, rate-limit and permanent-error rules. This
+  is a new opt-in egress point, `slack.memory_post`, allowed in air-gap mode
+  only with `AIIA_SLACK_MEMORY_POST_ENABLED=1`; `slack.post` stays denied and
+  capture receipts still never carry text. Bodies are plain text with
+  mentions, channel pings and links neutralized and a 3,000-character cap;
+  requesting a post while posting is off is refused before the Brain is called
+  (`memory_posting_disabled`). Retry with
+  `acknowledgement/retry?kind=memory_post`. Decision recorded as ADR-010.
+- **Chat reasoning toggle** - `POST /v1/chat` accepts `think` (`None` keeps the
+  model default) and reports `done_reason`, so a caller can turn off qwen3's
+  hidden reasoning and tell a truncated or empty answer from a real one.
 - **Assignment attempt history** - assignment and downstream handoff panels show
   paged saved attempts with model, duration, original task, output, and failure
   evidence. Applied output is identified separately from review acceptance;
   missing current output and unavailable history remain explicit.
-- **Dismiss a settled assignment** - review gains a `dismissed` decision, the
-  only one available for a failed run, which has no work product to accept.
-  Dismissed records leave the Switchboard attention list but keep their status,
-  error, and history, and Reopen restores them. Completed work can be dismissed
-  too, so rejected output no longer sits in attention forever. Accepting and
-  rejecting still require a non-empty result; dismissing and reopening require
-  the run to have settled, so queued and running work is refused with
-  `assignment_not_settled`. The stale-version guard applies unchanged.
 - **Dismiss a settled assignment** - dismissal is its own decision, stored in
   `dismissed_at` and `dismiss_note`, independent of the review verdict. A
   dismissed record leaves the Switchboard attention list but keeps its status,
@@ -32,19 +64,6 @@ All notable changes to AIIA are documented here. This project adheres to
   `review_status` are split back apart on load, recovering the verdict and the
   original review note. The migration is idempotent and writes once, so the
   stored file never disagrees with what the API serves.
-
-### Fixed
-- **Command Center authenticated its Brain calls** - eleven proxies to
-  `/v1/aiia/*` routes omitted the API key and silently received 401 whenever
-  `LOCAL_BRAIN_API_KEY` was set. Console chat and streaming chat, the Mind memory
-  browser, memory delete, teach, session-start, the AIIA status tile, the morning
-  check-in WIP and sessions panels, and both story-indexing calls were affected;
-  each degraded quietly to an empty list, `status: unknown`, or a swallowed
-  fire-and-forget rather than an error. All now send `AIIA_HEADERS`, as does the
-  shared `get_aiia_client()` factory. `test_brain_proxy_auth.py` asserts the
-  invariant statically so a new proxy cannot reintroduce it.
-
-### Added
 - **Studio Memory log** - a Memory tab lists Mindmoor captures from the Slack
   inbox (unreviewed, logged, dismissed) with search and counts. Logging a capture
   stores it as a Brain fact with Slack provenance (capture ID, channel, author,
@@ -53,20 +72,6 @@ All notable changes to AIIA are documented here. This project adheres to
   existing outbox. Dismiss and restore keep the record local and send nothing.
   Captured text is never sent outbound. Routes:
   `POST /api/memory-inbox/{id}/promote|dismiss|restore`, `GET /api/memory-inbox?status=`.
-
-### Changed
-- **Overview RUN buttons** — activity rows can rerun their recorded task with
-  the agent's current configuration. Controls disable while the Mini is busy;
-  persistent feedback shows completion or failure without automatic retries.
-- **Air-gap Voice Conductor exception** — `AIIA_AIRGAP=1` still denies every
-  registered cloud egress point except `xai.realtime`. Studio/PWA Voice
-  Conductor can report `connected` when a key is present and mint an
-  ephemeral xAI token; journal distill, whisper, Slack, TTS, research
-  fetch, and Claude Code stay fail-closed. Allowlist is
-  `AIRGAP_ALLOWED_EGRESS` in `local_brain/egress.py` — do not expand it.
-  Docs: `docs/AIRGAP.md`, `docs/VOICE-CONDUCTOR.md`.
-
-### Added
 - **Studio switchboard** — activity history, agent controls, and a durable local
   run ledger with output inspection. Completed work is reviewed independently
   from execution status; unavailable history remains visibly unknown.
@@ -78,34 +83,6 @@ All notable changes to AIIA are documented here. This project adheres to
   optional `suite` / `memory_namespace` on Studio agents,
   `GET /api/agent-suites`, catalog match by name (no live Mini IDs,
   no runtime JSON). Air-gap and Voice unchanged.
-
-
-### Fixed
-- **Assignment output reconciliation** - durable attempt IDs tie saved agent
-  output to the exact assignment run. Startup and explicit recovery restore
-  assignment/handoff state without inference; repeated recovery preserves review
-  decisions. Studio exposes pending recovery and errors instead of silent loss.
-- **Assignment durability** — every assignment and handoff mutation is one
-  atomic write with exact in-memory rollback on storage failure; the API returns
-  503 and starts no inference when persisting the start fails. Restart recovery refuses to boot if it cannot
-  persist. Retention never evicts running, queued, or handoff-linked records and
-  rejects creation at capacity instead. Handoff context carries the full
-  artifact; oversize results are rejected, never clipped.
-- **Agent persistence and restart recovery** - failed definition changes roll
-  back in memory and return visible storage errors. Run starts persist status
-  and loop accounting together before inference. Interrupted agents restart in
-  error with loops paused for operator review; uncertain work is not replayed.
-- **Switchboard history recovery** — completed output is atomically saved with
-  pending ledger entries before SQLite insertion. Ledger outages no longer turn
-  successful assignments into empty failures; pending entries survive cache
-  eviction, agent deletion and restart, and replay by stable run ID without
-  another inference. History read failures return 503 instead of appearing empty.
-- **Switchboard capability labels** — agents without a repository display
-  "No repository" rather than implying local memory is available.
-- **Empty agent output is a failed run.** `_execute_agent` (manual, interval, and assignment) now records `error=empty_agent_result`, broadcasts `failed`, and returns HTTP 502 instead of treating blank model content as success. Activity Overview / Needs Attention surface the failure.
-- **Agent map collisions no longer bury click targets.** Completed assignments are hidden by default (toggle to show). `studio_layout` reconciles persisted positions into free lanes so a representative fleet has unique hit targets at 1280×800 and 1440×900.
-
-### Added
 - **Artifact review** — completed assignment outputs can be accepted, rejected,
   or reopened with a saved note. Version checks prevent stale review decisions;
   failed saves preserve the prior decision. The switchboard surfaces failed,
@@ -121,13 +98,11 @@ All notable changes to AIIA are documented here. This project adheres to
   Sanction spend are rejected. Without a key the UI shows
   `not_configured` and does not crash. Design + threat model:
   `docs/VOICE-CONDUCTOR.md`.
-
 - **Approval-gated Git writes** on Agent Studio worktrees. After a workspace
   is ready, agents/UI may propose `write_file`, `run_tests`, or `commit`; a
   human approve executes the allowlisted op on the isolated worktree only
   (never the source checkout). `push` and `open_pr` are deferred
   (`op_deferred:push` / `op_deferred:open_pr`).
-
 - **Executable organization spec** — `docs/EXECUTABLE-ORGANIZATION.md`
   defines the v1 increment: Assignments, typed Handoffs, Specialties,
   Agent depth (`D0`–`D4` + `maxDelegationDepth`), and Sanction-gated
@@ -153,7 +128,6 @@ All notable changes to AIIA are documented here. This project adheres to
     audit-trail check, network-watch commands).
   - `local_brain/tests/test_airgap.py` — config overrides, fail-closed
     decision matrix, Voice Conductor allowlist, call-site degradation.
-
 - **Unified `aiia` CLI** — single command entry point for all AIIA workflows.
   Installs as `aiia` on PATH after `pip install aiia`. Subcommands:
   - `aiia` — show wordmark + quick-start tips
@@ -196,6 +170,74 @@ All notable changes to AIIA are documented here. This project adheres to
   filtering, subprocess executor safety (arg whitelist, timeout,
   exit handling), memory executor round-trip, and status executor
   response shape.
+
+### Changed
+- **"Local memory" retrieves what it claims.** An agent with the Local memory
+  tool now gets up to six real memories with their ids (1,500 characters at
+  most), filtered by `memory_namespace` when set, injected as untrusted data.
+  Any failure injects "Local memory was unavailable for this run" instead of
+  claiming retrieval that did not happen.
+- **Air-gap and Slack docs corrected** - `docs/AIRGAP.md` documents both
+  conditional exceptions (`slack.capture_ack`, `slack.memory_post`) and keeps
+  "do not add to the frozenset"; `docs/SLACK-PERFORMANCE-LABS.md` resolves its
+  contradictory scope statements and states the memory-post policy change
+  plainly.
+- **Overview RUN buttons** — activity rows can rerun their recorded task with
+  the agent's current configuration. Controls disable while the Mini is busy;
+  persistent feedback shows completion or failure without automatic retries.
+- **Air-gap Voice Conductor exception** — `AIIA_AIRGAP=1` still denies every
+  registered cloud egress point except `xai.realtime`. Studio/PWA Voice
+  Conductor can report `connected` when a key is present and mint an
+  ephemeral xAI token; journal distill, whisper, Slack, TTS, research
+  fetch, and Claude Code stay fail-closed. Allowlist is
+  `AIRGAP_ALLOWED_EGRESS` in `local_brain/egress.py` — do not expand it.
+  Docs: `docs/AIRGAP.md`, `docs/VOICE-CONDUCTOR.md`.
+
+### Fixed
+- **qwen3 thinking could consume the whole output budget.** With thinking on by
+  default, a capped `/v1/chat` call could spend every token on hidden reasoning
+  and return `done_reason=length` with empty content. That is how the
+  2026-09-17 standup brief came back empty. Callers can now disable thinking
+  (see Added) and see the stop reason.
+- **Command Center authenticated its Brain calls** - eleven proxies to
+  `/v1/aiia/*` routes omitted the API key and silently received 401 whenever
+  `LOCAL_BRAIN_API_KEY` was set. Console chat and streaming chat, the Mind memory
+  browser, memory delete, teach, session-start, the AIIA status tile, the morning
+  check-in WIP and sessions panels, and both story-indexing calls were affected;
+  each degraded quietly to an empty list, `status: unknown`, or a swallowed
+  fire-and-forget rather than an error. All now send `AIIA_HEADERS`, as does the
+  shared `get_aiia_client()` factory. `test_brain_proxy_auth.py` asserts the
+  invariant statically so a new proxy cannot reintroduce it.
+- **Assignment output reconciliation** - durable attempt IDs tie saved agent
+  output to the exact assignment run. Startup and explicit recovery restore
+  assignment/handoff state without inference; repeated recovery preserves review
+  decisions. Studio exposes pending recovery and errors instead of silent loss.
+- **Assignment durability** — every assignment and handoff mutation is one
+  atomic write with exact in-memory rollback on storage failure; the API returns
+  503 and starts no inference when persisting the start fails. Restart recovery refuses to boot if it cannot
+  persist. Retention never evicts running, queued, or handoff-linked records and
+  rejects creation at capacity instead. Handoff context carries the full
+  artifact; oversize results are rejected, never clipped.
+- **Agent persistence and restart recovery** - failed definition changes roll
+  back in memory and return visible storage errors. Run starts persist status
+  and loop accounting together before inference. Interrupted agents restart in
+  error with loops paused for operator review; uncertain work is not replayed.
+- **Switchboard history recovery** — completed output is atomically saved with
+  pending ledger entries before SQLite insertion. Ledger outages no longer turn
+  successful assignments into empty failures; pending entries survive cache
+  eviction, agent deletion and restart, and replay by stable run ID without
+  another inference. History read failures return 503 instead of appearing empty.
+- **Switchboard capability labels** — agents without a repository display
+  "No repository" rather than implying local memory is available.
+- **Empty agent output is a failed run.** `_execute_agent` (manual, interval, and assignment) now records `error=empty_agent_result`, broadcasts `failed`, and returns HTTP 502 instead of treating blank model content as success. Activity Overview / Needs Attention surface the failure.
+- **Agent map collisions no longer bury click targets.** Completed assignments are hidden by default (toggle to show). `studio_layout` reconciles persisted positions into free lanes so a representative fleet has unique hit targets at 1280×800 and 1440×900.
+
+### Removed
+- **Dead `POST /v1/aiia/slack` route.** It imported `local_brain.slack_client`,
+  a module never committed to this repository, so it could only ever return the
+  air-gap denial or a 500. The `slack.post` egress point stays registered and
+  denied in air-gap mode; `scripts/airgap_probe.sh` and `tests/test_airgap.py`
+  no longer depend on the route.
 
 ### Security
 - arXiv Atom feeds in the literature loop are parsed with `defusedxml`

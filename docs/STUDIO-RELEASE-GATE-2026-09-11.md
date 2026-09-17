@@ -148,3 +148,8 @@ and six-call evaluation have not run.
 The two-call live smoke and six-call behavior baseline are **NOT RUN**. No
 deployment, restart, schedule activation, inference, merge, or push was performed.
 This gate does not certify tenant isolation, GitHub access, or memory retrieval.
+
+> Update 2026-09-17: the "Local memory" tool now performs real retrieval with
+> provenance, covered by `local_brain/tests/test_agent_local_memory.py`, and says
+> so honestly when retrieval fails. The gate itself has not been re-run against
+> it; tenant isolation and GitHub access remain uncertified.
