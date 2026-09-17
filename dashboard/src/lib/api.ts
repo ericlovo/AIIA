@@ -387,6 +387,37 @@ export interface AgentSuite {
   members: AgentSuiteMember[];
 }
 
+// Contract C3: the bulk subset never carries identity or membership fields.
+export type AgentSuitePatch = Partial<{
+  model: string;
+  temperature: number;
+  max_tokens: number;
+  loop_enabled: boolean;
+  loop_interval_minutes: number;
+  loop_task: string;
+  loop_max_runs_per_day: number;
+  persona: string;
+  skills: string[];
+  tools: string[];
+  repo_id: string;
+  memory_namespace: string;
+}>;
+
+export interface SuitePatchFailure {
+  agent_id: string;
+  detail: string;
+}
+
+export class SuitePatchRejected extends Error {
+  failures: SuitePatchFailure[];
+
+  constructor(failures: SuitePatchFailure[]) {
+    super('suite_patch_rejected');
+    this.name = 'SuitePatchRejected';
+    this.failures = failures;
+  }
+}
+
 export type AgentDefinition = Pick<Agent,
   'name' | 'mission' | 'persona' | 'skills' | 'tools' | 'repo_id' |
   'temperature' | 'max_tokens' | 'loop_enabled' | 'loop_interval_minutes' |
@@ -608,6 +639,18 @@ export const api = {
   agents: () => get<{ agents: Agent[] }>('/api/agents'),
   agentSuites: () => get<{ suites: AgentSuite[] }>('/api/agent-suites'),
   agentModels: () => get<{ default: string; models: AgentModel[] }>('/api/agents/models'),
+  patchSuiteAgents: async (suite: string, patch: AgentSuitePatch) => {
+    const res = await fetch(`${BASE}/api/agent-suites/${encodeURIComponent(suite)}/agents`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(patch),
+    });
+    if (res.status === 422) {
+      const payload = await res.clone().json().catch(() => null) as { detail?: unknown; failures?: SuitePatchFailure[] } | null;
+      if (payload?.detail === 'suite_patch_rejected') throw new SuitePatchRejected(payload.failures ?? []);
+    }
+    return parse<{ suite: string; count: number; agents: Agent[] }>(res);
+  },
   agentResources: () => get<{ repos: RepositoryResource[]; github: GitHubResource }>('/api/agents/resources'),
   createAgent: (data: AgentDefinition) =>
     post<{ agent: Agent }>('/api/agents', data),

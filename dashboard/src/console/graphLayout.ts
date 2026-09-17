@@ -32,3 +32,54 @@ export function reconcileLayout(layout: Record<string, Point>, nodeIds: string[]
   }
   return placed
 }
+
+export interface SuiteMember { suite?: string }
+
+export interface SuiteGroup {
+  slug: string
+  count: number
+  color: string
+}
+
+export function suiteOf(agent: SuiteMember) {
+  return (agent.suite ?? '').trim().toLowerCase()
+}
+
+// Hash the slug so a suite keeps its colour across sessions, filters and new suites.
+// Hues 270-329 are skipped so no suite reads as a magenta handoff edge.
+export function suiteColor(slug: string) {
+  let hash = 0x811c9dc5
+  for (const char of slug) {
+    hash ^= char.codePointAt(0) ?? 0
+    hash = Math.imul(hash, 0x01000193)
+  }
+  const hue = (hash >>> 0) % 300
+  return `hsl(${hue < 270 ? hue : hue + 60} 85% 70%)`
+}
+
+export function suiteGroups(agents: SuiteMember[]): SuiteGroup[] {
+  const counts = new Map<string, number>()
+  for (const agent of agents) {
+    const slug = suiteOf(agent)
+    if (slug) counts.set(slug, (counts.get(slug) ?? 0) + 1)
+  }
+  return [...counts.entries()]
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([slug, count]) => ({ slug, count, color: suiteColor(slug) }))
+}
+
+// Suite members sit next to each other in the default layout; agents without a
+// suite follow. Order inside a group is the incoming order.
+export function orderBySuite<T extends SuiteMember>(agents: T[]) {
+  return agents
+    .map((agent, index) => ({ agent, index, slug: suiteOf(agent) }))
+    .sort((left, right) => {
+      if (Boolean(left.slug) !== Boolean(right.slug)) return left.slug ? -1 : 1
+      return left.slug.localeCompare(right.slug) || left.index - right.index
+    })
+    .map(item => item.agent)
+}
+
+export function filterBySuite<T extends SuiteMember>(agents: T[], slug: string | null) {
+  return slug ? agents.filter(agent => suiteOf(agent) === slug) : agents
+}
