@@ -166,6 +166,17 @@ export function AgentWorldCanvas({
       queryClient.setQueryData<{ handoffs: Handoff[] }>(['handoffs'], current => ({
         handoffs: withoutHandoff(current?.handoffs ?? EMPTY_HANDOFFS, handoffId),
       }))
+    },
+    onError: (failure, handoffId) => {
+      // The server says it is already gone, so the edge must go too.
+      if (failure instanceof Error && failure.message === 'handoff_not_found') {
+        queryClient.setQueryData<{ handoffs: Handoff[] }>(['handoffs'], current => current && {
+          handoffs: withoutHandoff(current.handoffs, handoffId),
+        })
+      }
+    },
+    // A refused remove (for example handoff_running) still refetches so the edge shows the real status.
+    onSettled: () => {
       void queryClient.invalidateQueries({ queryKey: ['assignments'] })
       void queryClient.invalidateQueries({ queryKey: ['handoffs'] })
     },

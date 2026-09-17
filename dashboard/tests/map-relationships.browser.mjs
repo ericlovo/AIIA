@@ -86,9 +86,18 @@ try {
       }
       else if (path.startsWith('/api/handoffs/') && method === 'DELETE') {
         const id = path.split('/')[3]
-        handoffDeletes.push(id)
-        handoffs = handoffs.filter(item => item.id !== id)
-        body = { deleted: true }
+        const existing = handoffs.find(item => item.id === id)
+        if (!existing) {
+          status = 404
+          body = { detail: 'handoff_not_found' }
+        } else if (existing.status === 'running') {
+          status = 409
+          body = { detail: 'handoff_running' }
+        } else {
+          handoffDeletes.push(id)
+          handoffs = handoffs.filter(item => item.id !== id)
+          body = { deleted: true }
+        }
       }
       else if (path === '/api/handoffs') body = { handoffs }
       else if (path === '/api/agent-suites/research/agents' && method === 'PATCH') {
@@ -270,6 +279,34 @@ try {
     await page.getByRole('heading', { name: 'Assignment queue' }).waitFor()
     await page.getByText('Assignment controls', { exact: true }).waitFor()
     await page.locator('div.text-lg', { hasText: 'Draft summary' }).waitFor()
+
+    // Removing reflects what the server did, not what the Map assumed.
+    await page.getByRole('tab', { name: 'Map', exact: true }).click()
+    const newEdge = page.getByRole('button', { name: /^Handoff from Signal Scout to Review Gate/ })
+    handoffs = handoffs.map(item => item.id === 'hof-new' ? { ...item, status: 'running' } : item)
+    await newEdge.focus()
+    await page.keyboard.press('Enter')
+    await edgeControls.getByRole('button', { name: 'Remove handoff' }).click()
+    await edgeControls.getByRole('button', { name: 'Confirm remove' }).click()
+    await edgeControls.getByRole('alert').filter({ hasText: 'The handoff is running' }).waitFor()
+    await page.waitForFunction(() => document.querySelector('[aria-label="Handoff controls"] dd.text-amber-300')?.textContent === 'running')
+    assert.equal(await edgeControls.getByRole('button', { name: 'Remove handoff' }).isDisabled(), true)
+    assert.equal(await page.locator('[data-edge="handoff:hof-new"]').count(), 1)
+    await edgeControls.getByRole('button', { name: 'Close handoff controls' }).click()
+
+    // Someone else already removed it: the Map drops the edge instead of keeping a ghost.
+    handoffs = handoffs.map(item => item.id === 'hof-new' ? { ...item, status: 'queued' } : item)
+    await page.reload()
+    await page.getByRole('tab', { name: 'Map', exact: true }).click()
+    await page.waitForFunction(() => document.querySelector('[data-edge="handoff:hof-new"]')?.getAttribute('aria-label')?.includes('queued'))
+    await newEdge.focus()
+    await page.keyboard.press('Enter')
+    handoffs = handoffs.filter(item => item.id !== 'hof-new')
+    await edgeControls.getByRole('button', { name: 'Remove handoff' }).click()
+    await edgeControls.getByRole('button', { name: 'Confirm remove' }).click()
+    await edgeControls.waitFor({ state: 'detached' })
+    await page.locator('[data-edge="handoff:hof-new"]').waitFor({ state: 'detached' })
+    assert.deepEqual(handoffDeletes, ['hof-existing'])
 
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false)
     assert.deepEqual(errors, [])
