@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import type { Agent } from '../src/lib/api.ts'
 import {
   NUMBER_LIMITS, listSummary, loopSummary, modelChoices, modelSummary, parseBoundedNumber, patchFailureMessage,
-  previousFields, readableError, runFailureMessage, runSuccessMessage, settlePending, truncateText, withAgentFields, withAgentRecord,
+  beginPatch, isNewestEdit, pendingValues, readableError, runFailureMessage, runSuccessMessage, settlePatch, truncateText, withAgentFields, withAgentRecord,
 } from '../src/console/agentConfig.ts'
 
 test('long results are collapsed and cut with an ellipsis at the limit', () => {
@@ -59,18 +59,44 @@ test('optimistic fields touch one agent, and rollback restores only the patched 
   assert.equal(optimistic.agents[0].suite, 'release')
   assert.equal(optimistic.agents[1], data.agents[1])
   assert.equal(data.agents[0].temperature, 0.2) // The cache snapshot is never mutated.
-  const previous = previousFields(data.agents[0], { temperature: 0.9 })
-  assert.deepEqual(previous, { temperature: 0.2 })
   const concurrent = withAgentFields(optimistic, 'a', { suite: 'ops' })
-  assert.deepEqual(withAgentFields(concurrent, 'a', previous)!.agents[0], { ...data.agents[0], suite: 'ops' })
+  assert.deepEqual(withAgentFields(concurrent, 'a', { temperature: 0.2 })!.agents[0], { ...data.agents[0], suite: 'ops' })
   assert.equal(withAgentFields(undefined, 'a', {}), undefined)
   const record = agent('b', { model: 'qwen3:8b' })
   assert.equal(withAgentRecord(data, record)!.agents[1], record)
 })
 
-test('a settled edit leaves a newer pending edit to the same field in place', () => {
-  assert.deepEqual(settlePending({ temperature: 0.9, suite: 'ops' }, { temperature: 0.9 }), { suite: 'ops' })
-  assert.deepEqual(settlePending({ temperature: 0.7 }, { temperature: 0.9 }), { temperature: 0.7 })
+test('only the newest edit of a field decides what it shows, whatever order responses arrive in', () => {
+  const server = agent('a', { model: 'llama3.1:8b' })
+  // Older success lands after the newer success: nothing is written back over the newer value.
+  let ledger = beginPatch({}, server, { model: 'qwen3:8b' }, 1)
+  ledger = beginPatch(ledger, server, { model: '' }, 2)
+  assert.deepEqual(pendingValues(ledger), { model: '' })
+  assert.equal(isNewestEdit(ledger, { model: 'qwen3:8b' }, 1), false)
+  let result = settlePatch(ledger, { model: '' }, 2, { ...server, model: '' })
+  assert.deepEqual(result.settled, { model: '' })
+  assert.deepEqual(pendingValues(result.ledger), {})
+  result = settlePatch(result.ledger, { model: 'qwen3:8b' }, 1, { ...server, model: 'qwen3:8b' })
+  assert.deepEqual(result.settled, {})
+
+  // Older success lands first, newer edit then fails: restore what the server confirmed, not the original.
+  ledger = beginPatch(beginPatch({}, server, { model: 'qwen3:8b' }, 3), server, { model: 'ghost:1b' }, 4)
+  result = settlePatch(ledger, { model: 'qwen3:8b' }, 3, { ...server, model: 'qwen3:8b' })
+  assert.deepEqual(result.settled, {})
+  assert.deepEqual(pendingValues(result.ledger), { model: 'ghost:1b' })
+  assert.deepEqual(settlePatch(result.ledger, { model: 'ghost:1b' }, 4, null).settled, { model: 'qwen3:8b' })
+
+  // Both fail: the original value comes back, never the first optimistic one.
+  ledger = beginPatch(beginPatch({}, server, { model: 'qwen3:8b' }, 5), server, { model: 'ghost:1b' }, 6)
+  result = settlePatch(ledger, { model: 'qwen3:8b' }, 5, null)
+  assert.deepEqual(result.settled, {})
+  assert.deepEqual(settlePatch(result.ledger, { model: 'ghost:1b' }, 6, null).settled, { model: 'llama3.1:8b' })
+
+  // Edits to different fields settle independently.
+  ledger = beginPatch(beginPatch({}, server, { temperature: 0.9 }, 7), server, { suite: 'ops' }, 8)
+  result = settlePatch(ledger, { temperature: 0.9 }, 7, null)
+  assert.deepEqual(result.settled, { temperature: 0.35 })
+  assert.deepEqual(pendingValues(result.ledger), { suite: 'ops' })
 })
 
 test('model picker offers the task default first and keeps an uninstalled pinned model visible', () => {

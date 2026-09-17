@@ -66,6 +66,9 @@ try {
     let modelsDown = false
     // Holds the next PATCH response open so the optimistic value can be observed first.
     let holdPatch = null
+    // Holds each PATCH response after the server applied it, so responses can be delivered out of order.
+    let gatePatches = false
+    const gates = []
     const runCalls = []
     let holdRun = null
     let miniBusy = false
@@ -90,7 +93,8 @@ try {
         else if (merged.loop_enabled && !merged.loop_task.trim()) { status = 422; body = { detail: 'loop_task_required' } }
         else if ('model' in fields && fields.model && modelsDown) { status = 503; body = { detail: 'models_unavailable' } }
         else if ('model' in fields && fields.model && !installed.has(fields.model)) { status = 422; body = { detail: 'unknown_model' } }
-        else { Object.assign(agent, fields, { updated_at: `${date}T10:00:00Z` }); body = { agent } }
+        else { Object.assign(agent, fields, { updated_at: `${date}T10:00:00Z` }); body = { agent: { ...agent } } }
+        if (gatePatches) await new Promise(resolve => gates.push(resolve))
       }
       else if (/^\/api\/agents\/[^/]+\/run$/.test(path)) {
         const id = path.split('/')[3]
@@ -243,6 +247,37 @@ try {
     assert.equal(agents[1].model, 'llama3.1:8b')
     modelsDown = false
 
+    // Two quick edits to one field whose responses arrive out of order: the older response
+    // must not overwrite the newer value the server kept, and a superseded failure is moot.
+    await inspector.getByRole('button', { name: 'Close node controls' }).click()
+    await page.locator('[data-agent-target="agent-2"]').press('Enter')
+    await inspector.getByText('Docs Scout', { exact: true }).waitFor()
+    gatePatches = true
+    await modelPicker.selectOption('qwen3:8b')
+    await until(() => gates.length === 1, 'first model PATCH not held')
+    await modelPicker.selectOption('')
+    await until(() => gates.length === 2, 'second model PATCH not held')
+    assert.equal(agents[1].model, '')
+    gates[1]()
+    await page.waitForTimeout(150)
+    gates[0]()
+    await page.waitForTimeout(300)
+    assert.equal(await modelPicker.inputValue(), '', 'a late response for an older edit overwrote the newer model')
+    gates.length = 0
+    await modelPicker.selectOption('ghost:1b')
+    await until(() => gates.length === 1, 'unknown model PATCH not held')
+    await modelPicker.selectOption('qwen3:8b')
+    await until(() => gates.length === 2, 'replacement model PATCH not held')
+    gates[1]()
+    await page.waitForTimeout(150)
+    gates[0]()
+    await page.waitForTimeout(300)
+    assert.equal(await modelPicker.inputValue(), 'qwen3:8b', 'a late failure for an older edit rolled back the saved model')
+    assert.equal(await inspector.getByRole('alert').count(), 0, 'a superseded failure must not claim the model was not saved')
+    assert.equal(agents[1].model, 'qwen3:8b')
+    gatePatches = false
+    gates.length = 0
+
     // A5: Run now sends the task, disables itself while pending, and reports the busy Mini.
     await inspector.getByRole('button', { name: 'Close node controls' }).click()
     await page.locator('[data-agent-target="agent-1"]').press('Enter')
@@ -292,7 +327,7 @@ try {
 
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false)
     assert.deepEqual(errors, [])
-    console.log(`${width}px: inspector configuration, optimistic PATCH, local validation, model picker, rollback messages, running note, run now and busy run passed`)
+    console.log(`${width}px: inspector configuration, optimistic PATCH, local validation, model picker, rollback messages, out-of-order responses, running note, run now and busy run passed`)
     await context.close()
   }
 } finally {

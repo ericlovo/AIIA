@@ -93,19 +93,52 @@ export function withAgentRecord<T extends { agents: Agent[] }>(data: T | undefin
   return { ...data, agents: data.agents.map(agent => agent.id === record.id ? record : agent) }
 }
 
-/** The values a patch overwrote, so a failure restores exactly those fields. */
-export function previousFields(agent: Agent | undefined, fields: AgentPatch): AgentPatch {
-  if (!agent) return {}
-  return Object.fromEntries(Object.keys(fields).map(key => [key, agent[key as keyof AgentPatch]])) as AgentPatch
-}
+type PatchKey = keyof AgentPatch
 
-/** Drops settled fields from the pending overlay unless a newer edit to the same field replaced them. */
-export function settlePending(pending: AgentPatch, fields: AgentPatch): AgentPatch {
-  const next: AgentPatch = { ...pending }
-  for (const [key, value] of Object.entries(fields)) {
-    if (next[key as keyof AgentPatch] === value) delete next[key as keyof AgentPatch]
+/**
+ * One entry per field with an edit in flight: the newest edit's sequence number, its
+ * optimistic value, and the last value the server confirmed for that field.
+ */
+export type PatchLedger = Partial<Record<PatchKey, { seq: number; value: unknown; confirmed: unknown }>>
+
+export function beginPatch(ledger: PatchLedger, current: Agent | undefined, fields: AgentPatch, seq: number): PatchLedger {
+  const next: PatchLedger = { ...ledger }
+  for (const [key, value] of Object.entries(fields) as [PatchKey, unknown][]) {
+    next[key] = { seq, value, confirmed: ledger[key] ? ledger[key].confirmed : current?.[key] }
   }
   return next
+}
+
+/**
+ * Settles one PATCH response (record on success, null on failure). Only the newest edit of a
+ * field decides what that field shows; an older response that lands late just moves the
+ * confirmed value a later failure would restore. `settled` holds the values to write.
+ */
+export function settlePatch(ledger: PatchLedger, fields: AgentPatch, seq: number, record: Agent | null): { ledger: PatchLedger; settled: AgentPatch } {
+  const next: PatchLedger = { ...ledger }
+  const settled: Record<string, unknown> = {}
+  for (const key of Object.keys(fields) as PatchKey[]) {
+    const entry = next[key]
+    if (!entry) continue
+    if (entry.seq === seq) {
+      const value = record ? record[key] : entry.confirmed
+      if (value !== undefined) settled[key] = value
+      delete next[key]
+    } else if (record && entry.seq > seq) {
+      next[key] = { ...entry, confirmed: record[key] }
+    }
+  }
+  return { ledger: next, settled: settled as AgentPatch }
+}
+
+/** Whether this edit is still the newest for any of its fields, so its outcome is the one on screen. */
+export function isNewestEdit(ledger: PatchLedger, fields: AgentPatch, seq: number): boolean {
+  return (Object.keys(fields) as PatchKey[]).some(key => ledger[key]?.seq === seq)
+}
+
+/** The optimistic values still in flight, overlaid on the agent so a refetch cannot flicker them back. */
+export function pendingValues(ledger: PatchLedger): AgentPatch {
+  return Object.fromEntries(Object.entries(ledger).map(([key, entry]) => [key, entry!.value])) as AgentPatch
 }
 
 export const RUN_TASK_MAX_LENGTH = 8_000

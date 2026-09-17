@@ -1,4 +1,4 @@
-import { useId, useState, type ReactNode } from 'react'
+import { useId, useRef, useState, type ReactNode } from 'react'
 import { useMutation, useMutationState, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api, type Agent } from '../lib/api'
 import {
@@ -10,15 +10,18 @@ import {
   modelChoices,
   parseBoundedNumber,
   patchFailureMessage,
-  previousFields,
+  beginPatch,
+  isNewestEdit,
+  pendingValues,
   readableError,
   runFailureMessage,
   runSuccessMessage,
-  settlePending,
+  settlePatch,
   truncateText,
   withAgentFields,
   withAgentRecord,
   type AgentPatch,
+  type PatchLedger,
 } from './agentConfig'
 
 interface AgentInspectorProps {
@@ -36,34 +39,46 @@ export function AgentInspector({ agent, onClose, onManageAgent, onAssignAgent }:
   const queryClient = useQueryClient()
   const models = useQuery({ queryKey: ['agent-models'], queryFn: api.agentModels, staleTime: 60_000, retry: false })
   // In-flight values win over the cache so a background refetch cannot flicker an edit back.
+  const ledger = useRef<PatchLedger>({})
+  const seq = useRef(0)
   const [pending, setPending] = useState<AgentPatch>({})
   const [failure, setFailure] = useState('')
   const view = { ...agent, ...pending }
 
+  function settle(fields: AgentPatch, id: number, record: Agent | null): AgentPatch {
+    const result = settlePatch(ledger.current, fields, id, record)
+    ledger.current = result.ledger
+    setPending(pendingValues(result.ledger))
+    if (Object.keys(result.settled).length > 0) queryClient.setQueryData<AgentsData>(['agents'], data => withAgentFields(data, agent.id, result.settled))
+    // The record may be older than an edit still in flight, so fetch the whole agent once all are settled.
+    if (Object.keys(result.ledger).length === 0) void queryClient.invalidateQueries({ queryKey: ['agents'] })
+    return result.settled
+  }
+
   const patch = useMutation({
-    mutationFn: (fields: AgentPatch) => api.patchAgent(agent.id, fields),
-    onMutate: async fields => {
+    mutationFn: ({ fields }: { fields: AgentPatch; id: number }) => api.patchAgent(agent.id, fields),
+    onMutate: async ({ fields, id }) => {
       setFailure('')
-      setPending(current => ({ ...current, ...fields }))
-      await queryClient.cancelQueries({ queryKey: ['agents'] })
       const cached = queryClient.getQueryData<AgentsData>(['agents'])?.agents.find(item => item.id === agent.id)
+      ledger.current = beginPatch(ledger.current, cached ?? agent, fields, id)
+      setPending(pendingValues(ledger.current))
+      await queryClient.cancelQueries({ queryKey: ['agents'] })
       queryClient.setQueryData<AgentsData>(['agents'], data => withAgentFields(data, agent.id, fields))
-      return { previous: previousFields(cached, fields) }
     },
-    onSuccess: ({ agent: record }, fields) => {
-      queryClient.setQueryData<AgentsData>(['agents'], data => withAgentRecord(data, record))
-      setPending(current => settlePending(current, fields))
+    onSuccess: ({ agent: record }, { fields, id }) => {
+      settle(fields, id, record)
     },
-    onError: (error, fields, context) => {
-      if (context) queryClient.setQueryData<AgentsData>(['agents'], data => withAgentFields(data, agent.id, context.previous))
-      setPending(current => settlePending(current, fields))
-      setFailure(patchFailureMessage(fields, error.message))
-      void queryClient.invalidateQueries({ queryKey: ['agents'] })
+    onError: (error, { fields, id }) => {
+      // A failure for an edit that a newer edit of the same field replaced is moot, so it says nothing.
+      const newest = isNewestEdit(ledger.current, fields, id)
+      settle(fields, id, null)
+      if (newest) setFailure(patchFailureMessage(fields, error.message))
     },
   })
 
   function change(fields: AgentPatch) {
-    patch.mutate(fields)
+    seq.current += 1
+    patch.mutate({ fields, id: seq.current })
   }
 
   const [task, setTask] = useState('')
