@@ -1,7 +1,8 @@
 import { useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { reconcileLayout } from './graphLayout'
-import type { Agent, AgentWorldPoint, Assignment, Handoff } from '../lib/api'
+import { HandoffComposer } from './HandoffComposer'
+import type { Agent, AgentWorldPoint, Assignment, Handoff, HandoffDefinition } from '../lib/api'
 
 interface AgentGraphOverlayProps {
   showCompleted: boolean
@@ -19,6 +20,7 @@ interface AgentGraphOverlayProps {
   onAssignAgent: (agentId: string) => void
   onOpenAssignment: (assignmentId: string) => void
   onRouteHandoff: (sourceAssignmentId: string, toAgentId: string) => void
+  onCreateHandoff: (data: HandoffDefinition) => Promise<Handoff>
 }
 
 type Point = AgentWorldPoint
@@ -45,6 +47,11 @@ interface WireDragState {
   point: Point
   targetAgentId: string | null
   moved: boolean
+}
+
+interface PendingHandoff {
+  sourceAssignmentId: string
+  toAgentId: string
 }
 
 function clamp(value: number, minimum = 8, maximum = 92) {
@@ -115,6 +122,7 @@ export function AgentGraphOverlay({
   onAssignAgent,
   onOpenAssignment,
   onRouteHandoff,
+  onCreateHandoff,
 }: AgentGraphOverlayProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const dragRef = useRef<DragState | null>(null)
@@ -125,6 +133,7 @@ export function AgentGraphOverlay({
   const [wireDrag, setWireDrag] = useState<WireDragState | null>(null)
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [connectFrom, setConnectFrom] = useState<string | null>(null)
+  const [pendingHandoff, setPendingHandoff] = useState<PendingHandoff | null>(null)
   const [draggingId, setDraggingId] = useState<string | null>(null)
   const nodes = useMemo<GraphNode[]>(() => {
     const work = visibleWork(assignments, showCompleted)
@@ -154,7 +163,7 @@ export function AgentGraphOverlay({
   function selectNode(node: GraphNode) {
     if (connectFrom && node.agent) {
       if (node.agent.id !== selectedSource?.agent_id) {
-        onRouteHandoff(connectFrom, node.agent.id)
+        setPendingHandoff({ sourceAssignmentId: connectFrom, toAgentId: node.agent.id })
         setConnectFrom(null)
       }
       return
@@ -301,7 +310,7 @@ export function AgentGraphOverlay({
     wireDragRef.current = null
     setWireDrag(null)
     if (drag?.targetAgentId) {
-      onRouteHandoff(drag.sourceAssignmentId, drag.targetAgentId)
+      setPendingHandoff({ sourceAssignmentId: drag.sourceAssignmentId, toAgentId: drag.targetAgentId })
     }
   }
 
@@ -319,7 +328,11 @@ export function AgentGraphOverlay({
     }
     setConnectFrom(assignmentId)
     setSelectedId(null)
+    setPendingHandoff(null)
   }
+
+  const pendingSource = pendingHandoff ? assignments.find(item => item.id === pendingHandoff.sourceAssignmentId) ?? null : null
+  const pendingTarget = pendingHandoff ? agents.find(agent => agent.id === pendingHandoff.toAgentId) ?? null : null
 
   return (
     <div ref={containerRef} className="pointer-events-none absolute inset-0 z-[5] overflow-hidden" aria-label="Agent topology graph">
@@ -339,7 +352,7 @@ export function AgentGraphOverlay({
           const from = layout[sourceId]
           const to = layout[targetId]
           if (!from || !to) return null
-          return <GraphEdge key={`handoff:${handoff.id}`} from={from} to={to} tone="handoff" />
+          return <GraphEdge key={`handoff:${handoff.id}`} edgeId={`handoff:${handoff.id}`} from={from} to={to} tone="handoff" />
         })}
         {wireDrag && layout[wireDrag.sourceNodeId] && (
           <GraphEdge from={layout[wireDrag.sourceNodeId]} to={wireDrag.point} tone="draft" />
@@ -400,14 +413,32 @@ export function AgentGraphOverlay({
         </div>, inspectorHost
       )}
 
-      {selected && !connectFrom && !wireDrag && inspectorHost && createPortal(
+      {pendingHandoff && pendingSource && pendingTarget && !connectFrom && !wireDrag && inspectorHost && createPortal(
+        <HandoffComposer
+          key={`${pendingHandoff.sourceAssignmentId}:${pendingHandoff.toAgentId}`}
+          source={pendingSource}
+          fromAgent={agents.find(agent => agent.id === pendingSource.agent_id) ?? null}
+          toAgent={pendingTarget}
+          onCreate={instructions => onCreateHandoff({
+            source_assignment_id: pendingSource.id,
+            to_agent_id: pendingTarget.id,
+            artifact_type: 'brief',
+            instructions,
+          })}
+          onCreated={() => setPendingHandoff(null)}
+          onCancel={() => setPendingHandoff(null)}
+          onOpenForm={() => onRouteHandoff(pendingSource.id, pendingTarget.id)}
+        />, inspectorHost
+      )}
+
+      {selected && !pendingHandoff && !connectFrom && !wireDrag && inspectorHost && createPortal(
         <NodeInspector
           node={selected}
           onClose={() => setSelectedId(null)}
           onManageAgent={onManageAgent}
           onAssignAgent={onAssignAgent}
           onOpenAssignment={onOpenAssignment}
-          onConnect={setConnectFrom}
+          onConnect={assignmentId => { setConnectFrom(assignmentId); setPendingHandoff(null) }}
           runningAssignmentId={runningAssignmentId}
           assignmentRunTargetId={assignmentRunTargetId}
           runError={assignmentRunError}
@@ -418,11 +449,12 @@ export function AgentGraphOverlay({
   )
 }
 
-function GraphEdge({ from, to, tone }: { from: Point; to: Point; tone: 'hierarchy' | 'handoff' | 'draft' }) {
+function GraphEdge({ from, to, tone, edgeId }: { from: Point; to: Point; tone: 'hierarchy' | 'handoff' | 'draft'; edgeId?: string }) {
   const bend = Math.max(4, Math.abs(to.y - from.y) * 0.45)
   const path = `M ${from.x} ${from.y} C ${from.x} ${from.y + bend}, ${to.x} ${to.y - bend}, ${to.x} ${to.y}`
   return (
     <path
+      data-edge={edgeId}
       d={path}
       vectorEffect="non-scaling-stroke"
       fill="none"

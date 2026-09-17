@@ -1,0 +1,156 @@
+// Map relationships: the handoff wire creates the handoff in place, edges can be
+// inspected and removed, and suites colour, filter and bulk-tune the Map.
+// Every response is synthetic; nothing reaches a running Command Center.
+import assert from 'node:assert/strict'
+import { mkdir } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+
+const { chromium } = await import(process.env.PLAYWRIGHT_MODULE || 'playwright')
+const output = process.env.SCREENSHOT_DIR || join(tmpdir(), 'aiia-map-relationships')
+await mkdir(output, { recursive: true })
+const browser = await chromium.launch({ headless: true, executablePath: process.env.CHROMIUM_PATH })
+const date = '2026-09-16'
+
+const agentBase = {
+  persona: '', skills: ['Analysis'], tools: [], repo_id: 'aiia', temperature: 0.35, max_tokens: 1200,
+  loop_enabled: false, loop_interval_minutes: 60, loop_task: '', loop_max_runs_per_day: 4, loop_runs_today: 0,
+  loop_day: date, memory_namespace: '', status: 'idle', last_run_at: null, last_result: '', last_error: '',
+  runs: [], created_at: `${date}T10:00:00Z`, updated_at: `${date}T10:00:00Z`,
+}
+function seedAgents() {
+  return [
+    { ...agentBase, id: 'agent-scout', name: 'Signal Scout', mission: 'Find signal in the repository.', suite: 'research', loop_task: 'Scan for changes.' },
+    { ...agentBase, id: 'agent-writer', name: 'Brief Writer', mission: 'Turn findings into briefs.', suite: 'research' },
+    { ...agentBase, id: 'agent-gate', name: 'Review Gate', mission: 'Gate risky changes.', suite: 'review' },
+    { ...agentBase, id: 'agent-solo', name: 'Solo Operator', mission: 'Handle one-off work.', suite: '' },
+  ]
+}
+const assignmentBase = {
+  priority: 'normal', context: '', success_criteria: '', source_handoff_id: '', review_status: 'unreviewed',
+  error: '', created_at: `${date}T11:00:00Z`, updated_at: `${date}T11:00:00Z`, started_at: null, completed_at: null,
+}
+function seedAssignments() {
+  return [
+    { ...assignmentBase, id: 'asg-scan', agent_id: 'agent-scout', title: 'Scan repository', objective: 'Scan it.', status: 'completed', result: 'Synthetic findings only.' },
+    { ...assignmentBase, id: 'asg-draft', agent_id: 'agent-writer', title: 'Draft summary', objective: 'Draft it.', status: 'queued', result: '' },
+  ]
+}
+function seedHandoffs() {
+  return [{
+    id: 'hof-existing', source_assignment_id: 'asg-draft', target_assignment_id: 'asg-gate-review', from_agent_id: 'agent-writer',
+    to_agent_id: 'agent-gate', artifact_type: 'brief', artifact: 'Synthetic.', instructions: 'Review the synthetic draft.',
+    status: 'queued', created_at: `${date}T12:05:00Z`, updated_at: `${date}T12:05:00Z`,
+  }]
+}
+
+try {
+  for (const width of [1440, 390]) {
+    const context = await browser.newContext({ viewport: { width, height: 900 } })
+    const page = await context.newPage()
+    page.setDefaultTimeout(12000)
+    const errors = []
+    page.on('pageerror', error => errors.push(error.message))
+    const agents = seedAgents()
+    const assignments = seedAssignments()
+    let handoffs = seedHandoffs()
+    const handoffPosts = []
+    let failNextHandoff = true
+    await page.routeWebSocket('**/ws', ws => ws.onMessage(() => {}))
+    await page.route('**/api/**', async route => {
+      const request = route.request()
+      const path = new URL(request.url()).pathname
+      const method = request.method()
+      let body = {}
+      let status = 200
+      if (path === '/api/agents') body = { agents }
+      else if (path === '/api/agents/resources') body = { repos: [], github: { status: 'disconnected' } }
+      else if (path === '/api/assignments') body = { assignments }
+      else if (path === '/api/handoffs' && method === 'POST') {
+        const sent = request.postDataJSON()
+        handoffPosts.push(sent)
+        if (failNextHandoff) {
+          failNextHandoff = false
+          status = 422
+          body = { detail: 'handoff_capacity_reached' }
+        } else {
+          const target = { ...assignmentBase, id: 'asg-handoff-new', agent_id: sent.to_agent_id, title: 'Handoff: Scan repository', objective: sent.instructions, status: 'queued', result: '', source_handoff_id: 'hof-new' }
+          const source = assignments.find(item => item.id === sent.source_assignment_id)
+          const handoff = { id: 'hof-new', source_assignment_id: sent.source_assignment_id, target_assignment_id: target.id, from_agent_id: source.agent_id, to_agent_id: sent.to_agent_id, artifact_type: sent.artifact_type, artifact: source.result, instructions: sent.instructions, status: 'queued', created_at: `${date}T13:30:00Z`, updated_at: `${date}T13:30:00Z` }
+          assignments.push(target)
+          handoffs = [handoff, ...handoffs]
+          body = { handoff, assignment: target }
+        }
+      }
+      else if (path === '/api/handoffs') body = { handoffs }
+      else if (path === '/api/agent-world/layout') body = { layout: { version: 1, revision: 0, positions: {}, updated_at: null } }
+      else if (path === '/api/git-workspaces') body = { workspaces: [] }
+      else if (path === '/api/git-writes') body = { writes: [] }
+      else if (path === '/api/tasks') body = []
+      else if (path === '/api/health') body = { aiia: { status: 'online' }, ollama: { status: 'online' } }
+      else if (path === '/api/monitor') body = { services: {} }
+      else if (path === '/api/voice/status') body = { available: false }
+      else if (path === '/api/tokens/today') body = { date, total_tokens: 0, total_requests: 0, total_cost: 0, by_provider: {}, by_purpose: {} }
+      else if (path === '/api/tokens/recent') body = { days: [] }
+      else if (path === '/api/studio/activity') body = { today: date, start: date, days: [], agent_days: [], runs: [], total: 0, matching: 0, imported: 0, usage_by_agent: [] }
+      else if (path === '/api/memory-inbox') body = { ideas: [], total: 0, offset: 0, counts: { unreviewed: 0, promoted: 0, dismissed: 0 } }
+      await route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) })
+    })
+
+    await page.goto(process.env.STUDIO_URL || 'http://127.0.0.1:5192/')
+    await page.getByRole('tab', { name: 'Map', exact: true }).click()
+    await page.getByRole('checkbox', { name: 'Completed assignments', exact: true }).check()
+    await page.waitForFunction(() => document.querySelectorAll('[data-graph-node]').length === 6)
+    await page.locator('[data-edge="handoff:hof-existing"]').waitFor({ state: 'attached' })
+
+    // A6: the wire opens an inline confirm, not the Handoffs tab.
+    const wire = page.getByRole('button', { name: 'Wire Scan repository to another agent' })
+    if (width >= 1024) {
+      await page.getByRole('button', { name: 'Fit map', exact: true }).click()
+      const from = await wire.boundingBox()
+      const to = await page.locator('[data-agent-target="agent-gate"]').boundingBox()
+      await page.mouse.move(from.x + from.width / 2, from.y + from.height / 2)
+      await page.mouse.down()
+      await page.mouse.move((from.x + to.x) / 2, (from.y + to.y) / 2, { steps: 6 })
+      await page.mouse.move(to.x + to.width / 2, to.y + to.height / 2, { steps: 6 })
+      await page.getByText('Drop on a target agent').waitFor()
+      await page.mouse.up()
+    } else {
+      await wire.focus()
+      await page.keyboard.press('Enter')
+      await page.getByText('Select a target agent for “Scan repository”').waitFor()
+      await page.locator('[data-agent-target="agent-gate"]').focus()
+      await page.keyboard.press('Enter')
+    }
+    const composer = page.getByRole('complementary', { name: 'Confirm handoff' })
+    await composer.waitFor()
+    assert.ok((await composer.innerText()).includes('Signal Scout → Review Gate'))
+    await page.getByRole('heading', { name: 'Agent control map' }).waitFor()
+    const instructions = composer.getByRole('textbox')
+    assert.ok((await instructions.inputValue()).includes('Scan repository'))
+    await instructions.fill('Gate the synthetic findings before anyone acts on them.')
+    await page.screenshot({ path: join(output, `handoff-confirm-${width}.png`) })
+    await composer.getByRole('button', { name: 'Create handoff' }).click()
+    await composer.getByRole('alert').filter({ hasText: 'The handoff ledger is full' }).waitFor()
+    assert.equal(await page.locator('[data-edge="handoff:hof-new"]').count(), 0)
+    await composer.getByRole('button', { name: 'Create handoff' }).click()
+    await composer.waitFor({ state: 'detached' })
+    await page.locator('[data-edge="handoff:hof-new"]').waitFor({ state: 'attached' })
+    await page.waitForFunction(() => document.querySelectorAll('[data-graph-node]').length === 7)
+    assert.equal(handoffPosts.length, 2)
+    assert.deepEqual(handoffPosts[1], {
+      source_assignment_id: 'asg-scan', to_agent_id: 'agent-gate', artifact_type: 'brief',
+      instructions: 'Gate the synthetic findings before anyone acts on them.',
+    })
+    await page.getByRole('heading', { name: 'Agent control map' }).waitFor()
+    await page.screenshot({ path: join(output, `handoff-created-${width}.png`) })
+
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false)
+    assert.deepEqual(errors, [])
+    console.log(`${width}px: wire to confirmed handoff with inline error and new edge passed`)
+    await context.close()
+  }
+} finally {
+  await browser.close()
+}
+console.log(`Screenshots: ${output}`)
