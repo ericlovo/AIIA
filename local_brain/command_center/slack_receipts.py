@@ -57,9 +57,21 @@ async def deliver_one(inbox, *, transport=None):
         "mrkdwn": False,
         "client_msg_id": str(uuid.uuid5(uuid.NAMESPACE_URL, message_key)),
     }
+    inbox.finish_receipt(
+        receipt, **await post_message(payload, receipt["attempts"], transport=transport)
+    )
+
+
+async def post_message(payload, attempts, *, transport=None):
+    """One chat.postMessage attempt, classified for a durable outbox.
+
+    Returns the finish fields: sent with the Slack ts, or pending/failed with a
+    sanitized error code and backoff. Shared by receipts and memory posts so both
+    keep the same 429 handling, permanent-error set and eight-attempt cap.
+    """
     error, delay, permanent = (
         "delivery_unavailable",
-        min(3600, 2 ** min(receipt["attempts"], 10)),
+        min(3600, 2 ** min(attempts, 10)),
         False,
     )
     try:
@@ -84,8 +96,7 @@ async def deliver_one(inbox, *, transport=None):
                 and data.get("ok") is True
                 and isinstance(data.get("ts"), str)
             ):
-                inbox.finish_receipt(receipt, status="sent", slack_ts=data["ts"])
-                return
+                return {"status": "sent", "slack_ts": data["ts"]}
             code = data.get("error") if isinstance(data, dict) else None
             # Persist only known error codes, never token-bearing response bodies.
             if code in {
@@ -100,12 +111,11 @@ async def deliver_one(inbox, *, transport=None):
             error, permanent = "request_rejected", True
     except (httpx.HTTPError, ValueError):
         pass
-    inbox.finish_receipt(
-        receipt,
-        status="failed" if permanent or receipt["attempts"] >= 8 else "pending",
-        error=error,
-        delay=delay,
-    )
+    return {
+        "status": "failed" if permanent or attempts >= 8 else "pending",
+        "error": error,
+        "delay": delay,
+    }
 
 
 async def run_worker(inbox_factory):

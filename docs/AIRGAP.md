@@ -2,8 +2,9 @@
 
 One flag turns the Brain into a local-only runtime: inference, embeddings,
 retrieval, and memory all stay on the box, every cloud egress point is denied
-except the explicit Voice Conductor allowlist (`xai.realtime`), and each
-denied attempt is reported to Sanction as audit evidence. This is the
+except the explicit Voice Conductor allowlist (`xai.realtime`) and two Slack
+exceptions that are off unless their own flag is set, and each denied attempt
+is reported to Sanction as audit evidence. This is the
 enforcement core of **Sanction Local** — the deny-list plus the audit export
 *is* the "data never leaves the building" artifact.
 
@@ -21,7 +22,8 @@ Effects, applied in `local_brain/config.py`:
 - `autonomy.research_enabled` is forced **off** (the literature loop fetches
   arbitrary URLs).
 - Every registered egress point (below) is denied by `local_brain/egress.py`,
-  except `xai.realtime` (Voice Conductor ephemeral token mint).
+  except `xai.realtime` (Voice Conductor ephemeral token mint) and, only when
+  their flags are set, `slack.capture_ack` and `slack.memory_post`.
 
 Cloud API keys may remain set; they are inert except `XAI_API_KEY`, which
 Voice Conductor may use to mint a short-lived xAI token. `aiia doctor`
@@ -33,7 +35,9 @@ reports other keys as "configured but inert under AIIA_AIRGAP".
 |---|---|---|
 | `anthropic.messages` / `openai.messages` / `groq.messages` | journal distiller | distillation skipped, raw transcript preserved |
 | `groq.whisper` | journal transcription | `TranscriptionError` (local faster-whisper voice path unaffected) |
-| `slack.post` | `POST /v1/aiia/slack` | 403 `EGRESS_DENIED_AIRGAP` |
+| `slack.post` | none; the old `POST /v1/aiia/slack` route was removed because it imported a module that was never committed | always denied, even when either Slack exception below is enabled; stays registered so any future call site is denied |
+| `slack.capture_ack` | Slack receipt worker (fixed save and promotion receipts, no captured text) | **conditional airgap exception** — allowed only with `AIIA_SLACK_ACK_ENABLED=1`; otherwise denied and receipts stay queued |
+| `slack.memory_post` | Slack memory post worker (human-approved memory text to one allowlisted channel) | **conditional airgap exception** — allowed only with `AIIA_SLACK_MEMORY_POST_ENABLED=1`; otherwise denied and posts stay queued |
 | `google.tts` | speak endpoints | client never initialized; macOS `say` fallback |
 | `anthropic.claude_code` | execution engine / story runner | engine refuses to start; runner exits at arg-parse |
 | `web.fetch` | research literature loop | force-disabled + fetch guard |
@@ -43,7 +47,19 @@ reports other keys as "configured but inert under AIIA_AIRGAP".
 governance metadata (tool names, token counts, decisions), never content —
 plus the Voice Conductor exception (`xai.realtime`) so Studio/PWA can hold
 the mic while the Mini mints an xAI ephemeral token. Do not add other tools
-to `AIRGAP_ALLOWED_EGRESS`. For a fully offline install that must also
+to `AIRGAP_ALLOWED_EGRESS`.
+
+The two Slack exceptions are conditional, not static. `airgap_allows_tool()`
+allows `slack.capture_ack` only while `AIIA_SLACK_ACK_ENABLED=1` and
+`slack.memory_post` only while `AIIA_SLACK_MEMORY_POST_ENABLED=1`, each read at
+decision time. Do not add either to the `AIRGAP_ALLOWED_EGRESS` frozenset:
+that would allow them with the flag off. Enabling one never enables the other
+or `slack.post`. `slack.capture_ack` sends only fixed receipt text. The
+`slack.memory_post` exception does transmit captured text, but only text a
+person explicitly marked for Slack when logging it, only to the single channel
+in `AIIA_SLACK_MEMORY_POST_CHANNEL_ID`, and only back to the workspace it was
+captured from (see `docs/SLACK-PERFORMANCE-LABS.md`). An install that must keep
+all captured text on the box leaves `AIIA_SLACK_MEMORY_POST_ENABLED` unset. For a fully offline install that must also
 block voice, remove `xai.realtime` from that allowlist (or unset the xAI
 key). Point `SANCTION_API_URL` at a local Sanction instance; the client is
 config-driven, so this is an env swap, not a code change.
@@ -53,11 +69,12 @@ config-driven, so this is an env swap, not a code change.
 `local_brain/egress.py::authorize_egress()`:
 
 - **Air-gap on** → deny, decided locally, unless the tool is in
-  `AIRGAP_ALLOWED_EGRESS` (`xai.realtime` only). Denied attempts are still
+  `AIRGAP_ALLOWED_EGRESS` (`xai.realtime` only) or is a Slack exception whose
+  flag is set (`slack.capture_ack`, `slack.memory_post`). Denied attempts are still
   POSTed to Sanction `/authorize/tool` so the denial persists in the audit
   trail. A failed audit post never converts a deny into an allow. The
-  Voice Conductor exception is a local allow; it does not unset
-  `AIIA_AIRGAP` and does not open any other egress point.
+  Voice Conductor and Slack exceptions are local allows; they do not unset
+  `AIIA_AIRGAP` and do not open any other egress point.
 - **Air-gap off, Sanction configured** → ask Sanction synchronously; timeout,
   transport error, or any non-`authorized: true` response ⇒ deny.
 - **Air-gap off, Sanction unconfigured** → allow (vanilla OSS behavior;
@@ -75,7 +92,7 @@ curl -s localhost:8100/health | jq .airgap
 aiia status          # shows AIRGAP=on + the disabled egress list
 aiia doctor          # cloud keys reported as inert
 
-# 2. Probe script — denies + audit rows
+# 2. Probe script — egress states (slack.post disabled) + recent audit rows
 bash scripts/airgap_probe.sh
 
 # 3. Unit suite
@@ -87,7 +104,8 @@ while sleep 10; do
   lsof -i -P -a -p "$PID" -sTCP:ESTABLISHED | grep -v -e 127.0.0.1 -e localhost
 done
 # Expect ONLY the Sanction control-plane host — plus api.x.ai if Voice
-# Conductor minted an ephemeral token (xai.realtime airgap exception).
+# Conductor minted an ephemeral token (xai.realtime airgap exception), and
+# slack.com only if AIIA_SLACK_ACK_ENABLED or AIIA_SLACK_MEMORY_POST_ENABLED is set.
 
 sudo tcpdump -i any -n 'host api.anthropic.com or host api.groq.com or host api.openai.com or host generativelanguage.googleapis.com'
 # Expect silence.

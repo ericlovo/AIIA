@@ -8,6 +8,11 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 IDEA_STATUSES = ("unreviewed", "promoted", "dismissed")
+# Highest first; list sorting and memory post delivery both use this order. The rank
+# expression is formatted only with literal column names, never caller input.
+PRIORITIES = ("urgent", "high", "normal", "low")
+PRIORITY_RANK = "CASE {} WHEN 'urgent' THEN 0 WHEN 'high' THEN 1 WHEN 'normal' THEN 2 ELSE 3 END"
+IDEA_SORTS = ("newest", "priority")
 # Receipt kinds map to fixed tables; never interpolate caller strings into SQL.
 # Queries below carry `# nosec B608` for that reason: the only interpolated
 # identifiers are these literal table names, and every value is bound through `?`.
@@ -18,13 +23,28 @@ RECEIPT_COLUMNS = """(
     next_attempt REAL NOT NULL DEFAULT 0, lease TEXT NOT NULL DEFAULT '',
     error TEXT NOT NULL DEFAULT '', slack_ts TEXT NOT NULL DEFAULT ''
 )"""
+# Approved memory posts: the body is the text snapshot a human approved at promote
+# time, keyed by memory so one Brain fact is posted at most once.
+MEMORY_POST_COLUMNS = """(
+    memory_id TEXT PRIMARY KEY, idea_id TEXT NOT NULL UNIQUE,
+    channel_id TEXT NOT NULL, priority TEXT NOT NULL, body TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'pending', attempts INTEGER NOT NULL DEFAULT 0,
+    next_attempt REAL NOT NULL DEFAULT 0, lease TEXT NOT NULL DEFAULT '',
+    error TEXT NOT NULL DEFAULT '', slack_ts TEXT NOT NULL DEFAULT ''
+)"""
 IDEA_REVIEW_COLUMNS = ("memory_id", "memory_category", "review_note", "reviewed_at")
+IDEA_POST_COLUMNS = {
+    "priority": "TEXT NOT NULL DEFAULT 'normal'",
+    "post_requested": "INTEGER NOT NULL DEFAULT 0",
+}
 IDEA_SELECT = (
     "SELECT ideas.*,c.status AS acknowledgement_status,"
     "c.error AS acknowledgement_error,c.slack_ts AS acknowledgement_ts,"
-    "p.status AS promotion_status,p.error AS promotion_error,p.slack_ts AS promotion_ts "
+    "p.status AS promotion_status,p.error AS promotion_error,p.slack_ts AS promotion_ts,"
+    "m.status AS memory_post_status,m.error AS memory_post_error,m.slack_ts AS memory_post_ts "
     "FROM ideas LEFT JOIN capture_receipts c ON c.idea_id=ideas.id "
-    "LEFT JOIN promotion_receipts p ON p.idea_id=ideas.id"
+    "LEFT JOIN promotion_receipts p ON p.idea_id=ideas.id "
+    "LEFT JOIN memory_posts m ON m.idea_id=ideas.id"
 )
 
 
@@ -55,12 +75,16 @@ class MemoryInbox:
                 )""")
                 for table in RECEIPT_TABLES.values():
                     connection.execute(f"CREATE TABLE IF NOT EXISTS {table} {RECEIPT_COLUMNS}")
+                connection.execute(f"CREATE TABLE IF NOT EXISTS memory_posts {MEMORY_POST_COLUMNS}")
                 columns = {row["name"] for row in connection.execute("PRAGMA table_info(ideas)")}
                 for column in IDEA_REVIEW_COLUMNS:
                     if column not in columns:
                         connection.execute(
                             f"ALTER TABLE ideas ADD COLUMN {column} TEXT NOT NULL DEFAULT ''"
                         )
+                for column, definition in IDEA_POST_COLUMNS.items():
+                    if column not in columns:
+                        connection.execute(f"ALTER TABLE ideas ADD COLUMN {column} {definition}")
                 yield connection
         finally:
             connection.close()
@@ -112,13 +136,27 @@ class MemoryInbox:
             row = db.execute(IDEA_SELECT + " WHERE ideas.id=?", (idea_id,)).fetchone()
             return dict(row) if row else None
 
-    def promote(self, idea_id: str, *, memory_id: str, category: str, note: str = "") -> dict:
+    def promote(
+        self,
+        idea_id: str,
+        *,
+        memory_id: str,
+        category: str,
+        note: str = "",
+        priority: str = "normal",
+        post_channel_id: str = "",
+        post_body: str = "",
+    ) -> dict:
         """Mark a capture as logged to Brain memory and queue one fixed Slack receipt.
 
         The receipt is queued at most once per idea and only when the capture
         arrived through a Slack thread; slash-command captures have no thread.
+        A human-approved memory post is queued in the same transaction when a
+        body is given, so a promotion and its post commit or roll back together.
         """
-        if not memory_id or len(note) > 2_000:
+        if priority not in PRIORITIES:
+            raise ValueError("invalid_priority")
+        if not memory_id or len(note) > 2_000 or bool(post_body) != bool(post_channel_id):
             raise ValueError("invalid_promotion")
         with self.connect() as db:
             db.execute("BEGIN IMMEDIATE")
@@ -133,9 +171,23 @@ class MemoryInbox:
                 raise ValueError("idea_already_promoted")
             db.execute(
                 "UPDATE ideas SET status='promoted',memory_id=?,memory_category=?,"
-                "review_note=?,reviewed_at=? WHERE id=?",
-                (memory_id, category, note.strip(), _now(), idea_id),
+                "review_note=?,reviewed_at=?,priority=?,post_requested=? WHERE id=?",
+                (
+                    memory_id,
+                    category,
+                    note.strip(),
+                    _now(),
+                    priority,
+                    int(bool(post_body)),
+                    idea_id,
+                ),
             )
+            if post_body:
+                db.execute(
+                    "INSERT INTO memory_posts (memory_id,idea_id,channel_id,priority,body) "
+                    "VALUES (?,?,?,?,?) ON CONFLICT(memory_id) DO NOTHING",
+                    (memory_id, idea_id, post_channel_id, priority, post_body),
+                )
             if row["thread_ts"]:
                 db.execute(
                     "INSERT INTO promotion_receipts (idea_id,thread_ts) VALUES (?,?) "
@@ -239,11 +291,66 @@ class MemoryInbox:
             )
             return result.rowcount == 1
 
+    def claim_memory_post(self):
+        """Lease the most urgent due post; priority decides before age."""
+        with self.connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            row = db.execute(
+                "SELECT m.*,i.workspace_id FROM memory_posts m JOIN ideas i ON i.id=m.idea_id "  # nosec B608
+                "WHERE m.status IN ('pending','sending') AND m.next_attempt<=? "
+                "ORDER BY " + PRIORITY_RANK.format("m.priority") + ",m.next_attempt,m.memory_id "
+                "LIMIT 1",
+                (time.time(),),
+            ).fetchone()
+            if row is None:
+                return None
+            post = dict(row)
+            post["lease"] = uuid.uuid4().hex
+            post["attempts"] += 1
+            db.execute(
+                "UPDATE memory_posts SET status='sending',attempts=?,lease=?,next_attempt=? "
+                "WHERE memory_id=?",
+                (post["attempts"], post["lease"], time.time() + 120, post["memory_id"]),
+            )
+            return post
+
+    def finish_memory_post(self, post, *, status, error="", slack_ts="", delay=0):
+        with self.connect() as db:
+            db.execute(
+                "UPDATE memory_posts SET status=?,error=?,slack_ts=?,next_attempt=? "
+                "WHERE memory_id=? AND lease=? AND status='sending'",
+                (status, error, slack_ts, time.time() + delay, post["memory_id"], post["lease"]),
+            )
+
+    def memory_post_status(self):
+        with self.connect() as db:
+            return dict(
+                db.execute("SELECT status,count(*) FROM memory_posts GROUP BY status").fetchall()
+            )
+
+    def retry_memory_post(self, idea_id):
+        with self.connect() as db:
+            result = db.execute(
+                "UPDATE memory_posts SET status='pending',attempts=0,next_attempt=0,error='' "
+                "WHERE idea_id=? AND status='failed'",
+                (idea_id,),
+            )
+            return result.rowcount == 1
+
     def list(
-        self, *, project: str = "", query: str = "", offset: int = 0, status: str = ""
+        self,
+        *,
+        project: str = "",
+        query: str = "",
+        offset: int = 0,
+        status: str = "",
+        priority: str = "",
+        sort: str = "newest",
     ) -> dict:
         if status and status not in IDEA_STATUSES:
             raise ValueError("invalid_idea_status")
+        if (priority and priority not in PRIORITIES) or sort not in IDEA_SORTS:
+            raise ValueError("invalid_idea_query")
         clauses, args = [], []
         if project:
             clauses.append("ideas.project=?")
@@ -251,6 +358,9 @@ class MemoryInbox:
         if query:
             clauses.append("instr(lower(ideas.text), lower(?)) > 0")
             args.append(query)
+        if priority:
+            clauses.append("ideas.priority=?")
+            args.append(priority)
         scope = " WHERE " + " AND ".join(clauses) if clauses else ""
         if status:
             clauses.append("ideas.status=?")
@@ -267,10 +377,13 @@ class MemoryInbox:
                     args[: len(args) - (1 if status else 0)],
                 ).fetchall()
             )
+            order = PRIORITY_RANK.format("ideas.priority") + "," if sort == "priority" else ""
             rows = db.execute(
                 IDEA_SELECT
                 + where
-                + " ORDER BY ideas.created_at DESC,ideas.id DESC LIMIT 50 OFFSET ?",
+                + " ORDER BY "
+                + order
+                + "ideas.created_at DESC,ideas.id DESC LIMIT 50 OFFSET ?",
                 [*args, offset],
             )
             return {

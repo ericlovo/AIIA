@@ -1,8 +1,8 @@
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { api, MEMORY_CATEGORIES, type Agent, type MemoryCategory, type MemoryIdea, type MemoryIdeaStatus } from '../lib/api'
+import { api, MEMORY_CATEGORIES, MEMORY_PRIORITIES, type Agent, type MemoryCategory, type MemoryIdea, type MemoryIdeaStatus, type MemoryInboxSort, type MemoryPriority } from '../lib/api'
 import { StudioTabs, type StudioView } from './StudioTabs'
-import { captureText, receiptLabel, type ReceiptTone } from './memoryText'
+import { captureText, MEMORY_POST_CHANNEL, memoryPostLabel, priorityLabel, receiptLabel, type PriorityTone, type ReceiptTone } from './memoryText'
 
 type Filter = MemoryIdeaStatus | ''
 const FILTERS: { id: Filter; label: string }[] = [
@@ -18,16 +18,24 @@ const TONE: Record<ReceiptTone, string> = {
   failed: 'text-red-300',
   none: 'text-neutral-600',
 }
+const PRIORITY_TONE: Record<PriorityTone, string> = {
+  urgent: 'border-red-500/60 text-red-200',
+  high: 'border-amber-500/60 text-amber-200',
+  normal: 'border-neutral-700 text-neutral-400',
+  low: 'border-neutral-800 text-neutral-500',
+}
 
 export function MemoryLog({ agents, view, onViewChange }: { agents: Agent[]; view: StudioView; onViewChange: (view: StudioView) => void }) {
   const qc = useQueryClient()
   const [filter, setFilter] = useState<Filter>('unreviewed')
   const [query, setQuery] = useState('')
   const [offset, setOffset] = useState(0)
+  const [priority, setPriority] = useState<MemoryPriority | ''>('')
+  const [sort, setSort] = useState<MemoryInboxSort>('newest')
   const [notice, setNotice] = useState<{ tone: 'ok' | 'error'; text: string } | null>(null)
   const page = useQuery({
-    queryKey: ['memory-inbox', PROJECT, filter, query, offset],
-    queryFn: () => api.memoryInbox({ project: PROJECT, status: filter, query, offset }),
+    queryKey: ['memory-inbox', PROJECT, filter, query, offset, priority, sort],
+    queryFn: () => api.memoryInbox({ project: PROJECT, status: filter, query, offset, priority, sort }),
     retry: false,
     refetchInterval: 15_000,
   })
@@ -40,13 +48,14 @@ export function MemoryLog({ agents, view, onViewChange }: { agents: Agent[]; vie
   }
   const fail = (error: Error) => setNotice({ tone: 'error', text: describe(error.message) })
   const promote = useMutation({
-    mutationFn: ({ id, category }: { id: string; category: MemoryCategory }) => api.promoteIdea(id, category),
-    onSuccess: result => done(`Logged to AIIA memory as ${result.idea.memory_category}. ${receiptLabel(result.idea.promotion_status, null, 'Memory').text}.`),
+    mutationFn: ({ id, category, priority, postToSlack }: { id: string; category: MemoryCategory; priority: MemoryPriority; postToSlack: boolean }) => api.promoteIdea(id, category, '', { priority, postToSlack }),
+    onSuccess: result => done(`Logged to AIIA memory as ${result.idea.memory_category} at ${priorityLabel(result.idea.priority).text.toLowerCase()} priority. ${receiptLabel(result.idea.promotion_status, null, 'Memory').text}.${result.idea.post_requested ? ` ${memoryPostLabel(result.idea.memory_post_status, null, true)?.text}.` : ''}`),
     onError: fail,
   })
   const dismiss = useMutation({ mutationFn: (id: string) => api.dismissIdea(id), onSuccess: () => done('Capture dismissed. It stays in the inbox under Dismissed.'), onError: fail })
   const restore = useMutation({ mutationFn: (id: string) => api.restoreIdea(id), onSuccess: () => done('Capture restored to Unreviewed.'), onError: fail })
-  const retry = useMutation({ mutationFn: ({ id, kind }: { id: string; kind: 'capture' | 'promotion' }) => api.retryIdeaReceipt(id, kind), onSuccess: () => done('Receipt queued again.'), onError: fail })
+  const retry = useMutation({ mutationFn: ({ id, kind }: { id: string; kind: 'capture' | 'promotion' | 'memory_post' }) => api.retryIdeaReceipt(id, kind), onSuccess: (_, { kind }) => done(kind === 'memory_post' ? `Post to ${MEMORY_POST_CHANNEL} queued again.` : 'Receipt queued again.'), onError: fail })
+  const canPost = slack.data?.memory_posts_configured === true
   const busy = promote.isPending || dismiss.isPending || restore.isPending || retry.isPending
   const data = page.data
   const counts = data?.counts
@@ -77,9 +86,17 @@ export function MemoryLog({ agents, view, onViewChange }: { agents: Agent[]; vie
         <div className="sticky top-0 z-10 flex flex-col gap-3 border-b border-neutral-900 bg-neutral-950/95 px-5 py-4 backdrop-blur sm:flex-row sm:items-center sm:justify-between sm:px-7">
           <div>
             <div className="text-[10px] font-semibold uppercase tracking-[0.2em] text-neutral-500">Mindmoor captures from Slack</div>
-            <div className="mt-1 text-xs text-neutral-600">Newest first · captures stay unreviewed until you log or dismiss them · refreshes every 15 seconds</div>
+            <div className="mt-1 text-xs text-neutral-600">{sort === 'priority' ? 'Highest priority first' : 'Newest first'} · captures stay unreviewed until you log or dismiss them · refreshes every 15 seconds</div>
           </div>
           <div className="flex flex-wrap items-center gap-2">
+            <select value={priority} onChange={event => { setPriority(event.target.value as MemoryPriority | ''); setOffset(0) }} aria-label="Filter by priority" className="h-8 border border-neutral-800 bg-neutral-900 px-1 text-xs text-neutral-200">
+              <option value="">Any priority</option>
+              {MEMORY_PRIORITIES.map(item => <option key={item} value={item}>{priorityLabel(item).text}</option>)}
+            </select>
+            <select value={sort} onChange={event => { setSort(event.target.value as MemoryInboxSort); setOffset(0) }} aria-label="Sort captures" className="h-8 border border-neutral-800 bg-neutral-900 px-1 text-xs text-neutral-200">
+              <option value="newest">Newest first</option>
+              <option value="priority">Priority first</option>
+            </select>
             <input value={query} onChange={event => { setQuery(event.target.value); setOffset(0) }} placeholder="Search captures" aria-label="Search captures" className="h-8 w-44 border border-neutral-800 bg-neutral-900 px-2 text-xs text-neutral-200 outline-none placeholder:text-neutral-600 focus:border-cyan-500/50" />
             <div className="flex h-8 max-w-full overflow-x-auto border border-neutral-800 p-0.5" role="tablist" aria-label="Capture filters">
               {FILTERS.map(item => (
@@ -93,11 +110,11 @@ export function MemoryLog({ agents, view, onViewChange }: { agents: Agent[]; vie
 
         {page.isError && <p role="alert" className="px-5 py-4 text-sm text-red-300 sm:px-7">Memory inbox unavailable. {data ? 'Showing the last loaded captures.' : 'Retry to load captures.'} <button type="button" onClick={() => page.refetch()} className="underline">Retry</button></p>}
         {page.isLoading && <p className="px-5 py-6 text-sm text-neutral-500 sm:px-7">Loading captures...</p>}
-        {data && ideas.length === 0 && <p className="px-5 py-6 text-sm text-neutral-500 sm:px-7">{query ? 'No captures match this search.' : filter === 'unreviewed' ? 'Nothing waiting. New @AIIA mentions and /aiia-capture ideas from the allowed Slack channels land here.' : 'No captures in this state.'}</p>}
+        {data && ideas.length === 0 && <p className="px-5 py-6 text-sm text-neutral-500 sm:px-7">{query || priority ? 'No captures match this search.' : filter === 'unreviewed' ? 'Nothing waiting. New @AIIA mentions and /aiia-capture ideas from the allowed Slack channels land here.' : 'No captures in this state.'}</p>}
 
         <ul className="divide-y divide-neutral-900">
-          {ideas.map(idea => <IdeaRow key={idea.id} idea={idea} busy={busy}
-            onPromote={category => promote.mutate({ id: idea.id, category })}
+          {ideas.map(idea => <IdeaRow key={idea.id} idea={idea} busy={busy} canPost={canPost}
+            onPromote={(category, priority, postToSlack) => promote.mutate({ id: idea.id, category, priority, postToSlack })}
             onDismiss={() => dismiss.mutate(idea.id)}
             onRestore={() => restore.mutate(idea.id)}
             onRetry={kind => retry.mutate({ id: idea.id, kind })} />)}
@@ -112,25 +129,30 @@ export function MemoryLog({ agents, view, onViewChange }: { agents: Agent[]; vie
         </div>}
 
         <p className="px-5 py-4 text-[11px] leading-relaxed text-neutral-600 sm:px-7">
-          Logging stores the capture as a Brain fact with Slack provenance (capture ID, channel, author, time) and, when the capture came from a thread, queues one fixed receipt back to that thread through the AIIA Slack app. The captured text is never sent outbound. Dismissing keeps the record locally and sends nothing.
+          Logging stores the capture as a Brain fact with Slack provenance (capture ID, channel, author, time) and, when the capture came from a thread, queues one fixed receipt back to that thread through the AIIA Slack app. Receipts never carry the captured text. Only when you check "Post to {MEMORY_POST_CHANNEL}" is the capture text, with its priority and category, posted to that one channel. Dismissing keeps the record locally and sends nothing.
         </p>
       </section>
     </main>
   )
 }
 
-function IdeaRow({ idea, busy, onPromote, onDismiss, onRestore, onRetry }: { idea: MemoryIdea; busy: boolean; onPromote: (category: MemoryCategory) => void; onDismiss: () => void; onRestore: () => void; onRetry: (kind: 'capture' | 'promotion') => void }) {
+function IdeaRow({ idea, busy, canPost, onPromote, onDismiss, onRestore, onRetry }: { idea: MemoryIdea; busy: boolean; canPost: boolean; onPromote: (category: MemoryCategory, priority: MemoryPriority, postToSlack: boolean) => void; onDismiss: () => void; onRestore: () => void; onRetry: (kind: 'capture' | 'promotion' | 'memory_post') => void }) {
   const [category, setCategory] = useState<MemoryCategory>('project')
+  const [priority, setPriority] = useState<MemoryPriority>('normal')
+  const [postToSlack, setPostToSlack] = useState(false)
+  const posted = memoryPostLabel(idea.memory_post_status, idea.memory_post_error, idea.post_requested === 1)
+  const badge = priorityLabel(idea.priority)
   const text = captureText(idea.text) || '(mention only, no text)'
   const save = receiptLabel(idea.acknowledgement_status, idea.acknowledgement_error, 'Save')
   const memory = receiptLabel(idea.promotion_status, idea.promotion_error, 'Memory')
   return (
-    <li className="px-5 py-4 sm:px-7" data-idea-status={idea.status}>
+    <li className="px-5 py-4 sm:px-7" data-idea-status={idea.status} data-idea-priority={badge.tone}>
       <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
         <div className="min-w-0 flex-1">
           <p className="whitespace-pre-wrap break-words text-sm text-neutral-100">{text}</p>
           <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-neutral-500">
             <span className={`uppercase tracking-wider ${idea.status === 'promoted' ? 'text-emerald-300' : idea.status === 'dismissed' ? 'text-neutral-500' : 'text-amber-300'}`}>{idea.status === 'promoted' ? 'Logged to memory' : idea.status === 'dismissed' ? 'Dismissed' : 'Unreviewed'}</span>
+            {idea.status === 'promoted' && <span className={`border px-1.5 uppercase tracking-wider ${PRIORITY_TONE[badge.tone]}`} aria-label={`Priority ${badge.text}`}>{badge.text}</span>}
             <span>{new Date(idea.created_at).toLocaleString()}</span>
             <span>{idea.source} · channel {idea.channel_id} · author {idea.author_id}</span>
             <span>capture {idea.id.slice(0, 8)}</span>
@@ -142,6 +164,8 @@ function IdeaRow({ idea, busy, onPromote, onDismiss, onRestore, onRetry }: { ide
             {save.tone === 'failed' && <button type="button" disabled={busy} onClick={() => onRetry('capture')} className="underline text-neutral-400">Retry save receipt</button>}
             {idea.status === 'promoted' && <span className={TONE[memory.tone]}>{memory.text}</span>}
             {idea.status === 'promoted' && memory.tone === 'failed' && <button type="button" disabled={busy} onClick={() => onRetry('promotion')} className="underline text-neutral-400">Retry memory receipt</button>}
+            {posted && <span className={TONE[posted.tone]}>{posted.text}</span>}
+            {posted?.tone === 'failed' && <button type="button" disabled={busy} onClick={() => onRetry('memory_post')} className="underline text-neutral-400">Retry memory post</button>}
           </div>
         </div>
         <div className="flex shrink-0 flex-wrap items-center gap-2">
@@ -151,7 +175,16 @@ function IdeaRow({ idea, busy, onPromote, onDismiss, onRestore, onRetry }: { ide
                 {MEMORY_CATEGORIES.map(item => <option key={item} value={item}>{item}</option>)}
               </select>
             </label>
-            <button type="button" disabled={busy} onClick={() => onPromote(category)} className="h-8 border border-cyan-500/60 bg-cyan-500/10 px-3 text-xs text-cyan-100 hover:bg-cyan-500/20 disabled:opacity-40">Log to memory</button>
+            <label className="text-[11px] text-neutral-500">Priority
+              <select value={priority} onChange={event => setPriority(event.target.value as MemoryPriority)} className="ml-1 h-8 border border-neutral-800 bg-neutral-900 px-1 text-xs text-neutral-200" aria-label={`Priority for capture ${idea.id.slice(0, 8)}`}>
+                {MEMORY_PRIORITIES.map(item => <option key={item} value={item}>{priorityLabel(item).text}</option>)}
+              </select>
+            </label>
+            {canPost && <label className="flex h-8 items-center gap-1.5 text-[11px] text-neutral-300">
+              <input type="checkbox" checked={postToSlack} onChange={event => setPostToSlack(event.target.checked)} className="accent-cyan-400" aria-label={`Post capture ${idea.id.slice(0, 8)} to ${MEMORY_POST_CHANNEL}`} />
+              Post to {MEMORY_POST_CHANNEL}
+            </label>}
+            <button type="button" disabled={busy} onClick={() => onPromote(category, priority, postToSlack)} className="h-8 border border-cyan-500/60 bg-cyan-500/10 px-3 text-xs text-cyan-100 hover:bg-cyan-500/20 disabled:opacity-40">Log to memory</button>
             <button type="button" disabled={busy} onClick={onDismiss} className="h-8 border border-neutral-800 px-3 text-xs text-neutral-300 hover:text-white disabled:opacity-40">Dismiss</button>
           </>}
           {idea.status === 'dismissed' && <button type="button" disabled={busy} onClick={onRestore} className="h-8 border border-neutral-800 px-3 text-xs text-neutral-300 hover:text-white disabled:opacity-40">Restore</button>}
@@ -161,11 +194,11 @@ function IdeaRow({ idea, busy, onPromote, onDismiss, onRestore, onRetry }: { ide
   )
 }
 
-function slackSummary(status: { configured: boolean; acknowledgements_configured: boolean; channel_ids: string[] } | undefined, failed: boolean): string {
+function slackSummary(status: { configured: boolean; acknowledgements_configured: boolean; channel_ids: string[]; memory_posts_configured?: boolean } | undefined, failed: boolean): string {
   if (failed) return 'Slack status unavailable'
   if (!status) return 'Checking Slack capture'
   if (!status.configured) return 'Slack capture not configured'
-  return `Slack capture on ${status.channel_ids.length} channel${status.channel_ids.length === 1 ? '' : 's'} · receipts ${status.acknowledgements_configured ? 'on' : 'off'}`
+  return `Slack capture on ${status.channel_ids.length} channel${status.channel_ids.length === 1 ? '' : 's'} · receipts ${status.acknowledgements_configured ? 'on' : 'off'} · posts to ${MEMORY_POST_CHANNEL} ${status.memory_posts_configured ? 'on' : 'off'}`
 }
 
 function describe(code: string): string {
@@ -176,6 +209,8 @@ function describe(code: string): string {
     idea_already_promoted: 'This capture is already logged to memory.',
     idea_not_dismissable: 'Only unreviewed captures can be dismissed.',
     idea_not_restorable: 'Only dismissed captures can be restored.',
+    memory_posting_disabled: `Posting to ${MEMORY_POST_CHANNEL} is not enabled on the Mini. Nothing was logged; untick the post option or ask the owner to enable it.`,
+    invalid_priority: 'Choose a priority of urgent, high, normal, or low.',
     idea_has_no_content: 'This capture is only a mention with no text to log.',
     memory_inbox_unavailable: 'The memory inbox storage is unavailable.',
     slack_receipts_not_configured: 'Slack receipts are not configured on the Mini.',

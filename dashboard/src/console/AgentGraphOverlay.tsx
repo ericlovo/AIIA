@@ -1,7 +1,11 @@
 import { useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { reconcileLayout } from './graphLayout'
-import type { Agent, AgentWorldPoint, Assignment, Handoff } from '../lib/api'
+import { orderBySuite, reconcileLayout, suiteColor, suiteOf } from './graphLayout'
+import { AgentInspector } from './AgentInspector'
+import { HandoffComposer } from './HandoffComposer'
+import { HandoffInspector } from './HandoffInspector'
+import { formatHandoffTime } from './mapRelationships'
+import type { Agent, AgentWorldPoint, Assignment, Handoff, HandoffDefinition } from '../lib/api'
 
 interface AgentGraphOverlayProps {
   showCompleted: boolean
@@ -19,6 +23,8 @@ interface AgentGraphOverlayProps {
   onAssignAgent: (agentId: string) => void
   onOpenAssignment: (assignmentId: string) => void
   onRouteHandoff: (sourceAssignmentId: string, toAgentId: string) => void
+  onCreateHandoff: (data: HandoffDefinition) => Promise<Handoff>
+  onDeleteHandoff: (handoffId: string) => Promise<void>
 }
 
 type Point = AgentWorldPoint
@@ -45,6 +51,11 @@ interface WireDragState {
   point: Point
   targetAgentId: string | null
   moved: boolean
+}
+
+interface PendingHandoff {
+  sourceAssignmentId: string
+  toAgentId: string
 }
 
 function clamp(value: number, minimum = 8, maximum = 92) {
@@ -115,6 +126,8 @@ export function AgentGraphOverlay({
   onAssignAgent,
   onOpenAssignment,
   onRouteHandoff,
+  onCreateHandoff,
+  onDeleteHandoff,
 }: AgentGraphOverlayProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const dragRef = useRef<DragState | null>(null)
@@ -125,10 +138,12 @@ export function AgentGraphOverlay({
   const [wireDrag, setWireDrag] = useState<WireDragState | null>(null)
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [connectFrom, setConnectFrom] = useState<string | null>(null)
+  const [pendingHandoff, setPendingHandoff] = useState<PendingHandoff | null>(null)
+  const [selectedHandoffId, setSelectedHandoffId] = useState<string | null>(null)
   const [draggingId, setDraggingId] = useState<string | null>(null)
   const nodes = useMemo<GraphNode[]>(() => {
     const work = visibleWork(assignments, showCompleted)
-    return agents.flatMap(agent => [
+    return orderBySuite(agents).flatMap(agent => [
       { id: `agent:${agent.id}`, kind: 'agent' as const, agent },
       ...work
         .filter(assignment => assignment.agent_id === agent.id)
@@ -147,6 +162,12 @@ export function AgentGraphOverlay({
   }, [defaults, draggingId, nodes, positions, transientPositions])
   const selected = nodes.find(node => node.id === selectedId) ?? null
   const nodeIds = useMemo(() => new Set(nodes.map(node => node.id)), [nodes])
+  // A suite filter can hide either end; controls for a hidden relationship stay closed.
+  const selectedHandoff = handoffs.find(handoff => handoff.id === selectedHandoffId
+    && nodeIds.has(`agent:${handoff.from_agent_id}`) && nodeIds.has(`agent:${handoff.to_agent_id}`)) ?? null
+  const pendingSource = pendingHandoff ? assignments.find(item => item.id === pendingHandoff.sourceAssignmentId) ?? null : null
+  const pendingTarget = pendingHandoff ? agents.find(agent => agent.id === pendingHandoff.toAgentId) ?? null : null
+  const composerOpen = Boolean(pendingSource && pendingTarget)
   const selectedSource = assignments.find(
     assignment => assignment.id === (connectFrom ?? wireDrag?.sourceAssignmentId),
   ) ?? null
@@ -154,12 +175,25 @@ export function AgentGraphOverlay({
   function selectNode(node: GraphNode) {
     if (connectFrom && node.agent) {
       if (node.agent.id !== selectedSource?.agent_id) {
-        onRouteHandoff(connectFrom, node.agent.id)
+        setPendingHandoff({ sourceAssignmentId: connectFrom, toAgentId: node.agent.id })
         setConnectFrom(null)
       }
       return
     }
     setSelectedId(node.id)
+    setSelectedHandoffId(null)
+    // A confirm hidden by a suite filter must not keep node controls closed.
+    if (!composerOpen) setPendingHandoff(null)
+  }
+
+  function selectHandoff(handoffId: string) {
+    if (connectFrom || wireDragRef.current) return
+    setSelectedHandoffId(handoffId)
+    setSelectedId(null)
+  }
+
+  function agentName(agentId: string) {
+    return agents.find(agent => agent.id === agentId)?.name ?? 'Removed agent'
   }
 
   function handlePointerDown(event: React.PointerEvent<HTMLButtonElement>, node: GraphNode) {
@@ -301,7 +335,7 @@ export function AgentGraphOverlay({
     wireDragRef.current = null
     setWireDrag(null)
     if (drag?.targetAgentId) {
-      onRouteHandoff(drag.sourceAssignmentId, drag.targetAgentId)
+      setPendingHandoff({ sourceAssignmentId: drag.sourceAssignmentId, toAgentId: drag.targetAgentId })
     }
   }
 
@@ -319,17 +353,29 @@ export function AgentGraphOverlay({
     }
     setConnectFrom(assignmentId)
     setSelectedId(null)
+    setSelectedHandoffId(null)
+    setPendingHandoff(null)
   }
 
   return (
     <div ref={containerRef} className="pointer-events-none absolute inset-0 z-[5] overflow-hidden" aria-label="Agent topology graph">
-      <svg className="absolute inset-0 h-full w-full" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+      <svg className="absolute inset-0 h-full w-full" viewBox="0 0 100 100" preserveAspectRatio="none" role="group" aria-label="Map relationships">
         {nodes.filter(node => node.assignment).map(node => {
           const assignment = node.assignment!
           const from = layout[`agent:${assignment.agent_id}`]
           const to = layout[node.id]
           if (!from || !to) return null
-          return <GraphEdge key={`hierarchy:${node.id}`} from={from} to={to} tone="hierarchy" />
+          return (
+            <GraphEdge
+              key={`hierarchy:${node.id}`}
+              edgeId={`hierarchy:${assignment.id}`}
+              from={from}
+              to={to}
+              tone="hierarchy"
+              label={`Open ${assignment.title}`}
+              onSelect={() => { if (!connectFrom && !wireDragRef.current) onOpenAssignment(assignment.id) }}
+            />
+          )
         })}
         {handoffs.map(handoff => {
           const sourceAssignmentId = `assignment:${handoff.source_assignment_id}`
@@ -339,7 +385,18 @@ export function AgentGraphOverlay({
           const from = layout[sourceId]
           const to = layout[targetId]
           if (!from || !to) return null
-          return <GraphEdge key={`handoff:${handoff.id}`} from={from} to={to} tone="handoff" />
+          return (
+            <GraphEdge
+              key={`handoff:${handoff.id}`}
+              edgeId={`handoff:${handoff.id}`}
+              from={from}
+              to={to}
+              tone="handoff"
+              selected={handoff.id === selectedHandoffId}
+              label={`Handoff from ${agentName(handoff.from_agent_id)} to ${agentName(handoff.to_agent_id)}, ${handoff.status}, created ${formatHandoffTime(handoff.created_at)}`}
+              onSelect={() => selectHandoff(handoff.id)}
+            />
+          )
         })}
         {wireDrag && layout[wireDrag.sourceNodeId] && (
           <GraphEdge from={layout[wireDrag.sourceNodeId]} to={wireDrag.point} tone="draft" />
@@ -364,7 +421,7 @@ export function AgentGraphOverlay({
               data-agent-target={node.agent?.id}
               type="button"
               aria-label={node.agent
-                ? `${node.agent.name}. ${node.agent.mission || 'No mission defined'}. Status: ${node.agent.status}`
+                ? `${node.agent.name}. ${node.agent.mission || 'No mission defined'}. Status: ${node.agent.status}${suiteOf(node.agent) ? `. Suite: ${suiteOf(node.agent)}` : ''}`
                 : `${assignment?.title} assignment node`}
               onPointerDown={event => handlePointerDown(event, node)}
               onPointerMove={handlePointerMove}
@@ -400,49 +457,135 @@ export function AgentGraphOverlay({
         </div>, inspectorHost
       )}
 
-      {selected && !connectFrom && !wireDrag && inspectorHost && createPortal(
-        <NodeInspector
-          node={selected}
+{pendingHandoff && pendingSource && pendingTarget && !connectFrom && !wireDrag && inspectorHost && createPortal(
+        <HandoffComposer
+          key={`${pendingHandoff.sourceAssignmentId}:${pendingHandoff.toAgentId}`}
+          source={pendingSource}
+          fromAgent={agents.find(agent => agent.id === pendingSource.agent_id) ?? null}
+          toAgent={pendingTarget}
+          onCreate={instructions => onCreateHandoff({
+            source_assignment_id: pendingSource.id,
+            to_agent_id: pendingTarget.id,
+            artifact_type: 'brief',
+            instructions,
+          })}
+          onCreated={handoff => { setPendingHandoff(null); setSelectedId(null); setSelectedHandoffId(handoff.id) }}
+          onCancel={() => setPendingHandoff(null)}
+          onOpenForm={() => onRouteHandoff(pendingSource.id, pendingTarget.id)}
+        />, inspectorHost
+      )}
+
+      {selectedHandoff && !selected && !composerOpen && !connectFrom && !wireDrag && inspectorHost && createPortal(
+        <HandoffInspector
+          key={selectedHandoff.id}
+          handoff={selectedHandoff}
+          agents={agents}
+          assignments={assignments}
+          onClose={() => setSelectedHandoffId(null)}
+          onOpenAssignment={onOpenAssignment}
+          onDelete={handoffId => onDeleteHandoff(handoffId).then(() => setSelectedHandoffId(null))}
+        />, inspectorHost
+      )}
+
+      {selected && !composerOpen && !connectFrom && !wireDrag && inspectorHost && createPortal(selected.agent ? (
+        <AgentInspector
+          key={selected.agent.id}
+          agent={selected.agent}
           onClose={() => setSelectedId(null)}
           onManageAgent={onManageAgent}
           onAssignAgent={onAssignAgent}
+        />
+      ) : (
+        <NodeInspector
+          node={selected}
+          onClose={() => setSelectedId(null)}
           onOpenAssignment={onOpenAssignment}
-          onConnect={setConnectFrom}
+          onConnect={assignmentId => { setConnectFrom(assignmentId); setPendingHandoff(null) }}
           runningAssignmentId={runningAssignmentId}
           assignmentRunTargetId={assignmentRunTargetId}
           runError={assignmentRunError}
           onRunAssignment={onRunAssignment}
-        />, inspectorHost
+        />
+      ), inspectorHost
       )}
     </div>
   )
 }
 
-function GraphEdge({ from, to, tone }: { from: Point; to: Point; tone: 'hierarchy' | 'handoff' | 'draft' }) {
+interface GraphEdgeProps {
+  from: Point
+  to: Point
+  tone: 'hierarchy' | 'handoff' | 'draft'
+  edgeId?: string
+  label?: string
+  selected?: boolean
+  onSelect?: () => void
+}
+
+function GraphEdge({ from, to, tone, edgeId, label, selected = false, onSelect }: GraphEdgeProps) {
   const bend = Math.max(4, Math.abs(to.y - from.y) * 0.45)
   const path = `M ${from.x} ${from.y} C ${from.x} ${from.y + bend}, ${to.x} ${to.y - bend}, ${to.x} ${to.y}`
-  return (
+  const stroke = tone === 'draft' ? 'rgba(244,114,182,0.95)' : tone === 'handoff' ? (selected ? 'rgba(245,208,254,1)' : 'rgba(232,121,249,0.72)') : 'rgba(103,232,249,0.24)'
+  const visible = (
     <path
+      data-edge={onSelect ? undefined : edgeId}
+      aria-hidden="true"
       d={path}
       vectorEffect="non-scaling-stroke"
       fill="none"
-      stroke={tone === 'draft' ? 'rgba(244,114,182,0.95)' : tone === 'handoff' ? 'rgba(232,121,249,0.72)' : 'rgba(103,232,249,0.24)'}
-      strokeWidth={tone === 'hierarchy' ? 1 : 1.5}
+      stroke={stroke}
+      strokeWidth={tone === 'hierarchy' ? 1 : selected ? 3 : 1.5}
       strokeDasharray={tone === 'hierarchy' ? undefined : '5 5'}
+      style={{ pointerEvents: 'none' }}
     />
+  )
+  if (!onSelect) return visible
+  // Handoff edges are tab stops; the many agent-to-work edges stay pointer-only
+  // because every assignment node already offers "Open work" from the keyboard.
+  const focusable = tone === 'handoff'
+  return (
+    <g>
+      {visible}
+      <path
+        data-edge={edgeId}
+        d={path}
+        role={focusable ? 'button' : undefined}
+        tabIndex={focusable ? 0 : undefined}
+        aria-label={focusable ? label : undefined}
+        aria-hidden={focusable ? undefined : true}
+        vectorEffect="non-scaling-stroke"
+        fill="none"
+        strokeWidth={14}
+        className={`cursor-pointer outline-none ${tone === 'handoff' ? 'stroke-transparent hover:stroke-fuchsia-300/20 focus-visible:stroke-fuchsia-300/35' : 'stroke-transparent hover:stroke-cyan-300/15'}`}
+        style={{ pointerEvents: 'stroke' }}
+        onClick={event => { event.stopPropagation(); onSelect() }}
+        onKeyDown={event => {
+          if (event.key !== 'Enter' && event.key !== ' ') return
+          event.preventDefault()
+          onSelect()
+        }}
+      >
+        {!focusable && label && <title>{label}</title>}
+      </path>
+    </g>
   )
 }
 
 function AgentNode({ agent }: { agent: Agent }) {
+  const suite = suiteOf(agent)
   return (
     <>
+      {suite && <i aria-hidden="true" className="absolute inset-x-0 top-0 h-0.5" style={{ background: suiteColor(suite) }} />}
       <div className="flex items-start justify-between gap-2">
         <span title={agent.name} className="line-clamp-2 min-w-0 text-xs font-semibold leading-snug text-white">{agent.name}</span>
         <i aria-hidden="true" className={`mt-1 h-1.5 w-1.5 shrink-0 rounded-full ${agent.status === 'running' ? 'bg-amber-300' : agent.status === 'error' ? 'bg-red-400' : 'bg-emerald-400'}`} />
       </div>
       <div className="mt-2 text-[8px] font-semibold tracking-[0.14em] uppercase text-cyan-300/55">Mission</div>
       <div title={agent.mission} className="mt-0.5 line-clamp-2 text-[10px] leading-relaxed text-white/55">{agent.mission || 'No mission defined'}</div>
-      <div className={`mt-2 text-[8px] font-semibold tracking-[0.14em] uppercase ${agent.status === 'running' ? 'text-amber-300' : agent.status === 'error' ? 'text-red-300' : 'text-emerald-300/60'}`}>{agent.status}</div>
+      <div className="mt-2 flex items-center justify-between gap-2">
+        <span className={`text-[8px] font-semibold tracking-[0.14em] uppercase ${agent.status === 'running' ? 'text-amber-300' : agent.status === 'error' ? 'text-red-300' : 'text-emerald-300/60'}`}>{agent.status}</span>
+        {suite && <span data-suite-badge={suite} title={`Suite: ${suite}`} className="flex min-w-0 items-center gap-1 text-[8px] font-semibold uppercase" style={{ color: suiteColor(suite) }}><i aria-hidden="true" className="h-1.5 w-1.5 shrink-0 rounded-full" style={{ background: suiteColor(suite) }} /><span className="truncate">{suite}</span></span>}
+      </div>
     </>
   )
 }
@@ -459,8 +602,6 @@ function AssignmentNode({ assignment }: { assignment: Assignment }) {
 interface NodeInspectorProps {
   node: GraphNode
   onClose: () => void
-  onManageAgent: (agentId: string) => void
-  onAssignAgent: (agentId: string) => void
   onOpenAssignment: (assignmentId: string) => void
   onConnect: (assignmentId: string) => void
   runningAssignmentId: string | null
@@ -469,8 +610,7 @@ interface NodeInspectorProps {
   onRunAssignment: (assignmentId: string) => Promise<void>
 }
 
-function NodeInspector({ node, onClose, onManageAgent, onAssignAgent, onOpenAssignment, onConnect, runningAssignmentId, assignmentRunTargetId, runError, onRunAssignment }: NodeInspectorProps) {
-  const agent = node.agent
+function NodeInspector({ node, onClose, onOpenAssignment, onConnect, runningAssignmentId, assignmentRunTargetId, runError, onRunAssignment }: NodeInspectorProps) {
   const assignment = node.assignment
   const runnable = assignment?.status === 'queued' || assignment?.status === 'failed'
   const isRunning = assignment?.id === runningAssignmentId
@@ -479,16 +619,14 @@ function NodeInspector({ node, onClose, onManageAgent, onAssignAgent, onOpenAssi
       <div className="flex items-start justify-between gap-3">
         <div>
           <div className="text-[9px] font-semibold tracking-[0.18em] uppercase text-cyan-300/70">{node.kind} controls</div>
-          <div className="mt-1 text-sm font-medium text-white">{agent?.name ?? assignment?.title}</div>
+          <div className="mt-1 text-sm font-medium text-white">{assignment?.title}</div>
         </div>
         <button type="button" onClick={onClose} className="text-lg leading-none text-white/30 hover:text-white" aria-label="Close node controls">×</button>
       </div>
-      <p className="mt-3 line-clamp-4 text-xs leading-relaxed text-white/45">{agent?.mission ?? assignment?.objective}</p>
+      <p className="mt-3 line-clamp-4 text-xs leading-relaxed text-white/45">{assignment?.objective}</p>
       {assignment && <div className="mt-3 text-[9px] font-semibold tracking-[0.16em] uppercase text-white/35">{assignment.status} · {assignment.priority} priority</div>}
       {assignment?.id === assignmentRunTargetId && runError && <div className="mt-3 border border-red-900/60 bg-red-950/40 px-3 py-2 text-xs text-red-300">{runError}</div>}
       <div className="mt-4 flex flex-wrap gap-2">
-        {agent && <button type="button" onClick={() => onAssignAgent(agent.id)} className="bg-cyan-300 px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-neutral-950">Assign work</button>}
-        {agent && <button type="button" onClick={() => onManageAgent(agent.id)} className="border border-white/15 px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-white/70 hover:border-white/40">Edit agent</button>}
         {runnable && <button type="button" disabled={isRunning} onClick={() => { void onRunAssignment(assignment.id).catch(() => undefined) }} className="bg-amber-300 px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-neutral-950 disabled:cursor-wait disabled:opacity-50">{isRunning ? 'Mini working' : assignment.status === 'failed' ? 'Retry assignment' : 'Run assignment'}</button>}
         {assignment && <button type="button" onClick={() => onOpenAssignment(assignment.id)} className="bg-cyan-300 px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-neutral-950">Open work</button>}
         {assignment?.status === 'completed' && assignment.result && <button type="button" onClick={() => onConnect(assignment.id)} className="border border-fuchsia-400/50 px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-fuchsia-200 hover:border-fuchsia-200">Connect handoff</button>}

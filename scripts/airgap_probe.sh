@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Air-gap probe — proves the running Brain denies cloud egress and that each
-# denial lands in Sanction's audit trail. Run with the Brain up under
+# Air-gap probe — proves the running Brain reports cloud egress denied and lists
+# recent denials from Sanction's audit trail. Run with the Brain up under
 # AIIA_AIRGAP=1. See docs/AIRGAP.md for the full evidence-pull runbook.
 #
 # Env:  BRAIN_URL (default http://localhost:8100)
@@ -33,17 +33,15 @@ for name, state in sorted(a['egress'].items()):
     print(f'       {name}: {state}')
 print('       permitted:', ', '.join(a['permitted']))"
 
-echo "== Slack egress probe (expect 403 EGRESS_DENIED_AIRGAP)"
-slack_code=$(curl -s -o /tmp/airgap_slack.json -w "%{http_code}" -X POST "$BRAIN_URL/v1/aiia/slack" \
-  -H "x-api-key: ${LOCAL_BRAIN_API_KEY:-}" -H "Content-Type: application/json" \
-  -d '{"text":"airgap probe"}')
-check "slack HTTP status" "403" "$slack_code"
-deny_code=$(python3 -c "import json; print(json.load(open('/tmp/airgap_slack.json'))['detail']['code'])" 2>/dev/null || echo "?")
-check "slack deny code" "EGRESS_DENIED_AIRGAP" "$deny_code"
+echo "== Slack egress state (expect slack.post disabled)"
+# General slack.post stays registered and denied. It no longer has a Brain route to
+# provoke, so the probe reads the decision from /health. slack.capture_ack and
+# slack.memory_post read "airgap-allowlisted" only when their opt-in flags are set.
+slack_state=$(echo "$health" | python3 -c "import json,sys; print(json.load(sys.stdin)['airgap']['egress'].get('slack.post', 'unregistered'))")
+check "slack.post egress state" "disabled" "$slack_state"
 
 if [ -n "${SANCTION_API_URL:-}" ] && [ -n "${SANCTION_API_KEY:-}" ]; then
   echo "== Sanction audit trail (denied tool rows)"
-  sleep 2 # let the fire-and-forget audit post land
   denied=$(curl -s "$SANCTION_API_URL/audit-events?type=authorization&limit=20" \
     -H "x-api-key: $SANCTION_API_KEY" | python3 -c "
 import json, sys

@@ -1,9 +1,10 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Maximize2, RotateCcw, ZoomIn, ZoomOut } from 'lucide-react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   api,
   type Agent,
+  type AgentSuitePatch,
   type AgentWorldLayout,
   type AgentWorldPoint,
   type Assignment,
@@ -11,7 +12,11 @@ import {
 } from '../lib/api'
 import { AgentGraphOverlay } from './AgentGraphOverlay'
 import { StudioTabs, type StudioView } from './StudioTabs'
-import { GRAPH_WIDTH, graphGeometry } from './graphLayout'
+import { GRAPH_WIDTH, filterBySuite, graphGeometry, suiteGroups } from './graphLayout'
+import { SuiteLegend } from './SuiteLegend'
+import { SuitePanel } from './SuitePanel'
+import { withUpdatedAgents } from './suiteModulation'
+import { withCreatedAssignment, withCreatedHandoff, withoutHandoff } from './mapRelationships'
 
 interface AgentWorldCanvasProps {
   agents: Agent[]
@@ -72,6 +77,8 @@ export function AgentWorldCanvas({
 }: AgentWorldCanvasProps) {
   const queryClient = useQueryClient()
   const [showCompleted, setShowCompleted] = useState(false)
+  const [suiteFilter, setSuiteFilter] = useState<string | null>(null)
+  const [tuningSuite, setTuningSuite] = useState<string | null>(null)
   const [inspectorHost, setInspectorHost] = useState<HTMLDivElement | null>(null)
   const viewportRef = useRef<HTMLElement>(null)
   const [zoom, setZoom] = useState(1)
@@ -95,7 +102,16 @@ export function AgentWorldCanvas({
   const assignments = assignmentData?.assignments ?? EMPTY_ASSIGNMENTS
   const handoffs = handoffData?.handoffs ?? EMPTY_HANDOFFS
   const layoutState = layoutData?.layout ?? EMPTY_LAYOUT
-  const mapMinHeight = graphMinHeight(agents.length, assignments, showCompleted)
+  const suites = useMemo(() => suiteGroups(agents), [agents])
+  const activeSuite = suites.some(group => group.slug === suiteFilter) ? suiteFilter : null
+  const mapAgents = useMemo(() => filterBySuite(agents, activeSuite), [agents, activeSuite])
+  const mapAssignments = useMemo(() => {
+    if (!activeSuite) return assignments
+    const members = new Set(mapAgents.map(agent => agent.id))
+    return assignments.filter(assignment => members.has(assignment.agent_id))
+  }, [activeSuite, assignments, mapAgents])
+  const tunedGroup = suites.find(group => group.slug === tuningSuite && group.slug === activeSuite) ?? null
+  const mapMinHeight = graphMinHeight(mapAgents.length, mapAssignments, showCompleted)
   const activeCount = agents.filter(agent => agent.status === 'running').length
 
   const saveLayout = useMutation({
@@ -129,6 +145,49 @@ export function AgentWorldCanvas({
     onError: (_error, _variables, context) => {
       if (context?.previous) queryClient.setQueryData(['agent-world-layout'], context.previous)
       else void queryClient.invalidateQueries({ queryKey: ['agent-world-layout'] })
+    },
+  })
+  const createHandoff = useMutation({
+    mutationFn: api.createHandoff,
+    onSuccess: ({ handoff, assignment }) => {
+      queryClient.setQueryData<{ handoffs: Handoff[] }>(['handoffs'], current => ({
+        handoffs: withCreatedHandoff(current?.handoffs ?? EMPTY_HANDOFFS, handoff),
+      }))
+      queryClient.setQueryData<{ assignments: Assignment[] }>(['assignments'], current => ({
+        assignments: withCreatedAssignment(current?.assignments ?? EMPTY_ASSIGNMENTS, assignment),
+      }))
+      void queryClient.invalidateQueries({ queryKey: ['assignments'] })
+      void queryClient.invalidateQueries({ queryKey: ['handoffs'] })
+    },
+  })
+  const deleteHandoff = useMutation({
+    mutationFn: api.deleteHandoff,
+    onSuccess: (_result, handoffId) => {
+      queryClient.setQueryData<{ handoffs: Handoff[] }>(['handoffs'], current => ({
+        handoffs: withoutHandoff(current?.handoffs ?? EMPTY_HANDOFFS, handoffId),
+      }))
+    },
+    onError: (failure, handoffId) => {
+      // The server says it is already gone, so the edge must go too.
+      if (failure instanceof Error && failure.message === 'handoff_not_found') {
+        queryClient.setQueryData<{ handoffs: Handoff[] }>(['handoffs'], current => current && {
+          handoffs: withoutHandoff(current.handoffs, handoffId),
+        })
+      }
+    },
+    // A refused remove (for example handoff_running) still refetches so the edge shows the real status.
+    onSettled: () => {
+      void queryClient.invalidateQueries({ queryKey: ['assignments'] })
+      void queryClient.invalidateQueries({ queryKey: ['handoffs'] })
+    },
+  })
+  const patchSuite = useMutation({
+    mutationFn: ({ suite, patch }: { suite: string; patch: AgentSuitePatch }) => api.patchSuiteAgents(suite, patch),
+    onSuccess: ({ agents: updated }) => {
+      queryClient.setQueryData<{ agents: Agent[] }>(['agents'], current => current && {
+        agents: withUpdatedAgents(current.agents, updated),
+      })
+      void queryClient.invalidateQueries({ queryKey: ['agents'] })
     },
   })
   const runAssignment = useMutation({
@@ -209,7 +268,7 @@ export function AgentWorldCanvas({
         <StudioTabs view="world" onChange={onViewChange} />
       </header>
       <div className="flex shrink-0 flex-wrap items-center gap-4 border-b border-white/10 px-5 py-3 text-xs text-neutral-400">
-        <span>{loading ? 'Loading agents' : `${agents.length} agents / ${activeCount} running`} / {assignmentLoading ? 'Loading work' : `${assignments.length} assignments`}</span>
+        <span>{loading ? 'Loading agents' : `${activeSuite ? `${mapAgents.length} of ${agents.length}` : agents.length} agents / ${activeCount} running`} / {assignmentLoading ? 'Loading work' : `${assignments.length} assignments`}</span>
         <label className="flex items-center gap-2"><input type="checkbox" checked={showCompleted} onChange={event => setShowCompleted(event.target.checked)} />Completed assignments</label>
         <button type="button" title="Reset layout" aria-label="Reset layout" disabled={saveLayout.isPending || resetLayout.isPending} onClick={() => { saveLayout.reset(); resetLayout.mutate() }} className="flex h-8 w-8 items-center justify-center border border-neutral-700 disabled:opacity-40"><RotateCcw size={15} /></button>
         <span role="status">{layoutLoadError ? 'Layout unavailable' : saveLayout.isError || resetLayout.isError ? 'Layout save failed' : saveLayout.isPending || resetLayout.isPending ? 'Saving layout' : layoutData ? 'Layout synced' : 'Loading layout'}</span>
@@ -225,6 +284,7 @@ export function AgentWorldCanvas({
             viewport.scrollTo(0, 0)
           }}><Maximize2 size={15} /></button>
         </div>
+        <SuiteLegend groups={suites} activeSuite={activeSuite} onSelect={slug => { setSuiteFilter(slug); setTuningSuite(null) }} onTune={setTuningSuite} />
       </div>
       {(agentError || assignmentLoadError || handoffLoadError || layoutLoadError) && <div role="alert" className="px-5 py-2 text-xs text-amber-200">Map data is incomplete. <button type="button" className="underline" onClick={() => { for (const key of ['agents', 'assignments', 'handoffs', 'agent-world-layout']) void queryClient.invalidateQueries({ queryKey: [key] }) }}>Retry</button></div>}
       {!loading && !agentError && agents.length === 0 && <p role="status" className="px-5 py-3 text-sm text-neutral-400">No agents configured.</p>}
@@ -236,8 +296,8 @@ export function AgentWorldCanvas({
           <AgentGraphOverlay
           inspectorHost={inspectorHost}
           showCompleted={showCompleted}
-          agents={agents}
-          assignments={assignments}
+          agents={mapAgents}
+          assignments={mapAssignments}
           handoffs={handoffs}
           positions={layoutState.positions}
           onSavePosition={(nodeId: string, point: AgentWorldPoint) => { resetLayout.reset(); return saveLayout.mutateAsync({ [nodeId]: point }).then(() => undefined) }}
@@ -249,12 +309,14 @@ export function AgentWorldCanvas({
           onAssignAgent={onAssignAgent}
           onOpenAssignment={onOpenAssignment}
           onRouteHandoff={onRouteHandoff}
+          onCreateHandoff={data => createHandoff.mutateAsync(data).then(result => result.handoff)}
+          onDeleteHandoff={handoffId => deleteHandoff.mutateAsync(handoffId).then(() => undefined)}
           />
 
           <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 flex flex-wrap items-center justify-between gap-3 border-t border-white/8 bg-[#080a0d]/90 px-4 py-3 text-[9px] font-semibold tracking-[0.14em] uppercase text-white/35 sm:px-6">
             <div className="flex flex-wrap gap-x-5 gap-y-2">
               <span><b className="mr-1.5 text-cyan-300">Solid</b>assignment</span>
-              <span><b className="mr-1.5 text-fuchsia-300">Dashed</b>handoff</span>
+              <span><b className="mr-1.5 text-fuchsia-300">Dashed</b>handoff · click to inspect</span>
               <span><b className="mr-1.5 text-white/70">Drag</b>to position</span>
             </div>
             <span>Click a node for controls</span>
@@ -263,6 +325,15 @@ export function AgentWorldCanvas({
         </div>
       </section>
       <div ref={setInspectorHost} className="pointer-events-none absolute inset-0 z-20" />
+      {tunedGroup && (
+        <SuitePanel
+          key={tunedGroup.slug}
+          group={tunedGroup}
+          members={mapAgents}
+          onApply={patch => patchSuite.mutateAsync({ suite: tunedGroup.slug, patch })}
+          onClose={() => setTuningSuite(null)}
+        />
+      )}
       </div>
     </main>
   )

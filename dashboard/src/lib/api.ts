@@ -208,6 +208,7 @@ export interface Agent {
   loop_max_runs_per_day: number;
   loop_runs_today: number;
   loop_day: string;
+  model?: string;
   suite?: string;
   memory_namespace?: string;
   status: 'idle' | 'running' | 'error';
@@ -217,6 +218,15 @@ export interface Agent {
   runs: AgentRun[];
   created_at: string;
   updated_at: string;
+}
+
+export interface AgentModel {
+  id: string;
+  label: string;
+  family: string;
+  parameter_size: string;
+  size_gb: number;
+  default: boolean;
 }
 
 export interface AgentRun {
@@ -262,6 +272,9 @@ export interface AgentTokenUsage {
 export type MemoryIdeaStatus = 'unreviewed' | 'promoted' | 'dismissed';
 export type MemoryCategory = 'decisions' | 'patterns' | 'lessons' | 'project' | 'meta' | 'team' | 'agents';
 export const MEMORY_CATEGORIES: MemoryCategory[] = ['project', 'decisions', 'patterns', 'lessons', 'team', 'agents', 'meta'];
+export type MemoryPriority = 'urgent' | 'high' | 'normal' | 'low';
+export const MEMORY_PRIORITIES: MemoryPriority[] = ['urgent', 'high', 'normal', 'low'];
+export type MemoryInboxSort = 'newest' | 'priority';
 
 export interface MemoryIdea {
   id: string;
@@ -277,12 +290,17 @@ export interface MemoryIdea {
   memory_category: string;
   review_note: string;
   reviewed_at: string;
+  priority: MemoryPriority;
+  post_requested: number;
   acknowledgement_status: string | null;
   acknowledgement_error: string | null;
   acknowledgement_ts: string | null;
   promotion_status: string | null;
   promotion_error: string | null;
   promotion_ts: string | null;
+  memory_post_status: string | null;
+  memory_post_error: string | null;
+  memory_post_ts: string | null;
 }
 
 export interface MemoryInboxPage {
@@ -301,6 +319,10 @@ export interface SlackCaptureStatus {
   acknowledgements_configured: boolean;
   acknowledgements: Record<string, number>;
   promotion_acknowledgements: Record<string, number>;
+  memory_posts_enabled: boolean;
+  memory_posts_configured: boolean;
+  memory_post_channel_id: string;
+  memory_posts: Record<string, number>;
 }
 
 export interface StudioActivity {
@@ -365,11 +387,43 @@ export interface AgentSuite {
   members: AgentSuiteMember[];
 }
 
+// Contract C3: the bulk subset never carries identity or membership fields.
+export type AgentSuitePatch = Partial<{
+  model: string;
+  temperature: number;
+  max_tokens: number;
+  loop_enabled: boolean;
+  loop_interval_minutes: number;
+  loop_task: string;
+  loop_max_runs_per_day: number;
+  persona: string;
+  skills: string[];
+  tools: string[];
+  repo_id: string;
+  memory_namespace: string;
+}>;
+
+export interface SuitePatchFailure {
+  agent_id: string;
+  detail: string;
+}
+
+export class SuitePatchRejected extends Error {
+  failures: SuitePatchFailure[];
+
+  constructor(failures: SuitePatchFailure[]) {
+    super('suite_patch_rejected');
+    this.name = 'SuitePatchRejected';
+    this.failures = failures;
+  }
+}
+
 export type AgentDefinition = Pick<Agent,
   'name' | 'mission' | 'persona' | 'skills' | 'tools' | 'repo_id' |
   'temperature' | 'max_tokens' | 'loop_enabled' | 'loop_interval_minutes' |
   'loop_task' | 'loop_max_runs_per_day'
 > & {
+  model?: string;
   suite?: string;
   memory_namespace?: string;
 };
@@ -584,6 +638,19 @@ export const api = {
 
   agents: () => get<{ agents: Agent[] }>('/api/agents'),
   agentSuites: () => get<{ suites: AgentSuite[] }>('/api/agent-suites'),
+  agentModels: () => get<{ default: string; models: AgentModel[] }>('/api/agents/models'),
+  patchSuiteAgents: async (suite: string, patch: AgentSuitePatch) => {
+    const res = await fetch(`${BASE}/api/agent-suites/${encodeURIComponent(suite)}/agents`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(patch),
+    });
+    if (res.status === 422) {
+      const payload = await res.clone().json().catch(() => null) as { detail?: unknown; failures?: SuitePatchFailure[] } | null;
+      if (payload?.detail === 'suite_patch_rejected') throw new SuitePatchRejected(payload.failures ?? []);
+    }
+    return parse<{ suite: string; count: number; agents: Agent[] }>(res);
+  },
   agentResources: () => get<{ repos: RepositoryResource[]; github: GitHubResource }>('/api/agents/resources'),
   createAgent: (data: AgentDefinition) =>
     post<{ agent: Agent }>('/api/agents', data),
@@ -591,25 +658,33 @@ export const api = {
     post<{ agent: Agent }>(`/api/agents/${id}/loop`, { enabled }),
   updateAgent: (id: string, data: AgentDefinition) =>
     put<{ agent: Agent }>(`/api/agents/${id}`, data),
+  patchAgent: (id: string, fields: Partial<AgentDefinition>) =>
+    fetch(`${BASE}/api/agents/${id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(fields),
+    }).then(res => parse<{ agent: Agent }>(res)),
   deleteAgent: (id: string) => del<{ deleted: boolean }>(`/api/agents/${id}`),
   runAgent: (id: string, task: string) =>
     post<{ agent: Agent; model: string; latency_ms: number }>(`/api/agents/${id}/run`, { task }),
 
-  memoryInbox: (params: { project?: string; query?: string; status?: MemoryIdeaStatus | ''; offset?: number } = {}) => {
+  memoryInbox: (params: { project?: string; query?: string; status?: MemoryIdeaStatus | ''; offset?: number; priority?: MemoryPriority | ''; sort?: MemoryInboxSort } = {}) => {
     const search = new URLSearchParams();
     if (params.project) search.set('project', params.project);
     if (params.query) search.set('query', params.query);
     if (params.status) search.set('status', params.status);
+    if (params.priority) search.set('priority', params.priority);
+    if (params.sort && params.sort !== 'newest') search.set('sort', params.sort);
     if (params.offset) search.set('offset', String(params.offset));
     const suffix = search.toString();
     return get<MemoryInboxPage>(`/api/memory-inbox${suffix ? `?${suffix}` : ''}`);
   },
-  promoteIdea: (id: string, category: MemoryCategory, note = '') =>
-    post<{ idea: MemoryIdea; memory_id: string }>(`/api/memory-inbox/${encodeURIComponent(id)}/promote`, { category, note }),
+  promoteIdea: (id: string, category: MemoryCategory, note = '', options: { priority?: MemoryPriority; postToSlack?: boolean } = {}) =>
+    post<{ idea: MemoryIdea; memory_id: string }>(`/api/memory-inbox/${encodeURIComponent(id)}/promote`, { category, note, priority: options.priority ?? 'normal', post_to_slack: options.postToSlack ?? false }),
   dismissIdea: (id: string, note = '') =>
     post<{ idea: MemoryIdea }>(`/api/memory-inbox/${encodeURIComponent(id)}/dismiss`, { note }),
   restoreIdea: (id: string) => post<{ idea: MemoryIdea }>(`/api/memory-inbox/${encodeURIComponent(id)}/restore`),
-  retryIdeaReceipt: (id: string, kind: 'capture' | 'promotion') =>
+  retryIdeaReceipt: (id: string, kind: 'capture' | 'promotion' | 'memory_post') =>
     post<{ status: string }>(`/api/memory-inbox/${encodeURIComponent(id)}/acknowledgement/retry?kind=${kind}`),
   slackCaptureStatus: () => get<SlackCaptureStatus>('/api/integrations/slack/status'),
   assignments: () => get<{ assignments: Assignment[] }>('/api/assignments'),

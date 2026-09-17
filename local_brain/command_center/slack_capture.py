@@ -16,26 +16,37 @@ import httpx
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
 
-from local_brain.command_center import slack_receipts
-from local_brain.command_center.memory_inbox import IDEA_STATUSES, MemoryInbox
+from local_brain.command_center import slack_memory_posts, slack_receipts
+from local_brain.command_center.memory_inbox import (
+    IDEA_SORTS,
+    IDEA_STATUSES,
+    PRIORITIES,
+    MemoryInbox,
+)
 
 BRAIN_URL = "http://localhost:8100"
 BRAIN_TRANSPORT = None  # tests inject an httpx transport; production dials the local Brain
 MEMORY_CATEGORIES = ("decisions", "patterns", "lessons", "project", "meta", "team", "agents")
 MENTION = re.compile(r"<@[A-Z0-9]+>")
+MEMORY_POST_TEXT_LIMIT = 3_000
 
 
 @asynccontextmanager
 async def lifespan(app):
-    task = asyncio.create_task(slack_receipts.run_worker(inbox))
+    tasks = [
+        asyncio.create_task(slack_receipts.run_worker(inbox)),
+        asyncio.create_task(slack_memory_posts.run_worker(inbox)),
+    ]
     try:
         yield
     finally:
-        task.cancel()
-        try:
-            await task
-        except asyncio.CancelledError:
-            pass
+        for task in tasks:
+            task.cancel()
+        for task in tasks:
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
 
 
 router = APIRouter(lifespan=lifespan)
@@ -77,17 +88,37 @@ def slack_status():
         "promotion_acknowledgements": inbox().receipt_status("promotion")
         if inbox().path.exists()
         else {},
+        "memory_posts_enabled": slack_memory_posts.enabled(),
+        "memory_posts_configured": slack_memory_posts.configured(),
+        "memory_post_channel_id": slack_memory_posts.channel_id(),
+        "memory_posts": inbox().memory_post_status() if inbox().path.exists() else {},
     }
 
 
 @router.get("/api/memory-inbox")
-def list_ideas(project: str = "", query: str = "", offset: int = 0, status: str = ""):
+def list_ideas(
+    project: str = "",
+    query: str = "",
+    offset: int = 0,
+    status: str = "",
+    priority: str = "",
+    sort: str = "newest",
+):
     if offset < 0 or offset > 1_000_000 or len(query) > 500:
         raise HTTPException(status_code=422, detail="invalid_inbox_query")
     if status and status not in IDEA_STATUSES:
         raise HTTPException(status_code=422, detail="invalid_inbox_query")
+    if (priority and priority not in PRIORITIES) or sort not in IDEA_SORTS:
+        raise HTTPException(status_code=422, detail="invalid_inbox_query")
     try:
-        return inbox().list(project=project, query=query, offset=offset, status=status)
+        return inbox().list(
+            project=project,
+            query=query,
+            offset=offset,
+            status=status,
+            priority=priority,
+            sort=sort,
+        )
     except (OSError, sqlite3.Error) as exc:
         raise HTTPException(status_code=503, detail="memory_inbox_unavailable") from exc
 
@@ -95,6 +126,8 @@ def list_ideas(project: str = "", query: str = "", offset: int = 0, status: str 
 class PromoteRequest(BaseModel):
     category: str = "project"
     note: str = Field(default="", max_length=2_000)
+    priority: str = "normal"
+    post_to_slack: bool = False
 
 
 class DismissRequest(BaseModel):
@@ -112,6 +145,37 @@ class MemoryUnavailable(Exception):
 def capture_text(text: str) -> str:
     """The idea without the leading bot mention; the original text stays stored."""
     return MENTION.sub("", text).strip()
+
+
+def slack_escape(text: str) -> str:
+    """Neutralize Slack control syntax: <!channel>, <!here>, <@U…> and <url|label> links."""
+    return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+
+def slack_unescape(text: str) -> str:
+    """Undo Slack's own &amp; &lt; &gt; encoding of inbound message text; &amp; goes last."""
+    return text.replace("&lt;", "<").replace("&gt;", ">").replace("&amp;", "&")
+
+
+def memory_post_text(idea: dict, *, memory_id: str, category: str, priority: str) -> str:
+    """The body approved at promote time and posted verbatim by the memory post worker.
+
+    Slack delivers captures with & < > already encoded, so that encoding is undone
+    first or "R&D" would post as "R&amp;D"; the escape below still runs over every
+    character, so a decoded <!channel> is re-neutralized. The text is capped before
+    escaping so an entity is never cut in half; the whole body is escaped because
+    the memory id comes back from the Brain.
+    """
+    text = capture_text(idea["text"])
+    if idea.get("source") == "slack":
+        text = slack_unescape(text)
+    truncated = len(text) > MEMORY_POST_TEXT_LIMIT
+    if truncated:
+        text = text[: MEMORY_POST_TEXT_LIMIT - 1] + "…"
+    footer = f"Capture {idea['id'][:8]} · Memory {memory_id}"
+    if truncated:
+        footer += " · Truncated"
+    return slack_escape(f"[{priority.upper()}] Memory logged to {category}\n\n{text}\n\n{footer}")
 
 
 async def remember_in_brain(fact: str, category: str, metadata: dict) -> dict:
@@ -158,6 +222,14 @@ def _load_idea(idea_id: str) -> dict:
 async def promote_idea(idea_id: str, body: PromoteRequest):
     if body.category not in MEMORY_CATEGORIES:
         raise HTTPException(status_code=422, detail="invalid_memory_category")
+    if body.priority not in PRIORITIES:
+        raise HTTPException(status_code=422, detail="invalid_priority")
+    # Refuse before the Brain call so a disabled post never leaves a half-promoted capture.
+    if body.post_to_slack and not slack_memory_posts.configured():
+        raise HTTPException(status_code=409, detail="memory_posting_disabled")
+    # Read the destination now: a config change during the Brain call must not turn
+    # a saved fact into a refused promotion. Delivery re-checks the channel anyway.
+    post_channel_id = slack_memory_posts.channel_id() if body.post_to_slack else ""
     idea = _load_idea(idea_id)
     if idea["status"] == "promoted":
         raise HTTPException(status_code=409, detail="idea_already_promoted")
@@ -181,9 +253,22 @@ async def promote_idea(idea_id: str, body: PromoteRequest):
         raise HTTPException(status_code=422, detail="memory_quality_rejected") from exc
     except MemoryUnavailable as exc:
         raise HTTPException(status_code=503, detail="brain_unavailable") from exc
+    post_body = (
+        memory_post_text(
+            idea, memory_id=memory["id"], category=body.category, priority=body.priority
+        )
+        if body.post_to_slack
+        else ""
+    )
     try:
         updated = inbox().promote(
-            idea_id, memory_id=memory["id"], category=body.category, note=body.note
+            idea_id,
+            memory_id=memory["id"],
+            category=body.category,
+            note=body.note,
+            priority=body.priority,
+            post_channel_id=post_channel_id,
+            post_body=post_body,
         )
     except ValueError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
@@ -221,12 +306,20 @@ def restore_idea(idea_id: str):
 
 @router.post("/api/memory-inbox/{idea_id}/acknowledgement/retry")
 def retry_acknowledgement(idea_id: str, kind: str = "capture"):
-    if not slack_receipts.configured():
-        raise HTTPException(status_code=503, detail="slack_receipts_not_configured")
-    if kind not in ("capture", "promotion"):
+    if kind not in ("capture", "promotion", "memory_post"):
         raise HTTPException(status_code=422, detail="invalid_receipt_kind")
+    if kind == "memory_post":
+        if not slack_memory_posts.configured():
+            raise HTTPException(status_code=409, detail="memory_posting_disabled")
+    elif not slack_receipts.configured():
+        raise HTTPException(status_code=503, detail="slack_receipts_not_configured")
     try:
-        if not inbox().retry_receipt(idea_id, kind):
+        requeued = (
+            inbox().retry_memory_post(idea_id)
+            if kind == "memory_post"
+            else inbox().retry_receipt(idea_id, kind)
+        )
+        if not requeued:
             raise HTTPException(status_code=409, detail="no_failed_receipt")
     except (OSError, sqlite3.Error) as exc:
         raise HTTPException(status_code=503, detail="memory_inbox_unavailable") from exc
