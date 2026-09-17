@@ -598,3 +598,70 @@ def test_delivered_post_is_escaped_plain_text(app, env, monkeypatch):
         f"Capture {idea['id'][:8]} · Memory project_5_5"
     )
     assert "thread_ts" not in seen[0]
+
+
+def test_concurrent_promotes_of_one_capture_queue_one_post(app, env, monkeypatch):
+    idea = capture(env.inbox)
+    both_in_brain = asyncio.Event()
+    arrived = []
+
+    async def handler(request):
+        arrived.append(request)
+        if len(arrived) == 2:
+            both_in_brain.set()
+        await asyncio.wait_for(both_in_brain.wait(), 5)
+        return httpx.Response(200, json={"id": f"project_race_{len(arrived)}"})
+
+    brain(monkeypatch, handler)
+
+    async def exercise():
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            path = f"/api/memory-inbox/{idea['id']}/promote"
+            body = {"priority": "urgent", "post_to_slack": True}
+            return await asyncio.gather(client.post(path, json=body), client.post(path, json=body))
+
+    responses = asyncio.run(exercise())
+    assert sorted(r.status_code for r in responses) == [200, 409]
+    assert [r.json()["detail"] for r in responses if r.status_code == 409] == [
+        "idea_already_promoted"
+    ]
+    with env.inbox.connect() as db:
+        posts = [dict(r) for r in db.execute("SELECT * FROM memory_posts")]
+    assert len(posts) == 1 and posts[0]["idea_id"] == idea["id"]
+    assert posts[0]["memory_id"] == env.inbox.get(idea["id"])["memory_id"]
+
+
+def test_worst_case_escaped_body_fits_one_slack_message():
+    # Every character expands to "&amp;"; Slack truncates text past 40,000 characters.
+    body = post_text("&" * 10_000, memory_id="m" * 200)
+    assert len(body) < 40_000
+    assert body.split("\n\n")[1] == "&amp;" * 2_999 + "…"
+
+
+def test_retried_post_keeps_its_message_id_and_priority_turn(env):
+    queue(env.inbox, key="event:1", priority="low", memory_id="low")
+    urgent = queue(env.inbox, key="event:2", priority="urgent", memory_id="urgent")
+    ids = []
+
+    def flaky(request):
+        payload = json.loads(request.content)
+        ids.append((payload["text"], payload["client_msg_id"]))
+        if payload["text"] == "body for urgent" and len(ids) == 1:
+            return httpx.Response(200, json={"ok": False, "error": "not_in_channel"})
+        return ok(request)
+
+    deliver(env.inbox, flaky)
+    assert env.inbox.get(urgent["id"])["memory_post_status"] == "failed"
+    assert env.inbox.retry_memory_post(urgent["id"]) is True
+    assert env.inbox.retry_memory_post(urgent["id"]) is False
+    with env.inbox.connect() as db:
+        db.execute("UPDATE memory_posts SET next_attempt=0")
+    deliver(env.inbox, flaky)
+    deliver(env.inbox, flaky)
+    assert [text for text, _ in ids] == ["body for urgent", "body for urgent", "body for low"]
+    assert ids[0][1] == ids[1][1] == str(uuid.uuid5(uuid.NAMESPACE_URL, "urgent:memory_post"))
+    assert env.inbox.memory_post_status() == {"sent": 2}
+    with env.inbox.connect() as db:
+        assert db.execute("SELECT count(*) FROM memory_posts").fetchone()[0] == 2
