@@ -65,6 +65,8 @@ const PATCH_ERRORS: Record<string, string> = {
   models_unavailable: 'Ollama is not reachable, so the model cannot be checked. Try again when it is running.',
   agent_not_found: 'this agent no longer exists.',
   empty_patch: 'there was nothing to change.',
+  local_model_unavailable: 'the local model is unavailable.',
+  run_output_persistence_failed: 'the run finished but its output could not be saved.',
 }
 
 /** Turns API detail codes into a sentence. FastAPI field errors arrive as an array and stringify badly. */
@@ -104,6 +106,19 @@ export function settlePending(pending: AgentPatch, fields: AgentPatch): AgentPat
     if (next[key as keyof AgentPatch] === value) delete next[key as keyof AgentPatch]
   }
   return next
+}
+
+export const RUN_TASK_MAX_LENGTH = 8_000
+
+/** parse() already words mini_busy; every other run failure is prefixed so it cannot read as a result. */
+export function runFailureMessage(message: string): string {
+  if (message.startsWith('Mini busy')) return message
+  return `Run failed: ${readableError(message)}`
+}
+
+export function runSuccessMessage(model: string | undefined, latencyMs: number | undefined): string {
+  const seconds = latencyMs ? ` in ${(latencyMs / 1000).toFixed(1)}s` : ''
+  return `Run finished${model ? ` on ${model}` : ''}${seconds}.`
 }
 
 export interface ModelChoice {

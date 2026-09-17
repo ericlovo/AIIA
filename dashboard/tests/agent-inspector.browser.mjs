@@ -1,5 +1,5 @@
 // The Map's agent inspector shows the agent's real configuration and edits it
-// one field at a time. Every response is synthetic; no Command Center, Brain or
+// one field at a time, and runs it. Every response is synthetic; no Command Center, Brain or
 // model is reached.
 import assert from 'node:assert/strict'
 import { mkdir } from 'node:fs/promises'
@@ -66,6 +66,9 @@ try {
     let modelsDown = false
     // Holds the next PATCH response open so the optimistic value can be observed first.
     let holdPatch = null
+    const runCalls = []
+    let holdRun = null
+    let miniBusy = false
     await page.routeWebSocket('**/ws', ws => ws.onMessage(() => {}))
     await page.route('**/api/**', async route => {
       const path = new URL(route.request().url()).pathname
@@ -88,6 +91,17 @@ try {
         else if ('model' in fields && fields.model && modelsDown) { status = 503; body = { detail: 'models_unavailable' } }
         else if ('model' in fields && fields.model && !installed.has(fields.model)) { status = 422; body = { detail: 'unknown_model' } }
         else { Object.assign(agent, fields, { updated_at: `${date}T10:00:00Z` }); body = { agent } }
+      }
+      else if (/^\/api\/agents\/[^/]+\/run$/.test(path)) {
+        const id = path.split('/')[3]
+        runCalls.push({ id, body: route.request().postDataJSON() })
+        if (holdRun) await holdRun
+        const agent = agents.find(item => item.id === id)
+        if (miniBusy) { status = 409; body = { detail: 'mini_busy' } }
+        else {
+          Object.assign(agent, { last_result: 'Synthetic run output.', last_run_at: `${date}T11:00:00Z` })
+          body = { agent, model: 'llama3.1:8b', latency_ms: 2340 }
+        }
       }
       else if (path === '/api/agents/resources') body = { repos: [], github: { status: 'disconnected' } }
       else if (path === '/api/assignments') body = { assignments: [] }
@@ -229,6 +243,42 @@ try {
     assert.equal(agents[1].model, 'llama3.1:8b')
     modelsDown = false
 
+    // A5: Run now sends the task, disables itself while pending, and reports the busy Mini.
+    await inspector.getByRole('button', { name: 'Close node controls' }).click()
+    await page.locator('[data-agent-target="agent-1"]').press('Enter')
+    await inspector.getByText('Release Gate Reviewer', { exact: true }).waitFor()
+    const runForm = inspector.getByRole('form', { name: 'Run agent' })
+    const runTask = runForm.getByLabel('Task for this run', { exact: true })
+    const runButton = runForm.getByRole('button', { name: 'Run now', exact: true })
+    assert.equal(await runButton.isDisabled(), true, 'an empty task cannot run')
+    await runTask.fill('Review candidate 42.')
+    holdRun = new Promise(resolve => { release = resolve })
+    await runButton.click()
+    await until(() => runCalls.length === 1, 'run request not sent')
+    assert.deepEqual(runCalls[0], { id: 'agent-1', body: { task: 'Review candidate 42.' } })
+    const working = runForm.getByRole('button', { name: 'Mini working', exact: true })
+    assert.equal(await working.isDisabled(), true)
+    // Reopening the inspector mid-run keeps the control disabled.
+    await inspector.getByRole('button', { name: 'Close node controls' }).click()
+    await page.locator('[data-agent-target="agent-1"]').press('Enter')
+    assert.equal(await inspector.getByRole('form', { name: 'Run agent' }).getByRole('button', { name: 'Mini working', exact: true }).isDisabled(), true)
+    await page.screenshot({ path: join(output, `inspector-run-pending-${width}.png`) })
+    holdRun = null
+    release()
+    await runForm.getByRole('status').filter({ hasText: 'Run finished on llama3.1:8b in 2.3s.' }).waitFor()
+    await inspector.getByText('Synthetic run output.', { exact: true }).waitFor()
+    assert.equal(runCalls.length, 1)
+
+    miniBusy = true
+    await runTask.fill('Review candidate 43.')
+    await runButton.click()
+    await runForm.getByRole('alert').filter({ hasText: 'Mini busy — wait for the active run to finish.' }).waitFor()
+    assert.equal(runCalls.length, 2)
+    assert.equal(await runTask.inputValue(), 'Review candidate 43.', 'a refused run keeps the task for a retry')
+    assert.equal(await runButton.isEnabled(), true)
+    miniBusy = false
+    await page.screenshot({ path: join(output, `inspector-run-busy-${width}.png`) })
+
     // A running agent keeps its controls usable and says the change waits for the next run.
     await inspector.getByRole('button', { name: 'Close node controls' }).click()
     await page.locator('[data-agent-target="agent-3"]').press('Enter')
@@ -242,7 +292,7 @@ try {
 
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false)
     assert.deepEqual(errors, [])
-    console.log(`${width}px: inspector configuration, optimistic PATCH, local validation, model picker, rollback messages, running note passed`)
+    console.log(`${width}px: inspector configuration, optimistic PATCH, local validation, model picker, rollback messages, running note, run now and busy run passed`)
     await context.close()
   }
 } finally {

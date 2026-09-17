@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import type { Agent } from '../src/lib/api.ts'
 import {
   NUMBER_LIMITS, listSummary, loopSummary, modelChoices, modelSummary, parseBoundedNumber, patchFailureMessage,
-  previousFields, readableError, settlePending, truncateText, withAgentFields, withAgentRecord,
+  previousFields, readableError, runFailureMessage, runSuccessMessage, settlePending, truncateText, withAgentFields, withAgentRecord,
 } from '../src/console/agentConfig.ts'
 
 test('long results are collapsed and cut with an ellipsis at the limit', () => {
@@ -81,4 +81,11 @@ test('model picker offers the task default first and keeps an uninstalled pinned
   ])
   assert.deepEqual(modelChoices('gone:3b', catalog).at(-1), { id: 'gone:3b', label: 'gone:3b (not installed)' })
   assert.deepEqual(modelChoices('gone:3b', undefined), [{ id: '', label: 'Task default' }, { id: 'gone:3b', label: 'gone:3b' }])
+})
+
+test('a busy Mini keeps its own wording, other run failures never read as a result', () => {
+  assert.equal(runFailureMessage('Mini busy — wait for the active run to finish.'), 'Mini busy — wait for the active run to finish.')
+  assert.equal(runFailureMessage('local_model_unavailable'), 'Run failed: the local model is unavailable.')
+  assert.equal(runSuccessMessage('qwen3:8b', 2340), 'Run finished on qwen3:8b in 2.3s.')
+  assert.equal(runSuccessMessage('', undefined), 'Run finished.')
 })

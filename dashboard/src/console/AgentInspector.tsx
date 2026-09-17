@@ -1,8 +1,9 @@
 import { useId, useState, type ReactNode } from 'react'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useMutationState, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api, type Agent } from '../lib/api'
 import {
   NUMBER_LIMITS,
+  RUN_TASK_MAX_LENGTH,
   SUITE_MAX_LENGTH,
   listSummary,
   loopSummary,
@@ -11,6 +12,8 @@ import {
   patchFailureMessage,
   previousFields,
   readableError,
+  runFailureMessage,
+  runSuccessMessage,
   settlePending,
   truncateText,
   withAgentFields,
@@ -63,6 +66,32 @@ export function AgentInspector({ agent, onClose, onManageAgent, onAssignAgent }:
     patch.mutate(fields)
   }
 
+  const [task, setTask] = useState('')
+  const runKey = ['agent-run', agent.id]
+  const run = useMutation({
+    mutationKey: runKey,
+    mutationFn: (runTask: string) => api.runAgent(agent.id, runTask),
+    onSuccess: ({ agent: record }) => {
+      queryClient.setQueryData<AgentsData>(['agents'], data => withAgentRecord(data, record))
+      setTask('')
+    },
+    onSettled: () => {
+      void queryClient.invalidateQueries({ queryKey: ['agents'] })
+      void queryClient.invalidateQueries({ queryKey: ['studio-activity'] })
+    },
+  })
+  // Read from the mutation cache, not component state, so closing and reopening the
+  // inspector during a long run keeps the control disabled and still shows the outcome.
+  const latestRun = useMutationState({ filters: { mutationKey: runKey }, select: mutation => mutation.state }).at(-1)
+  const running = run.isPending || latestRun?.status === 'pending'
+  const runData = latestRun?.data as Awaited<ReturnType<typeof api.runAgent>> | undefined
+  const runNotice = latestRun?.status === 'success'
+    ? { tone: 'ok', text: runSuccessMessage(runData?.model, runData?.latency_ms) }
+    : latestRun?.status === 'error'
+      ? { tone: 'error', text: runFailureMessage(latestRun.error?.message ?? '') }
+      : null
+  const taskId = useId()
+
   const lastResult = truncateText(agent.last_result)
   const lastError = truncateText(agent.last_error)
   const choices = modelChoices(view.model, models.data)
@@ -114,6 +143,30 @@ export function AgentInspector({ agent, onClose, onManageAgent, onAssignAgent }:
           </Field>
         </div>
       </section>
+
+      <form
+        aria-label="Run agent"
+        className="mt-4 border-t border-white/10 pt-3"
+        onSubmit={event => {
+          event.preventDefault()
+          if (running || !task.trim()) return
+          run.mutate(task.trim())
+        }}
+      >
+        <label htmlFor={taskId} className="text-[9px] font-semibold tracking-[0.16em] uppercase text-white/35">Task for this run</label>
+        <textarea
+          id={taskId}
+          rows={2}
+          value={task}
+          maxLength={RUN_TASK_MAX_LENGTH}
+          disabled={running}
+          placeholder="What should this agent do now?"
+          onChange={event => setTask(event.target.value)}
+          className={`${CONTROL} mt-1 resize-y disabled:opacity-50`}
+        />
+        {runNotice && <p role={runNotice.tone === 'error' ? 'alert' : 'status'} className={`mt-2 text-[11px] ${runNotice.tone === 'error' ? 'text-red-300' : 'text-emerald-300'}`}>{runNotice.text}</p>}
+        <button type="submit" disabled={running || !task.trim()} className="mt-2 bg-amber-300 px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-neutral-950 disabled:cursor-not-allowed disabled:opacity-50">{running ? 'Mini working' : 'Run now'}</button>
+      </form>
 
       <dl aria-label="Agent configuration" className="mt-4 grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1.5 text-[11px]">
         <ConfigRow label="Tools">{listSummary(agent.tools)}</ConfigRow>
