@@ -76,7 +76,21 @@ Python 3.10+, ~5GB free for a local model, and either Ollama running on
 Two surfaces are running underneath:
 
 - **Brain API** on `localhost:8100` — memory, RAG, LLM routing
-- **Command Center** on `localhost:8200` — dashboard, story queue, Voice Conductor (Grok)
+- **Command Center** on `localhost:8200` — Agent Studio, the Memory log, the story queue, and the Voice Conductor (Grok)
+
+**Agent Studio** is where local agents live. Each agent is a mission, a persona, a
+model, tools, and an optional bounded loop, running one at a time on the local
+model. Work flows through assignments and typed handoffs, every attempt is kept in
+a durable ledger with its measured tokens, and completed output is reviewed by a
+human before it counts. The Map shows the fleet as a graph you can act on: inspect
+and tune an agent, run it, wire a handoff, or tune a whole suite at once.
+
+**The Memory log** closes a loop with the team's Slack. Mentions and a slash
+command in allowlisted channels land in a local inbox; a human reviews each one in
+Studio and either dismisses it or logs it as a Brain memory with its provenance. A
+logged memory can be given a priority and, on explicit approval, posted back to
+one private channel. Everything else stays on the box: the air-gap denies every
+other cloud egress, fail-closed, and reports each denial as audit evidence.
 
 The CLI is a thin client over both. Claude Code reaches AIIA over MCP.
 Your terminal reaches AIIA over `aiia`. Same brain. Both halves of the
