@@ -1358,6 +1358,10 @@ async def patch_suite_agents(suite: str, body: SuiteAgentsPatchRequest | None = 
     installed: set[str] | None = None
     if model and any(agent.get("model", "") != model for agent in members):
         installed = {row["id"] for row in await _installed_chat_models()}
+        # Membership may have changed while Ollama answered; patch only current members.
+        members = [agent for agent in agent_registry.list() if agent.get("suite") == suite]
+        if not members:
+            raise HTTPException(status_code=404, detail="suite_not_found")
     failures = []
     for agent in members:
         detail = ""
