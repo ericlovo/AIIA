@@ -1562,6 +1562,9 @@ async def patch_agent(agent_id: str, body: AgentPatchRequest | None = None):
         updated = agent_registry.update(agent_id, **changes)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+    if not updated:
+        # Deleted while the model check awaited Ollama.
+        raise HTTPException(status_code=404, detail="agent_not_found")
     await broadcast_studio_event("agent", "updated", updated)
     return {"agent": updated}
 

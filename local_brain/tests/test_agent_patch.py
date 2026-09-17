@@ -141,6 +141,23 @@ def test_patch_unknown_agent_is_404(studio):
     assert events == []
 
 
+def test_patch_agent_deleted_during_model_check_is_404(studio, monkeypatch):
+    server, registry, events = studio
+    agent = _agent(registry)
+
+    async def delete_while_checking() -> list[dict[str, Any]]:
+        registry.delete(agent["id"])
+        return [{"id": "qwen3:8b"}]
+
+    monkeypatch.setattr(server, "_installed_chat_models", delete_while_checking)
+
+    response = _call(server, "PATCH", f"/api/agents/{agent['id']}", json={"model": "qwen3:8b"})
+
+    assert response.status_code == 404
+    assert response.json()["detail"] == "agent_not_found"
+    assert events == []
+
+
 def test_patch_refuses_loop_without_task_on_merged_result(studio):
     server, registry, events = studio
     blank = _agent(registry, name="Blank", loop_task="")
