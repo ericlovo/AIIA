@@ -495,6 +495,33 @@ def test_escaping_neutralizes_broadcasts_mentions_and_links():
     assert post_text("x", memory_id="m<!here>").endswith("Memory m&lt;!here&gt;")
 
 
+def test_escaping_covers_everyone_channel_links_entities_and_unicode():
+    body = post_text("hey <!everyone> in <#C0GENERAL1|general> and <#C0GENERAL1>")
+    assert "<" not in body and ">" not in body
+    assert "&lt;!everyone&gt;" in body
+    assert "&lt;#C0GENERAL1|general&gt; and &lt;#C0GENERAL1&gt;" in body
+    # Text that already holds entities is escaped again, never passed through as syntax.
+    typed = post_text("&lt;!channel&gt; &amp;")
+    assert "&amp;lt;!channel&amp;gt; &amp;amp;" in typed and "<" not in typed
+    unicode = post_text("caf\u00e9 \U0001f680 \uff1c!here\uff1e \u2028 \u00a0<!here>")
+    assert "caf\u00e9 \U0001f680 \uff1c!here\uff1e \u2028 \u00a0&lt;!here&gt;" in unicode
+
+
+def test_slack_encoded_capture_is_decoded_once_then_escaped():
+    idea = {
+        "id": "0123456789abcdef",
+        "source": "slack",
+        "text": "<@U0BOT1> R&amp;D: a &lt; b &gt; c <!channel> &lt;!here&gt; &amp;lt;",
+    }
+    body = slack_capture.memory_post_text(
+        idea, memory_id="project_1_1", category="project", priority="normal"
+    )
+    text = body.split("\n\n")[1]
+    # Slack shows each entity once: "R&D: a < b > c <!channel> <!here> &lt;", all inert.
+    assert text == ("R&amp;D: a &lt; b &gt; c &lt;!channel&gt; &lt;!here&gt; &amp;lt;")
+    assert "<" not in body and ">" not in body
+
+
 def test_text_over_limit_is_truncated_and_marked():
     exact = post_text("a" * 3_000)
     assert "a" * 3_000 in exact and "Truncated" not in exact and "…" not in exact

@@ -132,8 +132,10 @@ The body is plain text (`mrkdwn: false`):
 Capture 1a2b3c4d · Memory decisions_4_1789
 ```
 
-`&`, `<` and `>` are escaped, which neutralizes `<!channel>`, `<!here>`, user
-and group mentions, and link syntax. Text over 3,000 characters is cut to 3,000
+Slack delivers capture text with `&`, `<` and `>` already encoded, so that
+encoding is undone once, then `&`, `<` and `>` are escaped over the whole body,
+which neutralizes `<!channel>`, `<!here>`, `<!everyone>`, user and group
+mentions, channel links, and link syntax while "R&D" still reads "R&D". Text over 3,000 characters is cut to 3,000
 ending in `…`, and the footer gains `· Truncated`. The message is not threaded,
 not broadcast, and unfurls nothing. `client_msg_id` is stable per memory.
 

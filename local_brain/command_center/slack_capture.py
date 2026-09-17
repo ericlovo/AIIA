@@ -152,13 +152,23 @@ def slack_escape(text: str) -> str:
     return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
 
 
+def slack_unescape(text: str) -> str:
+    """Undo Slack's own &amp; &lt; &gt; encoding of inbound message text; &amp; goes last."""
+    return text.replace("&lt;", "<").replace("&gt;", ">").replace("&amp;", "&")
+
+
 def memory_post_text(idea: dict, *, memory_id: str, category: str, priority: str) -> str:
     """The body approved at promote time and posted verbatim by the memory post worker.
 
-    The text is capped before escaping so an entity is never cut in half; the
-    whole body is escaped because the memory id comes back from the Brain.
+    Slack delivers captures with & < > already encoded, so that encoding is undone
+    first or "R&D" would post as "R&amp;D"; the escape below still runs over every
+    character, so a decoded <!channel> is re-neutralized. The text is capped before
+    escaping so an entity is never cut in half; the whole body is escaped because
+    the memory id comes back from the Brain.
     """
     text = capture_text(idea["text"])
+    if idea.get("source") == "slack":
+        text = slack_unescape(text)
     truncated = len(text) > MEMORY_POST_TEXT_LIMIT
     if truncated:
         text = text[: MEMORY_POST_TEXT_LIMIT - 1] + "…"
