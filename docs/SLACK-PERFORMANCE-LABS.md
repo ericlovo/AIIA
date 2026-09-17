@@ -23,7 +23,7 @@ boundary. Where an older paragraph below reads differently, this one wins.
 | Inbound | `/aiia-capture` and `@AIIA` mentions from allowlisted channels, stored locally | none | on when capture is configured |
 | Outbound | Fixed save and promotion receipts in the capture thread; never captured text | `slack.capture_ack` | off (`AIIA_SLACK_ACK_ENABLED=1`) |
 | Outbound | Human-approved memory posts: the approved capture text, its priority and category, to one allowlisted channel | `slack.memory_post` | off (`AIIA_SLACK_MEMORY_POST_ENABLED=1`) |
-| Outbound | Anything else, including general `slack.post` | `slack.post` | always denied |
+| Outbound | Anything else, including general `slack.post` | `slack.post` | no call site; denied in air-gap mode, Sanction-governed otherwise |
 
 Scopes: `commands` and `app_mentions:read` for capture; `chat:write` for either
 outbound path, as in `config/slack-performance-labs-manifest.json`. No
