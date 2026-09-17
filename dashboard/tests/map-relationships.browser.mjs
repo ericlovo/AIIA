@@ -279,6 +279,15 @@ try {
     await legend.getByRole('button', { name: 'research suite, 2 agents' }).click()
     await page.waitForFunction(() => document.querySelectorAll('[data-graph-node]').length === 7)
 
+    // While picking a target, an agent-to-assignment edge does not pull the operator off the Map.
+    await page.getByRole('button', { name: 'Wire Scan repository to another agent' }).focus()
+    await page.keyboard.press('Enter')
+    await page.getByText('Select a target agent for “Scan repository”').waitFor()
+    await page.locator('[data-edge="hierarchy:asg-draft"]').click()
+    await page.getByText('Select a target agent for “Scan repository”').waitFor()
+    assert.equal(await page.getByRole('heading', { name: 'Assignment queue' }).count(), 0)
+    await page.getByRole('button', { name: 'Cancel', exact: true }).click()
+
     // Selecting an agent-to-assignment edge opens that assignment.
     await page.locator('[data-edge="hierarchy:asg-draft"]').click()
     await page.getByRole('heading', { name: 'Assignment queue' }).waitFor()

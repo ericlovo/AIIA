@@ -368,7 +368,7 @@ export function AgentGraphOverlay({
               to={to}
               tone="hierarchy"
               label={`Open ${assignment.title}`}
-              onSelect={() => onOpenAssignment(assignment.id)}
+              onSelect={() => { if (!connectFrom && !wireDragRef.current) onOpenAssignment(assignment.id) }}
             />
           )
         })}
