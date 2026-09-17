@@ -314,6 +314,9 @@ class ChatRequest(BaseModel):
     # What these tokens are for ("standup", "code-review", "digest", ...).
     # Flows to Command Center metering as the attribution dimension.
     purpose: str = ""
+    # Reasoning toggle for thinking-capable models. None keeps the model
+    # default (qwen3 thinks, and that reasoning spends max_tokens).
+    think: bool | None = None
 
 
 class ChatResponse(BaseModel):
@@ -323,6 +326,8 @@ class ChatResponse(BaseModel):
     model: str
     usage: dict[str, int] = {}
     latency_ms: float = 0.0
+    # Ollama's stop reason: "stop", or "length" when max_tokens ran out.
+    done_reason: str | None = None
 
 
 class EmbedRequest(BaseModel):
@@ -641,6 +646,7 @@ async def local_chat(request: ChatRequest):
         system=request.system,
         temperature=request.temperature,
         max_tokens=request.max_tokens,
+        think=request.think,
     )
 
     content = response.get("message", {}).get("content", "")
@@ -667,6 +673,7 @@ async def local_chat(request: ChatRequest):
         model=model,
         usage=usage,
         latency_ms=response.get("_latency_ms", 0),
+        done_reason=response.get("done_reason"),
     )
 
 
