@@ -38,6 +38,7 @@ class RunLedger:
                 latency_ms REAL NOT NULL, legacy INTEGER NOT NULL, payload TEXT NOT NULL
             )""")
             db.execute("CREATE INDEX IF NOT EXISTS runs_at ON runs(at)")
+            db.execute("CREATE INDEX IF NOT EXISTS runs_assignment ON runs(assignment_id,at)")
             columns = {row["name"] for row in db.execute("PRAGMA table_info(runs)")}
             for column in ("input_tokens", "output_tokens"):
                 if column not in columns:
@@ -198,3 +199,21 @@ class RunLedger:
         result = dict(row)
         payload = json.loads(result.pop("payload"))
         return {**payload, **result}
+
+    def assignment_history(self, assignment_id: str, *, offset: int = 0, limit: int = 20) -> dict:
+        with self.connect() as db:
+            total = db.execute(
+                "SELECT count(*) FROM runs WHERE assignment_id=? AND trigger='assignment'",
+                (assignment_id,),
+            ).fetchone()[0]
+            runs = [
+                dict(row)
+                for row in db.execute(
+                    """SELECT id,agent_id,agent_name,repo_id,at,status,trigger,
+                assignment_id,model,latency_ms,legacy,input_tokens,output_tokens FROM runs
+                WHERE assignment_id=? AND trigger='assignment'
+                ORDER BY at DESC,id DESC LIMIT ? OFFSET ?""",
+                    (assignment_id, limit, offset),
+                )
+            ]
+        return {"runs": runs, "total": total, "offset": offset, "limit": limit}
