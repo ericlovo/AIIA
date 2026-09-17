@@ -34,7 +34,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from local_brain.config import LocalBrainConfig, get_config
-from local_brain.egress import airgap_status, authorize_egress
+from local_brain.egress import airgap_status
 from local_brain.eq_brain.brain import AIIA
 from local_brain.eq_brain.knowledge_store import KnowledgeStore
 from local_brain.eq_brain.memory import Memory
@@ -1140,53 +1140,6 @@ async def aiia_session_end(request: AIIASessionEndRequest):
 )
 async def eq_session_end_legacy(request: AIIASessionEndRequest):
     return await aiia_session_end(request)
-
-
-# ─── Slack Integration ─────────────────────────────────────────────
-
-
-class SlackPostRequest(BaseModel):
-    """Post a message to Slack."""
-
-    channel: str = "#aiia-backlog"
-    text: str
-    thread_ts: str | None = None
-
-
-@app.post("/v1/aiia/slack", dependencies=[Depends(verify_api_key)])
-async def aiia_slack_post(request: SlackPostRequest):
-    """Post a message to Slack on behalf of AIIA."""
-    decision = await authorize_egress("slack.post")
-    if not decision.allowed:
-        raise HTTPException(
-            status_code=403,
-            detail={"code": "EGRESS_DENIED_AIRGAP", "reason": decision.reason},
-        )
-    from local_brain.slack_client import _api, _resolve_channel
-
-    token = os.getenv("SLACK_BOT_TOKEN", "")
-    if not token:
-        raise HTTPException(
-            status_code=503, detail="Slack not configured (SLACK_BOT_TOKEN missing)"
-        )
-
-    channel_id = _resolve_channel(request.channel)
-    if not channel_id:
-        raise HTTPException(status_code=404, detail=f"Channel not found: {request.channel}")
-
-    body = {"channel": channel_id, "text": request.text}
-    if request.thread_ts:
-        body["thread_ts"] = request.thread_ts
-
-    result = _api("chat.postMessage", body=body)
-    if not result:
-        raise HTTPException(status_code=502, detail="Slack API call failed")
-
-    return {
-        "ok": True,
-        "channel": request.channel,
-        "ts": result.get("ts"),
-    }
 
 
 # ─── AIIA Status ──────────────────────────────────────────────────

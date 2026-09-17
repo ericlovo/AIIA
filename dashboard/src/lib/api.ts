@@ -262,6 +262,9 @@ export interface AgentTokenUsage {
 export type MemoryIdeaStatus = 'unreviewed' | 'promoted' | 'dismissed';
 export type MemoryCategory = 'decisions' | 'patterns' | 'lessons' | 'project' | 'meta' | 'team' | 'agents';
 export const MEMORY_CATEGORIES: MemoryCategory[] = ['project', 'decisions', 'patterns', 'lessons', 'team', 'agents', 'meta'];
+export type MemoryPriority = 'urgent' | 'high' | 'normal' | 'low';
+export const MEMORY_PRIORITIES: MemoryPriority[] = ['urgent', 'high', 'normal', 'low'];
+export type MemoryInboxSort = 'newest' | 'priority';
 
 export interface MemoryIdea {
   id: string;
@@ -277,12 +280,17 @@ export interface MemoryIdea {
   memory_category: string;
   review_note: string;
   reviewed_at: string;
+  priority: MemoryPriority;
+  post_requested: number;
   acknowledgement_status: string | null;
   acknowledgement_error: string | null;
   acknowledgement_ts: string | null;
   promotion_status: string | null;
   promotion_error: string | null;
   promotion_ts: string | null;
+  memory_post_status: string | null;
+  memory_post_error: string | null;
+  memory_post_ts: string | null;
 }
 
 export interface MemoryInboxPage {
@@ -301,6 +309,10 @@ export interface SlackCaptureStatus {
   acknowledgements_configured: boolean;
   acknowledgements: Record<string, number>;
   promotion_acknowledgements: Record<string, number>;
+  memory_posts_enabled: boolean;
+  memory_posts_configured: boolean;
+  memory_post_channel_id: string;
+  memory_posts: Record<string, number>;
 }
 
 export interface StudioActivity {
@@ -595,21 +607,23 @@ export const api = {
   runAgent: (id: string, task: string) =>
     post<{ agent: Agent; model: string; latency_ms: number }>(`/api/agents/${id}/run`, { task }),
 
-  memoryInbox: (params: { project?: string; query?: string; status?: MemoryIdeaStatus | ''; offset?: number } = {}) => {
+  memoryInbox: (params: { project?: string; query?: string; status?: MemoryIdeaStatus | ''; offset?: number; priority?: MemoryPriority | ''; sort?: MemoryInboxSort } = {}) => {
     const search = new URLSearchParams();
     if (params.project) search.set('project', params.project);
     if (params.query) search.set('query', params.query);
     if (params.status) search.set('status', params.status);
+    if (params.priority) search.set('priority', params.priority);
+    if (params.sort && params.sort !== 'newest') search.set('sort', params.sort);
     if (params.offset) search.set('offset', String(params.offset));
     const suffix = search.toString();
     return get<MemoryInboxPage>(`/api/memory-inbox${suffix ? `?${suffix}` : ''}`);
   },
-  promoteIdea: (id: string, category: MemoryCategory, note = '') =>
-    post<{ idea: MemoryIdea; memory_id: string }>(`/api/memory-inbox/${encodeURIComponent(id)}/promote`, { category, note }),
+  promoteIdea: (id: string, category: MemoryCategory, note = '', options: { priority?: MemoryPriority; postToSlack?: boolean } = {}) =>
+    post<{ idea: MemoryIdea; memory_id: string }>(`/api/memory-inbox/${encodeURIComponent(id)}/promote`, { category, note, priority: options.priority ?? 'normal', post_to_slack: options.postToSlack ?? false }),
   dismissIdea: (id: string, note = '') =>
     post<{ idea: MemoryIdea }>(`/api/memory-inbox/${encodeURIComponent(id)}/dismiss`, { note }),
   restoreIdea: (id: string) => post<{ idea: MemoryIdea }>(`/api/memory-inbox/${encodeURIComponent(id)}/restore`),
-  retryIdeaReceipt: (id: string, kind: 'capture' | 'promotion') =>
+  retryIdeaReceipt: (id: string, kind: 'capture' | 'promotion' | 'memory_post') =>
     post<{ status: string }>(`/api/memory-inbox/${encodeURIComponent(id)}/acknowledgement/retry?kind=${kind}`),
   slackCaptureStatus: () => get<SlackCaptureStatus>('/api/integrations/slack/status'),
   assignments: () => get<{ assignments: Assignment[] }>('/api/assignments'),

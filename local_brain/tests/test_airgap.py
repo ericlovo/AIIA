@@ -161,6 +161,21 @@ def test_airgap_allows_voice_conductor_and_denies_other_egress(monkeypatch):
     assert sync_deny.allowed is False
 
 
+def test_slack_post_stays_registered_and_denied_without_its_route(monkeypatch):
+    from local_brain import local_api
+
+    assert "slack.post" in EGRESS_POINTS
+    assert "slack.post" not in AIRGAP_ALLOWED_EGRESS
+    paths = {getattr(route, "path", "") for route in local_api.app.routes}
+    assert "/v1/aiia/slack" not in paths
+    _set_mode(monkeypatch, airgap=True)
+    monkeypatch.setattr(egress, "report_denied_bg", lambda t, s=None: None)
+    monkeypatch.setenv("AIIA_SLACK_ACK_ENABLED", "1")
+    monkeypatch.setenv("AIIA_SLACK_MEMORY_POST_ENABLED", "1")
+    assert asyncio.run(authorize_egress("slack.post")).allowed is False
+    assert airgap_status(SimpleNamespace(airgap_enabled=True))["egress"]["slack.post"] == "disabled"
+
+
 def test_hybrid_unconfigured_allows(monkeypatch):
     _set_mode(monkeypatch, airgap=False, configured=False)
     decision = asyncio.run(authorize_egress("slack.post"))

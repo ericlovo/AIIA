@@ -1,7 +1,8 @@
 # Performance Labs Slack Capture
 
 AIIA (`A0C1F9EG0M8`) was created and installed in Performance Labs on September
-12, 2026, with `commands` and `app_mentions:read` only. Workspace:
+12, 2026, initially with `commands` and `app_mentions:read`; outbound receipts and
+memory posts need `chat:write` as well (see Scope below). Workspace:
 `performancelabs-hq.slack.com`, `T07LCJPNYJ1`. The separate Sanction product app
 (`A0BSBESRBPG`) and its callbacks remain unchanged. The installed AIIA app has
 the slash command configured; Events API activation awaits a verified callback.
@@ -11,6 +12,31 @@ Capture deployment and end-to-end validation remain pending.
 The Mini launcher loads private Slack settings from
 `~/.config/aiia/slack.env` after the production `.env`. The file is mode 0600;
 never copy its credentials into this repository, logs, or chat.
+
+## Scope
+
+This section is the current, authoritative statement of what crosses the Slack
+boundary. Where an older paragraph below reads differently, this one wins.
+
+| Direction | What | Egress point | Default |
+|---|---|---|---|
+| Inbound | `/aiia-capture` and `@AIIA` mentions from allowlisted channels, stored locally | none | on when capture is configured |
+| Outbound | Fixed save and promotion receipts in the capture thread; never captured text | `slack.capture_ack` | off (`AIIA_SLACK_ACK_ENABLED=1`) |
+| Outbound | Human-approved memory posts: the approved capture text, its priority and category, to one allowlisted channel | `slack.memory_post` | off (`AIIA_SLACK_MEMORY_POST_ENABLED=1`) |
+| Outbound | Anything else, including general `slack.post` | `slack.post` | no call site; denied in air-gap mode, Sanction-governed otherwise |
+
+Scopes: `commands` and `app_mentions:read` for capture; `chat:write` for either
+outbound path, as in `config/slack-performance-labs-manifest.json`. No
+`chat:write.public`, history, or impersonation scope is used.
+
+**Policy change (2026-09-17).** Until this change, the rule was "captured text
+is never transmitted". It is narrowly reversed by owner decision: a capture's
+text may now be posted to Slack, but only when a person explicitly marks that
+capture for Slack at the moment they log it to memory, only to the single
+channel configured in `AIIA_SLACK_MEMORY_POST_CHANNEL_ID` (`#aiia-memory`), and
+only back to the Performance Labs workspace it came from. Nothing is posted
+automatically, receipts still never carry captured text, and the path is off
+until the owner enables it.
 
 ## First Workflow
 
@@ -69,8 +95,8 @@ through the same fixed-destination path as save receipts, with the text
 a distinct `client_msg_id`, and the same retry, rate-limit, and permanent-error
 rules. Slash-command captures have no thread, so they get no receipt. At most
 one promotion receipt is ever queued per capture. The egress point remains
-`slack.capture_ack`; no new outbound scope, channel, or message class is added,
-and captured text is still never transmitted.
+`slack.capture_ack`, and receipts never transmit captured text. Posting the
+text itself is the separate, opt-in memory post path below.
 
 If the Brain rejects the fact (quality gate, 422) or does not answer (503), the
 capture stays unreviewed and nothing is queued. If the Brain stores the fact but
@@ -81,15 +107,87 @@ Dismiss keeps the record locally under Dismissed and sends nothing to Slack;
 Restore returns a dismissed capture to Unreviewed. Logged captures cannot be
 dismissed or restored from Studio because the Brain fact already exists.
 
+### Memory posts to #aiia-memory
+
+When logging a capture, the Memory log sets a priority (`urgent`, `high`,
+`normal`, `low`; default `normal`) and, only when the status route reports
+posting configured, offers "Post to #aiia-memory". Priority is stored on the
+capture and the log can filter by it or sort priority-first.
+
+If the post option is checked but posting is not enabled and configured, the
+promote route returns 409 `memory_posting_disabled` before calling the Brain,
+so nothing is logged and nothing is queued. Otherwise the Brain fact is stored,
+then one SQLite transaction marks the capture promoted with its priority and
+`post_requested`, and queues exactly one row in `memory_posts`, keyed by memory
+ID. The row holds the body approved at that moment; later edits do not change
+what is sent.
+
+The body is plain text (`mrkdwn: false`):
+
+```
+[HIGH] Memory logged to decisions
+
+<capture text, bot mention stripped>
+
+Capture 1a2b3c4d · Memory decisions_4_1789
+```
+
+Slack delivers capture text with `&`, `<` and `>` already encoded, so that
+encoding is undone once, then `&`, `<` and `>` are escaped over the whole body,
+which neutralizes `<!channel>`, `<!here>`, `<!everyone>`, user and group
+mentions, channel links, and link syntax while "R&D" still reads "R&D". Text over 3,000 characters is cut to 3,000
+ending in `…`, and the footer gains `· Truncated`. The message is not threaded,
+not broadcast, and unfurls nothing. `client_msg_id` is stable per memory.
+
+A worker delivers one post at a time: urgent before high before normal before
+low, then oldest due first. It reuses the receipt worker's lease, backoff,
+rate-limit handling, permanent-error set and eight-attempt cap. At delivery it
+re-checks that the capture's workspace is `AIIA_SLACK_TEAM_ID` (else it fails
+with `source_not_allowed`) and that the queued channel still equals the
+configured channel (else `destination_not_allowed`), and asks the
+`slack.memory_post` egress point. As with receipts, a timeout after Slack
+accepts a message can produce a duplicate.
+
+Configuration, all in the private Mini environment:
+
+- `AIIA_SLACK_MEMORY_POST_ENABLED=1` turns it on.
+- `AIIA_SLACK_MEMORY_POST_CHANNEL_ID` is the one destination and must match
+  `^C[A-Z0-9]{8,}$`. It is separate from the inbound `AIIA_SLACK_CHANNEL_IDS`
+  and never extends it.
+- `AIIA_SLACK_BOT_TOKEN` and `AIIA_SLACK_TEAM_ID` are reused.
+
+Enabled and configured means all four are present and valid.
+`/api/integrations/slack/status` reports `memory_posts_enabled`,
+`memory_posts_configured`, `memory_post_channel_id` and `memory_posts` counts.
+A failed post can be requeued with
+`POST /api/memory-inbox/{id}/acknowledgement/retry?kind=memory_post`.
+
+Activation, owner only, after deploy:
+
+1. Confirm the AIIA bot is still a member of `#aiia-memory` and the app has
+   `chat:write`.
+2. Set `AIIA_SLACK_MEMORY_POST_ENABLED=1` and
+   `AIIA_SLACK_MEMORY_POST_CHANNEL_ID` in the private service environment, then
+   restart. Check the status route reports `memory_posts_configured: true`.
+3. Log one clearly labelled synthetic capture with "Post to #aiia-memory"
+   checked, and confirm exactly one message arrives, escaped and correctly
+   headed, before logging anything real.
+
+To turn it off, unset `AIIA_SLACK_MEMORY_POST_ENABLED` and restart; queued posts
+stay pending locally and nothing is sent.
+
 Operator routes, all behind Studio's existing access boundary:
 `GET /api/memory-inbox?project=&query=&status=&offset=` (adds per-status
-counts), `POST /api/memory-inbox/{id}/promote` (`category`, optional `note`),
+counts; optional `priority` filter and `sort=priority`),
+`POST /api/memory-inbox/{id}/promote` (`category`, optional `note`, `priority`,
+`post_to_slack`),
 `POST /api/memory-inbox/{id}/dismiss` (optional `note`),
 `POST /api/memory-inbox/{id}/restore`, and
-`POST /api/memory-inbox/{id}/acknowledgement/retry?kind=capture|promotion`.
-`/api/integrations/slack/status` reports `promotion_acknowledgements` counts.
-The ideas table gains `memory_id`, `memory_category`, `review_note`, and
-`reviewed_at`; the migration is additive and repeatable.
+`POST /api/memory-inbox/{id}/acknowledgement/retry?kind=capture|promotion|memory_post`.
+`/api/integrations/slack/status` reports `promotion_acknowledgements` and
+`memory_posts` counts. The ideas table gains `memory_id`, `memory_category`,
+`review_note`, `reviewed_at`, `priority`, and `post_requested`, and a
+`memory_posts` table is added; the migrations are additive and repeatable.
 
 `/aiia-capture <idea>` explicitly saves the original text to a local SQLite inbox.
 Records include workspace, channel, author, capture time, source and project
@@ -98,30 +196,33 @@ as Brain facts or included in agent prompts.
 
 The app acknowledges a successful commit with an ephemeral capture ID. Retries
 with the same Slack trigger ID return the existing capture. Signing secrets,
-verification tokens and response URLs are not stored in the record. The handler
-does not call a model, post channel messages, poll Slack history or use response URLs.
+verification tokens and response URLs are not stored in the record. The capture
+handler itself does not call a model, post channel messages, poll Slack history or
+use response URLs; outbound messages come only from the opt-in workers above.
 
 `@AIIA <idea>` is also supported through signed `app_mention` events. Original
 mention text is retained; Slack event IDs deduplicate retries. Only allowlisted
 workspace/channel events are stored. Bot messages and other event types are
-ignored. Mentions are acknowledged to Slack after storage, but do not yet receive
-an in-channel reply. Signed URL-verification challenges do not create ideas.
+ignored. Mentions are acknowledged to Slack after storage; they get a threaded
+reply only when save receipts are enabled. Signed URL-verification challenges do
+not create ideas.
 
-The local Brain already has `/v1/aiia/remember` for structured facts and semantic
-indexing. A subsequent Studio inbox/review and curator-agent slice should promote
-selected captures through that path with provenance. This integration provides
-capture storage and a searchable API; it does not yet provide that UI or curator.
+Promotion to Brain memory through `/v1/aiia/remember` with provenance is done by
+a person in the Studio Memory log (above). There is no curator agent; nothing is
+promoted automatically.
 
 ## Installation
 
 1. Confirm the Performance Labs workspace and the channel IDs allowed to capture.
 2. Inspect the Performance Labs AIIA app and merge the required configuration from
-   `config/slack-performance-labs-manifest.json`. Required scopes are `commands`
-   and `app_mentions:read`, without channel-history or write access. Reinstall
+   `config/slack-performance-labs-manifest.json`. Capture needs `commands` and
+   `app_mentions:read`; receipts and memory posts also need `chat:write`. No
+   channel-history, `chat:write.public` or impersonation scope is used. Reinstall
    when Slack requires updated scope consent, then invite AIIA to the chosen channel.
 3. Put `AIIA_SLACK_SIGNING_SECRET`, `AIIA_SLACK_TEAM_ID`, and comma-separated
    `AIIA_SLACK_CHANNEL_IDS` in the Mini's private service environment. Enter secrets
-   locally. No bot token is required for this synchronous capture workflow.
+   locally. No bot token is required for capture alone; receipts and memory posts
+   need `AIIA_SLACK_BOT_TOKEN`.
 4. Deploy the integration and restart the service. Verify
    `/api/integrations/slack/status` shows configured with the expected IDs.
 5. Slack must reach the exact `/api/integrations/slack/commands` and
@@ -134,10 +235,11 @@ capture storage and a searchable API; it does not yet provide that UI or curator
    Verify one local record and retry deduplication before broader use.
 
 The HTTP response contains only capture acknowledgement or validation feedback.
-Existing outbound `slack.post` remains denied in air-gap mode. The old outbound
-route references a missing `local_brain.slack_client`; it is not used or repaired
-by this capture integration. Connecting outbound notifications or conversations
-requires its own scoped transport implementation and egress decision.
+General outbound `slack.post` remains denied in air-gap mode. The old Brain route
+`POST /v1/aiia/slack`, which imported a module that was never committed, has been
+removed. Any further outbound Slack use (notifications, conversations, other
+channels) needs its own scoped transport and egress decision, as receipts and
+memory posts each have.
 
 ## Local Access and Limits
 
