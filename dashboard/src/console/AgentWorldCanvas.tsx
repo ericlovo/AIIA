@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   api,
   type Agent,
+  type AgentSuitePatch,
   type AgentWorldLayout,
   type AgentWorldPoint,
   type Assignment,
@@ -13,6 +14,8 @@ import { AgentGraphOverlay } from './AgentGraphOverlay'
 import { StudioTabs, type StudioView } from './StudioTabs'
 import { GRAPH_WIDTH, filterBySuite, graphGeometry, suiteGroups } from './graphLayout'
 import { SuiteLegend } from './SuiteLegend'
+import { SuitePanel } from './SuitePanel'
+import { withUpdatedAgents } from './suiteModulation'
 import { withCreatedAssignment, withCreatedHandoff, withoutHandoff } from './mapRelationships'
 
 interface AgentWorldCanvasProps {
@@ -75,6 +78,7 @@ export function AgentWorldCanvas({
   const queryClient = useQueryClient()
   const [showCompleted, setShowCompleted] = useState(false)
   const [suiteFilter, setSuiteFilter] = useState<string | null>(null)
+  const [tuningSuite, setTuningSuite] = useState<string | null>(null)
   const [inspectorHost, setInspectorHost] = useState<HTMLDivElement | null>(null)
   const viewportRef = useRef<HTMLElement>(null)
   const [zoom, setZoom] = useState(1)
@@ -106,6 +110,7 @@ export function AgentWorldCanvas({
     const members = new Set(mapAgents.map(agent => agent.id))
     return assignments.filter(assignment => members.has(assignment.agent_id))
   }, [activeSuite, assignments, mapAgents])
+  const tunedGroup = suites.find(group => group.slug === tuningSuite && group.slug === activeSuite) ?? null
   const mapMinHeight = graphMinHeight(mapAgents.length, mapAssignments, showCompleted)
   const activeCount = agents.filter(agent => agent.status === 'running').length
 
@@ -163,6 +168,15 @@ export function AgentWorldCanvas({
       }))
       void queryClient.invalidateQueries({ queryKey: ['assignments'] })
       void queryClient.invalidateQueries({ queryKey: ['handoffs'] })
+    },
+  })
+  const patchSuite = useMutation({
+    mutationFn: ({ suite, patch }: { suite: string; patch: AgentSuitePatch }) => api.patchSuiteAgents(suite, patch),
+    onSuccess: ({ agents: updated }) => {
+      queryClient.setQueryData<{ agents: Agent[] }>(['agents'], current => current && {
+        agents: withUpdatedAgents(current.agents, updated),
+      })
+      void queryClient.invalidateQueries({ queryKey: ['agents'] })
     },
   })
   const runAssignment = useMutation({
@@ -259,7 +273,7 @@ export function AgentWorldCanvas({
             viewport.scrollTo(0, 0)
           }}><Maximize2 size={15} /></button>
         </div>
-        <SuiteLegend groups={suites} activeSuite={activeSuite} onSelect={setSuiteFilter} />
+        <SuiteLegend groups={suites} activeSuite={activeSuite} onSelect={setSuiteFilter} onTune={setTuningSuite} />
       </div>
       {(agentError || assignmentLoadError || handoffLoadError || layoutLoadError) && <div role="alert" className="px-5 py-2 text-xs text-amber-200">Map data is incomplete. <button type="button" className="underline" onClick={() => { for (const key of ['agents', 'assignments', 'handoffs', 'agent-world-layout']) void queryClient.invalidateQueries({ queryKey: [key] }) }}>Retry</button></div>}
       {!loading && !agentError && agents.length === 0 && <p role="status" className="px-5 py-3 text-sm text-neutral-400">No agents configured.</p>}
@@ -300,6 +314,15 @@ export function AgentWorldCanvas({
         </div>
       </section>
       <div ref={setInspectorHost} className="pointer-events-none absolute inset-0 z-20" />
+      {tunedGroup && (
+        <SuitePanel
+          key={tunedGroup.slug}
+          group={tunedGroup}
+          members={mapAgents}
+          onApply={patch => patchSuite.mutateAsync({ suite: tunedGroup.slug, patch })}
+          onClose={() => setTuningSuite(null)}
+        />
+      )}
       </div>
     </main>
   )

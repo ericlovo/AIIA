@@ -4,9 +4,10 @@ interface SuiteLegendProps {
   groups: SuiteGroup[]
   activeSuite: string | null
   onSelect: (slug: string | null) => void
+  onTune: (slug: string) => void
 }
 
-export function SuiteLegend({ groups, activeSuite, onSelect }: SuiteLegendProps) {
+export function SuiteLegend({ groups, activeSuite, onSelect, onTune }: SuiteLegendProps) {
   if (groups.length === 0) return null
   return (
     <div role="group" aria-label="Suite legend" className="flex min-w-0 max-w-full flex-wrap items-center gap-1.5">
@@ -33,6 +34,11 @@ export function SuiteLegend({ groups, activeSuite, onSelect }: SuiteLegendProps)
           <span className="text-neutral-500">{group.count}</span>
         </button>
       ))}
+      {activeSuite && (
+        <button type="button" onClick={() => onTune(activeSuite)} className="border border-cyan-400/50 px-2 py-1 text-cyan-200 hover:border-cyan-200">
+          Tune {activeSuite} suite
+        </button>
+      )}
     </div>
   )
 }

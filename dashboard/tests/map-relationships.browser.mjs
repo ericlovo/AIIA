@@ -56,6 +56,7 @@ try {
     let handoffs = seedHandoffs()
     const handoffPosts = []
     const handoffDeletes = []
+    const suitePatches = []
     let failNextHandoff = true
     await page.routeWebSocket('**/ws', ws => ws.onMessage(() => {}))
     await page.route('**/api/**', async route => {
@@ -90,6 +91,22 @@ try {
         body = { deleted: true }
       }
       else if (path === '/api/handoffs') body = { handoffs }
+      else if (path === '/api/agent-suites/research/agents' && method === 'PATCH') {
+        // Mirrors contract C3: validate every merged member first, then change all or none.
+        const sent = request.postDataJSON()
+        suitePatches.push(sent)
+        const members = agents.filter(item => item.suite === 'research')
+        const failures = members
+          .filter(item => ({ ...item, ...sent }).loop_enabled && !({ ...item, ...sent }).loop_task.trim())
+          .map(item => ({ agent_id: item.id, detail: 'loop_task_required' }))
+        if (failures.length) {
+          status = 422
+          body = { detail: 'suite_patch_rejected', failures }
+        } else {
+          for (const member of members) Object.assign(member, sent, { updated_at: `${date}T14:00:00Z` })
+          body = { suite: 'research', count: members.length, agents: members }
+        }
+      }
       else if (path === '/api/agent-world/layout') body = { layout: { version: 1, revision: 0, positions: {}, updated_at: null } }
       else if (path === '/api/git-workspaces') body = { workspaces: [] }
       else if (path === '/api/git-writes') body = { writes: [] }
@@ -209,6 +226,44 @@ try {
     await page.waitForFunction(() => document.querySelectorAll('[data-graph-node]').length === 7)
     assert.equal(await page.locator('[data-edge="handoff:hof-new"]').count(), 1)
 
+    // A7c: one request tunes every member; a rejection changes nothing.
+    await legend.getByRole('button', { name: 'research suite, 2 agents' }).click()
+    await legend.getByRole('button', { name: 'Tune research suite' }).click()
+    const suitePanel = page.getByRole('complementary', { name: 'Tune research suite' })
+    await suitePanel.waitFor()
+    const summary = suitePanel.locator('[data-suite-summary]')
+    assert.equal(await summary.innerText(), 'Now: temperature 0.35 · max tokens 1200 · loop off')
+    await suitePanel.getByLabel('Model', { exact: true }).selectOption('custom')
+    await suitePanel.getByLabel('Model id', { exact: true }).fill('qwen3:8b')
+    await suitePanel.getByLabel('Temperature', { exact: true }).fill('0.6')
+    await suitePanel.getByLabel('Max tokens', { exact: true }).fill('1600')
+    await suitePanel.getByRole('button', { name: 'Apply to 2 agents' }).click()
+    await suitePanel.getByRole('status').filter({ hasText: 'Updated 2 agents in research.' }).waitFor()
+    assert.deepEqual(suitePatches, [{ model: 'qwen3:8b', temperature: 0.6, max_tokens: 1600 }])
+    await page.waitForFunction(() => document.querySelector('[data-suite-summary]')?.textContent === 'Now: temperature 0.6 · max tokens 1600 · loop off')
+    assert.deepEqual(agents.filter(item => item.suite === 'research').map(item => [item.temperature, item.max_tokens, item.model]), [[0.6, 1600, 'qwen3:8b'], [0.6, 1600, 'qwen3:8b']])
+    assert.equal(agents.find(item => item.id === 'agent-gate').temperature, 0.35)
+    await page.screenshot({ path: join(output, `suite-patch-ok-${width}.png`) })
+
+    await suitePanel.getByLabel('Loop', { exact: true }).selectOption('on')
+    await suitePanel.getByRole('button', { name: 'Apply to 2 agents' }).click()
+    const rejection = suitePanel.getByRole('alert')
+    await rejection.waitFor()
+    const rejectionText = await rejection.innerText()
+    assert.ok(rejectionText.includes('Nothing changed'), rejectionText)
+    assert.ok(rejectionText.includes('Brief Writer: Needs a loop task before its loop can be enabled.'), rejectionText)
+    assert.ok(!rejectionText.includes('Signal Scout'), rejectionText)
+    assert.deepEqual(suitePatches[1], { loop_enabled: true })
+    assert.equal(await summary.innerText(), 'Now: temperature 0.6 · max tokens 1600 · loop off')
+    assert.equal(await suitePanel.getByLabel('Loop', { exact: true }).inputValue(), 'on')
+    assert.deepEqual(agents.map(item => item.loop_enabled), [false, false, false, false])
+    await page.screenshot({ path: join(output, `suite-patch-rejected-${width}.png`) })
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false)
+    await suitePanel.getByRole('button', { name: 'Close suite controls' }).click()
+    await suitePanel.waitFor({ state: 'detached' })
+    await legend.getByRole('button', { name: 'All agents' }).click()
+    await page.waitForFunction(() => document.querySelectorAll('[data-graph-node]').length === 7)
+
     // Selecting an agent-to-assignment edge opens that assignment.
     await page.locator('[data-edge="hierarchy:asg-draft"]').click()
     await page.getByRole('heading', { name: 'Assignment queue' }).waitFor()
@@ -217,7 +272,7 @@ try {
 
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false)
     assert.deepEqual(errors, [])
-    console.log(`${width}px: wire to confirmed handoff, inline error, edge inspect, keyboard edge remove with confirm, edge opens assignment, suite colours and filter passed`)
+    console.log(`${width}px: wire to confirmed handoff, inline error, edge inspect, keyboard edge remove with confirm, edge opens assignment, suite colours and filter, suite patch applied and rejected passed`)
     await context.close()
   }
 } finally {
