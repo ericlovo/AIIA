@@ -34,7 +34,7 @@ def test_failed_mutation_restores_memory_disk_and_references(registry, monkeypat
         "create": lambda: registry.create("Third", "New", "Precise", []),
         "update": lambda: registry.update(agent["id"], name="Changed", temperature=0.8),
         "delete": lambda: registry.delete(agent["id"]),
-        "loop": lambda: registry.update(agent["id"], loop_enabled=True),
+        "loop": lambda: registry.update(agent["id"], loop_enabled=True, loop_task="Inspect"),
         "start": lambda: registry.set_running(agent["id"]),
         "loop_start": lambda: registry.set_running(agent["id"], loop_run=True),
         "counter": lambda: registry.record_loop_run(agent["id"]),

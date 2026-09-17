@@ -28,7 +28,7 @@ from fastapi import Body, FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, JSONResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 logger = logging.getLogger("aiia.console")
 
@@ -1150,6 +1150,31 @@ class AgentCreateRequest(BaseModel):
     memory_namespace: str = Field(default="", max_length=64)
 
 
+class AgentPatchRequest(BaseModel):
+    """Any subset of the editable fields, with the same limits as create.
+
+    Defaults are None so an omitted field is unset; an explicit null fails the
+    field's type, because every field is non-optional once supplied.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    name: str = Field(default=None, min_length=1, max_length=80)
+    mission: str = Field(default=None, min_length=1, max_length=2_000)
+    persona: str = Field(default=None, max_length=2_000)
+    skills: list[str] = Field(default=None, max_length=12)
+    tools: list[str] = Field(default=None, max_length=8)
+    repo_id: str = Field(default=None, max_length=80)
+    temperature: float = Field(default=None, ge=0.0, le=1.0)
+    max_tokens: int = Field(default=None, ge=128, le=2_000)
+    loop_enabled: bool = Field(default=None)
+    loop_interval_minutes: int = Field(default=None, ge=15, le=1_440)
+    loop_task: str = Field(default=None, max_length=8_000)
+    loop_max_runs_per_day: int = Field(default=None, ge=1, le=48)
+    suite: str = Field(default=None, max_length=64)
+    memory_namespace: str = Field(default=None, max_length=64)
+
+
 class AgentRunRequest(BaseModel):
     task: str = Field(min_length=1, max_length=8_000)
 
@@ -1289,9 +1314,20 @@ async def agent_resources():
 
 
 def _validate_agent_repo(body: AgentCreateRequest) -> None:
+    _require_mounted_repo(body.tools, body.repo_id)
+
+
+def _require_mounted_repo(tools: list[str], repo_id: str) -> None:
     repo_tools = {"Repository read", "GitHub read", "Git workspace"}
-    if repo_tools.intersection(body.tools) and not repo_available(body.repo_id):
+    if repo_tools.intersection(tools) and not repo_available(repo_id):
         raise HTTPException(status_code=422, detail="mounted_repository_required")
+
+
+def _patch_changes(body: BaseModel | None) -> dict[str, Any]:
+    changes = body.model_dump(exclude_unset=True) if body else {}
+    if not changes:
+        raise HTTPException(status_code=422, detail="empty_patch")
+    return changes
 
 
 @app.post("/api/agents")
@@ -1332,6 +1368,26 @@ async def update_agent(agent_id: str, body: AgentCreateRequest):
         raise HTTPException(status_code=404, detail="agent_not_found")
     await broadcast_studio_event("agent", "updated", agent)
     return {"agent": agent}
+
+
+@app.patch("/api/agents/{agent_id}")
+async def patch_agent(agent_id: str, body: AgentPatchRequest | None = None):
+    changes = _patch_changes(body)
+    agent = agent_registry.get(agent_id)
+    if not agent:
+        raise HTTPException(status_code=404, detail="agent_not_found")
+    if "tools" in changes or "repo_id" in changes:
+        # Same check as create and PUT, applied to the tools and repo the agent will have.
+        _require_mounted_repo(
+            changes.get("tools", agent.get("tools", [])),
+            changes.get("repo_id", agent.get("repo_id", "")),
+        )
+    try:
+        updated = agent_registry.update(agent_id, **changes)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    await broadcast_studio_event("agent", "updated", updated)
+    return {"agent": updated}
 
 
 @app.delete("/api/agents/{agent_id}")

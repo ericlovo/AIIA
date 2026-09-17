@@ -119,6 +119,7 @@ class AgentRegistry:
             "created_at": now,
             "updated_at": now,
         }
+        self._require_loop_task(agent)
         self.agents.append(agent)
         return agent
 
@@ -127,6 +128,10 @@ class AgentRegistry:
         agent = self.get(agent_id)
         if not agent:
             return None
+        self._apply_changes(agent, changes)
+        return agent
+
+    def _apply_changes(self, agent: dict[str, Any], changes: dict[str, Any]) -> None:
         for field in ("name", "mission", "persona"):
             if field in changes:
                 agent[field] = str(changes[field]).strip()
@@ -157,15 +162,15 @@ class AgentRegistry:
             )
             agent["suite"] = suite
             agent["memory_namespace"] = memory_namespace
+        self._require_loop_task(agent)
         agent["updated_at"] = datetime.now(timezone.utc).isoformat()
-        return agent
 
     @_durable_mutation
     def due_loop(self) -> dict[str, Any] | None:
         now = datetime.now(timezone.utc)
         today = now.date().isoformat()
         for agent in self.agents:
-            if not agent.get("loop_enabled") or not agent.get("loop_task"):
+            if not agent.get("loop_enabled") or not str(agent.get("loop_task") or "").strip():
                 continue
             if agent.get("status") == "running":
                 continue
@@ -285,6 +290,12 @@ class AgentRegistry:
                 agent["last_error"] = "interrupted_agent_run; review before resuming"
                 agent["loop_enabled"] = False
                 agent["updated_at"] = datetime.now(timezone.utc).isoformat()
+
+    @staticmethod
+    def _require_loop_task(agent: dict[str, Any]) -> None:
+        # Checked on the merged record, so no write path can enable an empty loop.
+        if agent.get("loop_enabled") and not str(agent.get("loop_task") or "").strip():
+            raise ValueError("loop_task_required")
 
     @staticmethod
     def _skills(skills: Any) -> list[str]:
