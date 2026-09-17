@@ -180,6 +180,17 @@ def suite_prompt_line(agent: dict[str, Any]) -> str:
     )
 
 
+def _suite_agent_row(agent: dict[str, Any], matched_by: str) -> dict[str, Any]:
+    return {
+        "id": agent.get("id", ""),
+        "name": agent.get("name", ""),
+        "suite": agent.get("suite", ""),
+        "memory_namespace": agent.get("memory_namespace", ""),
+        "max_tokens": agent.get("max_tokens"),
+        "matched_by": matched_by,
+    }
+
+
 def describe_suites(agents: list[dict[str, Any]] | None = None) -> list[dict[str, Any]]:
     """Catalog plus any matching in-memory Studio agents (tag or alias)."""
     live = agents or []
@@ -188,16 +199,9 @@ def describe_suites(agents: list[dict[str, Any]] | None = None) -> list[dict[str
         members = []
         for member in catalog["members"]:
             matched = [
-                {
-                    "id": agent.get("id", ""),
-                    "name": agent.get("name", ""),
-                    "suite": agent.get("suite", ""),
-                    "memory_namespace": agent.get("memory_namespace", ""),
-                    "max_tokens": agent.get("max_tokens"),
-                    "matched_by": "tag"
-                    if str(agent.get("suite") or "") == catalog["slug"]
-                    else "alias",
-                }
+                _suite_agent_row(
+                    agent, "tag" if str(agent.get("suite") or "") == catalog["slug"] else "alias"
+                )
                 for agent in live
                 if str(agent.get("suite") or "") == catalog["slug"]
                 or match_member(str(agent.get("name") or ""), catalog["slug"]) is member
@@ -212,6 +216,30 @@ def describe_suites(agents: list[dict[str, Any]] | None = None) -> list[dict[str
                 "repository_id": catalog["repository_id"],
                 "max_depth": catalog["max_depth"],
                 "members": members,
+                "catalogued": True,
+                "agents": [
+                    _suite_agent_row(agent, "tag")
+                    for agent in live
+                    if str(agent.get("suite") or "") == catalog["slug"]
+                ],
+            }
+        )
+    # Tagged suites outside the catalog are still real suites the Studio can modulate.
+    in_use = sorted({str(agent.get("suite") or "") for agent in live} - set(KNOWN_SUITES) - {""})
+    for slug in in_use:
+        tagged = [agent for agent in live if str(agent.get("suite") or "") == slug]
+        namespace = str(tagged[0].get("memory_namespace") or "") or default_memory_namespace(slug)
+        suites.append(
+            {
+                "slug": slug,
+                "name": slug,
+                "memory_namespace": namespace,
+                "memory_source": f"suite:{namespace}",
+                "repository_id": "",
+                "max_depth": None,
+                "members": [],
+                "catalogued": False,
+                "agents": [_suite_agent_row(agent, "tag") for agent in tagged],
             }
         )
     return suites

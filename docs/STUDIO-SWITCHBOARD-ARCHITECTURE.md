@@ -72,7 +72,7 @@ Browser-created preview agents exist only in this copy and start paused.
 | Temperature/token cap | Studio sends both to `/v1/chat`; local API passes both to the Ollama client | The displayed model name in the older agent view is hardcoded; execution resolves the configured task-role model |
 | Repository read | Bounded status, five commits, diff statistics, first 80 tracked paths, README excerpt | Not arbitrary source-file retrieval, full patch review, or test execution |
 | GitHub read | Explicit GET requests through `gh api` | Credential connectivity was not revalidated; not a GitHub App integration |
-| Local memory | Studio adds a sentence saying memory is available | The inspected Studio `/v1/chat` path does not retrieve memory. This capability is misleading until retrieval is wired |
+| Local memory | Each run reads the authenticated Brain memory endpoint and injects at most 6 entries and 1,500 characters with their ids, filtered by `memory_namespace` (source `suite:<namespace>` or metadata namespace) when set | Recency, not semantic retrieval. Any failure injects "Local memory was unavailable for this run" instead of claiming retrieval |
 | Assignments | Durable objective, context, criteria, priority, result, status | Explicit execution; not an automatically draining durable queue |
 | Handoffs | Upstream artifact/context creates a downstream assignment | No general dependency evaluator, fan-out/join scheduler, or versioned graph execution |
 | Agent interval loops | Bounded interval and daily allowance, serviced by Command Center | In-process scheduler; no durable claim/lease, backoff, or crash recovery |

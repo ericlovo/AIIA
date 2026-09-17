@@ -28,6 +28,14 @@ class RunHistoryUnavailable(RuntimeError):
     """History is unavailable; completed output remains pending in the registry."""
 
 
+class BulkUpdateRejected(ValueError):
+    """At least one agent refused the change, so none of them were changed."""
+
+    def __init__(self, failures: list[dict[str, str]]):
+        super().__init__("bulk_update_rejected")
+        self.failures = failures
+
+
 def _durable_mutation(method):
     @wraps(method)
     def mutate(self, *args, **kwargs):
@@ -88,6 +96,7 @@ class AgentRegistry:
         loop_max_runs_per_day: int = 4,
         suite: str = "",
         memory_namespace: str = "",
+        model: str = "",
     ) -> dict[str, Any]:
         if len(self.agents) >= MAX_AGENTS:
             raise ValueError("agent_limit_reached")
@@ -103,6 +112,7 @@ class AgentRegistry:
             "repo_id": str(repo_id).strip()[:80],
             "temperature": self._temperature(temperature),
             "max_tokens": self._max_tokens(max_tokens),
+            "model": self._model(model),
             "loop_enabled": bool(loop_enabled),
             "loop_interval_minutes": self._interval(loop_interval_minutes),
             "loop_task": str(loop_task).strip()[:8_000],
@@ -119,6 +129,7 @@ class AgentRegistry:
             "created_at": now,
             "updated_at": now,
         }
+        self._require_loop_task(agent)
         self.agents.append(agent)
         return agent
 
@@ -127,6 +138,36 @@ class AgentRegistry:
         agent = self.get(agent_id)
         if not agent:
             return None
+        self._apply_changes(agent, changes)
+        return agent
+
+    def check_changes(self, agent_id: str, changes: dict[str, Any]) -> str:
+        """Return the validation error these changes would raise, without applying them."""
+        agent = self.get(agent_id)
+        if not agent:
+            return "agent_not_found"
+        try:
+            self._apply_changes(deepcopy(agent), changes)
+        except ValueError as exc:
+            return str(exc)
+        return ""
+
+    @_durable_mutation
+    def update_many(self, agent_ids: list[str], changes: dict[str, Any]) -> list[dict[str, Any]]:
+        """Apply the same changes to every agent, or to none of them, with one save."""
+        failures = [
+            {"agent_id": agent_id, "detail": detail}
+            for agent_id in agent_ids
+            if (detail := self.check_changes(agent_id, changes))
+        ]
+        if failures:
+            raise BulkUpdateRejected(failures)
+        agents = [self.get(agent_id) for agent_id in agent_ids]
+        for agent in agents:
+            self._apply_changes(agent, changes)
+        return agents
+
+    def _apply_changes(self, agent: dict[str, Any], changes: dict[str, Any]) -> None:
         for field in ("name", "mission", "persona"):
             if field in changes:
                 agent[field] = str(changes[field]).strip()
@@ -140,6 +181,8 @@ class AgentRegistry:
             agent["temperature"] = self._temperature(changes["temperature"])
         if "max_tokens" in changes:
             agent["max_tokens"] = self._max_tokens(changes["max_tokens"])
+        if "model" in changes:
+            agent["model"] = self._model(changes["model"])
         if "loop_enabled" in changes:
             agent["loop_enabled"] = bool(changes["loop_enabled"])
         if "loop_interval_minutes" in changes:
@@ -157,15 +200,15 @@ class AgentRegistry:
             )
             agent["suite"] = suite
             agent["memory_namespace"] = memory_namespace
+        self._require_loop_task(agent)
         agent["updated_at"] = datetime.now(timezone.utc).isoformat()
-        return agent
 
     @_durable_mutation
     def due_loop(self) -> dict[str, Any] | None:
         now = datetime.now(timezone.utc)
         today = now.date().isoformat()
         for agent in self.agents:
-            if not agent.get("loop_enabled") or not agent.get("loop_task"):
+            if not agent.get("loop_enabled") or not str(agent.get("loop_task") or "").strip():
                 continue
             if agent.get("status") == "running":
                 continue
@@ -287,6 +330,12 @@ class AgentRegistry:
                 agent["updated_at"] = datetime.now(timezone.utc).isoformat()
 
     @staticmethod
+    def _require_loop_task(agent: dict[str, Any]) -> None:
+        # Checked on the merged record, so no write path can enable an empty loop.
+        if agent.get("loop_enabled") and not str(agent.get("loop_task") or "").strip():
+            raise ValueError("loop_task_required")
+
+    @staticmethod
     def _skills(skills: Any) -> list[str]:
         if not isinstance(skills, list):
             return []
@@ -297,6 +346,11 @@ class AgentRegistry:
         if not isinstance(tools, list):
             return []
         return [str(tool).strip()[:80] for tool in tools if str(tool).strip()][:MAX_TOOLS]
+
+    @staticmethod
+    def _model(value: Any) -> str:
+        # Empty means the Brain's task-role default.
+        return str(value or "").strip()[:120]
 
     @staticmethod
     def _interval(value: Any) -> int:
@@ -383,6 +437,7 @@ class AgentRegistry:
                 agent.setdefault("repo_id", "")
                 agent.setdefault("temperature", 0.35)
                 agent.setdefault("max_tokens", 1_200)
+                agent.setdefault("model", "")
                 agent.setdefault("loop_enabled", False)
                 agent.setdefault("loop_interval_minutes", 60)
                 agent.setdefault("loop_task", "")
