@@ -12,7 +12,7 @@ import {
 import { AgentGraphOverlay } from './AgentGraphOverlay'
 import { StudioTabs, type StudioView } from './StudioTabs'
 import { GRAPH_WIDTH, graphGeometry } from './graphLayout'
-import { withCreatedAssignment, withCreatedHandoff } from './mapRelationships'
+import { withCreatedAssignment, withCreatedHandoff, withoutHandoff } from './mapRelationships'
 
 interface AgentWorldCanvasProps {
   agents: Agent[]
@@ -145,6 +145,16 @@ export function AgentWorldCanvas({
       void queryClient.invalidateQueries({ queryKey: ['handoffs'] })
     },
   })
+  const deleteHandoff = useMutation({
+    mutationFn: api.deleteHandoff,
+    onSuccess: (_result, handoffId) => {
+      queryClient.setQueryData<{ handoffs: Handoff[] }>(['handoffs'], current => ({
+        handoffs: withoutHandoff(current?.handoffs ?? EMPTY_HANDOFFS, handoffId),
+      }))
+      void queryClient.invalidateQueries({ queryKey: ['assignments'] })
+      void queryClient.invalidateQueries({ queryKey: ['handoffs'] })
+    },
+  })
   const runAssignment = useMutation({
     mutationFn: api.runAssignment,
     onSettled: () => {
@@ -264,12 +274,13 @@ export function AgentWorldCanvas({
           onOpenAssignment={onOpenAssignment}
           onRouteHandoff={onRouteHandoff}
           onCreateHandoff={data => createHandoff.mutateAsync(data).then(result => result.handoff)}
+          onDeleteHandoff={handoffId => deleteHandoff.mutateAsync(handoffId).then(() => undefined)}
           />
 
           <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 flex flex-wrap items-center justify-between gap-3 border-t border-white/8 bg-[#080a0d]/90 px-4 py-3 text-[9px] font-semibold tracking-[0.14em] uppercase text-white/35 sm:px-6">
             <div className="flex flex-wrap gap-x-5 gap-y-2">
               <span><b className="mr-1.5 text-cyan-300">Solid</b>assignment</span>
-              <span><b className="mr-1.5 text-fuchsia-300">Dashed</b>handoff</span>
+              <span><b className="mr-1.5 text-fuchsia-300">Dashed</b>handoff · click to inspect</span>
               <span><b className="mr-1.5 text-white/70">Drag</b>to position</span>
             </div>
             <span>Click a node for controls</span>

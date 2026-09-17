@@ -2,6 +2,8 @@ import { useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { reconcileLayout } from './graphLayout'
 import { HandoffComposer } from './HandoffComposer'
+import { HandoffInspector } from './HandoffInspector'
+import { formatHandoffTime } from './mapRelationships'
 import type { Agent, AgentWorldPoint, Assignment, Handoff, HandoffDefinition } from '../lib/api'
 
 interface AgentGraphOverlayProps {
@@ -21,6 +23,7 @@ interface AgentGraphOverlayProps {
   onOpenAssignment: (assignmentId: string) => void
   onRouteHandoff: (sourceAssignmentId: string, toAgentId: string) => void
   onCreateHandoff: (data: HandoffDefinition) => Promise<Handoff>
+  onDeleteHandoff: (handoffId: string) => Promise<void>
 }
 
 type Point = AgentWorldPoint
@@ -123,6 +126,7 @@ export function AgentGraphOverlay({
   onOpenAssignment,
   onRouteHandoff,
   onCreateHandoff,
+  onDeleteHandoff,
 }: AgentGraphOverlayProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const dragRef = useRef<DragState | null>(null)
@@ -134,6 +138,7 @@ export function AgentGraphOverlay({
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [connectFrom, setConnectFrom] = useState<string | null>(null)
   const [pendingHandoff, setPendingHandoff] = useState<PendingHandoff | null>(null)
+  const [selectedHandoffId, setSelectedHandoffId] = useState<string | null>(null)
   const [draggingId, setDraggingId] = useState<string | null>(null)
   const nodes = useMemo<GraphNode[]>(() => {
     const work = visibleWork(assignments, showCompleted)
@@ -155,6 +160,7 @@ export function AgentGraphOverlay({
     return reconcileLayout(merged, nodes.map(node => node.id))
   }, [defaults, draggingId, nodes, positions, transientPositions])
   const selected = nodes.find(node => node.id === selectedId) ?? null
+  const selectedHandoff = handoffs.find(handoff => handoff.id === selectedHandoffId) ?? null
   const nodeIds = useMemo(() => new Set(nodes.map(node => node.id)), [nodes])
   const selectedSource = assignments.find(
     assignment => assignment.id === (connectFrom ?? wireDrag?.sourceAssignmentId),
@@ -169,6 +175,17 @@ export function AgentGraphOverlay({
       return
     }
     setSelectedId(node.id)
+    setSelectedHandoffId(null)
+  }
+
+  function selectHandoff(handoffId: string) {
+    if (connectFrom || wireDragRef.current) return
+    setSelectedHandoffId(handoffId)
+    setSelectedId(null)
+  }
+
+  function agentName(agentId: string) {
+    return agents.find(agent => agent.id === agentId)?.name ?? 'Removed agent'
   }
 
   function handlePointerDown(event: React.PointerEvent<HTMLButtonElement>, node: GraphNode) {
@@ -328,6 +345,7 @@ export function AgentGraphOverlay({
     }
     setConnectFrom(assignmentId)
     setSelectedId(null)
+    setSelectedHandoffId(null)
     setPendingHandoff(null)
   }
 
@@ -336,13 +354,23 @@ export function AgentGraphOverlay({
 
   return (
     <div ref={containerRef} className="pointer-events-none absolute inset-0 z-[5] overflow-hidden" aria-label="Agent topology graph">
-      <svg className="absolute inset-0 h-full w-full" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+      <svg className="absolute inset-0 h-full w-full" viewBox="0 0 100 100" preserveAspectRatio="none" role="group" aria-label="Map relationships">
         {nodes.filter(node => node.assignment).map(node => {
           const assignment = node.assignment!
           const from = layout[`agent:${assignment.agent_id}`]
           const to = layout[node.id]
           if (!from || !to) return null
-          return <GraphEdge key={`hierarchy:${node.id}`} from={from} to={to} tone="hierarchy" />
+          return (
+            <GraphEdge
+              key={`hierarchy:${node.id}`}
+              edgeId={`hierarchy:${assignment.id}`}
+              from={from}
+              to={to}
+              tone="hierarchy"
+              label={`Open ${assignment.title}`}
+              onSelect={() => onOpenAssignment(assignment.id)}
+            />
+          )
         })}
         {handoffs.map(handoff => {
           const sourceAssignmentId = `assignment:${handoff.source_assignment_id}`
@@ -352,7 +380,18 @@ export function AgentGraphOverlay({
           const from = layout[sourceId]
           const to = layout[targetId]
           if (!from || !to) return null
-          return <GraphEdge key={`handoff:${handoff.id}`} edgeId={`handoff:${handoff.id}`} from={from} to={to} tone="handoff" />
+          return (
+            <GraphEdge
+              key={`handoff:${handoff.id}`}
+              edgeId={`handoff:${handoff.id}`}
+              from={from}
+              to={to}
+              tone="handoff"
+              selected={handoff.id === selectedHandoffId}
+              label={`Handoff from ${agentName(handoff.from_agent_id)} to ${agentName(handoff.to_agent_id)}, ${handoff.status}, created ${formatHandoffTime(handoff.created_at)}`}
+              onSelect={() => selectHandoff(handoff.id)}
+            />
+          )
         })}
         {wireDrag && layout[wireDrag.sourceNodeId] && (
           <GraphEdge from={layout[wireDrag.sourceNodeId]} to={wireDrag.point} tone="draft" />
@@ -425,9 +464,21 @@ export function AgentGraphOverlay({
             artifact_type: 'brief',
             instructions,
           })}
-          onCreated={() => setPendingHandoff(null)}
+          onCreated={handoff => { setPendingHandoff(null); setSelectedId(null); setSelectedHandoffId(handoff.id) }}
           onCancel={() => setPendingHandoff(null)}
           onOpenForm={() => onRouteHandoff(pendingSource.id, pendingTarget.id)}
+        />, inspectorHost
+      )}
+
+      {selectedHandoff && !selected && !pendingHandoff && !connectFrom && !wireDrag && inspectorHost && createPortal(
+        <HandoffInspector
+          key={selectedHandoff.id}
+          handoff={selectedHandoff}
+          agents={agents}
+          assignments={assignments}
+          onClose={() => setSelectedHandoffId(null)}
+          onOpenAssignment={onOpenAssignment}
+          onDelete={handoffId => onDeleteHandoff(handoffId).then(() => setSelectedHandoffId(null))}
         />, inspectorHost
       )}
 
@@ -449,19 +500,62 @@ export function AgentGraphOverlay({
   )
 }
 
-function GraphEdge({ from, to, tone, edgeId }: { from: Point; to: Point; tone: 'hierarchy' | 'handoff' | 'draft'; edgeId?: string }) {
+interface GraphEdgeProps {
+  from: Point
+  to: Point
+  tone: 'hierarchy' | 'handoff' | 'draft'
+  edgeId?: string
+  label?: string
+  selected?: boolean
+  onSelect?: () => void
+}
+
+function GraphEdge({ from, to, tone, edgeId, label, selected = false, onSelect }: GraphEdgeProps) {
   const bend = Math.max(4, Math.abs(to.y - from.y) * 0.45)
   const path = `M ${from.x} ${from.y} C ${from.x} ${from.y + bend}, ${to.x} ${to.y - bend}, ${to.x} ${to.y}`
-  return (
+  const stroke = tone === 'draft' ? 'rgba(244,114,182,0.95)' : tone === 'handoff' ? (selected ? 'rgba(245,208,254,1)' : 'rgba(232,121,249,0.72)') : 'rgba(103,232,249,0.24)'
+  const visible = (
     <path
-      data-edge={edgeId}
+      data-edge={onSelect ? undefined : edgeId}
+      aria-hidden="true"
       d={path}
       vectorEffect="non-scaling-stroke"
       fill="none"
-      stroke={tone === 'draft' ? 'rgba(244,114,182,0.95)' : tone === 'handoff' ? 'rgba(232,121,249,0.72)' : 'rgba(103,232,249,0.24)'}
-      strokeWidth={tone === 'hierarchy' ? 1 : 1.5}
+      stroke={stroke}
+      strokeWidth={tone === 'hierarchy' ? 1 : selected ? 3 : 1.5}
       strokeDasharray={tone === 'hierarchy' ? undefined : '5 5'}
+      style={{ pointerEvents: 'none' }}
     />
+  )
+  if (!onSelect) return visible
+  // Handoff edges are tab stops; the many agent-to-work edges stay pointer-only
+  // because every assignment node already offers "Open work" from the keyboard.
+  const focusable = tone === 'handoff'
+  return (
+    <g>
+      {visible}
+      <path
+        data-edge={edgeId}
+        d={path}
+        role={focusable ? 'button' : undefined}
+        tabIndex={focusable ? 0 : undefined}
+        aria-label={focusable ? label : undefined}
+        aria-hidden={focusable ? undefined : true}
+        vectorEffect="non-scaling-stroke"
+        fill="none"
+        strokeWidth={14}
+        className={`cursor-pointer outline-none ${tone === 'handoff' ? 'stroke-transparent hover:stroke-fuchsia-300/20 focus-visible:stroke-fuchsia-300/35' : 'stroke-transparent hover:stroke-cyan-300/15'}`}
+        style={{ pointerEvents: 'stroke' }}
+        onClick={event => { event.stopPropagation(); onSelect() }}
+        onKeyDown={event => {
+          if (event.key !== 'Enter' && event.key !== ' ') return
+          event.preventDefault()
+          onSelect()
+        }}
+      >
+        {!focusable && label && <title>{label}</title>}
+      </path>
+    </g>
   )
 }
 

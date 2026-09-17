@@ -55,6 +55,7 @@ try {
     const assignments = seedAssignments()
     let handoffs = seedHandoffs()
     const handoffPosts = []
+    const handoffDeletes = []
     let failNextHandoff = true
     await page.routeWebSocket('**/ws', ws => ws.onMessage(() => {}))
     await page.route('**/api/**', async route => {
@@ -81,6 +82,12 @@ try {
           handoffs = [handoff, ...handoffs]
           body = { handoff, assignment: target }
         }
+      }
+      else if (path.startsWith('/api/handoffs/') && method === 'DELETE') {
+        const id = path.split('/')[3]
+        handoffDeletes.push(id)
+        handoffs = handoffs.filter(item => item.id !== id)
+        body = { deleted: true }
       }
       else if (path === '/api/handoffs') body = { handoffs }
       else if (path === '/api/agent-world/layout') body = { layout: { version: 1, revision: 0, positions: {}, updated_at: null } }
@@ -145,9 +152,48 @@ try {
     await page.getByRole('heading', { name: 'Agent control map' }).waitFor()
     await page.screenshot({ path: join(output, `handoff-created-${width}.png`) })
 
+    // A6b: the created edge is selected and describes itself.
+    const edgeControls = page.getByRole('complementary', { name: 'Handoff controls' })
+    await edgeControls.waitFor()
+    let edgeText = await edgeControls.innerText()
+    assert.ok(edgeText.includes('Signal Scout · Scan repository'), edgeText)
+    assert.ok(edgeText.includes('Review Gate · Handoff: Scan repository'), edgeText)
+    assert.ok(edgeText.includes('2026-09-16 13:30 UTC'), edgeText)
+    await edgeControls.getByRole('button', { name: 'Close handoff controls' }).click()
+    await edgeControls.waitFor({ state: 'detached' })
+
+    // Keyboard reaches an existing handoff edge; removal needs a confirm.
+    const existingEdge = page.getByRole('button', { name: 'Handoff from Brief Writer to Review Gate, queued, created 2026-09-16 12:05 UTC' })
+    await existingEdge.focus()
+    await page.keyboard.press('Enter')
+    await edgeControls.waitFor()
+    edgeText = await edgeControls.innerText()
+    assert.ok(edgeText.includes('Brief Writer → Review Gate'), edgeText)
+    assert.ok(edgeText.includes('queued'), edgeText)
+    assert.ok(edgeText.includes('Brief Writer · Draft summary'), edgeText)
+    await edgeControls.getByRole('button', { name: 'Remove handoff' }).click()
+    await edgeControls.getByText('Remove this handoff? The target assignment stays in the queue.').waitFor()
+    await page.screenshot({ path: join(output, `handoff-remove-confirm-${width}.png`) })
+    await edgeControls.getByRole('button', { name: 'Keep handoff' }).click()
+    assert.deepEqual(handoffDeletes, [])
+    await edgeControls.getByRole('button', { name: 'Remove handoff' }).click()
+    await edgeControls.getByRole('button', { name: 'Confirm remove' }).click()
+    await edgeControls.waitFor({ state: 'detached' })
+    await page.locator('[data-edge="handoff:hof-existing"]').waitFor({ state: 'detached' })
+    assert.deepEqual(handoffDeletes, ['hof-existing'])
+    assert.equal(await page.locator('[data-edge="handoff:hof-new"]').count(), 1)
+
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false)
+
+    // Selecting an agent-to-assignment edge opens that assignment.
+    await page.locator('[data-edge="hierarchy:asg-draft"]').click()
+    await page.getByRole('heading', { name: 'Assignment queue' }).waitFor()
+    await page.getByText('Assignment controls', { exact: true }).waitFor()
+    await page.locator('div.text-lg', { hasText: 'Draft summary' }).waitFor()
+
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false)
     assert.deepEqual(errors, [])
-    console.log(`${width}px: wire to confirmed handoff with inline error and new edge passed`)
+    console.log(`${width}px: wire to confirmed handoff, inline error, edge inspect, keyboard edge remove with confirm, edge opens assignment passed`)
     await context.close()
   }
 } finally {
