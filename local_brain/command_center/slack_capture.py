@@ -227,6 +227,9 @@ async def promote_idea(idea_id: str, body: PromoteRequest):
     # Refuse before the Brain call so a disabled post never leaves a half-promoted capture.
     if body.post_to_slack and not slack_memory_posts.configured():
         raise HTTPException(status_code=409, detail="memory_posting_disabled")
+    # Read the destination now: a config change during the Brain call must not turn
+    # a saved fact into a refused promotion. Delivery re-checks the channel anyway.
+    post_channel_id = slack_memory_posts.channel_id() if body.post_to_slack else ""
     idea = _load_idea(idea_id)
     if idea["status"] == "promoted":
         raise HTTPException(status_code=409, detail="idea_already_promoted")
@@ -250,7 +253,6 @@ async def promote_idea(idea_id: str, body: PromoteRequest):
         raise HTTPException(status_code=422, detail="memory_quality_rejected") from exc
     except MemoryUnavailable as exc:
         raise HTTPException(status_code=503, detail="brain_unavailable") from exc
-    post_channel_id = slack_memory_posts.channel_id() if body.post_to_slack else ""
     post_body = (
         memory_post_text(
             idea, memory_id=memory["id"], category=body.category, priority=body.priority

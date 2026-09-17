@@ -186,6 +186,28 @@ def test_posting_disabled_refuses_before_brain(app, env, monkeypatch, name, valu
     assert status["memory_posts_configured"] is False
 
 
+def test_config_change_during_brain_call_still_records_promotion(app, env, monkeypatch):
+    idea = capture(env.inbox)
+
+    def handler(request):
+        monkeypatch.setenv("AIIA_SLACK_MEMORY_POST_CHANNEL_ID", "")
+        return httpx.Response(200, json={"id": "project_7_7"})
+
+    brain(monkeypatch, handler)
+    response = call(
+        app,
+        "POST",
+        f"/api/memory-inbox/{idea['id']}/promote",
+        {"post_to_slack": True},
+    )
+    # The Brain fact exists, so the capture must not be left unreviewed.
+    assert response.status_code == 200, response.text
+    assert env.inbox.get(idea["id"])["status"] == "promoted"
+    monkeypatch.setenv("AIIA_SLACK_MEMORY_POST_CHANNEL_ID", "C0ELSEWHERE")
+    deliver(env.inbox, lambda r: pytest.fail("changed destination must not be dialed"))
+    assert env.inbox.get(idea["id"])["memory_post_error"] == "destination_not_allowed"
+
+
 def test_post_rolls_back_with_the_promotion(env):
     idea = capture(env.inbox, thread="1789260567.123456")
     with env.inbox.connect() as db:
