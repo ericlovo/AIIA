@@ -6,6 +6,30 @@ All notable changes to AIIA are documented here. This project adheres to
 
 ## [Unreleased]
 
+## [0.6.0] — 2026-09-17
+
+Five months and 159 commits since 0.5.0, in three themes.
+
+**Agent Studio became a working fleet console.** Assignments and typed handoffs,
+a durable run ledger with attempt history and measured tokens per run, and human
+review of every completed output: accept, reject, or dismiss, with dismissal
+kept separate from the verdict. The Map now inspects, tunes and runs agents,
+creates handoffs in place, and modulates a whole suite at once, and each agent
+can run on its own installed local model.
+
+**A Slack memory loop for the team workspace.** Mentions and a slash command in
+allowlisted channels are captured to a local inbox, reviewed in Studio, logged to
+Brain memory with provenance, and, on explicit per-memory approval, posted back
+with a priority to one private channel. Every other cloud egress stays denied by
+air-gap mode, fail-closed, with each denial reported as audit evidence.
+
+**Foundations.** Air-gap mode itself, the Grok Voice Conductor, the unified
+`aiia` CLI, an Agent-to-Agent protocol module, the Command Center authenticating
+every Brain call, and a run of durability fixes so storage failures roll back
+instead of lying.
+
+Per-feature entries follow.
+
 ### Added
 - **Agent modulation from the Map.** The Map inspector shows an agent's real
   configuration (model, temperature, tokens, tools, skills, repository, suite,

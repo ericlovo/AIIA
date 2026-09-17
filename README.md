@@ -13,7 +13,7 @@ Copilot — pick your tool. The mirror works the same.
 
 Open source. Apache 2.0. Local-first. Free model. Your data stays yours.
 
-[![Version](https://img.shields.io/badge/version-0.5.0-blue)](./CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.6.0-blue)](./CHANGELOG.md)
 [![License](https://img.shields.io/badge/license-Apache%202.0-green)](./LICENSE)
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue)](./pyproject.toml)
 [![Status](https://img.shields.io/badge/status-beta-yellow)](#status)
@@ -151,7 +151,7 @@ public, under Apache 2.0.
 
 ## Status
 
-**v0.5.0 (Q2 2026).** Beta. Running in production on the author's machine
+**v0.6.0 (Q3 2026).** Beta. Running in production on the author's machine
 since February 2026. Interfaces stable but evolving — pin a version if
 you depend on it.
 
