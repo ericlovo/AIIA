@@ -208,6 +208,7 @@ export interface Agent {
   loop_max_runs_per_day: number;
   loop_runs_today: number;
   loop_day: string;
+  model?: string;
   suite?: string;
   memory_namespace?: string;
   status: 'idle' | 'running' | 'error';
@@ -217,6 +218,15 @@ export interface Agent {
   runs: AgentRun[];
   created_at: string;
   updated_at: string;
+}
+
+export interface AgentModel {
+  id: string;
+  label: string;
+  family: string;
+  parameter_size: string;
+  size_gb: number;
+  default: boolean;
 }
 
 export interface AgentRun {
@@ -382,6 +392,7 @@ export type AgentDefinition = Pick<Agent,
   'temperature' | 'max_tokens' | 'loop_enabled' | 'loop_interval_minutes' |
   'loop_task' | 'loop_max_runs_per_day'
 > & {
+  model?: string;
   suite?: string;
   memory_namespace?: string;
 };
@@ -596,6 +607,7 @@ export const api = {
 
   agents: () => get<{ agents: Agent[] }>('/api/agents'),
   agentSuites: () => get<{ suites: AgentSuite[] }>('/api/agent-suites'),
+  agentModels: () => get<{ default: string; models: AgentModel[] }>('/api/agents/models'),
   agentResources: () => get<{ repos: RepositoryResource[]; github: GitHubResource }>('/api/agents/resources'),
   createAgent: (data: AgentDefinition) =>
     post<{ agent: Agent }>('/api/agents', data),
@@ -603,6 +615,12 @@ export const api = {
     post<{ agent: Agent }>(`/api/agents/${id}/loop`, { enabled }),
   updateAgent: (id: string, data: AgentDefinition) =>
     put<{ agent: Agent }>(`/api/agents/${id}`, data),
+  patchAgent: (id: string, fields: Partial<AgentDefinition>) =>
+    fetch(`${BASE}/api/agents/${id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(fields),
+    }).then(res => parse<{ agent: Agent }>(res)),
   deleteAgent: (id: string) => del<{ deleted: boolean }>(`/api/agents/${id}`),
   runAgent: (id: string, task: string) =>
     post<{ agent: Agent; model: string; latency_ms: number }>(`/api/agents/${id}/run`, { task }),

@@ -1,6 +1,7 @@
 import { useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { reconcileLayout } from './graphLayout'
+import { AgentInspector } from './AgentInspector'
 import type { Agent, AgentWorldPoint, Assignment, Handoff } from '../lib/api'
 
 interface AgentGraphOverlayProps {
@@ -400,19 +401,26 @@ export function AgentGraphOverlay({
         </div>, inspectorHost
       )}
 
-      {selected && !connectFrom && !wireDrag && inspectorHost && createPortal(
-        <NodeInspector
-          node={selected}
+      {selected && !connectFrom && !wireDrag && inspectorHost && createPortal(selected.agent ? (
+        <AgentInspector
+          key={selected.agent.id}
+          agent={selected.agent}
           onClose={() => setSelectedId(null)}
           onManageAgent={onManageAgent}
           onAssignAgent={onAssignAgent}
+        />
+      ) : (
+        <NodeInspector
+          node={selected}
+          onClose={() => setSelectedId(null)}
           onOpenAssignment={onOpenAssignment}
           onConnect={setConnectFrom}
           runningAssignmentId={runningAssignmentId}
           assignmentRunTargetId={assignmentRunTargetId}
           runError={assignmentRunError}
           onRunAssignment={onRunAssignment}
-        />, inspectorHost
+        />
+      ), inspectorHost
       )}
     </div>
   )
@@ -459,8 +467,6 @@ function AssignmentNode({ assignment }: { assignment: Assignment }) {
 interface NodeInspectorProps {
   node: GraphNode
   onClose: () => void
-  onManageAgent: (agentId: string) => void
-  onAssignAgent: (agentId: string) => void
   onOpenAssignment: (assignmentId: string) => void
   onConnect: (assignmentId: string) => void
   runningAssignmentId: string | null
@@ -469,8 +475,7 @@ interface NodeInspectorProps {
   onRunAssignment: (assignmentId: string) => Promise<void>
 }
 
-function NodeInspector({ node, onClose, onManageAgent, onAssignAgent, onOpenAssignment, onConnect, runningAssignmentId, assignmentRunTargetId, runError, onRunAssignment }: NodeInspectorProps) {
-  const agent = node.agent
+function NodeInspector({ node, onClose, onOpenAssignment, onConnect, runningAssignmentId, assignmentRunTargetId, runError, onRunAssignment }: NodeInspectorProps) {
   const assignment = node.assignment
   const runnable = assignment?.status === 'queued' || assignment?.status === 'failed'
   const isRunning = assignment?.id === runningAssignmentId
@@ -479,16 +484,14 @@ function NodeInspector({ node, onClose, onManageAgent, onAssignAgent, onOpenAssi
       <div className="flex items-start justify-between gap-3">
         <div>
           <div className="text-[9px] font-semibold tracking-[0.18em] uppercase text-cyan-300/70">{node.kind} controls</div>
-          <div className="mt-1 text-sm font-medium text-white">{agent?.name ?? assignment?.title}</div>
+          <div className="mt-1 text-sm font-medium text-white">{assignment?.title}</div>
         </div>
         <button type="button" onClick={onClose} className="text-lg leading-none text-white/30 hover:text-white" aria-label="Close node controls">×</button>
       </div>
-      <p className="mt-3 line-clamp-4 text-xs leading-relaxed text-white/45">{agent?.mission ?? assignment?.objective}</p>
+      <p className="mt-3 line-clamp-4 text-xs leading-relaxed text-white/45">{assignment?.objective}</p>
       {assignment && <div className="mt-3 text-[9px] font-semibold tracking-[0.16em] uppercase text-white/35">{assignment.status} · {assignment.priority} priority</div>}
       {assignment?.id === assignmentRunTargetId && runError && <div className="mt-3 border border-red-900/60 bg-red-950/40 px-3 py-2 text-xs text-red-300">{runError}</div>}
       <div className="mt-4 flex flex-wrap gap-2">
-        {agent && <button type="button" onClick={() => onAssignAgent(agent.id)} className="bg-cyan-300 px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-neutral-950">Assign work</button>}
-        {agent && <button type="button" onClick={() => onManageAgent(agent.id)} className="border border-white/15 px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-white/70 hover:border-white/40">Edit agent</button>}
         {runnable && <button type="button" disabled={isRunning} onClick={() => { void onRunAssignment(assignment.id).catch(() => undefined) }} className="bg-amber-300 px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-neutral-950 disabled:cursor-wait disabled:opacity-50">{isRunning ? 'Mini working' : assignment.status === 'failed' ? 'Retry assignment' : 'Run assignment'}</button>}
         {assignment && <button type="button" onClick={() => onOpenAssignment(assignment.id)} className="bg-cyan-300 px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-neutral-950">Open work</button>}
         {assignment?.status === 'completed' && assignment.result && <button type="button" onClick={() => onConnect(assignment.id)} className="border border-fuchsia-400/50 px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-fuchsia-200 hover:border-fuchsia-200">Connect handoff</button>}
