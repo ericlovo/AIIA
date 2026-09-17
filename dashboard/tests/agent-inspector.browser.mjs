@@ -72,6 +72,8 @@ try {
     const runCalls = []
     let holdRun = null
     let miniBusy = false
+    // Makes the next PATCH fail with a server error the UI has no special wording for.
+    let serverError = false
     await page.routeWebSocket('**/ws', ws => ws.onMessage(() => {}))
     await page.route('**/api/**', async route => {
       const path = new URL(route.request().url()).pathname
@@ -89,7 +91,8 @@ try {
         const agent = agents.find(item => item.id === id)
         // Mirror contract C1 and C2 on the merged result.
         const merged = { ...agent, ...fields }
-        if (!agent) { status = 404; body = { detail: 'agent_not_found' } }
+        if (serverError) { serverError = false; status = 500; body = { detail: 'Agent store is locked.' } }
+        else if (!agent) { status = 404; body = { detail: 'agent_not_found' } }
         else if (merged.loop_enabled && !merged.loop_task.trim()) { status = 422; body = { detail: 'loop_task_required' } }
         else if ('model' in fields && fields.model && modelsDown) { status = 503; body = { detail: 'models_unavailable' } }
         else if ('model' in fields && fields.model && !installed.has(fields.model)) { status = 422; body = { detail: 'unknown_model' } }
@@ -324,6 +327,47 @@ try {
     await settings.getByLabel('Max tokens', { exact: true }).press('Enter')
     await until(() => agents[2].max_tokens === 900, 'running agent PATCH not applied')
     assert.deepEqual(patchCalls.at(-1), { id: 'agent-3', fields: { max_tokens: 900 } })
+
+    // Every control is labelled and reachable with Tab, in reading order.
+    await inspector.getByRole('button', { name: 'Close node controls' }).click()
+    await page.locator('[data-agent-target="agent-2"]').press('Enter')
+    await inspector.getByText('Docs Scout', { exact: true }).waitFor()
+    await inspector.getByRole('form', { name: 'Run agent' }).getByLabel('Task for this run', { exact: true }).fill('Check the docs.')
+    await inspector.getByRole('button', { name: 'Close node controls' }).focus()
+    const reached = []
+    for (let i = 0; i < 11; i++) {
+      await page.keyboard.press('Tab')
+      reached.push(await page.evaluate(() => {
+        const el = document.activeElement
+        const name = el.labels?.[0]?.textContent || el.getAttribute('aria-label') || el.textContent
+        return `${el.tagName.toLowerCase()}:${(name || '').trim()}`
+      }))
+    }
+    assert.deepEqual(reached, [
+      'select:Model', 'input:Temperature', 'input:Max tokens', 'input:Suite', 'input:Loop',
+      'input:Loop interval (min)', 'input:Loop runs per day', 'textarea:Task for this run',
+      'button:Run now', 'button:Assign work', 'button:Edit agent',
+    ])
+
+    // A failure on a field low in a scrolled inspector is reported beside that field, in view.
+    const dailyMax = settings.getByLabel('Loop runs per day', { exact: true })
+    await inspector.evaluate(element => { element.scrollTop = element.scrollHeight })
+    const sentBefore = patchCalls.length
+    serverError = true
+    await dailyMax.fill('7')
+    await dailyMax.press('Enter')
+    const dailyAlert = inspector.getByRole('alert')
+    await dailyAlert.getByText('Loop daily maximum not saved: Agent store is locked.', { exact: true }).waitFor()
+    assert.equal(patchCalls.length, sentBefore + 1)
+    assert.deepEqual(patchCalls.at(-1), { id: 'agent-2', fields: { loop_max_runs_per_day: 7 } })
+    assert.equal(await dailyMax.inputValue(), '4', 'the failed value rolls back')
+    const shown = await page.evaluate(() => {
+      const box = document.querySelector('[aria-label="Node controls"]').getBoundingClientRect()
+      const message = document.querySelector('[aria-label="Node controls"] [role="alert"]').getBoundingClientRect()
+      return message.top >= box.top && message.bottom <= box.bottom && message.bottom <= innerHeight
+    })
+    assert.equal(shown, true, 'the rollback message must be visible without scrolling back up')
+    await page.screenshot({ path: join(output, `inspector-rollback-scrolled-${width}.png`) })
 
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false)
     assert.deepEqual(errors, [])

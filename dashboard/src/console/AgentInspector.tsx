@@ -42,7 +42,8 @@ export function AgentInspector({ agent, onClose, onManageAgent, onAssignAgent }:
   const ledger = useRef<PatchLedger>({})
   const seq = useRef(0)
   const [pending, setPending] = useState<AgentPatch>({})
-  const [failure, setFailure] = useState('')
+  // The message sits beside the field that rolled back, so it is in view wherever the inspector is scrolled.
+  const [failure, setFailure] = useState<{ field: string; text: string } | null>(null)
   const view = { ...agent, ...pending }
 
   function settle(fields: AgentPatch, id: number, record: Agent | null): AgentPatch {
@@ -58,7 +59,7 @@ export function AgentInspector({ agent, onClose, onManageAgent, onAssignAgent }:
   const patch = useMutation({
     mutationFn: ({ fields }: { fields: AgentPatch; id: number }) => api.patchAgent(agent.id, fields),
     onMutate: async ({ fields, id }) => {
-      setFailure('')
+      setFailure(null)
       const cached = queryClient.getQueryData<AgentsData>(['agents'])?.agents.find(item => item.id === agent.id)
       ledger.current = beginPatch(ledger.current, cached ?? agent, fields, id)
       setPending(pendingValues(ledger.current))
@@ -72,7 +73,7 @@ export function AgentInspector({ agent, onClose, onManageAgent, onAssignAgent }:
       // A failure for an edit that a newer edit of the same field replaced is moot, so it says nothing.
       const newest = isNewestEdit(ledger.current, fields, id)
       settle(fields, id, null)
-      if (newest) setFailure(patchFailureMessage(fields, error.message))
+      if (newest) setFailure({ field: Object.keys(fields)[0], text: patchFailureMessage(fields, error.message) })
     },
   })
 
@@ -123,9 +124,8 @@ export function AgentInspector({ agent, onClose, onManageAgent, onAssignAgent }:
 
       <section aria-label="Agent settings" className="mt-4">
         {agent.status === 'running' && <p role="status" className="mb-3 border border-amber-300/30 bg-amber-950/30 px-2.5 py-1.5 text-[11px] text-amber-200">Running now. Changes apply to the next run.</p>}
-        {failure && <p role="alert" className="mb-3 border border-red-900/60 bg-red-950/40 px-2.5 py-1.5 text-[11px] text-red-300">{failure}</p>}
         <div className="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-3 gap-y-2 text-[11px]">
-          <Field label="Model">
+          <Field label="Model" failure={failure?.field === 'model' ? failure.text : ''}>
             {id => (
               <select id={id} value={view.model ?? ''} onChange={event => change({ model: event.target.value })} className={CONTROL}>
                 {choices.map(choice => <option key={choice.id} value={choice.id}>{choice.label}</option>)}
@@ -133,16 +133,16 @@ export function AgentInspector({ agent, onClose, onManageAgent, onAssignAgent }:
             )}
           </Field>
           {models.isError && <p className="col-span-2 -mt-1 text-[10px] text-amber-200/80">Model list unavailable: {readableError(models.error.message)}</p>}
-          <Field label="Temperature">
+          <Field label="Temperature" failure={failure?.field === 'temperature' ? failure.text : ''}>
             {id => <NumberInput id={id} label="Temperature" value={view.temperature} step={0.05} limits={NUMBER_LIMITS.temperature} onCommit={value => change({ temperature: value })} />}
           </Field>
-          <Field label="Max tokens">
+          <Field label="Max tokens" failure={failure?.field === 'max_tokens' ? failure.text : ''}>
             {id => <NumberInput id={id} label="Max tokens" value={view.max_tokens} step={50} limits={NUMBER_LIMITS.max_tokens} onCommit={value => change({ max_tokens: value })} />}
           </Field>
-          <Field label="Suite">
+          <Field label="Suite" failure={failure?.field === 'suite' ? failure.text : ''}>
             {id => <TextInput id={id} value={view.suite ?? ''} maxLength={SUITE_MAX_LENGTH} placeholder="None" onCommit={value => change({ suite: value })} />}
           </Field>
-          <Field label="Loop">
+          <Field label="Loop" failure={failure?.field === 'loop_enabled' ? failure.text : ''}>
             {id => (
               <div className="flex items-center gap-2 text-white/75">
                 <input id={id} type="checkbox" checked={Boolean(view.loop_enabled)} aria-describedby={`${id}-summary`} onChange={event => change({ loop_enabled: event.target.checked })} className="accent-cyan-300" />
@@ -150,10 +150,10 @@ export function AgentInspector({ agent, onClose, onManageAgent, onAssignAgent }:
               </div>
             )}
           </Field>
-          <Field label="Loop interval (min)">
+          <Field label="Loop interval (min)" failure={failure?.field === 'loop_interval_minutes' ? failure.text : ''}>
             {id => <NumberInput id={id} label="Loop interval" value={view.loop_interval_minutes} step={15} limits={NUMBER_LIMITS.loop_interval_minutes} onCommit={value => change({ loop_interval_minutes: value })} />}
           </Field>
-          <Field label="Loop runs per day">
+          <Field label="Loop runs per day" failure={failure?.field === 'loop_max_runs_per_day' ? failure.text : ''}>
             {id => <NumberInput id={id} label="Loop daily maximum" value={view.loop_max_runs_per_day} step={1} limits={NUMBER_LIMITS.loop_max_runs_per_day} onCommit={value => change({ loop_max_runs_per_day: value })} />}
           </Field>
         </div>
@@ -216,12 +216,15 @@ function ConfigRow({ label, children }: { label: string; children: ReactNode }) 
   )
 }
 
-function Field({ label, children }: { label: string; children: (id: string) => ReactNode }) {
+function Field({ label, failure, children }: { label: string; failure: string; children: (id: string) => ReactNode }) {
   const id = useId()
   return (
     <>
       <label htmlFor={id} className="text-white/35">{label}</label>
-      <div className="min-w-0">{children(id)}</div>
+      <div className="min-w-0">
+        {children(id)}
+        {failure && <p role="alert" className="mt-1 border border-red-900/60 bg-red-950/40 px-2 py-1 text-[10px] leading-snug text-red-300">{failure}</p>}
+      </div>
     </>
   )
 }
