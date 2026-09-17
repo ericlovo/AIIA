@@ -35,7 +35,7 @@ export function SuiteLegend({ groups, activeSuite, onSelect, onTune }: SuiteLege
         </button>
       ))}
       {activeSuite && (
-        <button type="button" onClick={() => onTune(activeSuite)} className="border border-cyan-400/50 px-2 py-1 text-cyan-200 hover:border-cyan-200">
+        <button type="button" title={`Tune ${activeSuite} suite`} onClick={() => onTune(activeSuite)} className="max-w-full truncate border border-cyan-400/50 px-2 py-1 text-cyan-200 hover:border-cyan-200">
           Tune {activeSuite} suite
         </button>
       )}

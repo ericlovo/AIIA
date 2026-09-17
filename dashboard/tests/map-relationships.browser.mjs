@@ -247,9 +247,14 @@ try {
     await suitePanel.getByLabel('Model id', { exact: true }).fill('qwen3:8b')
     await suitePanel.getByLabel('Temperature', { exact: true }).fill('0.62')
     await suitePanel.getByLabel('Max tokens', { exact: true }).fill('1600')
+    await suitePanel.getByLabel('Loop', { exact: true }).selectOption('off')
+    await suitePanel.getByLabel('Loop interval minutes', { exact: true }).fill('30')
+    await suitePanel.getByLabel('Loop runs per day', { exact: true }).fill('6')
     await suitePanel.getByRole('button', { name: 'Apply to 2 agents' }).evaluate(button => { button.click(); button.click() })
     await suitePanel.getByRole('status').filter({ hasText: 'Updated 2 agents in research.' }).waitFor()
-    assert.deepEqual(suitePatches, [{ model: 'qwen3:8b', temperature: 0.62, max_tokens: 1600 }])
+    assert.deepEqual(suitePatches, [{ model: 'qwen3:8b', temperature: 0.62, max_tokens: 1600, loop_enabled: false, loop_interval_minutes: 30, loop_max_runs_per_day: 6 }])
+    assert.deepEqual(agents.filter(item => item.suite === 'research').map(item => [item.loop_enabled, item.loop_interval_minutes, item.loop_max_runs_per_day]), [[false, 30, 6], [false, 30, 6]])
+    assert.equal(await suitePanel.getByLabel('Loop', { exact: true }).inputValue(), 'keep')
     await page.waitForFunction(() => document.querySelector('[data-suite-summary]')?.textContent === 'Now: temperature 0.62 · max tokens 1600 · loop off')
     assert.deepEqual(agents.filter(item => item.suite === 'research').map(item => [item.temperature, item.max_tokens, item.model]), [[0.62, 1600, 'qwen3:8b'], [0.62, 1600, 'qwen3:8b']])
     assert.equal(agents.find(item => item.id === 'agent-gate').temperature, 0.35)
@@ -357,9 +362,88 @@ try {
     assert.equal(await composer.count(), 0)
     assert.equal(handoffPosts.length, 2)
 
+    // Handoff edges are real tab stops, reached with Tab rather than programmatic focus.
+    await page.locator('body').click({ position: { x: 1, y: 1 } })
+    let reached = ''
+    for (let step = 0; step < 120 && !reached; step++) {
+      await page.keyboard.press('Tab')
+      reached = await page.evaluate(() => document.activeElement?.getAttribute('data-edge')?.startsWith('handoff:') ? document.activeElement.getAttribute('aria-label') : '')
+    }
+    assert.match(reached, /^Handoff from Brief Writer to Review Gate, queued, created 2026-09-16 12:05 UTC$/)
+    await page.keyboard.press(' ')
+    await edgeControls.waitFor()
+    await edgeControls.getByRole('button', { name: 'Close handoff controls' }).click()
+
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false)
     assert.deepEqual(errors, [])
     console.log(`${width}px: wire to confirmed handoff, inline error, edge inspect, keyboard edge remove with confirm, edge opens assignment, suite colours and filter, suite patch applied and rejected passed`)
+    await context.close()
+  }
+
+  // Many suites, including a maximum-length slug, still fit the toolbar and the Map at both widths.
+  for (const width of [1440, 390]) {
+    const context = await browser.newContext({ viewport: { width, height: 900 } })
+    const page = await context.newPage()
+    page.setDefaultTimeout(12000)
+    const errors = []
+    page.on('pageerror', error => errors.push(error.message))
+    const longSlug = `s${'x'.repeat(62)}`
+    const agents = Array.from({ length: 36 }, (_, i) => ({
+      ...agentBase, id: `agent-${i}`, name: `Agent ${i}`, mission: 'Synthetic.', suite: i % 3 === 2 ? '' : i === 0 ? longSlug : `suite-${i % 12}`,
+    }))
+    await page.routeWebSocket('**/ws', ws => ws.onMessage(() => {}))
+    await page.route('**/api/**', async route => {
+      const path = new URL(route.request().url()).pathname
+      let body = {}
+      if (path === '/api/agents') body = { agents }
+      else if (path === '/api/agents/resources') body = { repos: [], github: { status: 'disconnected' } }
+      else if (path === '/api/assignments') body = { assignments: [] }
+      else if (path === '/api/handoffs') body = { handoffs: [] }
+      else if (path === '/api/agent-world/layout') body = { layout: { version: 1, revision: 0, positions: {}, updated_at: null } }
+      else if (path === '/api/git-workspaces') body = { workspaces: [] }
+      else if (path === '/api/git-writes') body = { writes: [] }
+      else if (path === '/api/tasks') body = []
+      else if (path === '/api/health') body = { aiia: { status: 'online' }, ollama: { status: 'online' } }
+      else if (path === '/api/monitor') body = { services: {} }
+      else if (path === '/api/voice/status') body = { available: false }
+      else if (path === '/api/tokens/today') body = { date, total_tokens: 0, total_requests: 0, total_cost: 0, by_provider: {}, by_purpose: {} }
+      else if (path === '/api/tokens/recent') body = { days: [] }
+      else if (path === '/api/studio/activity') body = { today: date, start: date, days: [], agent_days: [], runs: [], total: 0, matching: 0, imported: 0, usage_by_agent: [] }
+      else if (path === '/api/memory-inbox') body = { ideas: [], total: 0, offset: 0, counts: { unreviewed: 0, promoted: 0, dismissed: 0 } }
+      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(body) })
+    })
+    await page.goto(process.env.STUDIO_URL || 'http://127.0.0.1:5192/')
+    await page.getByRole('tab', { name: 'Map', exact: true }).click()
+    await page.waitForFunction(() => document.querySelectorAll('[data-graph-node]').length === 36)
+    const legend = page.getByRole('group', { name: 'Suite legend' })
+    const expectedSuites = new Set(agents.map(item => item.suite).filter(Boolean))
+    assert.equal(await legend.getByRole('button', { name: / suite, \d+ agents?$/ }).count(), expectedSuites.size)
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false)
+    await legend.getByRole('button', { name: `${longSlug} suite, 1 agent` }).click()
+    await page.waitForFunction(() => document.querySelectorAll('[data-graph-node]').length === 1)
+    const tune = legend.getByRole('button', { name: `Tune ${longSlug} suite` })
+    // A long suite name must not push the control past the viewport, where an
+    // overflow-hidden ancestor would clip it and shift the whole toolbar.
+    for (const control of [tune, legend.getByRole('button', { name: `${longSlug} suite, 1 agent` })]) {
+      const box = await control.evaluate(button => { const rect = button.getBoundingClientRect(); return { left: rect.left, right: rect.right } })
+      assert.ok(box.left >= 0 && box.right <= width, `${JSON.stringify(box)} at ${width}px`)
+    }
+    await tune.click()
+    await page.getByRole('complementary', { name: `Tune ${longSlug} suite` }).waitFor()
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false)
+    await page.screenshot({ path: join(output, `many-suites-${width}.png`) })
+    await legend.getByRole('button', { name: 'All agents' }).click()
+    await page.waitForFunction(() => document.querySelectorAll('[data-graph-node]').length === 36)
+    const boxes = await page.locator('[data-graph-node]').evaluateAll(nodes => nodes.map(node => node.getBoundingClientRect()).map(({ left, top, right, bottom }) => ({ left, top, right, bottom })))
+    for (let i = 0; i < boxes.length; i++) {
+      for (let j = i + 1; j < boxes.length; j++) {
+        const a = boxes[i]
+        const b = boxes[j]
+        assert.ok(a.right <= b.left || b.right <= a.left || a.bottom <= b.top || b.bottom <= a.top, `Nodes ${i} and ${j} overlap at ${width}px`)
+      }
+    }
+    assert.deepEqual(errors, [])
+    console.log(`${width}px: ${expectedSuites.size} suites with a maximum-length slug fit, filter and lay out without overlap`)
     await context.close()
   }
 } finally {
