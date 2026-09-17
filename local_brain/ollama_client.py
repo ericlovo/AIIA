@@ -80,6 +80,7 @@ class OllamaClient:
         stream: bool = False,
         num_ctx: int = 32768,
         timeout: float | None = None,
+        think: bool | None = None,
     ) -> dict[str, Any]:
         """
         Send a chat completion request to Ollama.
@@ -93,6 +94,10 @@ class OllamaClient:
             stream: Whether to stream the response
             num_ctx: Context window size (32768 default, use 4096 for voice)
             timeout: Override default timeout (seconds) — use for slow models like DeepSeek R1
+            think: Reasoning toggle for thinking-capable models (qwen3, ...). None
+                omits the flag and keeps the model default, which for qwen3 is ON:
+                hidden reasoning then counts against max_tokens and can consume
+                the whole budget, leaving content empty.
 
         Returns:
             Ollama chat response dict with message, usage info, timing
@@ -115,6 +120,8 @@ class OllamaClient:
                 "num_gpu": 99,
             },
         }
+        if think is not None:
+            payload["think"] = think
 
         start = time.monotonic()
 
