@@ -284,7 +284,7 @@ export function AgentWorldCanvas({
             viewport.scrollTo(0, 0)
           }}><Maximize2 size={15} /></button>
         </div>
-        <SuiteLegend groups={suites} activeSuite={activeSuite} onSelect={setSuiteFilter} onTune={setTuningSuite} />
+        <SuiteLegend groups={suites} activeSuite={activeSuite} onSelect={slug => { setSuiteFilter(slug); setTuningSuite(null) }} onTune={setTuningSuite} />
       </div>
       {(agentError || assignmentLoadError || handoffLoadError || layoutLoadError) && <div role="alert" className="px-5 py-2 text-xs text-amber-200">Map data is incomplete. <button type="button" className="underline" onClick={() => { for (const key of ['agents', 'assignments', 'handoffs', 'agent-world-layout']) void queryClient.invalidateQueries({ queryKey: [key] }) }}>Retry</button></div>}
       {!loading && !agentError && agents.length === 0 && <p role="status" className="px-5 py-3 text-sm text-neutral-400">No agents configured.</p>}

@@ -93,7 +93,7 @@ export function SuitePanel({ group, members, onApply, onClose }: SuitePanelProps
         </div>
         <div className="grid grid-cols-2 gap-2">
           <label className="block text-[10px] text-white/50">Temperature
-            <input aria-label="Temperature" type="number" min="0" max="1" step="0.05" inputMode="decimal" value={form.temperature} onChange={event => update({ temperature: event.target.value })} placeholder={current.temperature} className={`${inputClass} mt-1`} />
+            <input aria-label="Temperature" type="number" min="0" max="1" step="any" inputMode="decimal" value={form.temperature} onChange={event => update({ temperature: event.target.value })} placeholder={current.temperature} className={`${inputClass} mt-1`} />
           </label>
           <label className="block text-[10px] text-white/50">Max tokens
             <input aria-label="Max tokens" type="number" min="128" max="2000" step="1" inputMode="numeric" value={form.maxTokens} onChange={event => update({ maxTokens: event.target.value })} placeholder={current.maxTokens} className={`${inputClass} mt-1`} />
