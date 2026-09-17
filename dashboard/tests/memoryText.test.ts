@@ -31,4 +31,6 @@ test('memoryPostLabel reports approved posts and stays silent when none was requ
   assert.deepEqual(memoryPostLabel('pending', 'rate_limited'), { tone: 'pending', text: 'Post queued for #aiia-memory' })
   assert.deepEqual(memoryPostLabel('failed', 'not_in_channel'), { tone: 'failed', text: 'Post to #aiia-memory failed: not_in_channel' })
   assert.equal(memoryPostLabel(null, null), null)
+  assert.deepEqual(memoryPostLabel(null, null, true), { tone: 'none', text: 'Same memory already posted to #aiia-memory from another capture' })
+  assert.deepEqual(memoryPostLabel('sent', '', true).tone, 'sent')
 })

@@ -17,11 +17,16 @@ export function receiptLabel(status: string | null, error: string | null, noun: 
 
 export const MEMORY_POST_CHANNEL = '#aiia-memory'
 
-/** Label for an approved memory post; null when no post was requested for the capture. */
-export function memoryPostLabel(status: string | null, error: string | null): { tone: ReceiptTone; text: string } | null {
+/**
+ * Label for an approved memory post; null when no post was requested for the capture.
+ * A requested post with no outbox row means the Brain matched an existing memory that
+ * another capture already queued: posts are keyed by memory, so it is not sent twice.
+ */
+export function memoryPostLabel(status: string | null, error: string | null, requested = false): { tone: ReceiptTone; text: string } | null {
   if (status === 'sent') return { tone: 'sent', text: `Posted to ${MEMORY_POST_CHANNEL}` }
   if (status === 'failed') return { tone: 'failed', text: `Post to ${MEMORY_POST_CHANNEL} failed${error ? `: ${error}` : ''}` }
   if (status === 'pending' || status === 'sending') return { tone: 'pending', text: `Post queued for ${MEMORY_POST_CHANNEL}` }
+  if (requested) return { tone: 'none', text: `Same memory already posted to ${MEMORY_POST_CHANNEL} from another capture` }
   return null
 }
 

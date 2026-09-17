@@ -49,7 +49,7 @@ export function MemoryLog({ agents, view, onViewChange }: { agents: Agent[]; vie
   const fail = (error: Error) => setNotice({ tone: 'error', text: describe(error.message) })
   const promote = useMutation({
     mutationFn: ({ id, category, priority, postToSlack }: { id: string; category: MemoryCategory; priority: MemoryPriority; postToSlack: boolean }) => api.promoteIdea(id, category, '', { priority, postToSlack }),
-    onSuccess: result => done(`Logged to AIIA memory as ${result.idea.memory_category} at ${priorityLabel(result.idea.priority).text.toLowerCase()} priority. ${receiptLabel(result.idea.promotion_status, null, 'Memory').text}.${result.idea.post_requested ? ` ${memoryPostLabel(result.idea.memory_post_status, null)?.text ?? `Post to ${MEMORY_POST_CHANNEL} requested`}.` : ''}`),
+    onSuccess: result => done(`Logged to AIIA memory as ${result.idea.memory_category} at ${priorityLabel(result.idea.priority).text.toLowerCase()} priority. ${receiptLabel(result.idea.promotion_status, null, 'Memory').text}.${result.idea.post_requested ? ` ${memoryPostLabel(result.idea.memory_post_status, null, true)?.text}.` : ''}`),
     onError: fail,
   })
   const dismiss = useMutation({ mutationFn: (id: string) => api.dismissIdea(id), onSuccess: () => done('Capture dismissed. It stays in the inbox under Dismissed.'), onError: fail })
@@ -140,7 +140,7 @@ function IdeaRow({ idea, busy, canPost, onPromote, onDismiss, onRestore, onRetry
   const [category, setCategory] = useState<MemoryCategory>('project')
   const [priority, setPriority] = useState<MemoryPriority>('normal')
   const [postToSlack, setPostToSlack] = useState(false)
-  const posted = memoryPostLabel(idea.memory_post_status, idea.memory_post_error)
+  const posted = memoryPostLabel(idea.memory_post_status, idea.memory_post_error, idea.post_requested === 1)
   const badge = priorityLabel(idea.priority)
   const text = captureText(idea.text) || '(mention only, no text)'
   const save = receiptLabel(idea.acknowledgement_status, idea.acknowledgement_error, 'Save')

@@ -144,6 +144,25 @@ def test_promote_with_post_enqueues_exactly_one_post(app, env, monkeypatch):
     assert status["memory_posts"] == {"pending": 1}
 
 
+def test_same_memory_from_two_captures_is_posted_once(app, env, monkeypatch):
+    first = capture(env.inbox, key="event:1")
+    second = capture(env.inbox, key="event:2")
+    # The Brain deduplicates an identical fact and returns the existing memory id.
+    brain(monkeypatch, lambda r: httpx.Response(200, json={"id": "project_3_3"}))
+    for idea in (first, second):
+        response = call(
+            app,
+            "POST",
+            f"/api/memory-inbox/{idea['id']}/promote",
+            {"post_to_slack": True},
+        )
+        assert response.status_code == 200, response.text
+    assert env.inbox.memory_post_status() == {"pending": 1}
+    row = env.inbox.get(second["id"])
+    assert row["status"] == "promoted" and row["post_requested"] == 1
+    assert row["memory_post_status"] is None
+
+
 def test_promote_without_post_queues_nothing(app, env, monkeypatch):
     idea = capture(env.inbox)
     brain(monkeypatch, lambda r: httpx.Response(200, json={"id": "project_1_1"}))
