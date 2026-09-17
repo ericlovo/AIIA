@@ -15,6 +15,16 @@ export function receiptLabel(status: string | null, error: string | null, noun: 
   return { tone: 'none', text: `No Slack thread for ${noun.toLowerCase()} receipt` }
 }
 
+export const MEMORY_POST_CHANNEL = '#aiia-memory'
+
+/** Label for an approved memory post; null when no post was requested for the capture. */
+export function memoryPostLabel(status: string | null, error: string | null): { tone: ReceiptTone; text: string } | null {
+  if (status === 'sent') return { tone: 'sent', text: `Posted to ${MEMORY_POST_CHANNEL}` }
+  if (status === 'failed') return { tone: 'failed', text: `Post to ${MEMORY_POST_CHANNEL} failed${error ? `: ${error}` : ''}` }
+  if (status === 'pending' || status === 'sending') return { tone: 'pending', text: `Post queued for ${MEMORY_POST_CHANNEL}` }
+  return null
+}
+
 export type PriorityTone = 'urgent' | 'high' | 'normal' | 'low'
 
 /** Badge text for a stored priority; anything unrecognised reads as normal, matching the column default. */

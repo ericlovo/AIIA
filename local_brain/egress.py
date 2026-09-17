@@ -4,7 +4,8 @@ Egress governance for AIIA.
 Every cloud-bound call site asks authorize_egress() before dialing out.
 Under AIIA_AIRGAP the decision is made locally — deny, except for the
 explicit AIRGAP_ALLOWED_EGRESS allowlist (Voice Conductor / xai.realtime
-ephemeral token mint) or the opt-in fixed Slack capture receipt transport.
+ephemeral token mint), the opt-in fixed Slack capture receipt transport, or the
+opt-in human-approved memory post to one allowlisted Slack channel.
 Denied attempts are still reported to
 Sanction so the denial lands in the audit trail. Outside air-gap the
 decision comes from Sanction's /authorize/tool endpoint and fails
@@ -41,6 +42,7 @@ EGRESS_POINTS = {
     "groq.whisper": "journal transcription",
     "slack.post": "Slack notify",
     "slack.capture_ack": "fixed local-memory save receipt (opt-in)",
+    "slack.memory_post": "human-approved memory post to one allowlisted channel (opt-in)",
     "google.tts": "TTS synthesis",
     "anthropic.claude_code": "execution engine / story runner",
     "web.fetch": "research literature loop",
@@ -49,8 +51,9 @@ EGRESS_POINTS = {
 
 PERMITTED_EGRESS = ["sanction control plane (metadata only)"]
 
-# Static exception for Voice Conductor. Save receipts are separately opt-in;
-# general slack.post remains denied even when capture acknowledgements are enabled.
+# Static exception for Voice Conductor. Save receipts and memory posts are each
+# separately opt-in below; never add them here. General slack.post remains denied
+# even when either Slack exception is enabled.
 AIRGAP_ALLOWED_EGRESS = frozenset({"xai.realtime"})
 
 _TIMEOUT = 5.0
@@ -58,8 +61,10 @@ _TIMEOUT = 5.0
 
 def airgap_allows_tool(tool: str) -> bool:
     """True if this tool is on the air-gap exception allowlist."""
-    return tool in AIRGAP_ALLOWED_EGRESS or (
-        tool == "slack.capture_ack" and os.getenv("AIIA_SLACK_ACK_ENABLED", "") == "1"
+    return (
+        tool in AIRGAP_ALLOWED_EGRESS
+        or (tool == "slack.capture_ack" and os.getenv("AIIA_SLACK_ACK_ENABLED", "") == "1")
+        or (tool == "slack.memory_post" and os.getenv("AIIA_SLACK_MEMORY_POST_ENABLED", "") == "1")
     )
 
 

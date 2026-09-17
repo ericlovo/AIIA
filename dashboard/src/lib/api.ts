@@ -288,6 +288,9 @@ export interface MemoryIdea {
   promotion_status: string | null;
   promotion_error: string | null;
   promotion_ts: string | null;
+  memory_post_status: string | null;
+  memory_post_error: string | null;
+  memory_post_ts: string | null;
 }
 
 export interface MemoryInboxPage {
@@ -306,6 +309,10 @@ export interface SlackCaptureStatus {
   acknowledgements_configured: boolean;
   acknowledgements: Record<string, number>;
   promotion_acknowledgements: Record<string, number>;
+  memory_posts_enabled: boolean;
+  memory_posts_configured: boolean;
+  memory_post_channel_id: string;
+  memory_posts: Record<string, number>;
 }
 
 export interface StudioActivity {
@@ -611,12 +618,12 @@ export const api = {
     const suffix = search.toString();
     return get<MemoryInboxPage>(`/api/memory-inbox${suffix ? `?${suffix}` : ''}`);
   },
-  promoteIdea: (id: string, category: MemoryCategory, note = '', options: { priority?: MemoryPriority } = {}) =>
-    post<{ idea: MemoryIdea; memory_id: string }>(`/api/memory-inbox/${encodeURIComponent(id)}/promote`, { category, note, priority: options.priority ?? 'normal' }),
+  promoteIdea: (id: string, category: MemoryCategory, note = '', options: { priority?: MemoryPriority; postToSlack?: boolean } = {}) =>
+    post<{ idea: MemoryIdea; memory_id: string }>(`/api/memory-inbox/${encodeURIComponent(id)}/promote`, { category, note, priority: options.priority ?? 'normal', post_to_slack: options.postToSlack ?? false }),
   dismissIdea: (id: string, note = '') =>
     post<{ idea: MemoryIdea }>(`/api/memory-inbox/${encodeURIComponent(id)}/dismiss`, { note }),
   restoreIdea: (id: string) => post<{ idea: MemoryIdea }>(`/api/memory-inbox/${encodeURIComponent(id)}/restore`),
-  retryIdeaReceipt: (id: string, kind: 'capture' | 'promotion') =>
+  retryIdeaReceipt: (id: string, kind: 'capture' | 'promotion' | 'memory_post') =>
     post<{ status: string }>(`/api/memory-inbox/${encodeURIComponent(id)}/acknowledgement/retry?kind=${kind}`),
   slackCaptureStatus: () => get<SlackCaptureStatus>('/api/integrations/slack/status'),
   assignments: () => get<{ assignments: Assignment[] }>('/api/assignments'),
