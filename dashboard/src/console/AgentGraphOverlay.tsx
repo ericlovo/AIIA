@@ -160,8 +160,13 @@ export function AgentGraphOverlay({
     return reconcileLayout(merged, nodes.map(node => node.id))
   }, [defaults, draggingId, nodes, positions, transientPositions])
   const selected = nodes.find(node => node.id === selectedId) ?? null
-  const selectedHandoff = handoffs.find(handoff => handoff.id === selectedHandoffId) ?? null
   const nodeIds = useMemo(() => new Set(nodes.map(node => node.id)), [nodes])
+  // A suite filter can hide either end; controls for a hidden relationship stay closed.
+  const selectedHandoff = handoffs.find(handoff => handoff.id === selectedHandoffId
+    && nodeIds.has(`agent:${handoff.from_agent_id}`) && nodeIds.has(`agent:${handoff.to_agent_id}`)) ?? null
+  const pendingSource = pendingHandoff ? assignments.find(item => item.id === pendingHandoff.sourceAssignmentId) ?? null : null
+  const pendingTarget = pendingHandoff ? agents.find(agent => agent.id === pendingHandoff.toAgentId) ?? null : null
+  const composerOpen = Boolean(pendingSource && pendingTarget)
   const selectedSource = assignments.find(
     assignment => assignment.id === (connectFrom ?? wireDrag?.sourceAssignmentId),
   ) ?? null
@@ -176,6 +181,8 @@ export function AgentGraphOverlay({
     }
     setSelectedId(node.id)
     setSelectedHandoffId(null)
+    // A confirm hidden by a suite filter must not keep node controls closed.
+    if (!composerOpen) setPendingHandoff(null)
   }
 
   function selectHandoff(handoffId: string) {
@@ -349,9 +356,6 @@ export function AgentGraphOverlay({
     setPendingHandoff(null)
   }
 
-  const pendingSource = pendingHandoff ? assignments.find(item => item.id === pendingHandoff.sourceAssignmentId) ?? null : null
-  const pendingTarget = pendingHandoff ? agents.find(agent => agent.id === pendingHandoff.toAgentId) ?? null : null
-
   return (
     <div ref={containerRef} className="pointer-events-none absolute inset-0 z-[5] overflow-hidden" aria-label="Agent topology graph">
       <svg className="absolute inset-0 h-full w-full" viewBox="0 0 100 100" preserveAspectRatio="none" role="group" aria-label="Map relationships">
@@ -470,7 +474,7 @@ export function AgentGraphOverlay({
         />, inspectorHost
       )}
 
-      {selectedHandoff && !selected && !pendingHandoff && !connectFrom && !wireDrag && inspectorHost && createPortal(
+      {selectedHandoff && !selected && !composerOpen && !connectFrom && !wireDrag && inspectorHost && createPortal(
         <HandoffInspector
           key={selectedHandoff.id}
           handoff={selectedHandoff}
@@ -482,7 +486,7 @@ export function AgentGraphOverlay({
         />, inspectorHost
       )}
 
-      {selected && !pendingHandoff && !connectFrom && !wireDrag && inspectorHost && createPortal(
+      {selected && !composerOpen && !connectFrom && !wireDrag && inspectorHost && createPortal(
         <NodeInspector
           node={selected}
           onClose={() => setSelectedId(null)}

@@ -322,6 +322,41 @@ try {
     await page.locator('[data-edge="handoff:hof-new"]').waitFor({ state: 'detached' })
     assert.deepEqual(handoffDeletes, ['hof-existing'])
 
+    // Filtering away a selected handoff's agents closes its controls instead of
+    // describing it with "Removed agent" while its edge is hidden.
+    handoffs = seedHandoffs()
+    await page.reload()
+    await page.getByRole('tab', { name: 'Map', exact: true }).click()
+    const crossSuiteEdge = page.getByRole('button', { name: /^Handoff from Brief Writer to Review Gate/ })
+    await crossSuiteEdge.focus()
+    await page.keyboard.press('Enter')
+    await edgeControls.waitFor()
+    await legend.getByRole('button', { name: 'research suite, 2 agents' }).click()
+    await page.waitForFunction(() => document.querySelectorAll('[data-graph-node]').length < 7)
+    await edgeControls.waitFor({ state: 'detached' })
+    assert.equal(await page.getByText('Removed agent').count(), 0)
+    await legend.getByRole('button', { name: 'All agents' }).click()
+    await page.waitForFunction(() => document.querySelectorAll('[data-graph-node]').length >= 6)
+
+    // A pending confirm whose target is filtered away must not leave the Map unable
+    // to open node controls.
+    await page.getByRole('checkbox', { name: 'Completed assignments', exact: true }).check()
+    await page.getByRole('button', { name: 'Wire Scan repository to another agent' }).focus()
+    await page.keyboard.press('Enter')
+    await page.getByText('Select a target agent for “Scan repository”').waitFor()
+    await page.locator('[data-agent-target="agent-gate"]').focus()
+    await page.keyboard.press('Enter')
+    await composer.waitFor()
+    await legend.getByRole('button', { name: 'research suite, 2 agents' }).click()
+    await composer.waitFor({ state: 'detached' })
+    await page.locator('[data-agent-target="agent-scout"]').focus()
+    await page.keyboard.press('Enter')
+    await page.getByRole('complementary', { name: 'Node controls' }).waitFor()
+    await legend.getByRole('button', { name: 'All agents' }).click()
+    await page.waitForFunction(() => document.querySelectorAll('[data-graph-node]').length >= 6)
+    assert.equal(await composer.count(), 0)
+    assert.equal(handoffPosts.length, 2)
+
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false)
     assert.deepEqual(errors, [])
     console.log(`${width}px: wire to confirmed handoff, inline error, edge inspect, keyboard edge remove with confirm, edge opens assignment, suite colours and filter, suite patch applied and rejected passed`)
