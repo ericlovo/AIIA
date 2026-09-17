@@ -28,6 +28,14 @@ class RunHistoryUnavailable(RuntimeError):
     """History is unavailable; completed output remains pending in the registry."""
 
 
+class BulkUpdateRejected(ValueError):
+    """At least one agent refused the change, so none of them were changed."""
+
+    def __init__(self, failures: list[dict[str, str]]):
+        super().__init__("bulk_update_rejected")
+        self.failures = failures
+
+
 def _durable_mutation(method):
     @wraps(method)
     def mutate(self, *args, **kwargs):
@@ -132,6 +140,32 @@ class AgentRegistry:
             return None
         self._apply_changes(agent, changes)
         return agent
+
+    def check_changes(self, agent_id: str, changes: dict[str, Any]) -> str:
+        """Return the validation error these changes would raise, without applying them."""
+        agent = self.get(agent_id)
+        if not agent:
+            return "agent_not_found"
+        try:
+            self._apply_changes(deepcopy(agent), changes)
+        except ValueError as exc:
+            return str(exc)
+        return ""
+
+    @_durable_mutation
+    def update_many(self, agent_ids: list[str], changes: dict[str, Any]) -> list[dict[str, Any]]:
+        """Apply the same changes to every agent, or to none of them, with one save."""
+        failures = [
+            {"agent_id": agent_id, "detail": detail}
+            for agent_id in agent_ids
+            if (detail := self.check_changes(agent_id, changes))
+        ]
+        if failures:
+            raise BulkUpdateRejected(failures)
+        agents = [self.get(agent_id) for agent_id in agent_ids]
+        for agent in agents:
+            self._apply_changes(agent, changes)
+        return agents
 
     def _apply_changes(self, agent: dict[str, Any], changes: dict[str, Any]) -> None:
         for field in ("name", "mission", "persona"):

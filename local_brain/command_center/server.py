@@ -862,7 +862,11 @@ routing_history = RoutingHistoryState()
 
 # ─── Action Queue + Task Runner ───────────────────────────
 from local_brain.command_center.action_queue import ActionQueue
-from local_brain.command_center.agent_registry import AgentRegistry, RunHistoryUnavailable
+from local_brain.command_center.agent_registry import (
+    AgentRegistry,
+    BulkUpdateRejected,
+    RunHistoryUnavailable,
+)
 from local_brain.command_center.agent_suites import describe_suites, suite_prompt_line
 from local_brain.command_center.aiia_tasks import TaskRunner
 from local_brain.command_center.assignment_registry import AssignmentRegistry
@@ -1152,8 +1156,8 @@ class AgentCreateRequest(BaseModel):
     memory_namespace: str = Field(default="", max_length=64)
 
 
-class AgentPatchRequest(BaseModel):
-    """Any subset of the editable fields, with the same limits as create.
+class SuiteAgentsPatchRequest(BaseModel):
+    """Settings that may be set on a whole suite: never identity or membership.
 
     Defaults are None so an omitted field is unset; an explicit null fails the
     field's type, because every field is non-optional once supplied.
@@ -1161,8 +1165,6 @@ class AgentPatchRequest(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    name: str = Field(default=None, min_length=1, max_length=80)
-    mission: str = Field(default=None, min_length=1, max_length=2_000)
     persona: str = Field(default=None, max_length=2_000)
     skills: list[str] = Field(default=None, max_length=12)
     tools: list[str] = Field(default=None, max_length=8)
@@ -1174,8 +1176,15 @@ class AgentPatchRequest(BaseModel):
     loop_interval_minutes: int = Field(default=None, ge=15, le=1_440)
     loop_task: str = Field(default=None, max_length=8_000)
     loop_max_runs_per_day: int = Field(default=None, ge=1, le=48)
-    suite: str = Field(default=None, max_length=64)
     memory_namespace: str = Field(default=None, max_length=64)
+
+
+class AgentPatchRequest(SuiteAgentsPatchRequest):
+    """Any subset of the editable fields, with the same limits as create."""
+
+    name: str = Field(default=None, min_length=1, max_length=80)
+    mission: str = Field(default=None, min_length=1, max_length=2_000)
+    suite: str = Field(default=None, max_length=64)
 
 
 class AgentRunRequest(BaseModel):
@@ -1274,6 +1283,46 @@ async def list_agents():
 @app.get("/api/agent-suites")
 async def list_agent_suites():
     return {"suites": describe_suites(agent_registry.list())}
+
+
+@app.patch("/api/agent-suites/{suite}/agents")
+async def patch_suite_agents(suite: str, body: SuiteAgentsPatchRequest | None = None):
+    changes = _patch_changes(body)
+    members = [agent for agent in agent_registry.list() if agent.get("suite") == suite]
+    if not members:
+        raise HTTPException(status_code=404, detail="suite_not_found")
+    model = str(changes.get("model") or "").strip()
+    installed: set[str] | None = None
+    if model and any(agent.get("model", "") != model for agent in members):
+        installed = {row["id"] for row in await _installed_chat_models()}
+    failures = []
+    for agent in members:
+        detail = ""
+        if installed is not None and agent.get("model", "") != model and model not in installed:
+            detail = "unknown_model"
+        elif "tools" in changes or "repo_id" in changes:
+            try:
+                _require_mounted_repo(
+                    changes.get("tools", agent.get("tools", [])),
+                    changes.get("repo_id", agent.get("repo_id", "")),
+                )
+            except HTTPException as exc:
+                detail = str(exc.detail)
+        detail = detail or agent_registry.check_changes(agent["id"], changes)
+        if detail:
+            failures.append({"agent_id": agent["id"], "detail": detail})
+    try:
+        if failures:
+            raise BulkUpdateRejected(failures)
+        updated = agent_registry.update_many([agent["id"] for agent in members], changes)
+    except BulkUpdateRejected as exc:
+        return JSONResponse(
+            status_code=422,
+            content={"detail": "suite_patch_rejected", "failures": exc.failures},
+        )
+    for agent in updated:
+        await broadcast_studio_event("agent", "updated", agent)
+    return {"suite": suite, "count": len(updated), "agents": updated}
 
 
 @app.get("/api/studio/activity")
