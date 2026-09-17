@@ -72,7 +72,7 @@ export function AgentStudio() {
           max_tokens: agent.max_tokens, loop_enabled: agent.loop_enabled,
           loop_interval_minutes: agent.loop_interval_minutes, loop_task: agent.loop_task,
           loop_max_runs_per_day: agent.loop_max_runs_per_day,
-          suite: agent.suite ?? '', memory_namespace: agent.memory_namespace ?? '',
+          model: agent.model ?? '', suite: agent.suite ?? '', memory_namespace: agent.memory_namespace ?? '',
         }
       : EMPTY_DRAFT)
   }

@@ -380,6 +380,7 @@ export type AgentDefinition = Pick<Agent,
   'temperature' | 'max_tokens' | 'loop_enabled' | 'loop_interval_minutes' |
   'loop_task' | 'loop_max_runs_per_day'
 > & {
+  model?: string;
   suite?: string;
   memory_namespace?: string;
 };
@@ -602,6 +603,12 @@ export const api = {
     post<{ agent: Agent }>(`/api/agents/${id}/loop`, { enabled }),
   updateAgent: (id: string, data: AgentDefinition) =>
     put<{ agent: Agent }>(`/api/agents/${id}`, data),
+  patchAgent: (id: string, fields: Partial<AgentDefinition>) =>
+    fetch(`${BASE}/api/agents/${id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(fields),
+    }).then(res => parse<{ agent: Agent }>(res)),
   deleteAgent: (id: string) => del<{ deleted: boolean }>(`/api/agents/${id}`),
   runAgent: (id: string, task: string) =>
     post<{ agent: Agent; model: string; latency_ms: number }>(`/api/agents/${id}/run`, { task }),
