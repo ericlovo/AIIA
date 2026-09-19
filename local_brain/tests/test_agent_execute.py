@@ -75,6 +75,7 @@ def _create_agent(agents: AgentRegistry, **overrides: Any) -> dict[str, Any]:
 async def test_model_usage_is_saved_even_for_empty_output(tmp_path, monkeypatch, content, loop_run):
     cc, agents, _assignments, _events, fake = _studio(tmp_path, monkeypatch, content=content)
     fake._response._payload["usage"] = {"input_tokens": 321, "output_tokens": 45}
+    fake._response._payload["done_reason"] = "length"
     agent = _create_agent(agents)
     tracker_calls = []
     monkeypatch.setattr(cc.token_tracker, "record", lambda *a, **kw: tracker_calls.append(kw))
@@ -87,7 +88,10 @@ async def test_model_usage_is_saved_even_for_empty_output(tmp_path, monkeypatch,
     run = agents.get(agent["id"])["runs"][0]
     assert run["input_tokens"] == 321
     assert run["output_tokens"] == 45
+    assert run["done_reason"] == "length"
+    assert fake.posts[0]["json"]["think"] is False
     assert agents.ledger.get(run["id"])["input_tokens"] == 321
+    assert agents.ledger.get(run["id"])["done_reason"] == "length"
     assert tracker_calls == []
 
 

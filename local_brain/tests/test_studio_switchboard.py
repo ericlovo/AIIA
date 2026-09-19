@@ -78,11 +78,13 @@ def test_agent_execution_parameters_reach_model_and_ledger(tmp_path, monkeypatch
     request = client.post.call_args.kwargs["json"]
     assert request["temperature"] == 0.2
     assert request["max_tokens"] == 900
+    assert request["think"] is False
     run = registry.ledger.get(agent["runs"][0]["id"])
     assert run["status"] == "completed"
     assert run["model"] == "test-local"
     assert run["temperature"] == 0.2
     assert run["max_tokens"] == 900
+    assert run["think"] is False
 
 
 def test_assignment_output_survives_history_failure_without_another_model_call(

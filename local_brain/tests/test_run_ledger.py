@@ -95,6 +95,7 @@ def test_pending_history_survives_outage_cache_eviction_and_agent_deletion(tmp_p
         assert run["agent_name"] == "Original"
         assert run["temperature"] == 0.2
         assert run["max_tokens"] == 900
+        assert run["think"] is False
         assert not run["legacy"]
     assert AgentRegistry(path).ledger.activity()["total"] == 20
 

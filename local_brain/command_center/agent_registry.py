@@ -90,6 +90,7 @@ class AgentRegistry:
         repo_id: str = "",
         temperature: float = 0.35,
         max_tokens: int = 1200,
+        think: bool = False,
         loop_enabled: bool = False,
         loop_interval_minutes: int = 60,
         loop_task: str = "",
@@ -112,6 +113,7 @@ class AgentRegistry:
             "repo_id": str(repo_id).strip()[:80],
             "temperature": self._temperature(temperature),
             "max_tokens": self._max_tokens(max_tokens),
+            "think": bool(think),
             "model": self._model(model),
             "loop_enabled": bool(loop_enabled),
             "loop_interval_minutes": self._interval(loop_interval_minutes),
@@ -181,6 +183,8 @@ class AgentRegistry:
             agent["temperature"] = self._temperature(changes["temperature"])
         if "max_tokens" in changes:
             agent["max_tokens"] = self._max_tokens(changes["max_tokens"])
+        if "think" in changes:
+            agent["think"] = bool(changes["think"])
         if "model" in changes:
             agent["model"] = self._model(changes["model"])
         if "loop_enabled" in changes:
@@ -262,6 +266,7 @@ class AgentRegistry:
         latency_ms: float = 0,
         run_id: str = "",
         usage: dict | None = None,
+        done_reason: str = "",
     ) -> dict[str, Any] | None:
         agent = self.get(agent_id)
         if not agent:
@@ -290,6 +295,7 @@ class AgentRegistry:
                     "latency_ms": round(float(latency_ms), 1),
                     "input_tokens": input_tokens,
                     "output_tokens": output_tokens,
+                    "done_reason": str(done_reason or ""),
                 }
             ]
             + agent["runs"]
@@ -300,7 +306,7 @@ class AgentRegistry:
             {
                 "agent": {
                     key: agent.get(key)
-                    for key in ("id", "name", "repo_id", "temperature", "max_tokens")
+                    for key in ("id", "name", "repo_id", "temperature", "max_tokens", "think")
                 },
                 "run": dict(agent["runs"][0]),
             }
@@ -437,6 +443,7 @@ class AgentRegistry:
                 agent.setdefault("repo_id", "")
                 agent.setdefault("temperature", 0.35)
                 agent.setdefault("max_tokens", 1_200)
+                agent.setdefault("think", False)
                 agent.setdefault("model", "")
                 agent.setdefault("loop_enabled", False)
                 agent.setdefault("loop_interval_minutes", 60)

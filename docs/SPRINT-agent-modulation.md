@@ -52,9 +52,9 @@ No priority is stored on memories or captures.
 `PATCH /api/agents/{agent_id}`
 
 - Body: a JSON object with any subset of the editable fields: `name`, `mission`,
-  `persona`, `skills`, `tools`, `repo_id`, `temperature`, `max_tokens`, `model`,
-  `loop_enabled`, `loop_interval_minutes`, `loop_task`, `loop_max_runs_per_day`,
-  `suite`, `memory_namespace`.
+  `persona`, `skills`, `tools`, `repo_id`, `temperature`, `max_tokens`, `think`,
+  `model`, `loop_enabled`, `loop_interval_minutes`, `loop_task`,
+  `loop_max_runs_per_day`, `suite`, `memory_namespace`.
 - Every present field uses the same limits as `AgentCreateRequest`. `model` is new, see C2.
 - Unknown field: `422`. Empty body: `422` with detail `empty_patch`.
 - Cross-field rule, applied to the merged result: an agent with `loop_enabled: true`

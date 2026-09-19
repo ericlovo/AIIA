@@ -1147,6 +1147,7 @@ class AgentCreateRequest(BaseModel):
     repo_id: str = Field(default="", max_length=80)
     temperature: float = Field(default=0.35, ge=0.0, le=1.0)
     max_tokens: int = Field(default=1_200, ge=128, le=2_000)
+    think: bool = False
     model: str = Field(default="", max_length=120)
     loop_enabled: bool = False
     loop_interval_minutes: int = Field(default=60, ge=15, le=1_440)
@@ -1171,6 +1172,7 @@ class SuiteAgentsPatchRequest(BaseModel):
     repo_id: str = Field(default=None, max_length=80)
     temperature: float = Field(default=None, ge=0.0, le=1.0)
     max_tokens: int = Field(default=None, ge=128, le=2_000)
+    think: bool = Field(default=None)
     model: str = Field(default=None, max_length=120)
     loop_enabled: bool = Field(default=None)
     loop_interval_minutes: int = Field(default=None, ge=15, le=1_440)
@@ -1616,6 +1618,9 @@ async def _execute_agent(
                 "system": _agent_system_prompt(agent, memory_context),
                 "max_tokens": agent.get("max_tokens", 1_200),
                 "temperature": agent.get("temperature", 0.35),
+                # qwen3 thinks by default; hidden reasoning spends max_tokens.
+                # Studio runs stay off unless the agent explicitly opts in.
+                "think": bool(agent.get("think", False)),
                 "purpose": purpose or ("agent_studio_loop" if loop_run else "agent_studio"),
             }
             if requested_model:
@@ -1645,6 +1650,7 @@ async def _execute_agent(
             result = str(payload.get("content") or "").strip()
             model = str(payload.get("model") or requested_model)
             latency_ms = float(payload.get("latency_ms", 0) or 0)
+            done_reason = str(payload.get("done_reason") or "")
             if not result:
                 updated = agent_registry.finish_run(
                     agent_id,
@@ -1656,6 +1662,7 @@ async def _execute_agent(
                     model=model,
                     latency_ms=latency_ms,
                     usage=payload.get("usage"),
+                    done_reason=done_reason,
                 )
                 if updated:
                     await broadcast_studio_event("agent", "failed", updated)
@@ -1670,6 +1677,7 @@ async def _execute_agent(
                 model=model,
                 latency_ms=latency_ms,
                 usage=payload.get("usage"),
+                done_reason=done_reason,
             )
             if updated:
                 await broadcast_studio_event("agent", "completed", updated)

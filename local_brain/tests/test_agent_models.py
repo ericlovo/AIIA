@@ -241,6 +241,7 @@ def test_agent_without_model_uses_task_role(studio):
 
     payload = upstream.chat_payloads[0]
     assert payload["model_role"] == "task"
+    assert payload["think"] is False
     assert "model" not in payload
     assert result["agent"]["runs"][0]["model"] == ""
     assert upstream.requests[0].headers.get("x-api-key") == server.AIIA_HEADERS.get("x-api-key")

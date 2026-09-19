@@ -88,7 +88,7 @@ Agent Studio loops landing (`feat(agent-studio): add tools and bounded loops`).
 | Tools | labels: `Local memory`, `Repository read`, `GitHub read` | max 8 |
 | Repo mounts | `REPO_MOUNTS`: `aiia`, `mindmoor`, `sanction`, `proxy-ai` | read-only git snapshot |
 | GitHub | `{ status: "disconnected", mode: "read_only" }` | do not claim GitHub data |
-| Model params | `temperature` 0–1, `max_tokens` 128–2000 | local `/v1/chat` |
+| Model params | `temperature` 0–1, `max_tokens` 128–2000, `think` default `false` | local `/v1/chat` |
 | Loop | `loop_enabled`, interval 15–1440 min, 1–48 runs/day | requires `loop_task` |
 | Scheduler | `agent_loop_runner()` every 15s; one agent at a time | `agent_run_lock` |
 | Run history | last 12 `{ task, result, error, at }` on the agent | not a first-class Run |

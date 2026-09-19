@@ -85,6 +85,7 @@ def test_registry_update_leaves_omitted_fields_untouched_on_disk(tmp_path):
         "skills",
         "tools",
         "temperature",
+        "think",
         "loop_enabled",
         "loop_interval_minutes",
         "loop_task",

@@ -69,7 +69,7 @@ Browser-created preview agents exist only in this copy and start paused.
 | Surface | Current implementation | Boundary |
 | --- | --- | --- |
 | Agent definitions | Name, mission, persona, skill labels, selected capabilities, repository, model parameters, interval settings | Skill labels are prompt configuration, not executable skill packages |
-| Temperature/token cap | Studio sends both to `/v1/chat`; local API passes both to the Ollama client | The displayed model name in the older agent view is hardcoded; execution resolves the configured task-role model |
+| Temperature/token cap | Studio sends temperature, `max_tokens`, and `think` (default `false`) to `/v1/chat`; local API passes them to the Ollama client | The displayed model name in the older agent view is hardcoded; execution resolves the configured task-role model. Per-agent `think: true` opts into qwen3 hidden reasoning. |
 | Repository read | Bounded status, five commits, diff statistics, first 80 tracked paths, README excerpt | Not arbitrary source-file retrieval, full patch review, or test execution |
 | GitHub read | Explicit GET requests through `gh api` | Credential connectivity was not revalidated; not a GitHub App integration |
 | Local memory | Each run reads the authenticated Brain memory endpoint and injects at most 6 entries and 1,500 characters with their ids, filtered by `memory_namespace` (source `suite:<namespace>` or metadata namespace) when set | Recency, not semantic retrieval. Any failure injects "Local memory was unavailable for this run" instead of claiming retrieval |
