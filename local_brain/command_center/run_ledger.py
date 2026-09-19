@@ -71,6 +71,7 @@ class RunLedger:
             **run,
             "temperature": None if legacy else agent.get("temperature"),
             "max_tokens": None if legacy else agent.get("max_tokens"),
+            "think": None if legacy else bool(agent.get("think", False)),
         }
         input_tokens, output_tokens = token_counts(run)
         with self.connect() as db:

@@ -6,6 +6,14 @@ All notable changes to AIIA are documented here. This project adheres to
 
 ## [Unreleased]
 
+### Fixed
+- **Studio/MCP send `think: false` by default.** Agent Studio runs through
+  `_execute_agent`, plus MCP `aiia_offload` and `aiia_digest`, now pass
+  `think: false` to Brain `/v1/chat`. qwen3's hidden reasoning was otherwise
+  on and spent most of `max_tokens` (empty or truncated results, ~50s median
+  latency). Set per-agent `think: true` to opt back in. The run ledger records
+  `done_reason` when Brain returns it.
+
 ## [0.6.0] — 2026-09-17
 
 Five months and 159 commits since 0.5.0, in three themes.
