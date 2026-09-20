@@ -140,4 +140,10 @@
 .sb-attention { padding:24px 30px; border-bottom:1px solid #25292c; }
 .sb-attention p { color:#a4b0b7; font-size:12px; }
 .sb-attention .sb-work { overflow-wrap:anywhere; }
+.sb-usage { border-bottom:1px solid #25292c; }
+.sb-usage>summary { cursor:pointer; padding:18px 30px; color:#92dce0; font-size:12px; }
+.sb-usage>summary:focus-visible { outline:2px solid #67d9e0; outline-offset:-4px; }
+.sb-usage[open]>summary { border-bottom:1px solid #25292c; }
+.sb-usage .sb-tokens:last-child { border-bottom:0; }
 @media (max-width:800px) { .sb-attention { padding:20px; } }
+@media (max-width:800px) { .sb-usage>summary { padding:16px 20px; } }

@@ -105,7 +105,7 @@ try {
     assert.equal(dismissCalls.at(-1).dismissed, true)
     assert.equal(dismissCalls.at(-1).expected_version, 'v-failed-1')
 
-    await page.getByRole('tab', { name: 'Switchboard', exact: true }).click()
+    await page.getByRole('tab', { name: 'Today', exact: true }).click()
     await page.getByRole('heading', { name: /Needs attention \(1\)/ }).waitFor()
 
     // Rejected work keeps its verdict through dismissal; both states show together.
@@ -121,7 +121,7 @@ try {
     assert.equal(assignments.find(a => a.id === 'rejected-1').review_note, 'Truncated and invented a helper.')
     await page.screenshot({ path: join(output, `rejected-dismissed-${width}.png`) })
 
-    await page.getByRole('tab', { name: 'Switchboard', exact: true }).click()
+    await page.getByRole('tab', { name: 'Today', exact: true }).click()
     await page.getByRole('heading', { name: /Needs attention \(0\)/ }).waitFor()
 
     // Restoring brings it back to attention still carrying the rejection.
@@ -130,7 +130,7 @@ try {
     await page.getByRole('region', { name: 'Attention tracking' }).getByRole('button', { name: 'Restore to attention' }).click()
     await page.getByRole('region', { name: 'Attention tracking' }).getByText('In the attention list', { exact: true }).waitFor()
     await review.getByText('Rejected output', { exact: true }).waitFor()
-    await page.getByRole('tab', { name: 'Switchboard', exact: true }).click()
+    await page.getByRole('tab', { name: 'Today', exact: true }).click()
     await page.getByRole('heading', { name: /Needs attention \(1\)/ }).waitFor()
 
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false)

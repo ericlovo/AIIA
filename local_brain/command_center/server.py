@@ -12,6 +12,7 @@ Or:
 """
 
 import asyncio
+import hashlib
 import json
 import logging
 import os
@@ -1214,6 +1215,11 @@ class AssignmentDismissRequest(BaseModel):
     note: str = Field(default="", max_length=2_000)
 
 
+class AssignmentRevisionRequest(BaseModel):
+    expected_version: str = Field(min_length=1, max_length=64)
+    note: str = Field(min_length=1, max_length=2_000)
+
+
 class HandoffCreateRequest(BaseModel):
     source_assignment_id: str = Field(min_length=1, max_length=80)
     to_agent_id: str = Field(min_length=1, max_length=80)
@@ -1844,6 +1850,25 @@ async def create_assignment(body: AssignmentCreateRequest):
     return {"assignment": assignment}
 
 
+@app.post("/api/assignments/{assignment_id}/revision")
+async def revise_assignment(assignment_id: str, body: AssignmentRevisionRequest):
+    source = assignment_registry.get_assignment(assignment_id)
+    if not source:
+        raise HTTPException(status_code=404, detail="assignment_not_found")
+    if not agent_registry.get(source["agent_id"]):
+        raise HTTPException(status_code=409, detail="agent_not_found")
+    existing_revision_ids = set(source.get("revision_ids", []))
+    try:
+        assignment = assignment_registry.create_revision(assignment_id, **body.model_dump())
+    except PersistenceError as exc:
+        raise HTTPException(status_code=503, detail="revision_persistence_failed") from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    if assignment["id"] not in existing_revision_ids:
+        await broadcast_assignment_event("created", assignment)
+    return {"assignment": assignment}
+
+
 @app.delete("/api/assignments/{assignment_id}")
 async def delete_assignment(assignment_id: str):
     assignment = assignment_registry.get_assignment(assignment_id)
@@ -1851,6 +1876,8 @@ async def delete_assignment(assignment_id: str):
         raise HTTPException(status_code=404, detail="assignment_not_found")
     if assignment["status"] == "running":
         raise HTTPException(status_code=409, detail="assignment_running")
+    if assignment.get("revision_of") or assignment.get("revision_ids"):
+        raise HTTPException(status_code=409, detail="assignment_has_revisions")
     if assignment_registry.assignment_has_handoffs(assignment_id):
         raise HTTPException(status_code=409, detail="assignment_has_handoffs")
     assignment_registry.delete_assignment(assignment_id)
@@ -1858,8 +1885,7 @@ async def delete_assignment(assignment_id: str):
     return {"deleted": True}
 
 
-@app.post("/api/assignments/{assignment_id}/run")
-async def run_assignment(assignment_id: str):
+async def _run_assignment(assignment_id: str, *, loop_run: bool = False):
     assignment = assignment_registry.get_assignment(assignment_id)
     if not assignment:
         raise HTTPException(status_code=404, detail="assignment_not_found")
@@ -1884,7 +1910,8 @@ async def run_assignment(assignment_id: str):
         run_result = await _execute_agent(
             assignment["agent_id"],
             _assignment_prompt(assignment),
-            purpose="agent_studio_assignment",
+            loop_run=loop_run,
+            purpose="agent_studio_loop" if loop_run else "agent_studio_assignment",
             assignment_id=assignment_id,
             run_id=assignment["attempt_id"],
         )
@@ -1928,6 +1955,11 @@ async def run_assignment(assignment_id: str):
         "model": run_result["model"],
         "latency_ms": run_result["latency_ms"],
     }
+
+
+@app.post("/api/assignments/{assignment_id}/run")
+async def run_assignment(assignment_id: str):
+    return await _run_assignment(assignment_id)
 
 
 @app.get("/api/git-workspaces")
@@ -2089,6 +2121,74 @@ async def reset_agent_world_layout():
     return {"layout": layout}
 
 
+def _loop_schedule_key(agent: dict[str, Any]) -> str:
+    last_run = str(agent.get("last_run_at") or "initial")
+    interval = int(agent.get("loop_interval_minutes", 60))
+    return f"{agent['id']}:{last_run}:{interval}"
+
+
+def _scheduled_input_hash(agent: dict[str, Any]) -> str:
+    tools = set(agent.get("tools", []))
+    if "Repository read" not in tools or tools.difference({"Repository read", "Git workspace"}):
+        return ""
+    repo_id = str(agent.get("repo_id") or "")
+    if not repo_id or not repo_available(repo_id):
+        return ""
+    payload = {
+        "repository": repo_snapshot(repo_id),
+        "task": agent.get("loop_task", ""),
+        "mission": agent.get("mission", ""),
+        "persona": agent.get("persona", ""),
+        "skills": agent.get("skills", []),
+        "model": agent.get("model", ""),
+        "temperature": agent.get("temperature", 0.35),
+        "max_tokens": agent.get("max_tokens", 1_200),
+        "think": agent.get("think", False),
+    }
+    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
+    return hashlib.sha256(encoded).hexdigest()
+
+
+async def _run_scheduled_agent(agent: dict[str, Any]) -> dict[str, Any]:
+    input_hash = _scheduled_input_hash(agent)
+    open_work = assignment_registry.open_scheduled_assignment(agent["id"])
+    if open_work:
+        if open_work["status"] == "queued":
+            result = await _run_assignment(open_work["id"], loop_run=True)
+            if input_hash:
+                updated = agent_registry.record_loop_input(agent["id"], input_hash)
+                if updated:
+                    result["agent"] = updated
+            return result
+        return {"assignment": open_work, "deduplicated": True}
+    if input_hash and input_hash == agent.get("loop_input_hash"):
+        updated = agent_registry.record_loop_skip(agent["id"], input_hash)
+        if updated:
+            await broadcast_studio_event("agent", "skipped", updated)
+        return {
+            "agent": updated,
+            "skipped": True,
+            "reason": "unchanged_repository_input",
+        }
+    assignment, created = assignment_registry.create_scheduled_assignment(
+        agent_id=agent["id"],
+        agent_name=agent["name"],
+        objective=agent["loop_task"],
+        schedule_key=_loop_schedule_key(agent),
+        interval_minutes=agent.get("loop_interval_minutes", 60),
+    )
+    if created:
+        await broadcast_assignment_event("created", assignment)
+    if assignment["status"] != "queued":
+        return {"assignment": assignment, "deduplicated": True}
+    result = await _run_assignment(assignment["id"], loop_run=True)
+    if input_hash:
+        updated = agent_registry.record_loop_input(agent["id"], input_hash)
+        if updated:
+            result["agent"] = updated
+    return result
+
+
 async def agent_loop_runner():
     await asyncio.sleep(10)
     while True:
@@ -2096,7 +2196,7 @@ async def agent_loop_runner():
             if not agent_run_lock.locked():
                 due_agent = agent_registry.due_loop()
                 if due_agent:
-                    await _execute_agent(due_agent["id"], due_agent["loop_task"], loop_run=True)
+                    await _run_scheduled_agent(due_agent)
         except Exception as exc:
             logger.warning("Agent loop scheduler error: %s", exc)
         await asyncio.sleep(15)

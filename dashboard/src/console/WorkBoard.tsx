@@ -17,7 +17,7 @@ import {
   type GitWorkspace,
   type RepositoryResource,
 } from '../lib/api'
-import { assignmentLabel, reviewLabel } from './assignmentReview'
+import { assignmentLabel, assignmentOrigin, reviewLabel } from './assignmentReview'
 import { StudioTabs, type StudioView } from './StudioTabs'
 
 const EMPTY_ASSIGNMENTS: Assignment[] = []
@@ -48,6 +48,7 @@ interface WorkBoardProps {
   agents: Agent[]
   view: Extract<StudioView, 'assignments' | 'handoffs'>
   onViewChange: (view: StudioView) => void
+  onRouteHandoff: (sourceId: string, targetId: string) => void
   initialAgentId?: string
   initialAssignmentId?: string
   initialHandoffSourceId?: string
@@ -58,6 +59,7 @@ export function WorkBoard({
   agents,
   view,
   onViewChange,
+  onRouteHandoff,
   initialAgentId = '',
   initialAssignmentId = '',
   initialHandoffSourceId = '',
@@ -182,14 +184,7 @@ export function WorkBoard({
   }
 
   function prepareHandoff(assignment: Assignment) {
-    setHandoffDraft({
-      source_assignment_id: assignment.id,
-      to_agent_id: '',
-      artifact_type: 'brief',
-      instructions: '',
-    })
-    setSelectedHandoffId(null)
-    onViewChange('handoffs')
+    onRouteHandoff(assignment.id, '')
   }
 
   const loading = view === 'assignments' ? assignmentsLoading : handoffsLoading
@@ -277,6 +272,7 @@ export function WorkBoard({
         {view === 'assignments' ? (
           selectedAssignment ? (
             <AssignmentDetails
+              onOpenAssignment={setSelectedAssignmentId}
               assignment={selectedAssignment}
               agent={agents.find(item => item.id === selectedAssignment.agent_id) ?? null}
               agentName={agentName(selectedAssignment.agent_id)}
@@ -340,7 +336,7 @@ export function WorkBoard({
 function AssignmentCard({ assignment, agentName, selected, onSelect }: { assignment: Assignment; agentName: string; selected: boolean; onSelect: () => void }) {
   return (
     <button onClick={onSelect} className={`min-h-40 border p-5 text-left transition-colors ${selected ? 'border-cyan-400/70 bg-cyan-500/10' : 'border-neutral-800 bg-neutral-900/60 hover:border-neutral-600'}`}>
-      {assignmentLabel(assignment) && <div className="mb-2 text-xs text-cyan-200">{assignmentLabel(assignment)}</div>}
+      <div className="mb-2 text-xs text-cyan-200">{assignmentOrigin(assignment)}{assignmentLabel(assignment) ? ` · ${assignmentLabel(assignment)}` : ''}</div>
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="truncate text-base font-medium text-white">{assignment.title}</div>
@@ -421,6 +417,7 @@ function AssignmentForm({ agents, draft, pending, error, onChange, onSubmit }: {
 }
 
 interface AssignmentDetailsProps {
+  onOpenAssignment: (id: string) => void
   assignment: Assignment
   agent: Agent | null
   agentName: string
@@ -444,7 +441,7 @@ interface AssignmentDetailsProps {
   onRemove: () => void
 }
 
-function AssignmentDetails({ assignment, agent, agentName, workspace, writes, repo, isRunning, isRemoving, isRequestingWorkspace, isApprovingWorkspace, isApprovingWrite, isRejectingWrite, hasHandoff, error, onRun, onHandoff, onRequestWorkspace, onApproveWorkspace, onApproveWrite, onRejectWrite, onRemove }: AssignmentDetailsProps) {
+function AssignmentDetails({ assignment, agent, agentName, workspace, writes, repo, isRunning, isRemoving, isRequestingWorkspace, isApprovingWorkspace, isApprovingWrite, isRejectingWrite, hasHandoff, error, onRun, onHandoff, onRequestWorkspace, onApproveWorkspace, onApproveWrite, onRejectWrite, onRemove, onOpenAssignment }: AssignmentDetailsProps) {
   const runnable = assignment.status === 'queued' || assignment.status === 'failed'
   const gitEnabled = agent?.tools.includes('Git workspace') ?? false
   const workspaceWrites = workspace ? writes.filter(item => item.workspace_id === workspace.id) : []
@@ -452,11 +449,14 @@ function AssignmentDetails({ assignment, agent, agentName, workspace, writes, re
     <Panel title={assignment.title} eyebrow="Assignment controls">
       <Meta label="Owner" value={agentName} />
       <div className="grid grid-cols-2 gap-3"><Meta label="Status" value={assignment.status} /><Meta label="Priority" value={assignment.priority} /></div>
+      <Meta label="Started by" value={assignmentOrigin(assignment)} />
       <TextBlock label="Objective" value={assignment.objective} />
       {assignment.success_criteria && <TextBlock label="Success criteria" value={assignment.success_criteria} />}
       {assignment.context && <TextBlock label="Context" value={assignment.context} muted />}
       {assignment.result && <TextBlock label="Work product" value={assignment.result} />}
+      {assignment.revision_of && <button onClick={() => onOpenAssignment(assignment.revision_of!)} className="text-sm text-cyan-200 underline">Open original assignment</button>}
       {assignment.status === 'completed' && assignment.result.trim() && <ArtifactReview key={assignment.id} assignment={assignment} />}
+      {assignment.review_status === 'rejected' && <RevisionPanel key={`revision-${assignment.id}`} assignment={assignment} onOpen={onOpenAssignment} />}
       {(assignment.status === 'completed' || assignment.status === 'failed') && <DismissalPanel key={`dismiss-${assignment.id}`} assignment={assignment} />}
       {assignment.error && <div className="border border-red-900/60 bg-red-950/30 p-3 text-xs text-red-300">{assignment.error}</div>}
       <OutputRecovery key={`recovery-${assignment.id}`} assignment={assignment} busy={isRunning} />
@@ -484,6 +484,25 @@ function AssignmentDetails({ assignment, agent, agentName, workspace, writes, re
       <button disabled={isRemoving || assignment.status === 'running' || hasHandoff} onClick={onRemove} title={hasHandoff ? 'Unlink the handoff before deleting connected work' : undefined} className="w-full px-3 py-2 text-xs text-neutral-600 hover:text-red-300 disabled:opacity-30">Delete assignment</button>
     </Panel>
   )
+}
+
+function RevisionPanel({ assignment, onOpen }: { assignment: Assignment; onOpen: (id: string) => void }) {
+  const qc = useQueryClient()
+  const [note, setNote] = useState(assignment.review_note || '')
+  const revision = useMutation({
+    mutationFn: () => api.reviseAssignment(assignment.id, assignment.review_version!, note),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['assignments'] }),
+  })
+  const existingRevisionId = assignment.revision_ids?.at(-1)
+  return <section aria-label="Request revision" className="space-y-3 border border-neutral-700 p-3">
+    <p className="text-xs leading-relaxed text-neutral-400">Create linked follow-up work for the same agent. This preserves the rejected artifact and does not run the revision automatically.</p>
+    {existingRevisionId ? <button className="w-full border border-cyan-700 px-3 py-2 text-sm text-cyan-200" onClick={() => onOpen(existingRevisionId)}>Open queued revision</button> : <>
+    <Field label="Revision feedback"><textarea value={note} onChange={event => setNote(event.target.value)} maxLength={2000} rows={3} /></Field>
+    <button disabled={!note.trim() || !assignment.review_version || revision.isPending || revision.isSuccess} onClick={() => revision.mutate()} className="flex w-full items-center justify-center gap-2 border border-cyan-700 px-3 py-2 text-sm text-cyan-200 disabled:opacity-40"><RotateCcw size={14} />{revision.isPending ? 'Creating revision...' : 'Request revision'}</button>
+    {revision.data && <div role="status" className="text-xs text-cyan-200">Revision queued. <button className="underline" onClick={() => onOpen(revision.data.assignment.id)}>Open revision</button></div>}
+    {revision.error && <ErrorNotice error={new Error(revisionError(revision.error.message))} />}
+    </>}
+  </section>
 }
 
 function DismissalPanel({ assignment }: { assignment: Assignment }) {
@@ -693,6 +712,14 @@ function StatusLabel({ status }: { status: AssignmentStatus }) {
 
 function ErrorNotice({ error }: { error: Error }) {
   return <div role="alert" className="border border-red-900/60 bg-red-950/30 p-3 text-xs text-red-300">{error.message}</div>
+}
+
+function revisionError(message: string) {
+  if (message.includes('review_changed_refresh_required')) return 'The review changed. Reload the assignment before requesting a revision.'
+  if (message.includes('revision_persistence_failed')) return 'The revision was not queued. Retry when local storage is available.'
+  if (message.includes('assignment_context_too_long')) return 'The original artifact is too large to carry into a revision.'
+  if (message.includes('agent_not_found')) return 'The assigned agent no longer exists. Choose a new owner before revising.'
+  return message
 }
 
 function relativeTime(value: string) {

@@ -131,6 +131,8 @@ async def test_interval_empty_output_is_scheduler_safe(tmp_path, monkeypatch):
     assert updated["status"] == "error"
     assert updated["last_error"] == "empty_agent_result"
     assert updated["runs"][0]["trigger"] == "interval"
+    assert updated["loop_consecutive_failures"] == 1
+    assert updated["loop_backoff_until"]
     assert any(entity == "agent" and event == "failed" for entity, event, _item in events)
     assert updated["status"] != "running"
 
@@ -172,6 +174,103 @@ async def test_nonempty_output_still_completes(tmp_path, monkeypatch):
     assert updated["status"] == "idle"
     assert updated["last_error"] == ""
     assert any(event == "completed" for _entity, event, _item in events)
+
+
+async def test_scheduled_run_is_a_reviewable_assignment(tmp_path, monkeypatch):
+    cc, agents, assignments, events, fake = _studio(
+        tmp_path, monkeypatch, content="CI is green at commit abc123."
+    )
+    agent = _create_agent(
+        agents,
+        loop_enabled=True,
+        loop_task="Inspect current CI state.",
+        loop_interval_minutes=30,
+    )
+
+    result = await cc._run_scheduled_agent(agent)
+
+    work = assignments.list_assignments()[0]
+    run = agents.get(agent["id"])["runs"][0]
+    assert result["assignment"]["id"] == work["id"]
+    assert work["status"] == "completed"
+    assert work["result"] == "CI is green at commit abc123."
+    assert work["review_status"] == "unreviewed"
+    assert work["trigger"] == "interval"
+    assert run["trigger"] == "interval"
+    assert run["assignment_id"] == work["id"]
+    assert agents.get(agent["id"])["loop_runs_today"] == 1
+    assert len(fake.posts) == 1
+    assert any(entity == "assignment" and event == "created" for entity, event, _ in events)
+    assert any(entity == "assignment" and event == "completed" for entity, event, _ in events)
+
+
+async def test_scheduled_repository_run_skips_unchanged_input(tmp_path, monkeypatch):
+    cc, agents, assignments, events, fake = _studio(
+        tmp_path, monkeypatch, content="No material regression risk."
+    )
+    snapshot = {"value": "commit abc123, clean tree"}
+    monkeypatch.setattr(cc, "repo_available", lambda repo_id: repo_id == "test")
+    monkeypatch.setattr(cc, "repo_snapshot", lambda repo_id: snapshot["value"])
+    agent = _create_agent(
+        agents,
+        tools=["Repository read"],
+        repo_id="test",
+        loop_enabled=True,
+        loop_task="Inspect current regression risk.",
+        loop_interval_minutes=30,
+    )
+
+    await cc._run_scheduled_agent(agent)
+    skipped = await cc._run_scheduled_agent(agent)
+
+    updated = agents.get(agent["id"])
+    assert skipped["skipped"] is True
+    assert skipped["reason"] == "unchanged_repository_input"
+    assert updated["loop_skip_reason"] == "unchanged_repository_input"
+    assert updated["loop_checked_at"] == updated["loop_skipped_at"]
+    assert updated["loop_runs_today"] == 1
+    assert len(assignments.list_assignments()) == 1
+    assert len(fake.posts) == 1
+    assert any(entity == "agent" and event == "skipped" for entity, event, _ in events)
+
+    snapshot["value"] = "commit def456, src changed"
+    await cc._run_scheduled_agent(agent)
+
+    assert len(assignments.list_assignments()) == 2
+    assert len(fake.posts) == 2
+    assert agents.get(agent["id"])["loop_runs_today"] == 2
+    assert agents.get(agent["id"])["loop_skip_reason"] == ""
+
+
+async def test_queued_scheduled_work_runs_before_unchanged_suppression(tmp_path, monkeypatch):
+    cc, agents, assignments, _events, fake = _studio(
+        tmp_path, monkeypatch, content="Recovered queued work."
+    )
+    monkeypatch.setattr(cc, "repo_available", lambda repo_id: repo_id == "test")
+    monkeypatch.setattr(cc, "repo_snapshot", lambda repo_id: "unchanged")
+    agent = _create_agent(
+        agents,
+        tools=["Repository read"],
+        repo_id="test",
+        loop_enabled=True,
+        loop_task="Inspect.",
+    )
+    input_hash = cc._scheduled_input_hash(agent)
+    agents.record_loop_input(agent["id"], input_hash)
+    queued, _ = assignments.create_scheduled_assignment(
+        agent_id=agent["id"],
+        agent_name=agent["name"],
+        objective=agent["loop_task"],
+        schedule_key="survived-restart",
+        interval_minutes=60,
+    )
+
+    result = await cc._run_scheduled_agent(agent)
+
+    assert result["assignment"]["id"] == queued["id"]
+    assert queued["status"] == "completed"
+    assert len(fake.posts) == 1
+    assert agents.get(agent["id"])["loop_input_hash"] == input_hash
 
 
 def test_finish_run_treats_blank_success_as_error(tmp_path):

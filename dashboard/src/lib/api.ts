@@ -208,6 +208,12 @@ export interface Agent {
   loop_max_runs_per_day: number;
   loop_runs_today: number;
   loop_day: string;
+  loop_checked_at?: string | null;
+  loop_input_hash?: string;
+  loop_skipped_at?: string | null;
+  loop_skip_reason?: string;
+  loop_consecutive_failures?: number;
+  loop_backoff_until?: string | null;
   model?: string;
   suite?: string;
   memory_namespace?: string;
@@ -431,8 +437,11 @@ export type AgentDefinition = Pick<Agent,
 export type AssignmentStatus = 'queued' | 'running' | 'completed' | 'failed';
 export type ReviewStatus = 'unreviewed' | 'accepted' | 'rejected';
 export type AssignmentPriority = 'low' | 'normal' | 'high' | 'urgent';
+export type AssignmentTrigger = 'manual' | 'interval' | 'handoff' | 'revision';
 
 export interface Assignment {
+  revision_of?: string;
+  revision_ids?: string[];
   recovery_pending?: boolean;
   recovered_at?: string;
   id: string;
@@ -443,6 +452,8 @@ export interface Assignment {
   context: string;
   success_criteria: string;
   source_handoff_id: string;
+  trigger?: AssignmentTrigger;
+  schedule_key?: string;
   review_status?: ReviewStatus;
   dismissed_at?: string | null;
   dismiss_note?: string;
@@ -694,6 +705,8 @@ export const api = {
     post<{ assignment: Assignment }>(`/api/assignments/${id}/review`, { decision, expected_version, note }),
   createAssignment: (data: AssignmentDefinition) =>
     post<{ assignment: Assignment }>('/api/assignments', data),
+  reviseAssignment: (id: string, expected_version: string, note: string) =>
+    post<{ assignment: Assignment }>(`/api/assignments/${encodeURIComponent(id)}/revision`, { expected_version, note }),
   deleteAssignment: (id: string) =>
     del<{ deleted: boolean }>(`/api/assignments/${id}`),
   runAssignment: (id: string) =>

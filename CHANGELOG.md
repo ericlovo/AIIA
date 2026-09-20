@@ -6,6 +6,27 @@ All notable changes to AIIA are documented here. This project adheres to
 
 ## [Unreleased]
 
+### Added
+- **Scheduled loops create reviewable assignments.** A due loop now creates a
+  queued assignment (trigger `interval`, one per schedule window) and runs that,
+  instead of sending inference straight at the agent. Loop output joins the same
+  review, revision and handoff path as manual work, and every assignment records
+  how it started: manual, scheduled loop, handoff or revision. One open scheduled
+  assignment per agent acts as backpressure, and a window that was created but
+  never ran, for example because the Mini was busy, is picked up on the next pass.
+- **Unchanged-input suppression for repository loops.** A loop agent whose only
+  tools are repository read and git workspace fingerprints its prompt inputs (the
+  repository snapshot plus its own configuration). An unchanged fingerprint skips
+  the run, records `unchanged_repository_input` with `loop_checked_at`, and does
+  not spend the daily budget. It fails open: agents with GitHub or local-memory
+  tools, or without a readable repository, always run. Editing an agent clears the
+  fingerprint so the next window runs.
+- **Loop failure backoff.** Consecutive interval-run failures back an agent off
+  exponentially from its own interval, capped at 24 hours, surfaced in the agent
+  lane as a failure streak and a retry time.
+- **Assignment revisions.** A reviewed assignment can be sent back for another
+  attempt as a linked child record, with the version guard preserved.
+
 ### Fixed
 - **Studio/MCP send `think: false` by default.** Agent Studio runs through
   `_execute_agent`, plus MCP `aiia_offload` and `aiia_digest`, now pass

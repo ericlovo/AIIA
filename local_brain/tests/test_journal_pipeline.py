@@ -197,8 +197,8 @@ def test_watcher_content_type_for_m4a(tmp_path):
     f = tmp_path / "test.m4a"
     f.write_bytes(b"x")
     ct = watcher._content_type_for(f)
-    # mimetypes on macOS usually returns audio/mp4 for .m4a; we accept both.
-    assert ct in ("audio/mp4", "audio/m4a")
+    # The macOS MIME database varies across releases for the same M4A container.
+    assert ct in ("audio/mp4", "audio/m4a", "audio/mp4a-latm")
 
 
 def test_watcher_content_type_falls_back_to_mp4_for_unknown(tmp_path):
