@@ -1209,6 +1209,18 @@ class AssignmentCreateRequest(BaseModel):
     success_criteria: str = Field(default="", max_length=4_000)
 
 
+# Loops that may file a proposal. "slack" is deliberately absent: a local process
+# must not be able to dress its own output up as something a person said in Slack.
+INGEST_SOURCES = {"backlog_steward", "code_review", "standup"}
+
+
+class InboxIngestRequest(BaseModel):
+    text: str = Field(min_length=1, max_length=8_000)
+    source: str = Field(min_length=1, max_length=40)
+    source_key: str = Field(min_length=1, max_length=240)
+    project: str = Field(default="", max_length=80)
+
+
 class CaptureAssignmentRequest(BaseModel):
     agent_id: str = Field(min_length=1, max_length=80)
     title: str = Field(default="", max_length=120)
@@ -1973,6 +1985,30 @@ async def _run_assignment(assignment_id: str, *, loop_run: bool = False):
 @app.post("/api/assignments/{assignment_id}/run")
 async def run_assignment(assignment_id: str):
     return await _run_assignment(assignment_id)
+
+
+@app.post("/api/memory-inbox/ingest")
+async def ingest_proposal(body: InboxIngestRequest):
+    """File one proposal from a local loop into the same inbox a person reviews.
+
+    Idempotent on `source_key`, because the loops that call this rerun on a
+    schedule and would otherwise re-file the same finding every day. A repeat is
+    not an error: the caller gets the existing row and `created: false`.
+    """
+    if body.source not in INGEST_SOURCES:
+        raise HTTPException(status_code=422, detail="unknown_ingest_source")
+    try:
+        idea, created = memory_capture_inbox().ingest(
+            text=body.text,
+            source_key=body.source_key,
+            source=body.source,
+            project=body.project,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except (OSError, sqlite3.Error) as exc:
+        raise HTTPException(status_code=503, detail="memory_inbox_unavailable") from exc
+    return {"idea": idea, "created": created}
 
 
 def _capture_title(idea: dict[str, Any]) -> str:

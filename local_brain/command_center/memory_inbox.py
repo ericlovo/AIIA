@@ -133,6 +133,31 @@ class MemoryInbox:
                 )
             return idea
 
+    def ingest(self, *, text: str, source_key: str, source: str, project: str) -> tuple[dict, bool]:
+        """Record a proposal from a local loop, and say whether it is new.
+
+        The source key is the whole deduplication story: a loop that reruns every
+        day re-sends the same key for the same finding, the row is left alone, and
+        the caller learns it was already there. Nothing here queues a receipt,
+        because no unattended loop should cause an outbound message.
+        """
+        if not text.strip() or len(text) > 8_000:
+            raise ValueError("idea_requires_1_to_8000_characters")
+        if not source_key.strip() or len(source_key) > 240:
+            raise ValueError("idea_requires_a_source_key")
+        with self.connect() as db:
+            cursor = db.execute(
+                """INSERT INTO ideas (id,source_key,text,source,project,workspace_id,
+                channel_id,author_id,created_at) VALUES (?,?,?,?,?,'','','',?)
+                ON CONFLICT(source_key) DO NOTHING""",
+                (uuid.uuid4().hex, source_key, text, source, project, _now()),
+            )
+            created = cursor.rowcount == 1
+            idea = dict(
+                db.execute(IDEA_SELECT + " WHERE ideas.source_key=?", (source_key,)).fetchone()
+            )
+            return idea, created
+
     def get(self, idea_id: str) -> dict | None:
         with self.connect() as db:
             row = db.execute(IDEA_SELECT + " WHERE ideas.id=?", (idea_id,)).fetchone()
@@ -365,6 +390,7 @@ class MemoryInbox:
         self,
         *,
         project: str = "",
+        source: str = "",
         query: str = "",
         offset: int = 0,
         status: str = "",
@@ -379,6 +405,9 @@ class MemoryInbox:
         if project:
             clauses.append("ideas.project=?")
             args.append(project)
+        if source:
+            clauses.append("ideas.source=?")
+            args.append(source)
         if query:
             clauses.append("instr(lower(ideas.text), lower(?)) > 0")
             args.append(query)
