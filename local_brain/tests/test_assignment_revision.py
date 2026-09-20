@@ -62,9 +62,7 @@ def test_revision_refuses_stale_blank_and_oversize_context(tmp_path):
         (original["review_version"], "   ", "feedback_required"),
     ]:
         with pytest.raises(ValueError, match=error):
-            registry.create_revision(
-                original["id"], expected_version=version, note=note
-            )
+            registry.create_revision(original["id"], expected_version=version, note=note)
     original["result"] = "x" * (MAX_CONTEXT_LENGTH + 1)
     with pytest.raises(ValueError, match="context_too_long"):
         registry.create_revision(
@@ -103,9 +101,7 @@ def test_revision_rolls_back_failed_storage(tmp_path, monkeypatch):
     assert registry.assignments == before
 
 
-def test_revision_endpoint_does_not_execute_and_rejects_missing_agent(
-    tmp_path, monkeypatch
-):
+def test_revision_endpoint_does_not_execute_and_rejects_missing_agent(tmp_path, monkeypatch):
     import asyncio
 
     import httpx
@@ -132,9 +128,7 @@ def test_revision_endpoint_does_not_execute_and_rejects_missing_agent(
             assert (
                 await client.post(url, json={**body, "expected_version": "stale"})
             ).status_code == 409
-            assert (
-                await client.delete(f"/api/assignments/{original['id']}")
-            ).status_code == 409
+            assert (await client.delete(f"/api/assignments/{original['id']}")).status_code == 409
             monkeypatch.setattr(server.agent_registry, "get", lambda _id: None)
             assert (await client.post(url, json=body)).status_code == 409
 
