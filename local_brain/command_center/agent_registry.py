@@ -123,6 +123,12 @@ class AgentRegistry:
             "memory_namespace": memory_namespace,
             "loop_runs_today": 0,
             "loop_day": "",
+            "loop_checked_at": None,
+            "loop_input_hash": "",
+            "loop_skipped_at": None,
+            "loop_skip_reason": "",
+            "loop_consecutive_failures": 0,
+            "loop_backoff_until": None,
             "status": "idle",
             "last_run_at": None,
             "last_result": "",
@@ -170,6 +176,20 @@ class AgentRegistry:
         return agents
 
     def _apply_changes(self, agent: dict[str, Any], changes: dict[str, Any]) -> None:
+        input_fields = {
+            "mission",
+            "persona",
+            "skills",
+            "tools",
+            "repo_id",
+            "temperature",
+            "max_tokens",
+            "think",
+            "model",
+            "loop_task",
+            "suite",
+            "memory_namespace",
+        }
         for field in ("name", "mission", "persona"):
             if field in changes:
                 agent[field] = str(changes[field]).strip()
@@ -204,6 +224,8 @@ class AgentRegistry:
             )
             agent["suite"] = suite
             agent["memory_namespace"] = memory_namespace
+        if input_fields.intersection(changes):
+            agent["loop_input_hash"] = ""
         self._require_loop_task(agent)
         agent["updated_at"] = datetime.now(timezone.utc).isoformat()
 
@@ -216,16 +238,23 @@ class AgentRegistry:
                 continue
             if agent.get("status") == "running":
                 continue
+            backoff_until = agent.get("loop_backoff_until")
+            if backoff_until:
+                try:
+                    if now < datetime.fromisoformat(backoff_until):
+                        continue
+                except ValueError:
+                    pass
             if agent.get("loop_day") != today:
                 agent["loop_day"] = today
                 agent["loop_runs_today"] = 0
             if agent.get("loop_runs_today", 0) >= agent.get("loop_max_runs_per_day", 4):
                 continue
-            last_run = agent.get("last_run_at")
-            if not last_run:
+            last_check = agent.get("loop_checked_at") or agent.get("last_run_at")
+            if not last_check:
                 return agent
             try:
-                elapsed = now - datetime.fromisoformat(last_run)
+                elapsed = now - datetime.fromisoformat(last_check)
             except ValueError:
                 return agent
             if elapsed >= timedelta(minutes=agent.get("loop_interval_minutes", 60)):
@@ -241,6 +270,30 @@ class AgentRegistry:
         agent["loop_runs_today"] = agent.get("loop_runs_today", 0) + 1
 
     @_durable_mutation
+    def record_loop_input(self, agent_id: str, input_hash: str) -> dict[str, Any] | None:
+        agent = self.get(agent_id)
+        if not agent:
+            return None
+        agent["loop_input_hash"] = input_hash
+        agent["loop_skip_reason"] = ""
+        agent["loop_skipped_at"] = None
+        agent["updated_at"] = datetime.now(timezone.utc).isoformat()
+        return agent
+
+    @_durable_mutation
+    def record_loop_skip(self, agent_id: str, input_hash: str) -> dict[str, Any] | None:
+        agent = self.get(agent_id)
+        if not agent:
+            return None
+        now = datetime.now(timezone.utc).isoformat()
+        agent["loop_checked_at"] = now
+        agent["loop_input_hash"] = input_hash
+        agent["loop_skipped_at"] = now
+        agent["loop_skip_reason"] = "unchanged_repository_input"
+        agent["updated_at"] = now
+        return agent
+
+    @_durable_mutation
     def set_running(self, agent_id: str, *, loop_run: bool = False) -> dict[str, Any] | None:
         agent = self.get(agent_id)
         if not agent:
@@ -249,8 +302,12 @@ class AgentRegistry:
         agent["last_error"] = ""
         agent["updated_at"] = datetime.now(timezone.utc).isoformat()
         if loop_run:
-            agent["loop_day"] = datetime.now(timezone.utc).date().isoformat()
+            now = datetime.now(timezone.utc)
+            agent["loop_day"] = now.date().isoformat()
             agent["loop_runs_today"] = agent.get("loop_runs_today", 0) + 1
+            agent["loop_checked_at"] = now.isoformat()
+            agent["loop_skip_reason"] = ""
+            agent["loop_skipped_at"] = None
         return agent
 
     def finish_run(
@@ -279,6 +336,21 @@ class AgentRegistry:
         agent["last_result"] = result
         agent["last_error"] = error
         agent["updated_at"] = now
+        if trigger == "interval":
+            agent["loop_checked_at"] = now
+            if error:
+                failures = agent.get("loop_consecutive_failures", 0) + 1
+                backoff_minutes = min(
+                    agent.get("loop_interval_minutes", 60) * (2 ** min(failures, 4)),
+                    1_440,
+                )
+                agent["loop_consecutive_failures"] = failures
+                agent["loop_backoff_until"] = (
+                    datetime.now(timezone.utc) + timedelta(minutes=backoff_minutes)
+                ).isoformat()
+            else:
+                agent["loop_consecutive_failures"] = 0
+                agent["loop_backoff_until"] = None
         run_id = run_id or uuid.uuid4().hex
         input_tokens, output_tokens = token_counts(usage)
         agent["runs"] = (
@@ -451,6 +523,12 @@ class AgentRegistry:
                 agent.setdefault("loop_max_runs_per_day", 4)
                 agent.setdefault("loop_runs_today", 0)
                 agent.setdefault("loop_day", "")
+                agent.setdefault("loop_checked_at", None)
+                agent.setdefault("loop_input_hash", "")
+                agent.setdefault("loop_skipped_at", None)
+                agent.setdefault("loop_skip_reason", "")
+                agent.setdefault("loop_consecutive_failures", 0)
+                agent.setdefault("loop_backoff_until", None)
                 agent.setdefault("suite", "")
                 agent.setdefault("memory_namespace", "")
         except (OSError, json.JSONDecodeError) as exc:

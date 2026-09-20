@@ -8,7 +8,7 @@ import { AgentTokenUsage } from './AgentTokenUsage'
 import { runTokens } from './runTokens'
 import { DEVELOPMENT_LOOPS } from './developmentLoops'
 import { loopState, DOT_COLOR } from './taskStatus'
-import { attentionAssignments, reviewLabel } from './assignmentReview'
+import { assignmentOrigin, attentionAssignments, reviewLabel } from './assignmentReview'
 import './switchboard.css'
 
 interface Props {
@@ -89,7 +89,7 @@ export function Switchboard({ agents, loading, agentError, onViewChange, onManag
           <div className="sb-section-title"><div><h2>Needs attention {assignments.data ? `(${attention.length})` : ''}</h2><p>{agent?.name || 'All agents'} · completed runs still need output review</p></div></div>
           {assignments.isError ? <p role="alert">Assignment status unavailable. {assignments.data ? 'Showing last loaded work.' : 'Retry to load work.'}</p> : assignments.isLoading ? <p>Loading assignments...</p> : null}
           {assignments.data && !assignments.isError && attention.length === 0 && <p>No assignments need attention in this view.</p>}
-          {(showAllAttention ? attention : attention.slice(0, 8)).map(work => <button className="sb-work" key={work.id} onClick={() => onOpenAssignment(work.id)}><span>{work.title}<small>{reviewLabel(work)} · {agents.find(item => item.id === work.agent_id)?.name || 'Removed agent'} · {work.priority}</small></span><ArrowRight size={14} /></button>)}
+          {(showAllAttention ? attention : attention.slice(0, 8)).map(work => <button className="sb-work" key={work.id} onClick={() => onOpenAssignment(work.id)}><span>{work.title}<small>{reviewLabel(work)} · {assignmentOrigin(work)} · {agents.find(item => item.id === work.agent_id)?.name || 'Removed agent'} · {work.priority}</small></span><ArrowRight size={14} /></button>)}
           {attention.length > 8 && <button className="sb-command" onClick={() => setShowAllAttention(!showAllAttention)}>{showAllAttention ? 'Show fewer' : `Show all ${attention.length} assignments`}</button>}
         </section>
         <details className="sb-usage"><summary>Token usage and agent attribution</summary>
@@ -145,7 +145,7 @@ export function Switchboard({ agents, loading, agentError, onViewChange, onManag
       <aside ref={inspectorRef} className="sb-inspector" aria-label="Activity inspector">
         {runId ? <><div className="sb-section-title"><h2>Run details</h2><button className="sb-icon" aria-label="Close run details" onClick={() => setRunId('')}><X size={16} /></button></div>{detail.isLoading && <p>Loading run...</p>}{detail.isError && <p role="alert">Could not load this run.</p>}{detail.data && <RunDetail run={detail.data.run} onOpenAssignment={onOpenAssignment} />}</>
         : selectedTask ? <><div className="sb-eyebrow">System loop</div><h2>{selectedTask.name}</h2><p>{selectedTask.description}</p><dl><dt>Current signal</dt><dd>{loopState(selectedTask)}</dd><dt>Last run</dt><dd>{time(selectedTask.last_run)}</dd><dt>Lifetime runs</dt><dd>{selectedTask.run_count}</dd><dt>Lifetime failures</dt><dd>{selectedTask.fail_count}</dd></dl><h3>Latest result</h3><pre>{selectedTask.last_result || 'No result recorded.'}</pre></>
-        : agent ? <><div className="sb-eyebrow">Agent controls</div><h2>{agent.name}</h2><p>{agent.mission}</p><dl><dt>State</dt><dd>{agent.status}</dd><dt>Repository</dt><dd>{agent.repo_id || 'None'}</dd><dt>Schedule</dt><dd>{agent.loop_enabled ? 'Enabled' : 'Paused'}</dd><dt>Interval</dt><dd>{interval(agent.loop_interval_minutes)}</dd><dt>Runs / UTC day</dt><dd>{agent.loop_day === today ? agent.loop_runs_today : 0} / {agent.loop_max_runs_per_day}</dd><dt>Temperature</dt><dd>{agent.temperature}</dd><dt>Token cap</dt><dd>{agent.max_tokens}</dd></dl>
+        : agent ? <><div className="sb-eyebrow">Agent controls</div><h2>{agent.name}</h2><p>{agent.mission}</p><dl><dt>State</dt><dd>{agent.status}</dd><dt>Repository</dt><dd>{agent.repo_id || 'None'}</dd><dt>Schedule</dt><dd>{agent.loop_enabled ? 'Enabled' : 'Paused'}</dd><dt>Interval</dt><dd>{interval(agent.loop_interval_minutes)}</dd><dt>Runs / UTC day</dt><dd>{agent.loop_day === today ? agent.loop_runs_today : 0} / {agent.loop_max_runs_per_day}</dd><dt>Last loop check</dt><dd>{agent.loop_checked_at ? time(agent.loop_checked_at) : 'Never'}</dd><dt>Last loop decision</dt><dd>{agent.loop_skip_reason === 'unchanged_repository_input' ? 'Skipped · repository unchanged' : agent.last_run_at ? 'Executed' : 'No decision'}</dd><dt>Failure streak</dt><dd>{agent.loop_consecutive_failures ?? 0}</dd><dt>Backoff until</dt><dd>{agent.loop_backoff_until ? time(agent.loop_backoff_until) : 'None'}</dd><dt>Temperature</dt><dd>{agent.temperature}</dd><dt>Token cap</dt><dd>{agent.max_tokens}</dd></dl>
           {agent.loop_task && <button className="sb-command" disabled={loop.isPending} onClick={() => loop.mutate({ id: agent.id, enabled: !agent.loop_enabled })}>{agent.loop_enabled ? <CirclePause size={15} /> : <Play size={15} />}{agent.loop_enabled ? 'Pause loop' : 'Enable loop'}</button>}
           {loop.isError && <p role="alert" className="sb-alert">{loop.error.message}</p>}
           <button className="sb-command" onClick={() => onManageAgent(agent.id)}><Layers3 size={15} /> Edit configuration</button><button className="sb-command" onClick={() => onAssignAgent(agent.id)}><FileText size={15} /> Assign work</button>
@@ -165,7 +165,13 @@ function interval(minutes: number) { return minutes >= 60 && minutes % 60 === 0 
 function time(value: string | null) { return value ? new Date(value).toLocaleString() : 'Never' }
 function loopDue(agent: Agent, today: string) {
   if (agent.loop_day === today && agent.loop_runs_today >= agent.loop_max_runs_per_day) return 'Daily cap reached'
-  if (!agent.last_run_at) return 'Due'
-  const minutes = Math.ceil((Date.parse(agent.last_run_at) + agent.loop_interval_minutes * 60_000 - Date.now()) / 60_000)
+  if (agent.loop_backoff_until) {
+    const backoffMinutes = Math.ceil((Date.parse(agent.loop_backoff_until) - Date.now()) / 60_000)
+    if (backoffMinutes > 0) return `Backoff · retry in ${interval(backoffMinutes)}`
+  }
+  const lastCheck = agent.loop_checked_at || agent.last_run_at
+  if (!lastCheck) return 'Due'
+  const minutes = Math.ceil((Date.parse(lastCheck) + agent.loop_interval_minutes * 60_000 - Date.now()) / 60_000)
+  if (agent.loop_skip_reason === 'unchanged_repository_input' && minutes > 0) return `No changes · check in ${interval(minutes)}`
   return minutes <= 0 ? 'Due' : `Due in ${interval(minutes)}`
 }

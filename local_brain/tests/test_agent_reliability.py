@@ -1,4 +1,5 @@
 from copy import deepcopy
+from datetime import datetime
 from unittest.mock import AsyncMock
 
 import pytest
@@ -18,7 +19,8 @@ def registry(tmp_path):
 
 
 @pytest.mark.parametrize(
-    "operation", ["create", "update", "delete", "loop", "start", "counter", "loop_start"]
+    "operation",
+    ["create", "update", "delete", "loop", "start", "counter", "loop_start", "input", "skip"],
 )
 def test_failed_mutation_restores_memory_disk_and_references(registry, monkeypatch, operation):
     agent = registry.agents[0]
@@ -38,6 +40,8 @@ def test_failed_mutation_restores_memory_disk_and_references(registry, monkeypat
         "start": lambda: registry.set_running(agent["id"]),
         "loop_start": lambda: registry.set_running(agent["id"], loop_run=True),
         "counter": lambda: registry.record_loop_run(agent["id"]),
+        "input": lambda: registry.record_loop_input(agent["id"], "hash"),
+        "skip": lambda: registry.record_loop_skip(agent["id"], "hash"),
     }
     with pytest.raises(PersistenceError):
         actions[operation]()
@@ -85,6 +89,46 @@ def test_explicit_resume_allows_never_completed_interrupted_loop(registry):
     assert recovered.due_loop() is None
     recovered.update(agent["id"], loop_enabled=True)
     assert recovered.due_loop()["id"] == agent["id"]
+
+
+def test_loop_input_state_persists_and_configuration_changes_invalidate_it(registry):
+    agent = registry.agents[0]
+    registry.record_loop_input(agent["id"], "stable-hash")
+    restored = AgentRegistry(registry.data_file)
+    assert restored.get(agent["id"])["loop_input_hash"] == "stable-hash"
+
+    restored.update(agent["id"], mission="Changed mission")
+    assert restored.get(agent["id"])["loop_input_hash"] == ""
+
+
+def test_interval_failures_back_off_and_success_resets_the_streak(registry):
+    agent = registry.agents[0]
+    registry.update(
+        agent["id"],
+        loop_enabled=True,
+        loop_task="Inspect",
+        loop_interval_minutes=15,
+    )
+
+    registry.set_running(agent["id"], loop_run=True)
+    registry.finish_run(agent["id"], "Inspect", error="local_model_unavailable", trigger="interval")
+    first_backoff = datetime.fromisoformat(agent["loop_backoff_until"])
+    assert agent["loop_consecutive_failures"] == 1
+    assert registry.due_loop() is None
+
+    registry.set_running(agent["id"], loop_run=True)
+    registry.finish_run(agent["id"], "Inspect", error="local_model_unavailable", trigger="interval")
+    second_backoff = datetime.fromisoformat(agent["loop_backoff_until"])
+    assert agent["loop_consecutive_failures"] == 2
+    assert second_backoff > first_backoff
+
+    registry.set_running(agent["id"], loop_run=True)
+    registry.finish_run(agent["id"], "Inspect", result="Recovered", trigger="interval")
+    assert agent["loop_consecutive_failures"] == 0
+    assert agent["loop_backoff_until"] is None
+    restored = AgentRegistry(registry.data_file).get(agent["id"])
+    assert restored["loop_consecutive_failures"] == 0
+    assert restored["loop_backoff_until"] is None
 
 
 def test_recovery_write_failure_prevents_registry_startup(registry, monkeypatch):

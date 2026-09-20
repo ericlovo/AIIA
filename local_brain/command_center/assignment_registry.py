@@ -37,6 +37,7 @@ MAX_RESULT_LENGTH = 40_000
 MAX_CONTEXT_LENGTH = MAX_RESULT_LENGTH + 1_000
 VALID_PRIORITIES = {"low", "normal", "high", "urgent"}
 VALID_ARTIFACT_TYPES = {"brief", "analysis", "plan", "decision", "review"}
+VALID_TRIGGERS = {"manual", "interval", "handoff", "revision"}
 
 
 def _now() -> str:
@@ -97,6 +98,18 @@ class AssignmentRegistry:
             None,
         )
 
+    def open_scheduled_assignment(self, agent_id: str) -> dict[str, Any] | None:
+        return next(
+            (
+                assignment
+                for assignment in self.assignments
+                if assignment.get("trigger") == "interval"
+                and assignment.get("agent_id") == agent_id
+                and assignment.get("status") in {"queued", "running"}
+            ),
+            None,
+        )
+
     @_durable_mutation
     def create_assignment(
         self,
@@ -109,10 +122,15 @@ class AssignmentRegistry:
         success_criteria: str = "",
         source_handoff_id: str = "",
         assignment_id: str | None = None,
+        trigger: str = "manual",
+        schedule_key: str = "",
     ) -> dict[str, Any]:
         priority = priority.strip().lower()
         if priority not in VALID_PRIORITIES:
             raise ValueError("invalid_priority")
+        trigger = trigger.strip().lower()
+        if trigger not in VALID_TRIGGERS:
+            raise ValueError("invalid_assignment_trigger")
         if len(context) > MAX_CONTEXT_LENGTH:
             raise ValueError("assignment_context_too_long")
         self._make_assignment_room()
@@ -126,6 +144,8 @@ class AssignmentRegistry:
             "context": context,
             "success_criteria": success_criteria.strip()[:4_000],
             "source_handoff_id": source_handoff_id,
+            "trigger": trigger,
+            "schedule_key": schedule_key.strip()[:240],
             "status": "queued",
             "result": "",
             "error": "",
@@ -137,6 +157,46 @@ class AssignmentRegistry:
         }
         self.assignments.insert(0, assignment)
         return assignment
+
+    @_durable_mutation
+    def create_scheduled_assignment(
+        self,
+        *,
+        agent_id: str,
+        agent_name: str,
+        objective: str,
+        schedule_key: str,
+        interval_minutes: int,
+    ) -> tuple[dict[str, Any], bool]:
+        """Create one reviewable item for a loop window, with queue backpressure."""
+        existing = next(
+            (
+                assignment
+                for assignment in self.assignments
+                if assignment.get("trigger") == "interval"
+                and assignment.get("schedule_key") == schedule_key
+            ),
+            None,
+        )
+        if existing:
+            return existing, False
+        open_work = self.open_scheduled_assignment(agent_id)
+        if open_work:
+            return open_work, False
+        assignment = self.create_assignment(
+            title=f"Scheduled: {agent_name}"[:120],
+            objective=objective,
+            agent_id=agent_id,
+            context=(
+                "Created by the Agent Studio loop scheduler.\n"
+                f"Cadence: every {interval_minutes} minutes.\n"
+                f"Schedule window: {schedule_key}."
+            ),
+            success_criteria="Return a concrete, evidence-bound work product for human review.",
+            trigger="interval",
+            schedule_key=schedule_key,
+        )
+        return assignment, True
 
     def _make_assignment_room(self) -> None:
         while len(self.assignments) >= MAX_ASSIGNMENTS:
@@ -335,6 +395,7 @@ class AssignmentRegistry:
             context=context,
             success_criteria=source["success_criteria"],
             assignment_id=child_id,
+            trigger="revision",
         )
         child.update(revision_of=source["id"], revision_version=expected_version)
         return child
@@ -395,6 +456,7 @@ class AssignmentRegistry:
             success_criteria=source["success_criteria"],
             source_handoff_id=handoff_id,
             assignment_id=assignment_id,
+            trigger="handoff",
         )
         return handoff, target
 
@@ -468,6 +530,11 @@ class AssignmentRegistry:
                 assignment.setdefault("review_version", legacy_version)
                 assignment.setdefault("dismissed_at", None)
                 assignment.setdefault("dismiss_note", "")
+                assignment.setdefault(
+                    "trigger",
+                    "handoff" if assignment.get("source_handoff_id") else "manual",
+                )
+                assignment.setdefault("schedule_key", "")
         except (OSError, json.JSONDecodeError) as exc:
             logger.warning("Could not load assignments: %s", exc)
             return

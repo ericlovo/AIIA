@@ -17,7 +17,7 @@ import {
   type GitWorkspace,
   type RepositoryResource,
 } from '../lib/api'
-import { assignmentLabel, reviewLabel } from './assignmentReview'
+import { assignmentLabel, assignmentOrigin, reviewLabel } from './assignmentReview'
 import { StudioTabs, type StudioView } from './StudioTabs'
 
 const EMPTY_ASSIGNMENTS: Assignment[] = []
@@ -336,7 +336,7 @@ export function WorkBoard({
 function AssignmentCard({ assignment, agentName, selected, onSelect }: { assignment: Assignment; agentName: string; selected: boolean; onSelect: () => void }) {
   return (
     <button onClick={onSelect} className={`min-h-40 border p-5 text-left transition-colors ${selected ? 'border-cyan-400/70 bg-cyan-500/10' : 'border-neutral-800 bg-neutral-900/60 hover:border-neutral-600'}`}>
-      {assignmentLabel(assignment) && <div className="mb-2 text-xs text-cyan-200">{assignmentLabel(assignment)}</div>}
+      <div className="mb-2 text-xs text-cyan-200">{assignmentOrigin(assignment)}{assignmentLabel(assignment) ? ` · ${assignmentLabel(assignment)}` : ''}</div>
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="truncate text-base font-medium text-white">{assignment.title}</div>
@@ -449,6 +449,7 @@ function AssignmentDetails({ assignment, agent, agentName, workspace, writes, re
     <Panel title={assignment.title} eyebrow="Assignment controls">
       <Meta label="Owner" value={agentName} />
       <div className="grid grid-cols-2 gap-3"><Meta label="Status" value={assignment.status} /><Meta label="Priority" value={assignment.priority} /></div>
+      <Meta label="Started by" value={assignmentOrigin(assignment)} />
       <TextBlock label="Objective" value={assignment.objective} />
       {assignment.success_criteria && <TextBlock label="Success criteria" value={assignment.success_criteria} />}
       {assignment.context && <TextBlock label="Context" value={assignment.context} muted />}

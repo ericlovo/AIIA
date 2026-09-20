@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import type { Assignment } from '../src/lib/api.ts'
-import { assignmentLabel, attentionAssignments, reviewLabel } from '../src/console/assignmentReview.ts'
+import { assignmentLabel, assignmentOrigin, attentionAssignments, reviewLabel } from '../src/console/assignmentReview.ts'
 
 const work = (id: string, overrides: Partial<Assignment> = {}): Assignment => ({
   id, title: id, objective: 'Assess evidence', agent_id: 'agent', priority: 'normal',
@@ -57,4 +57,11 @@ test('dismissing every flagged record empties attention', () => {
     work('c', { result: '', dismissed_at: '2026-09-16T19:00:00Z' }),
   ]
   assert.deepEqual(attentionAssignments(records), [])
+})
+
+test('assignment origin distinguishes scheduled work from operator work', () => {
+  assert.equal(assignmentOrigin(work('manual')), 'Manual')
+  assert.equal(assignmentOrigin(work('loop', { trigger: 'interval' })), 'Scheduled loop')
+  assert.equal(assignmentOrigin(work('handoff', { trigger: 'handoff' })), 'Handoff')
+  assert.equal(assignmentOrigin(work('revision', { trigger: 'revision' })), 'Revision')
 })

@@ -43,6 +43,7 @@ def test_handoff_creates_a_runnable_downstream_assignment(tmp_path):
 
     assert handoff["status"] == "queued"
     assert target["source_handoff_id"] == handoff["id"]
+    assert target["trigger"] == "handoff"
     assert "Use a scoped policy envelope" in target["context"]
 
     registry.set_running(target["id"])
@@ -105,3 +106,53 @@ def test_running_work_is_reconciled_after_restart(tmp_path):
 
     assert interrupted["status"] == "failed"
     assert interrupted["error"] == "interrupted_by_restart"
+
+
+def test_scheduled_assignments_deduplicate_and_apply_backpressure(tmp_path):
+    data_file = tmp_path / "assignments.json"
+    registry = AssignmentRegistry(data_file)
+
+    first, created = registry.create_scheduled_assignment(
+        agent_id="agent_ci",
+        agent_name="CI Signal Officer",
+        objective="Inspect current CI state.",
+        schedule_key="agent_ci:initial:30",
+        interval_minutes=30,
+    )
+    duplicate, duplicate_created = registry.create_scheduled_assignment(
+        agent_id="agent_ci",
+        agent_name="CI Signal Officer",
+        objective="Inspect current CI state.",
+        schedule_key="agent_ci:initial:30",
+        interval_minutes=30,
+    )
+    blocked, blocked_created = registry.create_scheduled_assignment(
+        agent_id="agent_ci",
+        agent_name="CI Signal Officer",
+        objective="Inspect current CI state.",
+        schedule_key="agent_ci:later:30",
+        interval_minutes=30,
+    )
+
+    assert created is True
+    assert duplicate_created is False
+    assert blocked_created is False
+    assert duplicate["id"] == blocked["id"] == first["id"]
+    assert first["trigger"] == "interval"
+    assert first["schedule_key"] == "agent_ci:initial:30"
+    assert len(registry.list_assignments()) == 1
+
+    registry.set_running(first["id"])
+    registry.finish_assignment(first["id"], result="CI is green.")
+    second, second_created = registry.create_scheduled_assignment(
+        agent_id="agent_ci",
+        agent_name="CI Signal Officer",
+        objective="Inspect current CI state.",
+        schedule_key="agent_ci:later:30",
+        interval_minutes=30,
+    )
+
+    assert second_created is True
+    assert second["id"] != first["id"]
+    restored = AssignmentRegistry(data_file)
+    assert restored.get_assignment(second["id"])["trigger"] == "interval"

@@ -17,6 +17,13 @@ export function assignmentLabel(assignment: Assignment): string {
   return verdict ? `${verdict} · Dismissed` : 'Dismissed'
 }
 
+export function assignmentOrigin(assignment: Assignment): string {
+  if (assignment.trigger === 'interval') return 'Scheduled loop'
+  if (assignment.trigger === 'handoff') return 'Handoff'
+  if (assignment.trigger === 'revision') return 'Revision'
+  return 'Manual'
+}
+
 /** Work a human still has to look at. A dismissed record keeps its verdict but stops nagging. */
 export function attentionAssignments(assignments: Assignment[], agentId = ''): Assignment[] {
   const rank = (item: Assignment) => item.status === 'failed' ? 0 : item.review_status === 'rejected' ? 1 : 2
