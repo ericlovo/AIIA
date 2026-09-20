@@ -65,3 +65,9 @@ test('assignment origin distinguishes scheduled work from operator work', () => 
   assert.equal(assignmentOrigin(work('handoff', { trigger: 'handoff' })), 'Handoff')
   assert.equal(assignmentOrigin(work('revision', { trigger: 'revision' })), 'Revision')
 })
+
+test('a capture-routed assignment names its source, not its trigger', () => {
+  // It is created manually, by a human clicking, so the trigger alone would read "Manual".
+  assert.equal(assignmentOrigin(work('capture', { trigger: 'manual', source_kind: 'memory_capture', source_ref: 'idea-1' })), 'From Slack capture')
+  assert.equal(assignmentOrigin(work('plain', { trigger: 'manual', source_kind: 'manual' })), 'Manual')
+})

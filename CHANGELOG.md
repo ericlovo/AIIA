@@ -7,6 +7,14 @@ All notable changes to AIIA are documented here. This project adheres to
 ## [Unreleased]
 
 ### Added
+- **A capture can be queued as work.** A Slack capture in the memory inbox can be
+  routed to one agent as a queued assignment, with no retyping: the capture text
+  becomes the objective, its provenance is recorded on the assignment
+  (`source_kind: memory_capture`, `source_ref`), and the row shows the work it
+  queued. The capture text is carried into the prompt quoted as untrusted input,
+  because it is written by whoever was in the Slack channel. Nothing runs on its
+  own; the assignment waits in Work until a human starts it. One capture queues
+  work once, and a capture whose assignment was deleted can be routed again.
 - **Scheduled loops create reviewable assignments.** A due loop now creates a
   queued assignment (trigger `interval`, one per schedule window) and runs that,
   instead of sending inference straight at the agent. Loop output joins the same

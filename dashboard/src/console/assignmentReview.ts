@@ -18,6 +18,7 @@ export function assignmentLabel(assignment: Assignment): string {
 }
 
 export function assignmentOrigin(assignment: Assignment): string {
+  if (assignment.source_kind === 'memory_capture') return 'From Slack capture'
   if (assignment.trigger === 'interval') return 'Scheduled loop'
   if (assignment.trigger === 'handoff') return 'Handoff'
   if (assignment.trigger === 'revision') return 'Revision'
