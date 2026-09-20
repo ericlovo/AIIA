@@ -298,6 +298,7 @@ export interface MemoryIdea {
   reviewed_at: string;
   priority: MemoryPriority;
   post_requested: number;
+  assignment_id: string;
   acknowledgement_status: string | null;
   acknowledgement_error: string | null;
   acknowledgement_ts: string | null;
@@ -438,6 +439,7 @@ export type AssignmentStatus = 'queued' | 'running' | 'completed' | 'failed';
 export type ReviewStatus = 'unreviewed' | 'accepted' | 'rejected';
 export type AssignmentPriority = 'low' | 'normal' | 'high' | 'urgent';
 export type AssignmentTrigger = 'manual' | 'interval' | 'handoff' | 'revision';
+export type AssignmentSource = 'manual' | 'memory_capture' | 'loop_schedule' | 'agent_handoff' | 'revision';
 
 export interface Assignment {
   revision_of?: string;
@@ -454,6 +456,8 @@ export interface Assignment {
   source_handoff_id: string;
   trigger?: AssignmentTrigger;
   schedule_key?: string;
+  source_kind?: AssignmentSource;
+  source_ref?: string;
   review_status?: ReviewStatus;
   dismissed_at?: string | null;
   dismiss_note?: string;
@@ -695,6 +699,8 @@ export const api = {
   dismissIdea: (id: string, note = '') =>
     post<{ idea: MemoryIdea }>(`/api/memory-inbox/${encodeURIComponent(id)}/dismiss`, { note }),
   restoreIdea: (id: string) => post<{ idea: MemoryIdea }>(`/api/memory-inbox/${encodeURIComponent(id)}/restore`),
+  assignCapture: (id: string, agentId: string, options: { title?: string; objective?: string; priority?: AssignmentPriority } = {}) =>
+    post<{ assignment: Assignment; idea: MemoryIdea }>(`/api/memory-inbox/${encodeURIComponent(id)}/assign`, { agent_id: agentId, title: options.title ?? '', objective: options.objective ?? '', priority: options.priority ?? 'normal' }),
   retryIdeaReceipt: (id: string, kind: 'capture' | 'promotion' | 'memory_post') =>
     post<{ status: string }>(`/api/memory-inbox/${encodeURIComponent(id)}/acknowledgement/retry?kind=${kind}`),
   slackCaptureStatus: () => get<SlackCaptureStatus>('/api/integrations/slack/status'),

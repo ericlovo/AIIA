@@ -36,6 +36,8 @@ IDEA_REVIEW_COLUMNS = ("memory_id", "memory_category", "review_note", "reviewed_
 IDEA_POST_COLUMNS = {
     "priority": "TEXT NOT NULL DEFAULT 'normal'",
     "post_requested": "INTEGER NOT NULL DEFAULT 0",
+    # The assignment a human routed this capture to, so one capture queues work once.
+    "assignment_id": "TEXT NOT NULL DEFAULT ''",
 }
 IDEA_SELECT = (
     "SELECT ideas.*,c.status AS acknowledgement_status,"
@@ -194,6 +196,28 @@ class MemoryInbox:
                     "ON CONFLICT(idea_id) DO NOTHING",
                     (idea_id, row["thread_ts"]),
                 )
+            return dict(db.execute(IDEA_SELECT + " WHERE ideas.id=?", (idea_id,)).fetchone())
+
+    def attach_assignment(self, idea_id: str, assignment_id: str, *, replace: bool = False) -> dict:
+        """Claim this capture for one assignment, or release it with an empty id.
+
+        The claim is the thing that keeps a capture from queueing the same work
+        twice; it is taken before the assignment record exists so two clicks that
+        race cannot both win. `replace` is for a caller that already found the
+        recorded assignment gone, and for releasing a claim whose create failed.
+        """
+        with self.connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            row = db.execute(
+                "SELECT status,assignment_id FROM ideas WHERE id=?", (idea_id,)
+            ).fetchone()
+            if row is None:
+                raise ValueError("idea_not_found")
+            if assignment_id and row["status"] == "dismissed":
+                raise ValueError("idea_not_assignable")
+            if assignment_id and row["assignment_id"] and not replace:
+                raise ValueError("idea_already_assigned")
+            db.execute("UPDATE ideas SET assignment_id=? WHERE id=?", (assignment_id, idea_id))
             return dict(db.execute(IDEA_SELECT + " WHERE ideas.id=?", (idea_id,)).fetchone())
 
     def dismiss(self, idea_id: str, *, note: str = "") -> dict:

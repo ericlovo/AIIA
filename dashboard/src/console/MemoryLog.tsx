@@ -55,8 +55,16 @@ export function MemoryLog({ agents, view, onViewChange }: { agents: Agent[]; vie
   const dismiss = useMutation({ mutationFn: (id: string) => api.dismissIdea(id), onSuccess: () => done('Capture dismissed. It stays in the inbox under Dismissed.'), onError: fail })
   const restore = useMutation({ mutationFn: (id: string) => api.restoreIdea(id), onSuccess: () => done('Capture restored to Unreviewed.'), onError: fail })
   const retry = useMutation({ mutationFn: ({ id, kind }: { id: string; kind: 'capture' | 'promotion' | 'memory_post' }) => api.retryIdeaReceipt(id, kind), onSuccess: (_, { kind }) => done(kind === 'memory_post' ? `Post to ${MEMORY_POST_CHANNEL} queued again.` : 'Receipt queued again.'), onError: fail })
+  const assign = useMutation({
+    mutationFn: ({ id, agentId }: { id: string; agentId: string }) => api.assignCapture(id, agentId),
+    onSuccess: result => {
+      qc.invalidateQueries({ queryKey: ['assignments'] })
+      done(`Queued for ${agents.find(item => item.id === result.assignment.agent_id)?.name || 'the agent'} as "${result.assignment.title}". It waits in Work until you run it.`)
+    },
+    onError: fail,
+  })
   const canPost = slack.data?.memory_posts_configured === true
-  const busy = promote.isPending || dismiss.isPending || restore.isPending || retry.isPending
+  const busy = promote.isPending || dismiss.isPending || restore.isPending || retry.isPending || assign.isPending
   const data = page.data
   const counts = data?.counts
   const ideas = data?.ideas ?? []
@@ -113,10 +121,11 @@ export function MemoryLog({ agents, view, onViewChange }: { agents: Agent[]; vie
         {data && ideas.length === 0 && <p className="px-5 py-6 text-sm text-neutral-500 sm:px-7">{query || priority ? 'No captures match this search.' : filter === 'unreviewed' ? 'Nothing waiting. New @AIIA mentions and /aiia-capture ideas from the allowed Slack channels land here.' : 'No captures in this state.'}</p>}
 
         <ul className="divide-y divide-neutral-900">
-          {ideas.map(idea => <IdeaRow key={idea.id} idea={idea} busy={busy} canPost={canPost}
+          {ideas.map(idea => <IdeaRow key={idea.id} idea={idea} busy={busy} canPost={canPost} agents={agents}
             onPromote={(category, priority, postToSlack) => promote.mutate({ id: idea.id, category, priority, postToSlack })}
             onDismiss={() => dismiss.mutate(idea.id)}
             onRestore={() => restore.mutate(idea.id)}
+            onAssign={agentId => assign.mutate({ id: idea.id, agentId })}
             onRetry={kind => retry.mutate({ id: idea.id, kind })} />)}
         </ul>
 
@@ -129,17 +138,18 @@ export function MemoryLog({ agents, view, onViewChange }: { agents: Agent[]; vie
         </div>}
 
         <p className="px-5 py-4 text-[11px] leading-relaxed text-neutral-600 sm:px-7">
-          Logging stores the capture as a Brain fact with Slack provenance (capture ID, channel, author, time) and, when the capture came from a thread, queues one fixed receipt back to that thread through the AIIA Slack app. Receipts never carry the captured text. Only when you check "Post to {MEMORY_POST_CHANNEL}" is the capture text, with its priority and category, posted to that one channel. Dismissing keeps the record locally and sends nothing.
+          "Queue as work" turns a capture into a queued assignment for one agent, with the capture text carried as untrusted input and its origin recorded. Nothing runs until you start it in Work. Logging stores the capture as a Brain fact with Slack provenance (capture ID, channel, author, time) and, when the capture came from a thread, queues one fixed receipt back to that thread through the AIIA Slack app. Receipts never carry the captured text. Only when you check "Post to {MEMORY_POST_CHANNEL}" is the capture text, with its priority and category, posted to that one channel. Dismissing keeps the record locally and sends nothing.
         </p>
       </section>
     </main>
   )
 }
 
-function IdeaRow({ idea, busy, canPost, onPromote, onDismiss, onRestore, onRetry }: { idea: MemoryIdea; busy: boolean; canPost: boolean; onPromote: (category: MemoryCategory, priority: MemoryPriority, postToSlack: boolean) => void; onDismiss: () => void; onRestore: () => void; onRetry: (kind: 'capture' | 'promotion' | 'memory_post') => void }) {
+function IdeaRow({ idea, busy, canPost, agents, onPromote, onDismiss, onRestore, onAssign, onRetry }: { idea: MemoryIdea; busy: boolean; canPost: boolean; agents: Agent[]; onPromote: (category: MemoryCategory, priority: MemoryPriority, postToSlack: boolean) => void; onDismiss: () => void; onRestore: () => void; onAssign: (agentId: string) => void; onRetry: (kind: 'capture' | 'promotion' | 'memory_post') => void }) {
   const [category, setCategory] = useState<MemoryCategory>('project')
   const [priority, setPriority] = useState<MemoryPriority>('normal')
   const [postToSlack, setPostToSlack] = useState(false)
+  const [owner, setOwner] = useState('')
   const posted = memoryPostLabel(idea.memory_post_status, idea.memory_post_error, idea.post_requested === 1)
   const badge = priorityLabel(idea.priority)
   const text = captureText(idea.text) || '(mention only, no text)'
@@ -158,6 +168,7 @@ function IdeaRow({ idea, busy, canPost, onPromote, onDismiss, onRestore, onRetry
             <span>capture {idea.id.slice(0, 8)}</span>
             {idea.status === 'promoted' && <span>memory {idea.memory_category} · {idea.memory_id}</span>}
             {idea.review_note && <span>note: {idea.review_note}</span>}
+            {idea.assignment_id && <span className="text-cyan-200">queued as work {idea.assignment_id.slice(0, 8)}</span>}
           </div>
           <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-[11px]">
             <span className={TONE[save.tone]}>{save.text}</span>
@@ -187,6 +198,15 @@ function IdeaRow({ idea, busy, canPost, onPromote, onDismiss, onRestore, onRetry
             <button type="button" disabled={busy} onClick={() => onPromote(category, priority, postToSlack)} className="h-8 border border-cyan-500/60 bg-cyan-500/10 px-3 text-xs text-cyan-100 hover:bg-cyan-500/20 disabled:opacity-40">Log to memory</button>
             <button type="button" disabled={busy} onClick={onDismiss} className="h-8 border border-neutral-800 px-3 text-xs text-neutral-300 hover:text-white disabled:opacity-40">Dismiss</button>
           </>}
+          {idea.status !== 'dismissed' && !idea.assignment_id && agents.length > 0 && <>
+            <label className="text-[11px] text-neutral-500">Agent
+              <select value={owner} onChange={event => setOwner(event.target.value)} className="ml-1 h-8 border border-neutral-800 bg-neutral-900 px-1 text-xs text-neutral-200" aria-label={`Agent for capture ${idea.id.slice(0, 8)}`}>
+                <option value="">Choose agent</option>
+                {agents.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
+              </select>
+            </label>
+            <button type="button" disabled={busy || !owner} onClick={() => onAssign(owner)} className="h-8 border border-neutral-800 px-3 text-xs text-neutral-300 hover:text-white disabled:opacity-40">Queue as work</button>
+          </>}
           {idea.status === 'dismissed' && <button type="button" disabled={busy} onClick={onRestore} className="h-8 border border-neutral-800 px-3 text-xs text-neutral-300 hover:text-white disabled:opacity-40">Restore</button>}
         </div>
       </div>
@@ -215,6 +235,10 @@ function describe(code: string): string {
     memory_inbox_unavailable: 'The memory inbox storage is unavailable.',
     slack_receipts_not_configured: 'Slack receipts are not configured on the Mini.',
     no_failed_receipt: 'No failed receipt to retry.',
+    idea_already_assigned: 'This capture already has work queued for it. Open it in Work.',
+    idea_not_assignable: 'A dismissed capture cannot be queued as work. Restore it first.',
+    assigned_agent_not_found: 'That agent no longer exists. Pick another one.',
+    assignment_persistence_failed: 'The assignment was not saved. Nothing was queued; try again.',
   }
   return messages[code] ?? code
 }

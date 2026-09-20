@@ -38,6 +38,16 @@ MAX_CONTEXT_LENGTH = MAX_RESULT_LENGTH + 1_000
 VALID_PRIORITIES = {"low", "normal", "high", "urgent"}
 VALID_ARTIFACT_TYPES = {"brief", "analysis", "plan", "decision", "review"}
 VALID_TRIGGERS = {"manual", "interval", "handoff", "revision"}
+# Where the work came from, as opposed to how it runs. A trigger drives scheduling;
+# a source is provenance, and is what a capture, a steward gap or a standup action
+# fills in so a human can see why a queued item exists without reading it.
+VALID_SOURCE_KINDS = {
+    "manual",
+    "memory_capture",
+    "loop_schedule",
+    "agent_handoff",
+    "revision",
+}
 
 
 def _now() -> str:
@@ -124,6 +134,8 @@ class AssignmentRegistry:
         assignment_id: str | None = None,
         trigger: str = "manual",
         schedule_key: str = "",
+        source_kind: str = "manual",
+        source_ref: str = "",
     ) -> dict[str, Any]:
         priority = priority.strip().lower()
         if priority not in VALID_PRIORITIES:
@@ -131,6 +143,9 @@ class AssignmentRegistry:
         trigger = trigger.strip().lower()
         if trigger not in VALID_TRIGGERS:
             raise ValueError("invalid_assignment_trigger")
+        source_kind = source_kind.strip().lower()
+        if source_kind not in VALID_SOURCE_KINDS:
+            raise ValueError("invalid_assignment_source")
         if len(context) > MAX_CONTEXT_LENGTH:
             raise ValueError("assignment_context_too_long")
         self._make_assignment_room()
@@ -146,6 +161,8 @@ class AssignmentRegistry:
             "source_handoff_id": source_handoff_id,
             "trigger": trigger,
             "schedule_key": schedule_key.strip()[:240],
+            "source_kind": source_kind,
+            "source_ref": source_ref.strip()[:240],
             "status": "queued",
             "result": "",
             "error": "",
@@ -195,6 +212,8 @@ class AssignmentRegistry:
             success_criteria="Return a concrete, evidence-bound work product for human review.",
             trigger="interval",
             schedule_key=schedule_key,
+            source_kind="loop_schedule",
+            source_ref=schedule_key,
         )
         return assignment, True
 
@@ -396,6 +415,8 @@ class AssignmentRegistry:
             success_criteria=source["success_criteria"],
             assignment_id=child_id,
             trigger="revision",
+            source_kind="revision",
+            source_ref=source["id"],
         )
         child.update(revision_of=source["id"], revision_version=expected_version)
         return child
@@ -457,6 +478,8 @@ class AssignmentRegistry:
             source_handoff_id=handoff_id,
             assignment_id=assignment_id,
             trigger="handoff",
+            source_kind="agent_handoff",
+            source_ref=handoff_id,
         )
         return handoff, target
 
@@ -535,6 +558,18 @@ class AssignmentRegistry:
                     "handoff" if assignment.get("source_handoff_id") else "manual",
                 )
                 assignment.setdefault("schedule_key", "")
+                assignment.setdefault(
+                    "source_kind",
+                    {
+                        "interval": "loop_schedule",
+                        "handoff": "agent_handoff",
+                        "revision": "revision",
+                    }.get(assignment.get("trigger", "manual"), "manual"),
+                )
+                assignment.setdefault(
+                    "source_ref",
+                    assignment.get("schedule_key") or assignment.get("source_handoff_id") or "",
+                )
         except (OSError, json.JSONDecodeError) as exc:
             logger.warning("Could not load assignments: %s", exc)
             return
