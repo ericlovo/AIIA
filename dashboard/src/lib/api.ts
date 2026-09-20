@@ -683,9 +683,10 @@ export const api = {
   runAgent: (id: string, task: string) =>
     post<{ agent: Agent; model: string; latency_ms: number }>(`/api/agents/${id}/run`, { task }),
 
-  memoryInbox: (params: { project?: string; query?: string; status?: MemoryIdeaStatus | ''; offset?: number; priority?: MemoryPriority | ''; sort?: MemoryInboxSort } = {}) => {
+  memoryInbox: (params: { project?: string; source?: string; query?: string; status?: MemoryIdeaStatus | ''; offset?: number; priority?: MemoryPriority | ''; sort?: MemoryInboxSort } = {}) => {
     const search = new URLSearchParams();
     if (params.project) search.set('project', params.project);
+    if (params.source) search.set('source', params.source);
     if (params.query) search.set('query', params.query);
     if (params.status) search.set('status', params.status);
     if (params.priority) search.set('priority', params.priority);

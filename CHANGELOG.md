@@ -7,6 +7,16 @@ All notable changes to AIIA are documented here. This project adheres to
 ## [Unreleased]
 
 ### Added
+- **Loops can file a proposal into the inbox a human already reviews.**
+  `POST /api/memory-inbox/ingest` takes one finding from a local loop with a
+  stable `source_key` and is idempotent on it, so a loop that reruns daily does
+  not refile the same finding, and a proposal already reviewed stays reviewed.
+  Filing queues no Slack receipt, because nothing unattended should cause an
+  outbound message, and `slack` is not an accepted source, so a local process
+  cannot dress its output up as something a person said. The memory view gains a
+  From Slack / From loops / All selector, since proposals carry no channel or
+  author. A filed proposal can be queued as work through the same control a
+  capture uses.
 - **A capture can be queued as work.** A Slack capture in the memory inbox can be
   routed to one agent as a queued assignment, with no retyping: the capture text
   becomes the objective, its provenance is recorded on the assignment

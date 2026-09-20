@@ -98,13 +98,14 @@ def slack_status():
 @router.get("/api/memory-inbox")
 def list_ideas(
     project: str = "",
+    source: str = "",
     query: str = "",
     offset: int = 0,
     status: str = "",
     priority: str = "",
     sort: str = "newest",
 ):
-    if offset < 0 or offset > 1_000_000 or len(query) > 500:
+    if offset < 0 or offset > 1_000_000 or len(query) > 500 or len(source) > 40:
         raise HTTPException(status_code=422, detail="invalid_inbox_query")
     if status and status not in IDEA_STATUSES:
         raise HTTPException(status_code=422, detail="invalid_inbox_query")
@@ -113,6 +114,7 @@ def list_ideas(
     try:
         return inbox().list(
             project=project,
+            source=source,
             query=query,
             offset=offset,
             status=status,
