@@ -73,7 +73,7 @@ export function Switchboard({ agents, loading, agentError, onViewChange, onManag
   return <main className="switchboard">
     {import.meta.env.VITE_STUDIO_PREVIEW === 'true' && <div className="sb-preview" role="status">Isolated preview · execution disabled · copied local data</div>}
     <header className="sb-header">
-      <div><div className="sb-eyebrow">AIIA / Agent Studio</div><h1>Switchboard</h1><p>{loading ? 'Loading agents' : `${agents.length} agents`} <span>/</span> {scheduled.length} loops enabled <span>/</span> Mini execution</p></div>
+      <div><div className="sb-eyebrow">AIIA / Agent Studio</div><h1>Today</h1><p>{loading ? 'Loading agents' : `${agents.length} agents`} <span>/</span> {scheduled.length} loops enabled <span>/</span> Mini execution</p></div>
       <StudioTabs view="switchboard" onChange={onViewChange} />
     </header>
     {(activity.isError || agentError || assignments.isError) && <div role="alert" className="sb-alert">Some live data is unavailable. {activity.error?.message || 'Check the Command Center connection.'} <button onClick={refresh}>Retry</button></div>}
@@ -83,10 +83,8 @@ export function Switchboard({ agents, loading, agentError, onViewChange, onManag
       <button onClick={() => onViewChange('assignments')}><span>Work queue</span><strong>{assignments.data ? selectedWork.length : '--'}</strong><small>Open assignments <ArrowRight size={12} /></small></button>
       <div><span>Loop allowance</span><strong>{dailyCap}<em> / day</em></strong><small>Configured ceiling · {scheduled.length} schedules</small></div>
     </section>
-    <TokenUsage />
     <div className="sb-body">
       <div className="sb-main">
-        <AgentTokenUsage data={data} agents={agents} day={day} status={status} selectedAgentId={agentId} onSelectAgent={pickAgent} />
         <section className="sb-attention" aria-label="Needs attention">
           <div className="sb-section-title"><div><h2>Needs attention {assignments.data ? `(${attention.length})` : ''}</h2><p>{agent?.name || 'All agents'} · completed runs still need output review</p></div></div>
           {assignments.isError ? <p role="alert">Assignment status unavailable. {assignments.data ? 'Showing last loaded work.' : 'Retry to load work.'}</p> : assignments.isLoading ? <p>Loading assignments...</p> : null}
@@ -94,6 +92,10 @@ export function Switchboard({ agents, loading, agentError, onViewChange, onManag
           {(showAllAttention ? attention : attention.slice(0, 8)).map(work => <button className="sb-work" key={work.id} onClick={() => onOpenAssignment(work.id)}><span>{work.title}<small>{reviewLabel(work)} · {agents.find(item => item.id === work.agent_id)?.name || 'Removed agent'} · {work.priority}</small></span><ArrowRight size={14} /></button>)}
           {attention.length > 8 && <button className="sb-command" onClick={() => setShowAllAttention(!showAllAttention)}>{showAllAttention ? 'Show fewer' : `Show all ${attention.length} assignments`}</button>}
         </section>
+        <details className="sb-usage"><summary>Token usage and agent attribution</summary>
+          <TokenUsage />
+          <AgentTokenUsage data={data} agents={agents} day={day} status={status} selectedAgentId={agentId} onSelectAgent={pickAgent} />
+        </details>
         <section className="sb-contributions" aria-label="Agent activity calendar">
           <div className="sb-section-title"><div><h2>Execution activity</h2><p>{data ? `${total} recorded runs · ${failed} failed · last 13 weeks, UTC` : activity.isLoading ? 'Loading recorded activity...' : 'Recorded activity unavailable'}</p></div><button className="sb-icon" title="Refresh activity" aria-label="Refresh activity" onClick={refresh}><RefreshCw size={16} className={refreshing ? 'sb-spin' : ''} /></button></div>
           <div className="sb-calendar-wrap">

@@ -1214,6 +1214,11 @@ class AssignmentDismissRequest(BaseModel):
     note: str = Field(default="", max_length=2_000)
 
 
+class AssignmentRevisionRequest(BaseModel):
+    expected_version: str = Field(min_length=1, max_length=64)
+    note: str = Field(min_length=1, max_length=2_000)
+
+
 class HandoffCreateRequest(BaseModel):
     source_assignment_id: str = Field(min_length=1, max_length=80)
     to_agent_id: str = Field(min_length=1, max_length=80)
@@ -1844,6 +1849,29 @@ async def create_assignment(body: AssignmentCreateRequest):
     return {"assignment": assignment}
 
 
+@app.post("/api/assignments/{assignment_id}/revision")
+async def revise_assignment(assignment_id: str, body: AssignmentRevisionRequest):
+    source = assignment_registry.get_assignment(assignment_id)
+    if not source:
+        raise HTTPException(status_code=404, detail="assignment_not_found")
+    if not agent_registry.get(source["agent_id"]):
+        raise HTTPException(status_code=409, detail="agent_not_found")
+    existing_revision_ids = set(source.get("revision_ids", []))
+    try:
+        assignment = assignment_registry.create_revision(
+            assignment_id, **body.model_dump()
+        )
+    except PersistenceError as exc:
+        raise HTTPException(
+            status_code=503, detail="revision_persistence_failed"
+        ) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    if assignment["id"] not in existing_revision_ids:
+        await broadcast_assignment_event("created", assignment)
+    return {"assignment": assignment}
+
+
 @app.delete("/api/assignments/{assignment_id}")
 async def delete_assignment(assignment_id: str):
     assignment = assignment_registry.get_assignment(assignment_id)
@@ -1851,6 +1879,8 @@ async def delete_assignment(assignment_id: str):
         raise HTTPException(status_code=404, detail="assignment_not_found")
     if assignment["status"] == "running":
         raise HTTPException(status_code=409, detail="assignment_running")
+    if assignment.get("revision_of") or assignment.get("revision_ids"):
+        raise HTTPException(status_code=409, detail="assignment_has_revisions")
     if assignment_registry.assignment_has_handoffs(assignment_id):
         raise HTTPException(status_code=409, detail="assignment_has_handoffs")
     assignment_registry.delete_assignment(assignment_id)

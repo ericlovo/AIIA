@@ -168,6 +168,7 @@ export function AgentStudio() {
         agents={agents}
         view={view}
         onViewChange={changeView}
+        onRouteHandoff={routeHandoff}
         initialAgentId={workBoardIntent?.agentId}
         initialAssignmentId={workBoardIntent?.assignmentId}
         initialHandoffSourceId={workBoardIntent?.handoffSourceId}

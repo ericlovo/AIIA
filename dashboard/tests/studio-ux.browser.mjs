@@ -1,10 +1,11 @@
 import assert from 'node:assert/strict'
-import { mkdir } from 'node:fs/promises'
+import { mkdir, readFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 const { chromium } = await import(process.env.PLAYWRIGHT_MODULE || 'playwright')
 const output = process.env.SCREENSHOT_DIR || join(tmpdir(), 'aiia-studio-ux')
+const studioDist = process.env.STUDIO_DIST_DIR
 await mkdir(output, { recursive: true })
 const browser = await chromium.launch({ headless: true, executablePath: process.env.CHROMIUM_PATH })
 const date = '2026-09-14'
@@ -56,6 +57,19 @@ try {
     const ideas = makeIdeas()
     let promoteCalls = 0
     await page.routeWebSocket('**/ws', ws => ws.onMessage(() => {}))
+    if (studioDist) {
+      await page.route('http://studio.test/', async route => route.fulfill({
+        contentType: 'text/html',
+        body: await readFile(join(studioDist, 'index.html')),
+      }))
+      await page.route('http://studio.test/assets/**', async route => {
+        const asset = new URL(route.request().url()).pathname.slice(1)
+        await route.fulfill({
+          contentType: asset.endsWith('.css') ? 'text/css' : 'text/javascript',
+          body: await readFile(join(studioDist, asset)),
+        })
+      })
+    }
     await page.route('**/api/**', async route => {
       const path = new URL(route.request().url()).pathname
       let body = {}
@@ -106,7 +120,8 @@ try {
       else if (path === '/api/voice/status') body = { available: false }
       await route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) })
     })
-    await page.goto(process.env.STUDIO_URL || 'http://127.0.0.1:5184/')
+    await page.goto(studioDist ? 'http://studio.test/' : process.env.STUDIO_URL || 'http://127.0.0.1:5184/')
+    await page.getByText('Token usage and agent attribution', { exact: true }).click()
     const tokens = page.getByRole('region', { name: 'Platform token usage' })
     await tokens.getByText('84,256', { exact: true }).first().waitFor().catch(async error => {
       console.error(await page.locator('body').innerText())

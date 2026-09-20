@@ -146,6 +146,8 @@ class AssignmentRegistry:
                     for assignment in reversed(self.assignments)
                     if assignment["status"] in {"completed", "failed"}
                     and not assignment.get("source_handoff_id")
+                    and not assignment.get("revision_of")
+                    and not assignment.get("revision_ids")
                     and not self.assignment_has_handoffs(assignment["id"])
                 ),
                 None,
@@ -298,6 +300,46 @@ class AssignmentRegistry:
         return assignment
 
     @_durable_mutation
+    def create_revision(
+        self, assignment_id: str, *, expected_version: str, note: str
+    ) -> dict[str, Any]:
+        source = self.get_assignment(assignment_id)
+        if not source:
+            raise ValueError("assignment_not_found")
+        if source["status"] != "completed" or not source["result"].strip():
+            raise ValueError("assignment_not_reviewable")
+        if source.get("review_status") != "rejected":
+            raise ValueError("assignment_not_rejected")
+        if not expected_version or expected_version != source.get("review_version"):
+            raise ValueError("review_changed_refresh_required")
+        if not note.strip() or len(note) > 2_000:
+            raise ValueError("revision_feedback_required")
+        for child_id in source.get("revision_ids", []):
+            child = self.get_assignment(child_id)
+            if child and child.get("revision_version") == expected_version:
+                return child
+        context = (
+            f"Revision of {source['id']}\n\nFeedback:\n{note.strip()}"
+            f"\n\nOriginal context:\n{source['context']}"
+            f"\n\nOriginal output:\n{source['result']}"
+        )
+        if len(context) > MAX_CONTEXT_LENGTH:
+            raise ValueError("assignment_context_too_long")
+        child_id = f"asg_{uuid.uuid4().hex[:12]}"
+        source.setdefault("revision_ids", []).append(child_id)
+        child = self.create_assignment(
+            title=f"Revise: {source['title']}",
+            objective=source["objective"],
+            agent_id=source["agent_id"],
+            priority=source["priority"],
+            context=context,
+            success_criteria=source["success_criteria"],
+            assignment_id=child_id,
+        )
+        child.update(revision_of=source["id"], revision_version=expected_version)
+        return child
+
+    @_durable_mutation
     def create_handoff(
         self,
         *,
@@ -363,6 +405,8 @@ class AssignmentRegistry:
             return False
         if self.assignment_has_handoffs(assignment_id):
             return False
+        if assignment.get("revision_of") or assignment.get("revision_ids"):
+            raise ValueError("assignment_has_revisions")
         self.assignments.remove(assignment)
         return True
 

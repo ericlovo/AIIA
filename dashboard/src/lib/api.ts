@@ -433,6 +433,8 @@ export type ReviewStatus = 'unreviewed' | 'accepted' | 'rejected';
 export type AssignmentPriority = 'low' | 'normal' | 'high' | 'urgent';
 
 export interface Assignment {
+  revision_of?: string;
+  revision_ids?: string[];
   recovery_pending?: boolean;
   recovered_at?: string;
   id: string;
@@ -694,6 +696,8 @@ export const api = {
     post<{ assignment: Assignment }>(`/api/assignments/${id}/review`, { decision, expected_version, note }),
   createAssignment: (data: AssignmentDefinition) =>
     post<{ assignment: Assignment }>('/api/assignments', data),
+  reviseAssignment: (id: string, expected_version: string, note: string) =>
+    post<{ assignment: Assignment }>(`/api/assignments/${encodeURIComponent(id)}/revision`, { expected_version, note }),
   deleteAssignment: (id: string) =>
     del<{ deleted: boolean }>(`/api/assignments/${id}`),
   runAssignment: (id: string) =>
