@@ -17,7 +17,7 @@ const FILTERS: { id: Filter; label: string }[] = [
 type Origin = 'slack' | 'loops' | 'all'
 const ORIGINS: { id: Origin; label: string; source: string; project: string; blurb: string }[] = [
   { id: 'slack', label: 'From Slack', source: 'slack', project: 'mindmoor', blurb: 'Captures from the allowed Slack channels.' },
-  { id: 'loops', label: 'From loops', source: 'backlog_steward', project: '', blurb: 'Proposals the backlog steward filed. A rerun does not refile the same finding.' },
+  { id: 'loops', label: 'From loops', source: 'local_proposals', project: '', blurb: 'Proposals filed by backlog, code-review, and standup loops. A rerun does not refile the same finding.' },
   { id: 'all', label: 'All', source: '', project: '', blurb: 'Everything waiting for review, whoever raised it.' },
 ]
 const TONE: Record<ReceiptTone, string> = {
@@ -103,7 +103,7 @@ export function MemoryLog({ agents, view, onViewChange }: { agents: Agent[]; vie
       <section aria-label="Memory log" className="min-w-0">
         <div className="sticky top-0 z-10 flex flex-col gap-3 border-b border-neutral-900 bg-neutral-950/95 px-5 py-4 backdrop-blur sm:flex-row sm:items-center sm:justify-between sm:px-7">
           <div>
-            <div className="text-[10px] font-semibold uppercase tracking-[0.2em] text-neutral-500">Mindmoor captures from Slack</div>
+            <div className="text-[10px] font-semibold uppercase tracking-[0.2em] text-neutral-500">Review inbox · {scope.label}</div>
             <div className="mt-1 text-xs text-neutral-600">{sort === 'priority' ? 'Highest priority first' : 'Newest first'} · captures stay unreviewed until you log or dismiss them · refreshes every 15 seconds</div>
           </div>
           <div className="flex flex-wrap items-center gap-2">
@@ -135,7 +135,7 @@ export function MemoryLog({ agents, view, onViewChange }: { agents: Agent[]; vie
 
         {page.isError && <p role="alert" className="px-5 py-4 text-sm text-red-300 sm:px-7">Memory inbox unavailable. {data ? 'Showing the last loaded captures.' : 'Retry to load captures.'} <button type="button" onClick={() => page.refetch()} className="underline">Retry</button></p>}
         {page.isLoading && <p className="px-5 py-6 text-sm text-neutral-500 sm:px-7">Loading captures...</p>}
-        {data && ideas.length === 0 && <p className="px-5 py-6 text-sm text-neutral-500 sm:px-7">{query || priority ? 'No captures match this search.' : filter === 'unreviewed' ? (origin === 'loops' ? 'Nothing proposed. The backlog steward files what it finds here after its daily run.' : 'Nothing waiting. New @AIIA mentions and /aiia-capture ideas from the allowed Slack channels land here.') : 'No captures in this state.'}</p>}
+        {data && ideas.length === 0 && <p className="px-5 py-6 text-sm text-neutral-500 sm:px-7">{query || priority ? 'No captures match this search.' : filter === 'unreviewed' ? emptyInboxText(origin) : 'No captures in this state.'}</p>}
 
         <ul className="divide-y divide-neutral-900">
           {ideas.map(idea => <IdeaRow key={idea.id} idea={idea} busy={busy} canPost={canPost} agents={agents}
@@ -155,11 +155,26 @@ export function MemoryLog({ agents, view, onViewChange }: { agents: Agent[]; vie
         </div>}
 
         <p className="px-5 py-4 text-[11px] leading-relaxed text-neutral-600 sm:px-7">
-          {scope.blurb} "Queue as work" turns a capture into a queued assignment for one agent, with the capture text carried as untrusted input and its origin recorded. Nothing runs until you start it in Work. Logging stores the capture as a Brain fact with Slack provenance (capture ID, channel, author, time) and, when the capture came from a thread, queues one fixed receipt back to that thread through the AIIA Slack app. Receipts never carry the captured text. Only when you check "Post to {MEMORY_POST_CHANNEL}" is the capture text, with its priority and category, posted to that one channel. Dismissing keeps the record locally and sends nothing.
+          {scope.blurb} "Queue as work" turns a capture into a queued assignment for one agent, with the capture text carried as untrusted input and its origin recorded. Nothing runs until you start it in Work. {originHelp(origin)}
         </p>
       </section>
     </main>
   )
+}
+
+function emptyInboxText(origin: Origin): string {
+  if (origin === 'loops') return 'Nothing proposed. Local backlog, code-review, and standup loops file findings here.'
+  if (origin === 'slack') return 'Nothing waiting. New @AIIA mentions and /aiia-capture ideas from the allowed Slack channels land here.'
+  return 'Nothing waiting for review from Slack or local loops.'
+}
+
+// The two origins carry different obligations, so the footer says the one that
+// applies rather than describing Slack receipts to someone reading loop output.
+function originHelp(origin: Origin): string {
+  const shared = 'Logging stores the capture as a Brain fact. Dismissing keeps the record locally.'
+  if (origin === 'loops') return `${shared} Local proposals use a stable source key, send no Slack receipt, and remain reviewable when their loop runs again.`
+  if (origin === 'slack') return `${shared} Slack provenance includes capture ID, channel, author, and time. Thread captures queue one fixed receipt that never includes the captured text. Checking "Post to ${MEMORY_POST_CHANNEL}" posts the approved text, priority, and category to that channel.`
+  return `${shared} Slack captures retain channel provenance and may queue a receipt; local proposals are idempotent and send nothing outbound.`
 }
 
 function IdeaRow({ idea, busy, canPost, agents, onPromote, onDismiss, onRestore, onAssign, onRetry }: { idea: MemoryIdea; busy: boolean; canPost: boolean; agents: Agent[]; onPromote: (category: MemoryCategory, priority: MemoryPriority, postToSlack: boolean) => void; onDismiss: () => void; onRestore: () => void; onAssign: (agentId: string) => void; onRetry: (kind: 'capture' | 'promotion' | 'memory_post') => void }) {

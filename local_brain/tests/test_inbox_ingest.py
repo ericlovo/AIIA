@@ -115,6 +115,20 @@ def test_a_filed_proposal_can_be_queued_as_work(studio):
 def test_proposals_can_be_listed_apart_from_slack_captures(studio):
     server, _, inbox = studio
     ingest(server)
+    ingest(
+        server,
+        text="Review bot found an optional dependency outage",
+        source="code_review",
+        source_key="code-review:51:optional-seed",
+        project="mindmoor",
+    )
+    ingest(
+        server,
+        text="Standup found a blocked deployment",
+        source="standup",
+        source_key="standup:2026-09-21:deploy",
+        project="sanction",
+    )
     inbox.capture(
         text="a person said this",
         source_key="event:1",
@@ -124,10 +138,19 @@ def test_proposals_can_be_listed_apart_from_slack_captures(studio):
 
     client = TestClient(server.app)
     stewarded = client.get("/api/memory-inbox?source=backlog_steward").json()
+    proposals = client.get("/api/memory-inbox?source=local_proposals").json()
     slack = client.get("/api/memory-inbox?source=slack").json()
     everything = client.get("/api/memory-inbox").json()
 
     assert [item["source"] for item in stewarded["ideas"]] == ["backlog_steward"]
+    assert {item["source"] for item in proposals["ideas"]} == {
+        "backlog_steward",
+        "code_review",
+        "standup",
+    }
     assert [item["source"] for item in slack["ideas"]] == ["slack"]
     assert stewarded["total"] == 1
-    assert everything["total"] == 2
+    assert proposals["total"] == 3
+    # Counts follow the same scope as the rows, or the tab lies about its backlog.
+    assert proposals["counts"] == {"unreviewed": 3, "promoted": 0, "dismissed": 0}
+    assert everything["total"] == 4

@@ -13,6 +13,11 @@ IDEA_STATUSES = ("unreviewed", "promoted", "dismissed")
 PRIORITIES = ("urgent", "high", "normal", "low")
 PRIORITY_RANK = "CASE {} WHEN 'urgent' THEN 0 WHEN 'high' THEN 1 WHEN 'normal' THEN 2 ELSE 3 END"
 IDEA_SORTS = ("newest", "priority")
+# One inbox holds two different things. Slack captures are what a person said;
+# these are what an unattended loop proposed. The filter name is what the console
+# asks for when it wants every local source at once rather than one loop.
+LOCAL_PROPOSALS_FILTER = "local_proposals"
+LOCAL_PROPOSAL_SOURCES = ("backlog_steward", "code_review", "standup")
 # Receipt kinds map to fixed tables; never interpolate caller strings into SQL.
 # Queries below carry `# nosec B608` for that reason: the only interpolated
 # identifiers are these literal table names, and every value is bound through `?`.
@@ -405,7 +410,10 @@ class MemoryInbox:
         if project:
             clauses.append("ideas.project=?")
             args.append(project)
-        if source:
+        if source == LOCAL_PROPOSALS_FILTER:
+            clauses.append("ideas.source IN (?,?,?)")
+            args.extend(LOCAL_PROPOSAL_SOURCES)
+        elif source:
             clauses.append("ideas.source=?")
             args.append(source)
         if query:

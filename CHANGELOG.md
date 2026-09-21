@@ -46,6 +46,10 @@ All notable changes to AIIA are documented here. This project adheres to
   attempt as a linked child record, with the version guard preserved.
 
 ### Fixed
+- **The review inbox's From loops view includes every local proposal source.**
+  Backlog steward, code-review, and standup findings now appear together while
+  Slack captures remain separate. The active origin is named in the UI and its
+  guidance distinguishes local idempotency from Slack receipts and provenance.
 - **Studio/MCP send `think: false` by default.** Agent Studio runs through
   `_execute_agent`, plus MCP `aiia_offload` and `aiia_digest`, now pass
   `think: false` to Brain `/v1/chat`. qwen3's hidden reasoning was otherwise

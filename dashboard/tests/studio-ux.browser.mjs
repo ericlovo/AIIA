@@ -40,6 +40,8 @@ const makeIdeas = () => [
   { id: 'idea-one-00000000', text: '<@U0C1DCQFMRC> log this EPIC for LNS', source: 'slack', project: 'mindmoor', workspace_id: 'T_TEST', channel_id: 'C_ONE', author_id: 'U_AUTHOR', created_at: `${date}T17:22:31Z`, status: 'unreviewed', memory_id: '', memory_category: '', review_note: '', reviewed_at: '', acknowledgement_status: 'sent', acknowledgement_error: '', acknowledgement_ts: '1.1', promotion_status: null, promotion_error: null, promotion_ts: null },
   { id: 'idea-two-00000000', text: 'capture milestone from the slash command', source: 'slack', project: 'mindmoor', workspace_id: 'T_TEST', channel_id: 'C_ONE', author_id: 'U_AUTHOR', created_at: `${date}T16:43:24Z`, status: 'unreviewed', memory_id: '', memory_category: '', review_note: '', reviewed_at: '', acknowledgement_status: null, acknowledgement_error: null, acknowledgement_ts: null, promotion_status: null, promotion_error: null, promotion_ts: null },
   { id: 'idea-three-0000000', text: '<@U0C1DCQFMRC> channel verification test only', source: 'slack', project: 'mindmoor', workspace_id: 'T_TEST', channel_id: 'C_ONE', author_id: 'U_AUTHOR', created_at: `${date}T16:35:46Z`, status: 'dismissed', memory_id: '', memory_category: '', review_note: 'test noise', reviewed_at: `${date}T18:00:00Z`, acknowledgement_status: 'sent', acknowledgement_error: '', acknowledgement_ts: '1.2', promotion_status: null, promotion_error: null, promotion_ts: null },
+  { id: 'idea-four-00000000', text: 'Classify CodeRabbit findings and surface vendor quota failures separately', source: 'code_review', project: 'mindmoor', workspace_id: '', channel_id: '', author_id: '', created_at: `${date}T15:10:00Z`, status: 'unreviewed', memory_id: '', memory_category: '', review_note: '', reviewed_at: '', acknowledgement_status: null, acknowledgement_error: null, acknowledgement_ts: null, promotion_status: null, promotion_error: null, promotion_ts: null },
+  { id: 'idea-five-00000000', text: 'Standup found a blocked deployment', source: 'standup', project: 'sanction', workspace_id: '', channel_id: '', author_id: '', created_at: `${date}T14:10:00Z`, status: 'unreviewed', memory_id: '', memory_category: '', review_note: '', reviewed_at: '', acknowledgement_status: null, acknowledgement_error: null, acknowledgement_ts: null, promotion_status: null, promotion_error: null, promotion_ts: null },
 ]
 
 try {
@@ -97,10 +99,14 @@ try {
       }
       else if (path === '/api/studio/runs/synthetic-run') body = { run: measuredRun }
       else if (path === '/api/memory-inbox') {
-        const wanted = new URL(route.request().url()).searchParams.get('status')
-        const rows = ideas.filter(idea => !wanted || idea.status === wanted)
+        const params = new URL(route.request().url()).searchParams
+        const wanted = params.get('status')
+        const source = params.get('source')
+        const project = params.get('project')
+        const scoped = ideas.filter(idea => (!source || (source === 'local_proposals' ? idea.source !== 'slack' : idea.source === source)) && (!project || idea.project === project))
+        const rows = scoped.filter(idea => !wanted || idea.status === wanted)
         const counts = { unreviewed: 0, promoted: 0, dismissed: 0 }
-        for (const idea of ideas) counts[idea.status]++
+        for (const idea of scoped) counts[idea.status]++
         body = { ideas: rows, total: rows.length, offset: 0, counts }
       } else if (path.startsWith('/api/memory-inbox/')) {
         const [, , , id, action] = path.split('/')
@@ -166,6 +172,12 @@ try {
     assert.ok((await memory.innerText()).includes('Save receipt sent to Slack'))
     assert.ok((await memory.innerText()).includes('No Slack thread for save receipt'))
     await page.screenshot({ path: join(output, `memory-${width}.png`) })
+    await memory.getByRole('tab', { name: 'From loops' }).click()
+    await memory.getByText('Classify CodeRabbit findings and surface vendor quota failures separately', { exact: true }).waitFor()
+    assert.ok((await memory.innerText()).includes('code review · proposed · mindmoor'))
+    assert.ok((await memory.innerText()).includes('standup · proposed · sanction'))
+    assert.ok(!(await memory.innerText()).includes('log this EPIC for LNS'))
+    await memory.getByRole('tab', { name: 'From Slack' }).click()
     await memory.getByLabel('Memory category for capture idea-one').selectOption('decisions')
     await memory.getByRole('listitem').filter({ hasText: 'log this EPIC for LNS' }).getByRole('button', { name: 'Log to memory' }).click()
     await page.getByRole('status').filter({ hasText: 'Logged to AIIA memory as decisions' }).waitFor()
