@@ -147,3 +147,19 @@
 .sb-usage .sb-tokens:last-child { border-bottom:0; }
 @media (max-width:800px) { .sb-attention { padding:20px; } }
 @media (max-width:800px) { .sb-usage>summary { padding:16px 20px; } }
+
+.sb-review { padding:20px 30px; border-bottom:1px solid #25292c; }
+.sb-review-window { display:flex; gap:4px; }
+.sb-review-window button { background:#141d20; border:1px solid #25292c; color:#98a2a8; font-size:11px; padding:4px 10px; cursor:pointer; }
+.sb-review-window button:focus-visible { outline:2px solid #67d9e0; outline-offset:2px; }
+.sb-review-on { background:#1d2d31 !important; color:#92dce0 !important; border-color:#2f4a50 !important; }
+.sb-review-grid { display:grid; grid-template-columns:repeat(6,minmax(0,1fr)); gap:10px; margin:14px 0 12px; }
+.sb-review-metric { display:flex; flex-direction:column; gap:2px; text-align:left; min-width:0; padding:12px; background:#141d20; border:1px solid #25292c; cursor:pointer; }
+.sb-review-metric:hover { border-color:#2f4a50; }
+.sb-review-metric:focus-visible { outline:2px solid #67d9e0; outline-offset:2px; }
+.sb-review-count { font-size:22px; color:#f0f3f5; }
+.sb-review-label { font-size:12px; color:#eff2f3; overflow-wrap:anywhere; }
+.sb-review-rate { font-size:10px; color:#929ea5; overflow-wrap:anywhere; }
+.sb-review-sources { display:flex; flex-wrap:wrap; gap:14px; font-size:11px; color:#98a2a8; margin-bottom:12px; }
+@media (max-width:900px) { .sb-review-grid { grid-template-columns:repeat(3,minmax(0,1fr)); } }
+@media (max-width:560px) { .sb-review { padding:16px 20px; } .sb-review-grid { grid-template-columns:repeat(2,minmax(0,1fr)); } .sb-review-count { font-size:19px; } }

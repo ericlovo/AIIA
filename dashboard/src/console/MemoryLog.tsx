@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { api, MEMORY_CATEGORIES, MEMORY_PRIORITIES, type Agent, type MemoryCategory, type MemoryIdea, type MemoryIdeaStatus, type MemoryInboxSort, type MemoryPriority, type ReviewOutcome } from '../lib/api'
+import { api, MEMORY_CATEGORIES, MEMORY_PRIORITIES, type Agent, type MemoryCategory, type MemoryIdea, type MemoryIdeaStatus, type MemoryInboxSort, type MemoryPriority, type ReviewOutcome, type ReviewBucket } from '../lib/api'
 import { StudioTabs, type StudioView } from './StudioTabs'
 import { captureText, MEMORY_POST_CHANNEL, memoryPostLabel, priorityLabel, receiptLabel, type PriorityTone, type ReceiptTone } from './memoryText'
 
@@ -33,19 +33,33 @@ const PRIORITY_TONE: Record<PriorityTone, string> = {
   low: 'border-neutral-800 text-neutral-500',
 }
 
-export function MemoryLog({ agents, view, onViewChange }: { agents: Agent[]; view: StudioView; onViewChange: (view: StudioView) => void }) {
+const OUTCOME_LABELS: Record<ReviewBucket, string> = {
+  open: 'Open',
+  needs_work: 'Accepted as work',
+  already_fixed: 'Already fixed',
+  declined: 'Declined',
+  external_failure: 'External / tooling',
+  unclassified: 'Unclassified',
+}
+
+export function MemoryLog({ agents, view, onViewChange, intent }: { agents: Agent[]; view: StudioView; onViewChange: (view: StudioView) => void; intent?: { bucket: ReviewBucket | ''; revision: number } }) {
   const qc = useQueryClient()
-  const [filter, setFilter] = useState<Filter>('unreviewed')
-  const [origin, setOrigin] = useState<Origin>('slack')
+  // Arriving from a Switchboard metric: open on that slice of the same inbox,
+  // with the status tabs cleared so the rows the number counted are visible.
+  // The caller remounts on each metric click, so this is read once, at mount.
+  const arrived = Boolean(intent?.revision)
+  const [filter, setFilter] = useState<Filter>(arrived ? '' : 'unreviewed')
+  const [origin, setOrigin] = useState<Origin>(arrived ? 'loops' : 'slack')
   const scope = ORIGINS.find(item => item.id === origin) ?? ORIGINS[0]
   const [query, setQuery] = useState('')
   const [offset, setOffset] = useState(0)
   const [priority, setPriority] = useState<MemoryPriority | ''>('')
   const [sort, setSort] = useState<MemoryInboxSort>('newest')
+  const [outcome, setOutcome] = useState<ReviewBucket | ''>(arrived ? intent?.bucket ?? '' : '')
   const [notice, setNotice] = useState<{ tone: 'ok' | 'error'; text: string } | null>(null)
   const page = useQuery({
-    queryKey: ['memory-inbox', scope.id, filter, query, offset, priority, sort],
-    queryFn: () => api.memoryInbox({ project: scope.project, source: scope.source, status: filter, query, offset, priority, sort }),
+    queryKey: ['memory-inbox', scope.id, filter, outcome, query, offset, priority, sort],
+    queryFn: () => api.memoryInbox({ project: scope.project, source: scope.source, status: filter, outcome, query, offset, priority, sort }),
     retry: false,
     refetchInterval: 15_000,
   })
@@ -121,6 +135,7 @@ export function MemoryLog({ agents, view, onViewChange }: { agents: Agent[]; vie
               <option value="priority">Priority first</option>
             </select>
             <input value={query} onChange={event => { setQuery(event.target.value); setOffset(0) }} placeholder="Search captures" aria-label="Search captures" className="h-8 w-44 border border-neutral-800 bg-neutral-900 px-2 text-xs text-neutral-200 outline-none placeholder:text-neutral-600 focus:border-cyan-500/50" />
+            {outcome && <button type="button" onClick={() => { setOutcome(''); setOffset(0) }} className="flex h-8 shrink-0 items-center gap-1 border border-cyan-500/50 bg-cyan-500/10 px-2 text-[11px] text-cyan-100" aria-label={`Clear the ${OUTCOME_LABELS[outcome]} filter`}>{OUTCOME_LABELS[outcome]} ✕</button>}
             <div className="flex h-8 max-w-full overflow-x-auto border border-neutral-800 p-0.5" role="tablist" aria-label="Capture origin">
               {ORIGINS.map(item => (
                 <button key={item.id} role="tab" aria-selected={origin === item.id} onClick={() => { setOrigin(item.id); setOffset(0) }} className={`shrink-0 px-3 text-[11px] transition-colors ${origin === item.id ? 'bg-neutral-700 text-white' : 'text-neutral-500 hover:text-neutral-200'}`}>
@@ -140,7 +155,7 @@ export function MemoryLog({ agents, view, onViewChange }: { agents: Agent[]; vie
 
         {page.isError && <p role="alert" className="px-5 py-4 text-sm text-red-300 sm:px-7">Memory inbox unavailable. {data ? 'Showing the last loaded captures.' : 'Retry to load captures.'} <button type="button" onClick={() => page.refetch()} className="underline">Retry</button></p>}
         {page.isLoading && <p className="px-5 py-6 text-sm text-neutral-500 sm:px-7">Loading captures...</p>}
-        {data && ideas.length === 0 && <p className="px-5 py-6 text-sm text-neutral-500 sm:px-7">{query || priority ? 'No captures match this search.' : filter === 'unreviewed' ? emptyInboxText(origin) : 'No captures in this state.'}</p>}
+        {data && ideas.length === 0 && <p className="px-5 py-6 text-sm text-neutral-500 sm:px-7">{outcome ? `No proposals under ${OUTCOME_LABELS[outcome]} in this view.` : query || priority ? 'No captures match this search.' : filter === 'unreviewed' ? emptyInboxText(origin) : 'No captures in this state.'}</p>}
 
         <ul className="divide-y divide-neutral-900">
           {ideas.map(idea => <IdeaRow key={idea.id} idea={idea} busy={busy} canPost={canPost} agents={agents}

@@ -4,7 +4,7 @@ import sqlite3
 import time
 import uuid
 from contextlib import contextmanager
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 IDEA_STATUSES = ("unreviewed", "promoted", "dismissed")
@@ -19,6 +19,21 @@ IDEA_SORTS = ("newest", "priority")
 LOCAL_PROPOSALS_FILTER = "local_proposals"
 LOCAL_PROPOSAL_SOURCES = ("backlog_steward", "code_review", "standup")
 REVIEW_OUTCOMES = ("needs_work", "already_fixed", "declined", "external_failure")
+# A row that was closed before outcomes existed, or promoted without a work
+# verdict, has no outcome. It is reported under its own name. Folding it into
+# "declined" would invent a judgement nobody made, and would make a loop look
+# worse the older its findings are.
+UNCLASSIFIED = "unclassified"
+REVIEW_BUCKETS = ("open", *REVIEW_OUTCOMES, UNCLASSIFIED)
+# An accepted proposal keeps status `unreviewed` and carries an assignment, so
+# "still waiting for a person" is the absence of both a claim and an outcome.
+REVIEW_BUCKET_SQL = """CASE
+    WHEN ideas.status='unreviewed' AND ideas.assignment_id='' AND ideas.review_outcome=''
+        THEN 'open'
+    WHEN ideas.review_outcome='' THEN 'unclassified'
+    ELSE ideas.review_outcome
+END"""
+MAX_REVIEW_WINDOW_DAYS = 90
 # Receipt kinds map to fixed tables; never interpolate caller strings into SQL.
 # Queries below carry `# nosec B608` for that reason: the only interpolated
 # identifiers are these literal table names, and every value is bound through `?`.
@@ -453,6 +468,62 @@ class MemoryInbox:
             )
             return result.rowcount == 1
 
+    def review_health(self, *, days: int, project: str = "") -> dict:
+        """Counts of local proposals by source, project and review outcome.
+
+        Reads the persisted outcome column; it never parses proposal text. The
+        window is bounded and expressed in UTC, because these rows are written by
+        loops on a UTC schedule and a local-time window would cut a day in half.
+        """
+        if days < 1 or days > MAX_REVIEW_WINDOW_DAYS:
+            raise ValueError("invalid_review_window")
+        since = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
+        clauses = ["ideas.source IN (?,?,?)", "ideas.created_at>=?"]
+        args: list = [*LOCAL_PROPOSAL_SOURCES, since]
+        if project:
+            clauses.append("ideas.project=?")
+            args.append(project)
+        where = " WHERE " + " AND ".join(clauses)
+        empty = {bucket: 0 for bucket in REVIEW_BUCKETS}
+        totals = dict(empty)
+        by_source: dict[str, dict] = {}
+        by_project: dict[str, dict] = {}
+        with self.connect() as db:
+            rows = db.execute(
+                "SELECT ideas.source,ideas.project,"  # nosec B608
+                + REVIEW_BUCKET_SQL
+                + " AS bucket,count(*) FROM ideas"
+                + where
+                + " GROUP BY ideas.source,ideas.project,bucket",
+                args,
+            ).fetchall()
+        for source, project_name, bucket, count in rows:
+            if bucket not in totals:  # an outcome this version does not know
+                bucket = UNCLASSIFIED
+            totals[bucket] += count
+            by_source.setdefault(source, {"source": source, **empty})[bucket] += count
+            group = by_project.setdefault(
+                project_name or "unassigned", {"project": project_name or "unassigned", **empty}
+            )
+            group[bucket] += count
+        filed = sum(totals.values())
+        reviewed = filed - totals["open"]
+        return {
+            "window_days": days,
+            "since": since,
+            "filed": filed,
+            "reviewed": reviewed,
+            "totals": totals,
+            "by_source": sorted(
+                by_source.values(),
+                key=lambda row: -sum(value for key, value in row.items() if key != "source"),
+            ),
+            "by_project": sorted(
+                by_project.values(),
+                key=lambda row: -sum(value for key, value in row.items() if key != "project"),
+            ),
+        }
+
     def list(
         self,
         *,
@@ -461,11 +532,14 @@ class MemoryInbox:
         query: str = "",
         offset: int = 0,
         status: str = "",
+        outcome: str = "",
         priority: str = "",
         sort: str = "newest",
     ) -> dict:
         if status and status not in IDEA_STATUSES:
             raise ValueError("invalid_idea_status")
+        if outcome and outcome not in (*REVIEW_OUTCOMES, UNCLASSIFIED, "open"):
+            raise ValueError("invalid_review_outcome")
         if (priority and priority not in PRIORITIES) or sort not in IDEA_SORTS:
             raise ValueError("invalid_idea_query")
         clauses, args = [], []
@@ -481,6 +555,15 @@ class MemoryInbox:
         if query:
             clauses.append("instr(lower(ideas.text), lower(?)) > 0")
             args.append(query)
+        if outcome == "open":
+            clauses.append("ideas.status='unreviewed' AND ideas.assignment_id=''")
+            clauses.append("ideas.review_outcome=''")
+        elif outcome == UNCLASSIFIED:
+            clauses.append("ideas.review_outcome=''")
+            clauses.append("NOT (ideas.status='unreviewed' AND ideas.assignment_id='')")
+        elif outcome:
+            clauses.append("ideas.review_outcome=?")
+            args.append(outcome)
         if priority:
             clauses.append("ideas.priority=?")
             args.append(priority)

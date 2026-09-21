@@ -282,6 +282,20 @@ export type MemoryPriority = 'urgent' | 'high' | 'normal' | 'low';
 export const MEMORY_PRIORITIES: MemoryPriority[] = ['urgent', 'high', 'normal', 'low'];
 export type MemoryInboxSort = 'newest' | 'priority';
 export type ReviewOutcome = 'needs_work' | 'already_fixed' | 'declined' | 'external_failure';
+// `unclassified` is a reported bucket, never a stored outcome: it is what a row
+// closed before outcomes existed looks like from the outside.
+export type ReviewBucket = 'open' | ReviewOutcome | 'unclassified';
+export type ReviewCounts = Record<ReviewBucket, number>;
+
+export interface ReviewHealth {
+  window_days: number;
+  since: string;
+  filed: number;
+  reviewed: number;
+  totals: ReviewCounts;
+  by_source: (ReviewCounts & { source: string })[];
+  by_project: (ReviewCounts & { project: string })[];
+}
 
 export interface MemoryIdea {
   id: string;
@@ -685,12 +699,13 @@ export const api = {
   runAgent: (id: string, task: string) =>
     post<{ agent: Agent; model: string; latency_ms: number }>(`/api/agents/${id}/run`, { task }),
 
-  memoryInbox: (params: { project?: string; source?: string; query?: string; status?: MemoryIdeaStatus | ''; offset?: number; priority?: MemoryPriority | ''; sort?: MemoryInboxSort } = {}) => {
+  memoryInbox: (params: { project?: string; source?: string; query?: string; status?: MemoryIdeaStatus | ''; outcome?: ReviewBucket | ''; offset?: number; priority?: MemoryPriority | ''; sort?: MemoryInboxSort } = {}) => {
     const search = new URLSearchParams();
     if (params.project) search.set('project', params.project);
     if (params.source) search.set('source', params.source);
     if (params.query) search.set('query', params.query);
     if (params.status) search.set('status', params.status);
+    if (params.outcome) search.set('outcome', params.outcome);
     if (params.priority) search.set('priority', params.priority);
     if (params.sort && params.sort !== 'newest') search.set('sort', params.sort);
     if (params.offset) search.set('offset', String(params.offset));
@@ -708,6 +723,8 @@ export const api = {
     post<{ assignment: Assignment; idea: MemoryIdea }>(`/api/memory-inbox/${encodeURIComponent(id)}/assign`, { agent_id: agentId, title: options.title ?? '', objective: options.objective ?? '', priority: options.priority ?? 'normal', review_note: options.reviewNote ?? '' }),
   retryIdeaReceipt: (id: string, kind: 'capture' | 'promotion' | 'memory_post') =>
     post<{ status: string }>(`/api/memory-inbox/${encodeURIComponent(id)}/acknowledgement/retry?kind=${kind}`),
+  reviewHealth: (days = 14, project = '') =>
+    get<ReviewHealth>(`/api/memory-inbox/review-health?days=${days}${project ? `&project=${encodeURIComponent(project)}` : ''}`),
   slackCaptureStatus: () => get<SlackCaptureStatus>('/api/integrations/slack/status'),
   assignments: () => get<{ assignments: Assignment[] }>('/api/assignments'),
   dismissAssignment: (id: string, dismissed: boolean, expected_version: string, note = '') =>

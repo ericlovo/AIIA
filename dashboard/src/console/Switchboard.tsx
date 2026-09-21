@@ -9,6 +9,7 @@ import { runTokens } from './runTokens'
 import { DEVELOPMENT_LOOPS } from './developmentLoops'
 import { loopState, DOT_COLOR } from './taskStatus'
 import { assignmentOrigin, attentionAssignments, reviewLabel } from './assignmentReview'
+import { formatRate, reviewMetrics, reviewSummary, type ReviewMetric } from './reviewHealth'
 import './switchboard.css'
 
 interface Props {
@@ -19,11 +20,12 @@ interface Props {
   onManageAgent: (id: string) => void
   onAssignAgent: (id: string) => void
   onOpenAssignment: (id: string) => void
+  onOpenReview: (bucket: ReviewMetric['bucket'] | '') => void
   onTemplate: (draft: AgentDefinition) => void
   initialTaskId?: string
 }
 
-export function Switchboard({ agents, loading, agentError, onViewChange, onManageAgent, onAssignAgent, onOpenAssignment, onTemplate, initialTaskId }: Props) {
+export function Switchboard({ agents, loading, agentError, onViewChange, onManageAgent, onAssignAgent, onOpenAssignment, onOpenReview, onTemplate, initialTaskId }: Props) {
   const qc = useQueryClient()
   const inspectorRef = useRef<HTMLElement>(null)
   const ledgerRef = useRef<HTMLElement>(null)
@@ -43,6 +45,9 @@ export function Switchboard({ agents, loading, agentError, onViewChange, onManag
   const activity = useQuery({ queryKey: ['studio-activity', agentId, day, status], queryFn: () => api.studioActivity(agentId, day, status), retry: false, refetchInterval: 5_000 })
   const assignments = useQuery({ queryKey: ['assignments'], queryFn: api.assignments, retry: false, refetchInterval: 5_000 })
   const tasks = useQuery({ queryKey: ['pulse-tasks'], queryFn: api.tasks, refetchInterval: 5_000 })
+  const [reviewWindow, setReviewWindow] = useState(14)
+  const review = useQuery({ queryKey: ['review-health', reviewWindow], queryFn: () => api.reviewHealth(reviewWindow), retry: false, refetchInterval: 30_000 })
+  const metrics = reviewMetrics(review.data)
   const detail = useQuery({ queryKey: ['studio-run', runId], queryFn: () => api.studioRun(runId), enabled: Boolean(runId) })
   const loop = useMutation({ mutationFn: ({ id, enabled }: { id: string; enabled: boolean }) => api.setAgentLoop(id, enabled), onSuccess: () => qc.invalidateQueries({ queryKey: ['agents'] }) })
   const data = activity.data
@@ -91,6 +96,35 @@ export function Switchboard({ agents, loading, agentError, onViewChange, onManag
           {assignments.data && !assignments.isError && attention.length === 0 && <p>No assignments need attention in this view.</p>}
           {(showAllAttention ? attention : attention.slice(0, 8)).map(work => <button className="sb-work" key={work.id} onClick={() => onOpenAssignment(work.id)}><span>{work.title}<small>{reviewLabel(work)} · {assignmentOrigin(work)} · {agents.find(item => item.id === work.agent_id)?.name || 'Removed agent'} · {work.priority}</small></span><ArrowRight size={14} /></button>)}
           {attention.length > 8 && <button className="sb-command" onClick={() => setShowAllAttention(!showAllAttention)}>{showAllAttention ? 'Show fewer' : `Show all ${attention.length} assignments`}</button>}
+        </section>
+        <section className="sb-review" aria-label="Review health">
+          <div className="sb-section-title">
+            <div>
+              <h2>Review health</h2>
+              <p>{review.isError ? 'Review health unavailable.' : review.isLoading && !review.data ? 'Loading review health...' : reviewSummary(review.data)}</p>
+            </div>
+            <div className="sb-review-window" role="group" aria-label="Review window">
+              {[7, 14, 30].map(days => (
+                <button key={days} type="button" aria-pressed={reviewWindow === days} onClick={() => setReviewWindow(days)} className={reviewWindow === days ? 'sb-review-on' : ''}>{days}d</button>
+              ))}
+            </div>
+          </div>
+          {review.isError && <p role="alert">Could not load review outcomes. <button className="sb-command" onClick={() => review.refetch()}>Retry</button></p>}
+          <div className="sb-review-grid">
+            {metrics.map(metric => (
+              <button key={metric.bucket} type="button" className="sb-review-metric" title={metric.help} onClick={() => onOpenReview(metric.bucket)}>
+                <span className="sb-review-count">{metric.count}</span>
+                <span className="sb-review-label">{metric.label}</span>
+                <span className="sb-review-rate">{metric.bucket === 'open' ? 'of the window' : `${formatRate(metric.rate)} of reviewed`}</span>
+              </button>
+            ))}
+          </div>
+          {review.data && review.data.by_source.length > 0 && <div className="sb-review-sources">
+            {review.data.by_source.map(row => (
+              <span key={row.source}>{row.source.replace(/_/g, ' ')}: {row.open} open of {row.open + row.needs_work + row.already_fixed + row.declined + row.external_failure + row.unclassified} filed</span>
+            ))}
+          </div>}
+          <button className="sb-command" onClick={() => onOpenReview('')}>Open the review inbox</button>
         </section>
         <details className="sb-usage"><summary>Token usage and agent attribution</summary>
           <TokenUsage />

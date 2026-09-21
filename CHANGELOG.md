@@ -7,6 +7,14 @@ All notable changes to AIIA are documented here. This project adheres to
 ## [Unreleased]
 
 ### Added
+- **Review health on the Switchboard.** A bounded UTC window of local proposals,
+  grouped by source, project and recorded outcome: how many are open, how many
+  became work, and the already-fixed, declined and external/tooling rates. Rates
+  are shares of reviewed proposals, so an untouched backlog cannot flatter a
+  loop. Rows closed before outcomes existed are reported as `Unclassified`
+  rather than counted as declined. Every metric opens the existing review inbox
+  filtered to itself, and the view reads the stored outcome column; it never
+  parses proposal text and starts nothing.
 - **Local findings have explicit review outcomes.** Code-review, standup, and
   backlog proposals can be classified as already fixed, declined, or an external
   tooling failure with a required rationale. Accepting a proposal for work records

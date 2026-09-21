@@ -57,6 +57,7 @@ try {
     let layout = { version: 1, revision: 0, positions: {}, updated_at: null }
     let saves = 0
     const ideas = makeIdeas()
+    let emptyReview = false
     let promoteCalls = 0
     await page.routeWebSocket('**/ws', ws => ws.onMessage(() => {}))
     if (studioDist) {
@@ -103,11 +104,30 @@ try {
         const wanted = params.get('status')
         const source = params.get('source')
         const project = params.get('project')
-        const scoped = ideas.filter(idea => (!source || (source === 'local_proposals' ? idea.source !== 'slack' : idea.source === source)) && (!project || idea.project === project))
+        const outcome = params.get('outcome')
+        const bucketOf = idea => idea.status === 'unreviewed' && !idea.assignment_id && !idea.review_outcome ? 'open' : (idea.review_outcome || 'unclassified')
+        const scoped = ideas.filter(idea => (!source || (source === 'local_proposals' ? idea.source !== 'slack' : idea.source === source)) && (!project || idea.project === project) && (!outcome || bucketOf(idea) === outcome))
         const rows = scoped.filter(idea => !wanted || idea.status === wanted)
         const counts = { unreviewed: 0, promoted: 0, dismissed: 0 }
         for (const idea of scoped) counts[idea.status]++
         body = { ideas: rows, total: rows.length, offset: 0, counts }
+      } else if (path === '/api/memory-inbox/review-health') {
+
+        const days = Number(new URL(route.request().url()).searchParams.get('days') || 14)
+        body = emptyReview
+          ? { window_days: days, since: `${date}T00:00:00+00:00`, filed: 0, reviewed: 0, totals: { open: 0, needs_work: 0, already_fixed: 0, declined: 0, external_failure: 0, unclassified: 0 }, by_source: [], by_project: [] }
+          : {
+              window_days: days, since: `${date}T00:00:00+00:00`, filed: 12, reviewed: 9,
+              totals: { open: 3, needs_work: 4, already_fixed: 2, declined: 2, external_failure: 0, unclassified: 1 },
+              by_source: [
+                { source: 'code_review', open: 2, needs_work: 3, already_fixed: 2, declined: 1, external_failure: 0, unclassified: 1 },
+                { source: 'standup', open: 1, needs_work: 1, already_fixed: 0, declined: 1, external_failure: 0, unclassified: 0 },
+              ],
+              by_project: [
+                { project: 'mindmoor', open: 2, needs_work: 3, already_fixed: 2, declined: 1, external_failure: 0, unclassified: 1 },
+                { project: 'sanction', open: 1, needs_work: 1, already_fixed: 0, declined: 1, external_failure: 0, unclassified: 0 },
+              ],
+            }
       } else if (path.startsWith('/api/memory-inbox/')) {
         const [, , , id, action] = path.split('/')
         const idea = ideas.find(item => item.id === id)
@@ -128,6 +148,44 @@ try {
       await route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) })
     })
     await page.goto(studioDist ? 'http://studio.test/' : process.env.STUDIO_URL || 'http://127.0.0.1:5184/')
+
+    // Review health: mixed sources and outcomes, every metric a doorway.
+    const review = page.getByRole('region', { name: 'Review health' })
+    await review.getByText('12 filed in 14 days · 3 open · 44% of reviewed became work.', { exact: true }).waitFor()
+    const reviewText = await review.innerText()
+    assert.ok(reviewText.includes('Accepted as work'))
+    assert.ok(reviewText.includes('44% of reviewed'))
+    // Unclassified is named and rated on its own, never folded into declined.
+    assert.ok(reviewText.includes('Unclassified'))
+    assert.ok(reviewText.includes('code review: 2 open of 9 filed'))
+    assert.ok(reviewText.includes('standup: 1 open of 3 filed'))
+    await review.scrollIntoViewIfNeeded()
+    await page.screenshot({ path: join(output, `review-health-${width}.png`) })
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false)
+
+    await review.getByRole('button', { name: '30d' }).click()
+    await review.getByText('12 filed in 30 days · 3 open · 44% of reviewed became work.', { exact: true }).waitFor()
+    await review.getByRole('button', { name: '14d' }).click()
+
+    // A metric opens the existing inbox filtered to itself, not a second screen.
+    await review.getByRole('button', { name: /Already fixed/ }).click()
+    const filtered = page.getByRole('region', { name: 'Memory log' })
+    await filtered.getByRole('button', { name: 'Clear the Already fixed filter' }).waitFor()
+    await filtered.getByText('No proposals under Already fixed in this view.', { exact: true }).waitFor()
+    await filtered.getByRole('button', { name: 'Clear the Already fixed filter' }).click()
+    await filtered.getByText('Classify CodeRabbit findings and surface vendor quota failures separately', { exact: true }).waitFor()
+    await page.getByRole('tab', { name: 'Today', exact: true }).click()
+
+    // Zero data is a sentence, not an empty grid or a division by zero.
+    emptyReview = true
+    await review.getByRole('button', { name: '7d' }).click()
+    await review.getByText('No local proposals filed in the last 7 days.', { exact: true }).waitFor()
+    assert.ok((await review.innerText()).includes('—'))
+    await page.screenshot({ path: join(output, `review-health-empty-${width}.png`) })
+    emptyReview = false
+    await review.getByRole('button', { name: '14d' }).click()
+    await review.getByText('12 filed in 14 days · 3 open · 44% of reviewed became work.', { exact: true }).waitFor()
+
     await page.getByText('Token usage and agent attribution', { exact: true }).click()
     const tokens = page.getByRole('region', { name: 'Platform token usage' })
     await tokens.getByText('84,256', { exact: true }).first().waitFor().catch(async error => {
