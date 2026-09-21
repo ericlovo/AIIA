@@ -78,6 +78,57 @@ def test_a_reviewed_proposal_stays_reviewed_when_the_loop_reruns(studio):
     assert inbox.get(idea["id"])["status"] == "dismissed"
 
 
+@pytest.mark.parametrize("outcome", ["already_fixed", "declined", "external_failure"])
+def test_a_proposal_can_be_classified_with_a_rationale(studio, outcome):
+    server, _, inbox = studio
+    idea = ingest(server).json()["idea"]
+
+    response = TestClient(server.app).post(
+        f"/api/memory-inbox/{idea['id']}/triage",
+        json={"outcome": outcome, "note": "Reviewed against the current branch."},
+    )
+
+    assert response.status_code == 200
+    reviewed = response.json()["idea"]
+    assert reviewed["status"] == "dismissed"
+    assert reviewed["review_outcome"] == outcome
+    assert reviewed["review_note"] == "Reviewed against the current branch."
+    assert reviewed["reviewed_at"]
+    ingest(server)
+    assert inbox.get(idea["id"])["review_outcome"] == outcome
+
+
+def test_triage_refuses_slack_missing_rationale_and_needs_work_without_an_assignment(studio):
+    server, _, inbox = studio
+    proposal = ingest(server).json()["idea"]
+    slack = inbox.capture(
+        text="human capture",
+        source_key="event:1",
+        source="slack",
+        project="mindmoor",
+    )
+    client = TestClient(server.app)
+
+    assert (
+        client.post(
+            f"/api/memory-inbox/{proposal['id']}/triage",
+            json={"outcome": "declined", "note": ""},
+        ).status_code
+        == 422
+    )
+    invalid = client.post(
+        f"/api/memory-inbox/{proposal['id']}/triage",
+        json={"outcome": "needs_work", "note": "Should be assigned."},
+    )
+    assert invalid.status_code == 422
+    refused = client.post(
+        f"/api/memory-inbox/{slack['id']}/triage",
+        json={"outcome": "declined", "note": "Not a local proposal."},
+    )
+    assert refused.status_code == 409
+    assert refused.json()["detail"] == "idea_not_triageable"
+
+
 def test_a_loop_cannot_file_as_slack(studio):
     server, _, inbox = studio
 
@@ -102,7 +153,11 @@ def test_a_filed_proposal_can_be_queued_as_work(studio):
     idea = ingest(server).json()["idea"]
 
     response = TestClient(server.app).post(
-        f"/api/memory-inbox/{idea['id']}/assign", json={"agent_id": agents.agents[0]["id"]}
+        f"/api/memory-inbox/{idea['id']}/assign",
+        json={
+            "agent_id": agents.agents[0]["id"],
+            "review_note": "Valid defect; send it to delivery.",
+        },
     )
 
     assert response.status_code == 200
@@ -110,6 +165,29 @@ def test_a_filed_proposal_can_be_queued_as_work(studio):
     assert assignment["status"] == "queued"
     assert assignment["source_kind"] == "memory_capture"
     assert assignment["source_ref"] == idea["id"]
+    reviewed = response.json()["idea"]
+    assert reviewed["review_outcome"] == "needs_work"
+    assert reviewed["review_note"] == "Valid defect; send it to delivery."
+    assert reviewed["reviewed_at"]
+
+
+def test_releasing_a_failed_assignment_claim_rolls_back_needs_work(studio):
+    _, _, inbox = studio
+    idea, _ = inbox.ingest(
+        text="Review this finding",
+        source_key="code-review:rollback",
+        source="code_review",
+        project="mindmoor",
+    )
+    claimed = inbox.attach_assignment(idea["id"], "assignment-1", note="Valid defect.")
+    assert claimed["review_outcome"] == "needs_work"
+
+    released = inbox.attach_assignment(idea["id"], "", replace=True)
+
+    assert released["assignment_id"] == ""
+    assert released["review_outcome"] == ""
+    assert released["review_note"] == ""
+    assert released["reviewed_at"] == ""
 
 
 def test_proposals_can_be_listed_apart_from_slack_captures(studio):

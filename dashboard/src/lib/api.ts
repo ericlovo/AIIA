@@ -281,6 +281,7 @@ export const MEMORY_CATEGORIES: MemoryCategory[] = ['project', 'decisions', 'pat
 export type MemoryPriority = 'urgent' | 'high' | 'normal' | 'low';
 export const MEMORY_PRIORITIES: MemoryPriority[] = ['urgent', 'high', 'normal', 'low'];
 export type MemoryInboxSort = 'newest' | 'priority';
+export type ReviewOutcome = 'needs_work' | 'already_fixed' | 'declined' | 'external_failure';
 
 export interface MemoryIdea {
   id: string;
@@ -295,6 +296,7 @@ export interface MemoryIdea {
   memory_id: string;
   memory_category: string;
   review_note: string;
+  review_outcome?: ReviewOutcome | '';
   reviewed_at: string;
   priority: MemoryPriority;
   post_requested: number;
@@ -700,8 +702,10 @@ export const api = {
   dismissIdea: (id: string, note = '') =>
     post<{ idea: MemoryIdea }>(`/api/memory-inbox/${encodeURIComponent(id)}/dismiss`, { note }),
   restoreIdea: (id: string) => post<{ idea: MemoryIdea }>(`/api/memory-inbox/${encodeURIComponent(id)}/restore`),
-  assignCapture: (id: string, agentId: string, options: { title?: string; objective?: string; priority?: AssignmentPriority } = {}) =>
-    post<{ assignment: Assignment; idea: MemoryIdea }>(`/api/memory-inbox/${encodeURIComponent(id)}/assign`, { agent_id: agentId, title: options.title ?? '', objective: options.objective ?? '', priority: options.priority ?? 'normal' }),
+  triageIdea: (id: string, outcome: Exclude<ReviewOutcome, 'needs_work'>, note: string) =>
+    post<{ idea: MemoryIdea }>(`/api/memory-inbox/${encodeURIComponent(id)}/triage`, { outcome, note }),
+  assignCapture: (id: string, agentId: string, options: { title?: string; objective?: string; priority?: AssignmentPriority; reviewNote?: string } = {}) =>
+    post<{ assignment: Assignment; idea: MemoryIdea }>(`/api/memory-inbox/${encodeURIComponent(id)}/assign`, { agent_id: agentId, title: options.title ?? '', objective: options.objective ?? '', priority: options.priority ?? 'normal', review_note: options.reviewNote ?? '' }),
   retryIdeaReceipt: (id: string, kind: 'capture' | 'promotion' | 'memory_post') =>
     post<{ status: string }>(`/api/memory-inbox/${encodeURIComponent(id)}/acknowledgement/retry?kind=${kind}`),
   slackCaptureStatus: () => get<SlackCaptureStatus>('/api/integrations/slack/status'),

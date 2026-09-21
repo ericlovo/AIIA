@@ -1227,6 +1227,7 @@ class CaptureAssignmentRequest(BaseModel):
     title: str = Field(default="", max_length=120)
     objective: str = Field(default="", max_length=8_000)
     priority: str = Field(default="normal", max_length=20)
+    review_note: str = Field(default="", max_length=2_000)
 
 
 class AssignmentReviewRequest(BaseModel):
@@ -2076,7 +2077,9 @@ async def assign_capture(idea_id: str, body: CaptureAssignmentRequest):
 
         assignment_id = uuid.uuid4().hex
         try:
-            idea = memory_capture_inbox().attach_assignment(idea_id, assignment_id, replace=replace)
+            idea = memory_capture_inbox().attach_assignment(
+                idea_id, assignment_id, replace=replace, note=body.review_note
+            )
         except ValueError as exc:
             code = str(exc)
             raise HTTPException(

@@ -21,6 +21,7 @@ from local_brain.command_center.memory_inbox import (
     IDEA_SORTS,
     IDEA_STATUSES,
     PRIORITIES,
+    REVIEW_OUTCOMES,
     MemoryInbox,
 )
 
@@ -134,6 +135,11 @@ class PromoteRequest(BaseModel):
 
 class DismissRequest(BaseModel):
     note: str = Field(default="", max_length=2_000)
+
+
+class TriageRequest(BaseModel):
+    outcome: str
+    note: str = Field(min_length=1, max_length=2_000)
 
 
 class MemoryRejected(Exception):
@@ -297,6 +303,21 @@ def dismiss_idea(idea_id: str, body: DismissRequest):
 def restore_idea(idea_id: str):
     try:
         return {"idea": inbox().restore(idea_id)}
+    except ValueError as exc:
+        code = str(exc)
+        raise HTTPException(
+            status_code=404 if code == "idea_not_found" else 409, detail=code
+        ) from exc
+    except (OSError, sqlite3.Error) as exc:
+        raise HTTPException(status_code=503, detail="memory_inbox_unavailable") from exc
+
+
+@router.post("/api/memory-inbox/{idea_id}/triage")
+def triage_idea(idea_id: str, body: TriageRequest):
+    if body.outcome not in REVIEW_OUTCOMES[1:]:
+        raise HTTPException(status_code=422, detail="invalid_review_outcome")
+    try:
+        return {"idea": inbox().triage(idea_id, outcome=body.outcome, note=body.note)}
     except ValueError as exc:
         code = str(exc)
         raise HTTPException(

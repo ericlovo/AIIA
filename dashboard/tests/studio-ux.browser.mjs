@@ -117,7 +117,8 @@ try {
           Object.assign(idea, { status: 'promoted', memory_id: 'decisions_9_1789', memory_category: route.request().postDataJSON().category, reviewed_at: `${date}T18:30:00Z`, promotion_status: idea.acknowledgement_status ? 'pending' : null })
           body = { idea, memory_id: idea.memory_id }
         } else if (action === 'dismiss') { Object.assign(idea, { status: 'dismissed', reviewed_at: `${date}T18:30:00Z` }); body = { idea } }
-        else if (action === 'restore') { Object.assign(idea, { status: 'unreviewed', reviewed_at: '', review_note: '' }); body = { idea } }
+        else if (action === 'restore') { Object.assign(idea, { status: 'unreviewed', reviewed_at: '', review_note: '', review_outcome: '' }); body = { idea } }
+        else if (action === 'triage') { Object.assign(idea, { status: 'dismissed', review_outcome: route.request().postDataJSON().outcome, review_note: route.request().postDataJSON().note, reviewed_at: `${date}T18:30:00Z` }); body = { idea } }
         if (status === 404) body = { detail: 'idea_not_found' }
       } else if (path === '/api/integrations/slack/status') body = { configured: true, workspace_id: 'T_TEST', channel_ids: ['C_ONE', 'C_TWO'], outbound_messages: true, acknowledgements_enabled: true, acknowledgements_configured: true, acknowledgements: { sent: 2 }, promotion_acknowledgements: {} }
       else if (path === '/api/tasks') body = []
@@ -177,6 +178,9 @@ try {
     assert.ok((await memory.innerText()).includes('code review · proposed · mindmoor'))
     assert.ok((await memory.innerText()).includes('standup · proposed · sanction'))
     assert.ok(!(await memory.innerText()).includes('log this EPIC for LNS'))
+    await memory.getByLabel('Review rationale for capture idea-fou').fill('Already landed on main.')
+    await memory.getByRole('listitem').filter({ hasText: 'Classify CodeRabbit findings' }).getByRole('button', { name: 'Already fixed' }).click()
+    await page.getByRole('status').filter({ hasText: 'Finding classified as already fixed' }).waitFor()
     await memory.getByRole('tab', { name: 'From Slack' }).click()
     await memory.getByLabel('Memory category for capture idea-one').selectOption('decisions')
     await memory.getByRole('listitem').filter({ hasText: 'log this EPIC for LNS' }).getByRole('button', { name: 'Log to memory' }).click()

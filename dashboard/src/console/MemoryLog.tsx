@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { api, MEMORY_CATEGORIES, MEMORY_PRIORITIES, type Agent, type MemoryCategory, type MemoryIdea, type MemoryIdeaStatus, type MemoryInboxSort, type MemoryPriority } from '../lib/api'
+import { api, MEMORY_CATEGORIES, MEMORY_PRIORITIES, type Agent, type MemoryCategory, type MemoryIdea, type MemoryIdeaStatus, type MemoryInboxSort, type MemoryPriority, type ReviewOutcome } from '../lib/api'
 import { StudioTabs, type StudioView } from './StudioTabs'
 import { captureText, MEMORY_POST_CHANNEL, memoryPostLabel, priorityLabel, receiptLabel, type PriorityTone, type ReceiptTone } from './memoryText'
 
@@ -64,9 +64,14 @@ export function MemoryLog({ agents, view, onViewChange }: { agents: Agent[]; vie
   })
   const dismiss = useMutation({ mutationFn: (id: string) => api.dismissIdea(id), onSuccess: () => done('Capture dismissed. It stays in the inbox under Dismissed.'), onError: fail })
   const restore = useMutation({ mutationFn: (id: string) => api.restoreIdea(id), onSuccess: () => done('Capture restored to Unreviewed.'), onError: fail })
+  const triage = useMutation({
+    mutationFn: ({ id, outcome, note }: { id: string; outcome: Exclude<ReviewOutcome, 'needs_work'>; note: string }) => api.triageIdea(id, outcome, note),
+    onSuccess: result => done(`Finding classified as ${reviewOutcomeLabel(result.idea.review_outcome).toLowerCase()}. It remains available under Dismissed.`),
+    onError: fail,
+  })
   const retry = useMutation({ mutationFn: ({ id, kind }: { id: string; kind: 'capture' | 'promotion' | 'memory_post' }) => api.retryIdeaReceipt(id, kind), onSuccess: (_, { kind }) => done(kind === 'memory_post' ? `Post to ${MEMORY_POST_CHANNEL} queued again.` : 'Receipt queued again.'), onError: fail })
   const assign = useMutation({
-    mutationFn: ({ id, agentId }: { id: string; agentId: string }) => api.assignCapture(id, agentId),
+    mutationFn: ({ id, agentId, note }: { id: string; agentId: string; note: string }) => api.assignCapture(id, agentId, { reviewNote: note }),
     onSuccess: result => {
       qc.invalidateQueries({ queryKey: ['assignments'] })
       done(`Queued for ${agents.find(item => item.id === result.assignment.agent_id)?.name || 'the agent'} as "${result.assignment.title}". It waits in Work until you run it.`)
@@ -74,7 +79,7 @@ export function MemoryLog({ agents, view, onViewChange }: { agents: Agent[]; vie
     onError: fail,
   })
   const canPost = slack.data?.memory_posts_configured === true
-  const busy = promote.isPending || dismiss.isPending || restore.isPending || retry.isPending || assign.isPending
+  const busy = promote.isPending || dismiss.isPending || restore.isPending || triage.isPending || retry.isPending || assign.isPending
   const data = page.data
   const counts = data?.counts
   const ideas = data?.ideas ?? []
@@ -142,7 +147,8 @@ export function MemoryLog({ agents, view, onViewChange }: { agents: Agent[]; vie
             onPromote={(category, priority, postToSlack) => promote.mutate({ id: idea.id, category, priority, postToSlack })}
             onDismiss={() => dismiss.mutate(idea.id)}
             onRestore={() => restore.mutate(idea.id)}
-            onAssign={agentId => assign.mutate({ id: idea.id, agentId })}
+            onTriage={(outcome, note) => triage.mutate({ id: idea.id, outcome, note })}
+            onAssign={(agentId, note) => assign.mutate({ id: idea.id, agentId, note })}
             onRetry={kind => retry.mutate({ id: idea.id, kind })} />)}
         </ul>
 
@@ -177,11 +183,13 @@ function originHelp(origin: Origin): string {
   return `${shared} Slack captures retain channel provenance and may queue a receipt; local proposals are idempotent and send nothing outbound.`
 }
 
-function IdeaRow({ idea, busy, canPost, agents, onPromote, onDismiss, onRestore, onAssign, onRetry }: { idea: MemoryIdea; busy: boolean; canPost: boolean; agents: Agent[]; onPromote: (category: MemoryCategory, priority: MemoryPriority, postToSlack: boolean) => void; onDismiss: () => void; onRestore: () => void; onAssign: (agentId: string) => void; onRetry: (kind: 'capture' | 'promotion' | 'memory_post') => void }) {
+function IdeaRow({ idea, busy, canPost, agents, onPromote, onDismiss, onRestore, onTriage, onAssign, onRetry }: { idea: MemoryIdea; busy: boolean; canPost: boolean; agents: Agent[]; onPromote: (category: MemoryCategory, priority: MemoryPriority, postToSlack: boolean) => void; onDismiss: () => void; onRestore: () => void; onTriage: (outcome: Exclude<ReviewOutcome, 'needs_work'>, note: string) => void; onAssign: (agentId: string, note: string) => void; onRetry: (kind: 'capture' | 'promotion' | 'memory_post') => void }) {
   const [category, setCategory] = useState<MemoryCategory>('project')
   const [priority, setPriority] = useState<MemoryPriority>('normal')
   const [postToSlack, setPostToSlack] = useState(false)
   const [owner, setOwner] = useState('')
+  const [reviewNote, setReviewNote] = useState('')
+  const localProposal = idea.source !== 'slack'
   const posted = memoryPostLabel(idea.memory_post_status, idea.memory_post_error, idea.post_requested === 1)
   const badge = priorityLabel(idea.priority)
   const text = captureText(idea.text) || '(mention only, no text)'
@@ -200,6 +208,7 @@ function IdeaRow({ idea, busy, canPost, agents, onPromote, onDismiss, onRestore,
             <span>capture {idea.id.slice(0, 8)}</span>
             {idea.status === 'promoted' && <span>memory {idea.memory_category} · {idea.memory_id}</span>}
             {idea.review_note && <span>note: {idea.review_note}</span>}
+            {idea.review_outcome && <span className="text-cyan-200">triage: {reviewOutcomeLabel(idea.review_outcome)}</span>}
             {idea.assignment_id && <span className="text-cyan-200">queued as work {idea.assignment_id.slice(0, 8)}</span>}
           </div>
           <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-[11px]">
@@ -228,7 +237,13 @@ function IdeaRow({ idea, busy, canPost, agents, onPromote, onDismiss, onRestore,
               Post to {MEMORY_POST_CHANNEL}
             </label>}
             <button type="button" disabled={busy} onClick={() => onPromote(category, priority, postToSlack)} className="h-8 border border-cyan-500/60 bg-cyan-500/10 px-3 text-xs text-cyan-100 hover:bg-cyan-500/20 disabled:opacity-40">Log to memory</button>
-            <button type="button" disabled={busy} onClick={onDismiss} className="h-8 border border-neutral-800 px-3 text-xs text-neutral-300 hover:text-white disabled:opacity-40">Dismiss</button>
+            {!localProposal && <button type="button" disabled={busy} onClick={onDismiss} className="h-8 border border-neutral-800 px-3 text-xs text-neutral-300 hover:text-white disabled:opacity-40">Dismiss</button>}
+          </>}
+          {localProposal && idea.status === 'unreviewed' && !idea.assignment_id && <>
+            <input value={reviewNote} onChange={event => setReviewNote(event.target.value)} placeholder="Review rationale" aria-label={`Review rationale for capture ${idea.id.slice(0, 8)}`} className="h-8 w-44 border border-neutral-800 bg-neutral-900 px-2 text-xs text-neutral-200 outline-none placeholder:text-neutral-600 focus:border-cyan-500/50" />
+            <button type="button" disabled={busy || !reviewNote.trim()} onClick={() => onTriage('already_fixed', reviewNote)} className="h-8 border border-neutral-800 px-3 text-xs text-neutral-300 hover:text-white disabled:opacity-40">Already fixed</button>
+            <button type="button" disabled={busy || !reviewNote.trim()} onClick={() => onTriage('external_failure', reviewNote)} className="h-8 border border-neutral-800 px-3 text-xs text-neutral-300 hover:text-white disabled:opacity-40">External / tooling</button>
+            <button type="button" disabled={busy || !reviewNote.trim()} onClick={() => onTriage('declined', reviewNote)} className="h-8 border border-neutral-800 px-3 text-xs text-neutral-300 hover:text-white disabled:opacity-40">Decline</button>
           </>}
           {idea.status !== 'dismissed' && !idea.assignment_id && agents.length > 0 && <>
             <label className="text-[11px] text-neutral-500">Agent
@@ -237,13 +252,23 @@ function IdeaRow({ idea, busy, canPost, agents, onPromote, onDismiss, onRestore,
                 {agents.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
               </select>
             </label>
-            <button type="button" disabled={busy || !owner} onClick={() => onAssign(owner)} className="h-8 border border-neutral-800 px-3 text-xs text-neutral-300 hover:text-white disabled:opacity-40">Queue as work</button>
+            <button type="button" disabled={busy || !owner} onClick={() => onAssign(owner, reviewNote)} className="h-8 border border-neutral-800 px-3 text-xs text-neutral-300 hover:text-white disabled:opacity-40">{localProposal ? 'Accept as work' : 'Queue as work'}</button>
           </>}
           {idea.status === 'dismissed' && <button type="button" disabled={busy} onClick={onRestore} className="h-8 border border-neutral-800 px-3 text-xs text-neutral-300 hover:text-white disabled:opacity-40">Restore</button>}
         </div>
       </div>
     </li>
   )
+}
+
+function reviewOutcomeLabel(outcome: MemoryIdea['review_outcome']): string {
+  const labels: Partial<Record<ReviewOutcome, string>> = {
+    needs_work: 'Needs work',
+    already_fixed: 'Already fixed',
+    declined: 'Declined',
+    external_failure: 'External / tooling',
+  }
+  return outcome ? labels[outcome] ?? outcome : 'Reviewed'
 }
 
 function slackSummary(status: { configured: boolean; acknowledgements_configured: boolean; channel_ids: string[]; memory_posts_configured?: boolean } | undefined, failed: boolean): string {

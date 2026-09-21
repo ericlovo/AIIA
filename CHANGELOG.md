@@ -7,6 +7,11 @@ All notable changes to AIIA are documented here. This project adheres to
 ## [Unreleased]
 
 ### Added
+- **Local findings have explicit review outcomes.** Code-review, standup, and
+  backlog proposals can be classified as already fixed, declined, or an external
+  tooling failure with a required rationale. Accepting a proposal for work records
+  `needs_work` and queues its assignment in the same locked path; it still never
+  runs automatically.
 - **Loops can file a proposal into the inbox a human already reviews.**
   `POST /api/memory-inbox/ingest` takes one finding from a local loop with a
   stable `source_key` and is idempotent on it, so a loop that reruns daily does

@@ -18,6 +18,7 @@ IDEA_SORTS = ("newest", "priority")
 # asks for when it wants every local source at once rather than one loop.
 LOCAL_PROPOSALS_FILTER = "local_proposals"
 LOCAL_PROPOSAL_SOURCES = ("backlog_steward", "code_review", "standup")
+REVIEW_OUTCOMES = ("needs_work", "already_fixed", "declined", "external_failure")
 # Receipt kinds map to fixed tables; never interpolate caller strings into SQL.
 # Queries below carry `# nosec B608` for that reason: the only interpolated
 # identifiers are these literal table names, and every value is bound through `?`.
@@ -37,7 +38,13 @@ MEMORY_POST_COLUMNS = """(
     next_attempt REAL NOT NULL DEFAULT 0, lease TEXT NOT NULL DEFAULT '',
     error TEXT NOT NULL DEFAULT '', slack_ts TEXT NOT NULL DEFAULT ''
 )"""
-IDEA_REVIEW_COLUMNS = ("memory_id", "memory_category", "review_note", "reviewed_at")
+IDEA_REVIEW_COLUMNS = (
+    "memory_id",
+    "memory_category",
+    "review_note",
+    "reviewed_at",
+    "review_outcome",
+)
 IDEA_POST_COLUMNS = {
     "priority": "TEXT NOT NULL DEFAULT 'normal'",
     "post_requested": "INTEGER NOT NULL DEFAULT 0",
@@ -228,7 +235,9 @@ class MemoryInbox:
                 )
             return dict(db.execute(IDEA_SELECT + " WHERE ideas.id=?", (idea_id,)).fetchone())
 
-    def attach_assignment(self, idea_id: str, assignment_id: str, *, replace: bool = False) -> dict:
+    def attach_assignment(
+        self, idea_id: str, assignment_id: str, *, replace: bool = False, note: str = ""
+    ) -> dict:
         """Claim this capture for one assignment, or release it with an empty id.
 
         The claim is the thing that keeps a capture from queueing the same work
@@ -238,8 +247,11 @@ class MemoryInbox:
         """
         with self.connect() as db:
             db.execute("BEGIN IMMEDIATE")
+            if len(note) > 2_000:
+                raise ValueError("invalid_review_note")
             row = db.execute(
-                "SELECT status,assignment_id FROM ideas WHERE id=?", (idea_id,)
+                "SELECT status,assignment_id,source,review_outcome FROM ideas WHERE id=?",
+                (idea_id,),
             ).fetchone()
             if row is None:
                 raise ValueError("idea_not_found")
@@ -247,7 +259,49 @@ class MemoryInbox:
                 raise ValueError("idea_not_assignable")
             if assignment_id and row["assignment_id"] and not replace:
                 raise ValueError("idea_already_assigned")
-            db.execute("UPDATE ideas SET assignment_id=? WHERE id=?", (assignment_id, idea_id))
+            if assignment_id and row["source"] in LOCAL_PROPOSAL_SOURCES:
+                db.execute(
+                    "UPDATE ideas SET assignment_id=?,review_outcome='needs_work',"
+                    "review_note=?,reviewed_at=? WHERE id=?",
+                    (assignment_id, note.strip(), _now(), idea_id),
+                )
+            elif (
+                not assignment_id
+                and row["source"] in LOCAL_PROPOSAL_SOURCES
+                and row["review_outcome"] == "needs_work"
+            ):
+                db.execute(
+                    "UPDATE ideas SET assignment_id='',review_outcome='',review_note='',"
+                    "reviewed_at='' WHERE id=?",
+                    (idea_id,),
+                )
+            else:
+                db.execute("UPDATE ideas SET assignment_id=? WHERE id=?", (assignment_id, idea_id))
+            return dict(db.execute(IDEA_SELECT + " WHERE ideas.id=?", (idea_id,)).fetchone())
+
+    def triage(self, idea_id: str, *, outcome: str, note: str) -> dict:
+        if outcome not in REVIEW_OUTCOMES[1:]:
+            raise ValueError("invalid_review_outcome")
+        if not note.strip() or len(note) > 2_000:
+            raise ValueError("review_note_required")
+        with self.connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            row = db.execute(
+                "SELECT status,source,assignment_id FROM ideas WHERE id=?", (idea_id,)
+            ).fetchone()
+            if row is None:
+                raise ValueError("idea_not_found")
+            if (
+                row["source"] not in LOCAL_PROPOSAL_SOURCES
+                or row["status"] != "unreviewed"
+                or row["assignment_id"]
+            ):
+                raise ValueError("idea_not_triageable")
+            db.execute(
+                "UPDATE ideas SET status='dismissed',review_outcome=?,review_note=?,"
+                "reviewed_at=? WHERE id=?",
+                (outcome, note.strip(), _now(), idea_id),
+            )
             return dict(db.execute(IDEA_SELECT + " WHERE ideas.id=?", (idea_id,)).fetchone())
 
     def dismiss(self, idea_id: str, *, note: str = "") -> dict:
@@ -258,6 +312,7 @@ class MemoryInbox:
             allowed=("unreviewed",),
             status="dismissed",
             note=note,
+            outcome="",
             error="idea_not_dismissable",
         )
 
@@ -267,10 +322,11 @@ class MemoryInbox:
             allowed=("dismissed",),
             status="unreviewed",
             note="",
+            outcome="",
             error="idea_not_restorable",
         )
 
-    def _transition(self, idea_id, *, allowed, status, note, error) -> dict:
+    def _transition(self, idea_id, *, allowed, status, note, outcome, error) -> dict:
         with self.connect() as db:
             db.execute("BEGIN IMMEDIATE")
             row = db.execute("SELECT status FROM ideas WHERE id=?", (idea_id,)).fetchone()
@@ -279,8 +335,14 @@ class MemoryInbox:
             if row["status"] not in allowed:
                 raise ValueError(error)
             db.execute(
-                "UPDATE ideas SET status=?,review_note=?,reviewed_at=? WHERE id=?",
-                (status, note.strip(), _now() if status != "unreviewed" else "", idea_id),
+                "UPDATE ideas SET status=?,review_note=?,review_outcome=?,reviewed_at=? WHERE id=?",
+                (
+                    status,
+                    note.strip(),
+                    outcome,
+                    _now() if status != "unreviewed" else "",
+                    idea_id,
+                ),
             )
             return dict(db.execute(IDEA_SELECT + " WHERE ideas.id=?", (idea_id,)).fetchone())
 
