@@ -554,6 +554,7 @@ async def production_monitor_loop():
 from local_brain.__version__ import __version__
 
 app = FastAPI(title="AIIA Command Center", version=__version__)
+from local_brain.command_center.memory_inbox import LOCAL_PROPOSAL_SOURCES
 from local_brain.command_center.slack_capture import inbox as memory_capture_inbox
 from local_brain.command_center.slack_capture import router as slack_capture_router
 
@@ -1211,7 +1212,7 @@ class AssignmentCreateRequest(BaseModel):
 
 # Loops that may file a proposal. "slack" is deliberately absent: a local process
 # must not be able to dress its own output up as something a person said in Slack.
-INGEST_SOURCES = {"backlog_steward", "code_review", "standup"}
+INGEST_SOURCES = set(LOCAL_PROPOSAL_SOURCES)
 
 
 class InboxIngestRequest(BaseModel):
@@ -1226,6 +1227,7 @@ class CaptureAssignmentRequest(BaseModel):
     title: str = Field(default="", max_length=120)
     objective: str = Field(default="", max_length=8_000)
     priority: str = Field(default="normal", max_length=20)
+    review_note: str = Field(default="", max_length=2_000)
 
 
 class AssignmentReviewRequest(BaseModel):
@@ -2075,7 +2077,9 @@ async def assign_capture(idea_id: str, body: CaptureAssignmentRequest):
 
         assignment_id = uuid.uuid4().hex
         try:
-            idea = memory_capture_inbox().attach_assignment(idea_id, assignment_id, replace=replace)
+            idea = memory_capture_inbox().attach_assignment(
+                idea_id, assignment_id, replace=replace, note=body.review_note
+            )
         except ValueError as exc:
             code = str(exc)
             raise HTTPException(

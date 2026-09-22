@@ -162,6 +162,7 @@ def test_dismiss_and_restore_transitions(inbox):
     restored = inbox.restore(idea["id"])
     assert restored["status"] == "unreviewed"
     assert restored["review_note"] == "" and restored["reviewed_at"] == ""
+    assert restored["review_outcome"] == ""
     with pytest.raises(ValueError, match="idea_not_restorable"):
         inbox.restore(idea["id"])
     inbox.promote(idea["id"], memory_id="m", category="project")

@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { api, MEMORY_CATEGORIES, MEMORY_PRIORITIES, type Agent, type MemoryCategory, type MemoryIdea, type MemoryIdeaStatus, type MemoryInboxSort, type MemoryPriority } from '../lib/api'
+import { api, MEMORY_CATEGORIES, MEMORY_PRIORITIES, type Agent, type MemoryCategory, type MemoryIdea, type MemoryIdeaStatus, type MemoryInboxSort, type MemoryPriority, type ReviewOutcome, type ReviewBucket } from '../lib/api'
 import { StudioTabs, type StudioView } from './StudioTabs'
 import { captureText, MEMORY_POST_CHANNEL, memoryPostLabel, priorityLabel, receiptLabel, type PriorityTone, type ReceiptTone } from './memoryText'
 
@@ -17,7 +17,7 @@ const FILTERS: { id: Filter; label: string }[] = [
 type Origin = 'slack' | 'loops' | 'all'
 const ORIGINS: { id: Origin; label: string; source: string; project: string; blurb: string }[] = [
   { id: 'slack', label: 'From Slack', source: 'slack', project: 'mindmoor', blurb: 'Captures from the allowed Slack channels.' },
-  { id: 'loops', label: 'From loops', source: 'backlog_steward', project: '', blurb: 'Proposals the backlog steward filed. A rerun does not refile the same finding.' },
+  { id: 'loops', label: 'From loops', source: 'local_proposals', project: '', blurb: 'Proposals filed by backlog, code-review, and standup loops. A rerun does not refile the same finding.' },
   { id: 'all', label: 'All', source: '', project: '', blurb: 'Everything waiting for review, whoever raised it.' },
 ]
 const TONE: Record<ReceiptTone, string> = {
@@ -33,19 +33,33 @@ const PRIORITY_TONE: Record<PriorityTone, string> = {
   low: 'border-neutral-800 text-neutral-500',
 }
 
-export function MemoryLog({ agents, view, onViewChange }: { agents: Agent[]; view: StudioView; onViewChange: (view: StudioView) => void }) {
+const OUTCOME_LABELS: Record<ReviewBucket, string> = {
+  open: 'Open',
+  needs_work: 'Accepted as work',
+  already_fixed: 'Already fixed',
+  declined: 'Declined',
+  external_failure: 'External / tooling',
+  unclassified: 'Unclassified',
+}
+
+export function MemoryLog({ agents, view, onViewChange, intent }: { agents: Agent[]; view: StudioView; onViewChange: (view: StudioView) => void; intent?: { bucket: ReviewBucket | ''; revision: number } }) {
   const qc = useQueryClient()
-  const [filter, setFilter] = useState<Filter>('unreviewed')
-  const [origin, setOrigin] = useState<Origin>('slack')
+  // Arriving from a Switchboard metric: open on that slice of the same inbox,
+  // with the status tabs cleared so the rows the number counted are visible.
+  // The caller remounts on each metric click, so this is read once, at mount.
+  const arrived = Boolean(intent?.revision)
+  const [filter, setFilter] = useState<Filter>(arrived ? '' : 'unreviewed')
+  const [origin, setOrigin] = useState<Origin>(arrived ? 'loops' : 'slack')
   const scope = ORIGINS.find(item => item.id === origin) ?? ORIGINS[0]
   const [query, setQuery] = useState('')
   const [offset, setOffset] = useState(0)
   const [priority, setPriority] = useState<MemoryPriority | ''>('')
   const [sort, setSort] = useState<MemoryInboxSort>('newest')
+  const [outcome, setOutcome] = useState<ReviewBucket | ''>(arrived ? intent?.bucket ?? '' : '')
   const [notice, setNotice] = useState<{ tone: 'ok' | 'error'; text: string } | null>(null)
   const page = useQuery({
-    queryKey: ['memory-inbox', scope.id, filter, query, offset, priority, sort],
-    queryFn: () => api.memoryInbox({ project: scope.project, source: scope.source, status: filter, query, offset, priority, sort }),
+    queryKey: ['memory-inbox', scope.id, filter, outcome, query, offset, priority, sort],
+    queryFn: () => api.memoryInbox({ project: scope.project, source: scope.source, status: filter, outcome, query, offset, priority, sort }),
     retry: false,
     refetchInterval: 15_000,
   })
@@ -64,9 +78,14 @@ export function MemoryLog({ agents, view, onViewChange }: { agents: Agent[]; vie
   })
   const dismiss = useMutation({ mutationFn: (id: string) => api.dismissIdea(id), onSuccess: () => done('Capture dismissed. It stays in the inbox under Dismissed.'), onError: fail })
   const restore = useMutation({ mutationFn: (id: string) => api.restoreIdea(id), onSuccess: () => done('Capture restored to Unreviewed.'), onError: fail })
+  const triage = useMutation({
+    mutationFn: ({ id, outcome, note }: { id: string; outcome: Exclude<ReviewOutcome, 'needs_work'>; note: string }) => api.triageIdea(id, outcome, note),
+    onSuccess: result => done(`Finding classified as ${reviewOutcomeLabel(result.idea.review_outcome).toLowerCase()}. It remains available under Dismissed.`),
+    onError: fail,
+  })
   const retry = useMutation({ mutationFn: ({ id, kind }: { id: string; kind: 'capture' | 'promotion' | 'memory_post' }) => api.retryIdeaReceipt(id, kind), onSuccess: (_, { kind }) => done(kind === 'memory_post' ? `Post to ${MEMORY_POST_CHANNEL} queued again.` : 'Receipt queued again.'), onError: fail })
   const assign = useMutation({
-    mutationFn: ({ id, agentId }: { id: string; agentId: string }) => api.assignCapture(id, agentId),
+    mutationFn: ({ id, agentId, note }: { id: string; agentId: string; note: string }) => api.assignCapture(id, agentId, { reviewNote: note }),
     onSuccess: result => {
       qc.invalidateQueries({ queryKey: ['assignments'] })
       done(`Queued for ${agents.find(item => item.id === result.assignment.agent_id)?.name || 'the agent'} as "${result.assignment.title}". It waits in Work until you run it.`)
@@ -74,7 +93,7 @@ export function MemoryLog({ agents, view, onViewChange }: { agents: Agent[]; vie
     onError: fail,
   })
   const canPost = slack.data?.memory_posts_configured === true
-  const busy = promote.isPending || dismiss.isPending || restore.isPending || retry.isPending || assign.isPending
+  const busy = promote.isPending || dismiss.isPending || restore.isPending || triage.isPending || retry.isPending || assign.isPending
   const data = page.data
   const counts = data?.counts
   const ideas = data?.ideas ?? []
@@ -103,7 +122,7 @@ export function MemoryLog({ agents, view, onViewChange }: { agents: Agent[]; vie
       <section aria-label="Memory log" className="min-w-0">
         <div className="sticky top-0 z-10 flex flex-col gap-3 border-b border-neutral-900 bg-neutral-950/95 px-5 py-4 backdrop-blur sm:flex-row sm:items-center sm:justify-between sm:px-7">
           <div>
-            <div className="text-[10px] font-semibold uppercase tracking-[0.2em] text-neutral-500">Mindmoor captures from Slack</div>
+            <div className="text-[10px] font-semibold uppercase tracking-[0.2em] text-neutral-500">Review inbox · {scope.label}</div>
             <div className="mt-1 text-xs text-neutral-600">{sort === 'priority' ? 'Highest priority first' : 'Newest first'} · captures stay unreviewed until you log or dismiss them · refreshes every 15 seconds</div>
           </div>
           <div className="flex flex-wrap items-center gap-2">
@@ -116,6 +135,7 @@ export function MemoryLog({ agents, view, onViewChange }: { agents: Agent[]; vie
               <option value="priority">Priority first</option>
             </select>
             <input value={query} onChange={event => { setQuery(event.target.value); setOffset(0) }} placeholder="Search captures" aria-label="Search captures" className="h-8 w-44 border border-neutral-800 bg-neutral-900 px-2 text-xs text-neutral-200 outline-none placeholder:text-neutral-600 focus:border-cyan-500/50" />
+            {outcome && <button type="button" onClick={() => { setOutcome(''); setOffset(0) }} className="flex h-8 shrink-0 items-center gap-1 border border-cyan-500/50 bg-cyan-500/10 px-2 text-[11px] text-cyan-100" aria-label={`Clear the ${OUTCOME_LABELS[outcome]} filter`}>{OUTCOME_LABELS[outcome]} ✕</button>}
             <div className="flex h-8 max-w-full overflow-x-auto border border-neutral-800 p-0.5" role="tablist" aria-label="Capture origin">
               {ORIGINS.map(item => (
                 <button key={item.id} role="tab" aria-selected={origin === item.id} onClick={() => { setOrigin(item.id); setOffset(0) }} className={`shrink-0 px-3 text-[11px] transition-colors ${origin === item.id ? 'bg-neutral-700 text-white' : 'text-neutral-500 hover:text-neutral-200'}`}>
@@ -135,14 +155,15 @@ export function MemoryLog({ agents, view, onViewChange }: { agents: Agent[]; vie
 
         {page.isError && <p role="alert" className="px-5 py-4 text-sm text-red-300 sm:px-7">Memory inbox unavailable. {data ? 'Showing the last loaded captures.' : 'Retry to load captures.'} <button type="button" onClick={() => page.refetch()} className="underline">Retry</button></p>}
         {page.isLoading && <p className="px-5 py-6 text-sm text-neutral-500 sm:px-7">Loading captures...</p>}
-        {data && ideas.length === 0 && <p className="px-5 py-6 text-sm text-neutral-500 sm:px-7">{query || priority ? 'No captures match this search.' : filter === 'unreviewed' ? (origin === 'loops' ? 'Nothing proposed. The backlog steward files what it finds here after its daily run.' : 'Nothing waiting. New @AIIA mentions and /aiia-capture ideas from the allowed Slack channels land here.') : 'No captures in this state.'}</p>}
+        {data && ideas.length === 0 && <p className="px-5 py-6 text-sm text-neutral-500 sm:px-7">{outcome ? `No proposals under ${OUTCOME_LABELS[outcome]} in this view.` : query || priority ? 'No captures match this search.' : filter === 'unreviewed' ? emptyInboxText(origin) : 'No captures in this state.'}</p>}
 
         <ul className="divide-y divide-neutral-900">
           {ideas.map(idea => <IdeaRow key={idea.id} idea={idea} busy={busy} canPost={canPost} agents={agents}
             onPromote={(category, priority, postToSlack) => promote.mutate({ id: idea.id, category, priority, postToSlack })}
             onDismiss={() => dismiss.mutate(idea.id)}
             onRestore={() => restore.mutate(idea.id)}
-            onAssign={agentId => assign.mutate({ id: idea.id, agentId })}
+            onTriage={(outcome, note) => triage.mutate({ id: idea.id, outcome, note })}
+            onAssign={(agentId, note) => assign.mutate({ id: idea.id, agentId, note })}
             onRetry={kind => retry.mutate({ id: idea.id, kind })} />)}
         </ul>
 
@@ -155,18 +176,35 @@ export function MemoryLog({ agents, view, onViewChange }: { agents: Agent[]; vie
         </div>}
 
         <p className="px-5 py-4 text-[11px] leading-relaxed text-neutral-600 sm:px-7">
-          {scope.blurb} "Queue as work" turns a capture into a queued assignment for one agent, with the capture text carried as untrusted input and its origin recorded. Nothing runs until you start it in Work. Logging stores the capture as a Brain fact with Slack provenance (capture ID, channel, author, time) and, when the capture came from a thread, queues one fixed receipt back to that thread through the AIIA Slack app. Receipts never carry the captured text. Only when you check "Post to {MEMORY_POST_CHANNEL}" is the capture text, with its priority and category, posted to that one channel. Dismissing keeps the record locally and sends nothing.
+          {scope.blurb} "Queue as work" turns a capture into a queued assignment for one agent, with the capture text carried as untrusted input and its origin recorded. Nothing runs until you start it in Work. {originHelp(origin)}
         </p>
       </section>
     </main>
   )
 }
 
-function IdeaRow({ idea, busy, canPost, agents, onPromote, onDismiss, onRestore, onAssign, onRetry }: { idea: MemoryIdea; busy: boolean; canPost: boolean; agents: Agent[]; onPromote: (category: MemoryCategory, priority: MemoryPriority, postToSlack: boolean) => void; onDismiss: () => void; onRestore: () => void; onAssign: (agentId: string) => void; onRetry: (kind: 'capture' | 'promotion' | 'memory_post') => void }) {
+function emptyInboxText(origin: Origin): string {
+  if (origin === 'loops') return 'Nothing proposed. Local backlog, code-review, and standup loops file findings here.'
+  if (origin === 'slack') return 'Nothing waiting. New @AIIA mentions and /aiia-capture ideas from the allowed Slack channels land here.'
+  return 'Nothing waiting for review from Slack or local loops.'
+}
+
+// The two origins carry different obligations, so the footer says the one that
+// applies rather than describing Slack receipts to someone reading loop output.
+function originHelp(origin: Origin): string {
+  const shared = 'Logging stores the capture as a Brain fact. Dismissing keeps the record locally.'
+  if (origin === 'loops') return `${shared} Local proposals use a stable source key, send no Slack receipt, and remain reviewable when their loop runs again.`
+  if (origin === 'slack') return `${shared} Slack provenance includes capture ID, channel, author, and time. Thread captures queue one fixed receipt that never includes the captured text. Checking "Post to ${MEMORY_POST_CHANNEL}" posts the approved text, priority, and category to that channel.`
+  return `${shared} Slack captures retain channel provenance and may queue a receipt; local proposals are idempotent and send nothing outbound.`
+}
+
+function IdeaRow({ idea, busy, canPost, agents, onPromote, onDismiss, onRestore, onTriage, onAssign, onRetry }: { idea: MemoryIdea; busy: boolean; canPost: boolean; agents: Agent[]; onPromote: (category: MemoryCategory, priority: MemoryPriority, postToSlack: boolean) => void; onDismiss: () => void; onRestore: () => void; onTriage: (outcome: Exclude<ReviewOutcome, 'needs_work'>, note: string) => void; onAssign: (agentId: string, note: string) => void; onRetry: (kind: 'capture' | 'promotion' | 'memory_post') => void }) {
   const [category, setCategory] = useState<MemoryCategory>('project')
   const [priority, setPriority] = useState<MemoryPriority>('normal')
   const [postToSlack, setPostToSlack] = useState(false)
   const [owner, setOwner] = useState('')
+  const [reviewNote, setReviewNote] = useState('')
+  const localProposal = idea.source !== 'slack'
   const posted = memoryPostLabel(idea.memory_post_status, idea.memory_post_error, idea.post_requested === 1)
   const badge = priorityLabel(idea.priority)
   const text = captureText(idea.text) || '(mention only, no text)'
@@ -185,6 +223,7 @@ function IdeaRow({ idea, busy, canPost, agents, onPromote, onDismiss, onRestore,
             <span>capture {idea.id.slice(0, 8)}</span>
             {idea.status === 'promoted' && <span>memory {idea.memory_category} · {idea.memory_id}</span>}
             {idea.review_note && <span>note: {idea.review_note}</span>}
+            {idea.review_outcome && <span className="text-cyan-200">triage: {reviewOutcomeLabel(idea.review_outcome)}</span>}
             {idea.assignment_id && <span className="text-cyan-200">queued as work {idea.assignment_id.slice(0, 8)}</span>}
           </div>
           <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-[11px]">
@@ -213,7 +252,13 @@ function IdeaRow({ idea, busy, canPost, agents, onPromote, onDismiss, onRestore,
               Post to {MEMORY_POST_CHANNEL}
             </label>}
             <button type="button" disabled={busy} onClick={() => onPromote(category, priority, postToSlack)} className="h-8 border border-cyan-500/60 bg-cyan-500/10 px-3 text-xs text-cyan-100 hover:bg-cyan-500/20 disabled:opacity-40">Log to memory</button>
-            <button type="button" disabled={busy} onClick={onDismiss} className="h-8 border border-neutral-800 px-3 text-xs text-neutral-300 hover:text-white disabled:opacity-40">Dismiss</button>
+            {!localProposal && <button type="button" disabled={busy} onClick={onDismiss} className="h-8 border border-neutral-800 px-3 text-xs text-neutral-300 hover:text-white disabled:opacity-40">Dismiss</button>}
+          </>}
+          {localProposal && idea.status === 'unreviewed' && !idea.assignment_id && <>
+            <input value={reviewNote} onChange={event => setReviewNote(event.target.value)} placeholder="Review rationale" aria-label={`Review rationale for capture ${idea.id.slice(0, 8)}`} className="h-8 w-44 border border-neutral-800 bg-neutral-900 px-2 text-xs text-neutral-200 outline-none placeholder:text-neutral-600 focus:border-cyan-500/50" />
+            <button type="button" disabled={busy || !reviewNote.trim()} onClick={() => onTriage('already_fixed', reviewNote)} className="h-8 border border-neutral-800 px-3 text-xs text-neutral-300 hover:text-white disabled:opacity-40">Already fixed</button>
+            <button type="button" disabled={busy || !reviewNote.trim()} onClick={() => onTriage('external_failure', reviewNote)} className="h-8 border border-neutral-800 px-3 text-xs text-neutral-300 hover:text-white disabled:opacity-40">External / tooling</button>
+            <button type="button" disabled={busy || !reviewNote.trim()} onClick={() => onTriage('declined', reviewNote)} className="h-8 border border-neutral-800 px-3 text-xs text-neutral-300 hover:text-white disabled:opacity-40">Decline</button>
           </>}
           {idea.status !== 'dismissed' && !idea.assignment_id && agents.length > 0 && <>
             <label className="text-[11px] text-neutral-500">Agent
@@ -222,13 +267,23 @@ function IdeaRow({ idea, busy, canPost, agents, onPromote, onDismiss, onRestore,
                 {agents.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
               </select>
             </label>
-            <button type="button" disabled={busy || !owner} onClick={() => onAssign(owner)} className="h-8 border border-neutral-800 px-3 text-xs text-neutral-300 hover:text-white disabled:opacity-40">Queue as work</button>
+            <button type="button" disabled={busy || !owner} onClick={() => onAssign(owner, reviewNote)} className="h-8 border border-neutral-800 px-3 text-xs text-neutral-300 hover:text-white disabled:opacity-40">{localProposal ? 'Accept as work' : 'Queue as work'}</button>
           </>}
           {idea.status === 'dismissed' && <button type="button" disabled={busy} onClick={onRestore} className="h-8 border border-neutral-800 px-3 text-xs text-neutral-300 hover:text-white disabled:opacity-40">Restore</button>}
         </div>
       </div>
     </li>
   )
+}
+
+function reviewOutcomeLabel(outcome: MemoryIdea['review_outcome']): string {
+  const labels: Partial<Record<ReviewOutcome, string>> = {
+    needs_work: 'Needs work',
+    already_fixed: 'Already fixed',
+    declined: 'Declined',
+    external_failure: 'External / tooling',
+  }
+  return outcome ? labels[outcome] ?? outcome : 'Reviewed'
 }
 
 function slackSummary(status: { configured: boolean; acknowledgements_configured: boolean; channel_ids: string[]; memory_posts_configured?: boolean } | undefined, failed: boolean): string {

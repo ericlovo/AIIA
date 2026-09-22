@@ -40,6 +40,8 @@ const makeIdeas = () => [
   { id: 'idea-one-00000000', text: '<@U0C1DCQFMRC> log this EPIC for LNS', source: 'slack', project: 'mindmoor', workspace_id: 'T_TEST', channel_id: 'C_ONE', author_id: 'U_AUTHOR', created_at: `${date}T17:22:31Z`, status: 'unreviewed', memory_id: '', memory_category: '', review_note: '', reviewed_at: '', acknowledgement_status: 'sent', acknowledgement_error: '', acknowledgement_ts: '1.1', promotion_status: null, promotion_error: null, promotion_ts: null },
   { id: 'idea-two-00000000', text: 'capture milestone from the slash command', source: 'slack', project: 'mindmoor', workspace_id: 'T_TEST', channel_id: 'C_ONE', author_id: 'U_AUTHOR', created_at: `${date}T16:43:24Z`, status: 'unreviewed', memory_id: '', memory_category: '', review_note: '', reviewed_at: '', acknowledgement_status: null, acknowledgement_error: null, acknowledgement_ts: null, promotion_status: null, promotion_error: null, promotion_ts: null },
   { id: 'idea-three-0000000', text: '<@U0C1DCQFMRC> channel verification test only', source: 'slack', project: 'mindmoor', workspace_id: 'T_TEST', channel_id: 'C_ONE', author_id: 'U_AUTHOR', created_at: `${date}T16:35:46Z`, status: 'dismissed', memory_id: '', memory_category: '', review_note: 'test noise', reviewed_at: `${date}T18:00:00Z`, acknowledgement_status: 'sent', acknowledgement_error: '', acknowledgement_ts: '1.2', promotion_status: null, promotion_error: null, promotion_ts: null },
+  { id: 'idea-four-00000000', text: 'Classify CodeRabbit findings and surface vendor quota failures separately', source: 'code_review', project: 'mindmoor', workspace_id: '', channel_id: '', author_id: '', created_at: `${date}T15:10:00Z`, status: 'unreviewed', memory_id: '', memory_category: '', review_note: '', reviewed_at: '', acknowledgement_status: null, acknowledgement_error: null, acknowledgement_ts: null, promotion_status: null, promotion_error: null, promotion_ts: null },
+  { id: 'idea-five-00000000', text: 'Standup found a blocked deployment', source: 'standup', project: 'sanction', workspace_id: '', channel_id: '', author_id: '', created_at: `${date}T14:10:00Z`, status: 'unreviewed', memory_id: '', memory_category: '', review_note: '', reviewed_at: '', acknowledgement_status: null, acknowledgement_error: null, acknowledgement_ts: null, promotion_status: null, promotion_error: null, promotion_ts: null },
 ]
 
 try {
@@ -55,6 +57,7 @@ try {
     let layout = { version: 1, revision: 0, positions: {}, updated_at: null }
     let saves = 0
     const ideas = makeIdeas()
+    let emptyReview = false
     let promoteCalls = 0
     await page.routeWebSocket('**/ws', ws => ws.onMessage(() => {}))
     if (studioDist) {
@@ -97,11 +100,34 @@ try {
       }
       else if (path === '/api/studio/runs/synthetic-run') body = { run: measuredRun }
       else if (path === '/api/memory-inbox') {
-        const wanted = new URL(route.request().url()).searchParams.get('status')
-        const rows = ideas.filter(idea => !wanted || idea.status === wanted)
+        const params = new URL(route.request().url()).searchParams
+        const wanted = params.get('status')
+        const source = params.get('source')
+        const project = params.get('project')
+        const outcome = params.get('outcome')
+        const bucketOf = idea => idea.status === 'unreviewed' && !idea.assignment_id && !idea.review_outcome ? 'open' : (idea.review_outcome || 'unclassified')
+        const scoped = ideas.filter(idea => (!source || (source === 'local_proposals' ? idea.source !== 'slack' : idea.source === source)) && (!project || idea.project === project) && (!outcome || bucketOf(idea) === outcome))
+        const rows = scoped.filter(idea => !wanted || idea.status === wanted)
         const counts = { unreviewed: 0, promoted: 0, dismissed: 0 }
-        for (const idea of ideas) counts[idea.status]++
+        for (const idea of scoped) counts[idea.status]++
         body = { ideas: rows, total: rows.length, offset: 0, counts }
+      } else if (path === '/api/memory-inbox/review-health') {
+
+        const days = Number(new URL(route.request().url()).searchParams.get('days') || 14)
+        body = emptyReview
+          ? { window_days: days, since: `${date}T00:00:00+00:00`, filed: 0, reviewed: 0, totals: { open: 0, needs_work: 0, already_fixed: 0, declined: 0, external_failure: 0, unclassified: 0 }, by_source: [], by_project: [] }
+          : {
+              window_days: days, since: `${date}T00:00:00+00:00`, filed: 12, reviewed: 9,
+              totals: { open: 3, needs_work: 4, already_fixed: 2, declined: 2, external_failure: 0, unclassified: 1 },
+              by_source: [
+                { source: 'code_review', open: 2, needs_work: 3, already_fixed: 2, declined: 1, external_failure: 0, unclassified: 1 },
+                { source: 'standup', open: 1, needs_work: 1, already_fixed: 0, declined: 1, external_failure: 0, unclassified: 0 },
+              ],
+              by_project: [
+                { project: 'mindmoor', open: 2, needs_work: 3, already_fixed: 2, declined: 1, external_failure: 0, unclassified: 1 },
+                { project: 'sanction', open: 1, needs_work: 1, already_fixed: 0, declined: 1, external_failure: 0, unclassified: 0 },
+              ],
+            }
       } else if (path.startsWith('/api/memory-inbox/')) {
         const [, , , id, action] = path.split('/')
         const idea = ideas.find(item => item.id === id)
@@ -111,7 +137,8 @@ try {
           Object.assign(idea, { status: 'promoted', memory_id: 'decisions_9_1789', memory_category: route.request().postDataJSON().category, reviewed_at: `${date}T18:30:00Z`, promotion_status: idea.acknowledgement_status ? 'pending' : null })
           body = { idea, memory_id: idea.memory_id }
         } else if (action === 'dismiss') { Object.assign(idea, { status: 'dismissed', reviewed_at: `${date}T18:30:00Z` }); body = { idea } }
-        else if (action === 'restore') { Object.assign(idea, { status: 'unreviewed', reviewed_at: '', review_note: '' }); body = { idea } }
+        else if (action === 'restore') { Object.assign(idea, { status: 'unreviewed', reviewed_at: '', review_note: '', review_outcome: '' }); body = { idea } }
+        else if (action === 'triage') { Object.assign(idea, { status: 'dismissed', review_outcome: route.request().postDataJSON().outcome, review_note: route.request().postDataJSON().note, reviewed_at: `${date}T18:30:00Z` }); body = { idea } }
         if (status === 404) body = { detail: 'idea_not_found' }
       } else if (path === '/api/integrations/slack/status') body = { configured: true, workspace_id: 'T_TEST', channel_ids: ['C_ONE', 'C_TWO'], outbound_messages: true, acknowledgements_enabled: true, acknowledgements_configured: true, acknowledgements: { sent: 2 }, promotion_acknowledgements: {} }
       else if (path === '/api/tasks') body = []
@@ -121,6 +148,44 @@ try {
       await route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) })
     })
     await page.goto(studioDist ? 'http://studio.test/' : process.env.STUDIO_URL || 'http://127.0.0.1:5184/')
+
+    // Review health: mixed sources and outcomes, every metric a doorway.
+    const review = page.getByRole('region', { name: 'Review health' })
+    await review.getByText('12 filed in 14 days · 3 open · 44% of reviewed became work.', { exact: true }).waitFor()
+    const reviewText = await review.innerText()
+    assert.ok(reviewText.includes('Accepted as work'))
+    assert.ok(reviewText.includes('44% of reviewed'))
+    // Unclassified is named and rated on its own, never folded into declined.
+    assert.ok(reviewText.includes('Unclassified'))
+    assert.ok(reviewText.includes('code review: 2 open of 9 filed'))
+    assert.ok(reviewText.includes('standup: 1 open of 3 filed'))
+    await review.scrollIntoViewIfNeeded()
+    await page.screenshot({ path: join(output, `review-health-${width}.png`) })
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false)
+
+    await review.getByRole('button', { name: '30d' }).click()
+    await review.getByText('12 filed in 30 days · 3 open · 44% of reviewed became work.', { exact: true }).waitFor()
+    await review.getByRole('button', { name: '14d' }).click()
+
+    // A metric opens the existing inbox filtered to itself, not a second screen.
+    await review.getByRole('button', { name: /Already fixed/ }).click()
+    const filtered = page.getByRole('region', { name: 'Memory log' })
+    await filtered.getByRole('button', { name: 'Clear the Already fixed filter' }).waitFor()
+    await filtered.getByText('No proposals under Already fixed in this view.', { exact: true }).waitFor()
+    await filtered.getByRole('button', { name: 'Clear the Already fixed filter' }).click()
+    await filtered.getByText('Classify CodeRabbit findings and surface vendor quota failures separately', { exact: true }).waitFor()
+    await page.getByRole('tab', { name: 'Today', exact: true }).click()
+
+    // Zero data is a sentence, not an empty grid or a division by zero.
+    emptyReview = true
+    await review.getByRole('button', { name: '7d' }).click()
+    await review.getByText('No local proposals filed in the last 7 days.', { exact: true }).waitFor()
+    assert.ok((await review.innerText()).includes('—'))
+    await page.screenshot({ path: join(output, `review-health-empty-${width}.png`) })
+    emptyReview = false
+    await review.getByRole('button', { name: '14d' }).click()
+    await review.getByText('12 filed in 14 days · 3 open · 44% of reviewed became work.', { exact: true }).waitFor()
+
     await page.getByText('Token usage and agent attribution', { exact: true }).click()
     const tokens = page.getByRole('region', { name: 'Platform token usage' })
     await tokens.getByText('84,256', { exact: true }).first().waitFor().catch(async error => {
@@ -166,6 +231,15 @@ try {
     assert.ok((await memory.innerText()).includes('Save receipt sent to Slack'))
     assert.ok((await memory.innerText()).includes('No Slack thread for save receipt'))
     await page.screenshot({ path: join(output, `memory-${width}.png`) })
+    await memory.getByRole('tab', { name: 'From loops' }).click()
+    await memory.getByText('Classify CodeRabbit findings and surface vendor quota failures separately', { exact: true }).waitFor()
+    assert.ok((await memory.innerText()).includes('code review · proposed · mindmoor'))
+    assert.ok((await memory.innerText()).includes('standup · proposed · sanction'))
+    assert.ok(!(await memory.innerText()).includes('log this EPIC for LNS'))
+    await memory.getByLabel('Review rationale for capture idea-fou').fill('Already landed on main.')
+    await memory.getByRole('listitem').filter({ hasText: 'Classify CodeRabbit findings' }).getByRole('button', { name: 'Already fixed' }).click()
+    await page.getByRole('status').filter({ hasText: 'Finding classified as already fixed' }).waitFor()
+    await memory.getByRole('tab', { name: 'From Slack' }).click()
     await memory.getByLabel('Memory category for capture idea-one').selectOption('decisions')
     await memory.getByRole('listitem').filter({ hasText: 'log this EPIC for LNS' }).getByRole('button', { name: 'Log to memory' }).click()
     await page.getByRole('status').filter({ hasText: 'Logged to AIIA memory as decisions' }).waitFor()

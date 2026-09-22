@@ -7,6 +7,19 @@ All notable changes to AIIA are documented here. This project adheres to
 ## [Unreleased]
 
 ### Added
+- **Review health on the Switchboard.** A bounded UTC window of local proposals,
+  grouped by source, project and recorded outcome: how many are open, how many
+  became work, and the already-fixed, declined and external/tooling rates. Rates
+  are shares of reviewed proposals, so an untouched backlog cannot flatter a
+  loop. Rows closed before outcomes existed are reported as `Unclassified`
+  rather than counted as declined. Every metric opens the existing review inbox
+  filtered to itself, and the view reads the stored outcome column; it never
+  parses proposal text and starts nothing.
+- **Local findings have explicit review outcomes.** Code-review, standup, and
+  backlog proposals can be classified as already fixed, declined, or an external
+  tooling failure with a required rationale. Accepting a proposal for work records
+  `needs_work` and queues its assignment in the same locked path; it still never
+  runs automatically.
 - **Loops can file a proposal into the inbox a human already reviews.**
   `POST /api/memory-inbox/ingest` takes one finding from a local loop with a
   stable `source_key` and is idempotent on it, so a loop that reruns daily does
@@ -46,6 +59,10 @@ All notable changes to AIIA are documented here. This project adheres to
   attempt as a linked child record, with the version guard preserved.
 
 ### Fixed
+- **The review inbox's From loops view includes every local proposal source.**
+  Backlog steward, code-review, and standup findings now appear together while
+  Slack captures remain separate. The active origin is named in the UI and its
+  guidance distinguishes local idempotency from Slack receipts and provenance.
 - **Studio/MCP send `think: false` by default.** Agent Studio runs through
   `_execute_agent`, plus MCP `aiia_offload` and `aiia_digest`, now pass
   `think: false` to Brain `/v1/chat`. qwen3's hidden reasoning was otherwise

@@ -7,6 +7,7 @@ import { WorkBoard } from './WorkBoard'
 import { ActivityOverview } from './ActivityOverview'
 import { Switchboard } from './Switchboard'
 import { MemoryLog } from './MemoryLog'
+import type { ReviewBucket } from '../lib/api'
 
 type Draft = AgentDefinition
 
@@ -57,6 +58,9 @@ export function AgentStudio() {
     return () => window.removeEventListener('studio:switchboard', open)
   }, [])
   const [workBoardIntent, setWorkBoardIntent] = useState<WorkBoardIntent | null>(null)
+  // A review metric is a doorway into the existing inbox, not a second screen.
+  // The revision lets the same metric be reopened after the filter was cleared.
+  const [reviewIntent, setReviewIntent] = useState<{ bucket: ReviewBucket | ''; revision: number }>({ bucket: '', revision: 0 })
   const selected = agents.find(agent => agent.id === selectedId) ?? null
   const needsRepo = draft.tools.some(tool => ['Repository read', 'GitHub read', 'Git workspace'].includes(tool))
   const githubConnected = resources?.github.status === 'connected'
@@ -79,6 +83,9 @@ export function AgentStudio() {
 
   function changeView(nextView: StudioView) {
     setWorkBoardIntent(null)
+    // Revision 0 means "no intent", so opening Memory from the tabs later shows
+    // the default view rather than silently re-applying the last metric filter.
+    setReviewIntent({ bucket: '', revision: 0 })
     setSwitchboardIntent(previous => ({ taskId: '', revision: previous.revision + 1 }))
     setView(nextView)
   }
@@ -91,6 +98,11 @@ export function AgentStudio() {
   function assignAgent(agentId: string) {
     setWorkBoardIntent({ agentId })
     setView('assignments')
+  }
+
+  function openReview(bucket: ReviewBucket | '') {
+    setReviewIntent(previous => ({ bucket, revision: previous.revision + 1 }))
+    setView('memory')
   }
 
   function openAssignment(assignmentId: string) {
@@ -134,7 +146,7 @@ export function AgentStudio() {
   if (view === 'switchboard') {
     return <Switchboard key={switchboardIntent.revision} agents={agents} loading={isLoading} agentError={isError}
       onViewChange={changeView} onManageAgent={manageAgent} onAssignAgent={assignAgent}
-      onOpenAssignment={openAssignment} initialTaskId={switchboardIntent.taskId}
+      onOpenAssignment={openAssignment} onOpenReview={openReview} initialTaskId={switchboardIntent.taskId}
       onTemplate={template => { selectAgent(null); setDraft(template); changeView('agents') }} />
   }
 
@@ -158,7 +170,7 @@ export function AgentStudio() {
   }
 
   if (view === 'memory') {
-    return <MemoryLog agents={agents} view={view} onViewChange={changeView} />
+    return <MemoryLog key={reviewIntent.revision} agents={agents} view={view} onViewChange={changeView} intent={reviewIntent} />
   }
 
   if (view !== 'agents') {
