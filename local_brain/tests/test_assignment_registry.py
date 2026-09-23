@@ -1,6 +1,32 @@
 from local_brain.command_center.assignment_registry import AssignmentRegistry
 
 
+def test_pending_loop_reviews_are_scoped_and_survive_reload(tmp_path):
+    registry = AssignmentRegistry(tmp_path / "assignments.json")
+    for agent_id, trigger, status in [
+        ("one", "interval", "completed"),
+        ("two", "interval", "completed"),
+        ("one", "manual", "completed"),
+        ("one", "interval", "failed"),
+        ("one", "interval", "queued"),
+        ("one", "interval", "running"),
+    ]:
+        work = registry.create_assignment(
+            title="Evidence", objective="Inspect", agent_id=agent_id, trigger=trigger
+        )
+        if status != "queued":
+            registry.set_running(work["id"])
+        if status in {"completed", "failed"}:
+            registry.finish_assignment(
+                work["id"], result="Evidence", error="failure" if status == "failed" else ""
+            )
+    assert registry.pending_loop_reviews("one") == 1
+    assert registry.pending_loop_reviews("two") == 1
+    assert registry.pending_loop_reviews("unknown") == 0
+    restored = AssignmentRegistry(registry.data_file)
+    assert restored.pending_loop_reviews("one") == 1
+
+
 def test_assignment_lifecycle_persists(tmp_path):
     data_file = tmp_path / "assignments.json"
     registry = AssignmentRegistry(data_file)

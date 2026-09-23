@@ -32,6 +32,7 @@ _COLLAPSED = re.compile(
 
 ASSIGNMENT_DATA_FILE = Path(__file__).parent / "assignment_data.json"
 MAX_ASSIGNMENTS = 250
+MAX_PENDING_LOOP_REVIEWS = 3
 MAX_HANDOFFS = 250
 MAX_RESULT_LENGTH = 40_000
 MAX_CONTEXT_LENGTH = MAX_RESULT_LENGTH + 1_000
@@ -118,6 +119,17 @@ class AssignmentRegistry:
                 and assignment.get("status") in {"queued", "running"}
             ),
             None,
+        )
+
+    def pending_loop_reviews(self, agent_id: str) -> int:
+        return sum(
+            1
+            for assignment in self.assignments
+            if assignment.get("agent_id") == agent_id
+            and assignment.get("trigger") == "interval"
+            and assignment.get("status") == "completed"
+            and assignment.get("review_status", "unreviewed") == "unreviewed"
+            and not assignment.get("dismissed_at")
         )
 
     @_durable_mutation

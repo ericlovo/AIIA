@@ -204,6 +204,58 @@ async def test_scheduled_run_is_a_reviewable_assignment(tmp_path, monkeypatch):
     assert any(entity == "assignment" and event == "completed" for entity, event, _ in events)
 
 
+@pytest.mark.parametrize("release", ["accepted", "rejected", "dismissed"])
+async def test_scheduled_review_backpressure(tmp_path, monkeypatch, release):
+    cc, agents, assignments, events, fake = _studio(
+        tmp_path, monkeypatch, content="Evidence for review."
+    )
+    agent = _create_agent(agents, loop_enabled=True, loop_task="Inspect.")
+    for index in range(3):
+        monkeypatch.setattr(cc, "_loop_schedule_key", lambda agent, i=index: str(i))
+        await cc._run_scheduled_agent(agent)
+
+    agents.record_loop_input(agent["id"], "last-executed-input")
+    monkeypatch.setattr(cc, "_scheduled_input_hash", lambda agent: "new-unexecuted-input")
+    monkeypatch.setattr(cc, "_loop_schedule_key", lambda agent: "next-window")
+    blocked = await cc._run_scheduled_agent(agent)
+    assert blocked["reason"] == "awaiting_review"
+    assert blocked["pending_reviews"] == 3
+    assert len(fake.posts) == 3
+    assert len(assignments.list_assignments()) == 3
+    assert agent["loop_runs_today"] == 3
+    assert agent["loop_input_hash"] == "last-executed-input"
+    assert agent["loop_checked_at"] == agent["loop_skipped_at"]
+    assert AgentRegistry(agents.data_file).get(agent["id"])["loop_skip_reason"] == "awaiting_review"
+    assert any(event == "skipped" for _, event, _ in events)
+
+    other = _create_agent(agents, loop_enabled=True, loop_task="Other work.")
+    assert agents.due_loop()["id"] == other["id"]
+    manual = assignments.create_assignment(
+        title="Manual", objective="Inspect", agent_id=agent["id"]
+    )
+    await cc.run_assignment(manual["id"])
+    assert len(fake.posts) == 4
+    assert assignments.pending_loop_reviews(agent["id"]) == 3
+
+    work = next(a for a in assignments.list_assignments() if a["trigger"] == "interval")
+    if release == "dismissed":
+        assignments.dismiss_assignment(
+            work["id"], dismissed=True, expected_version=work["review_version"]
+        )
+    else:
+        assignments.review_assignment(
+            work["id"],
+            decision=release,
+            note="Reviewed evidence",
+            expected_version=work["review_version"],
+        )
+    result = await cc._run_scheduled_agent(agent)
+    assert result["assignment"]["status"] == "completed"
+    assert len(fake.posts) == 5
+    assert agent["loop_skip_reason"] == ""
+    assert agent["loop_input_hash"] == "new-unexecuted-input"
+
+
 async def test_scheduled_repository_run_skips_unchanged_input(tmp_path, monkeypatch):
     cc, agents, assignments, events, fake = _studio(
         tmp_path, monkeypatch, content="No material regression risk."

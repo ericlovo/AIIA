@@ -12,7 +12,8 @@ const date = '2026-09-14'
 const agents = Array.from({ length: 24 }, (_, i) => ({
   id: `synthetic-${i}`, name: `CI specialist ${i + 1}`, mission: 'Review local repository evidence and identify the next verification task.',
   status: i === 0 ? 'running' : 'idle', skills: ['Analysis'], tools: ['Repository read'],
-  repo_id: 'aiia', loop_enabled: false, loop_max_runs_per_day: 4, runs: [],
+  repo_id: 'aiia', loop_enabled: i === 1, loop_max_runs_per_day: 4, runs: [],
+  loop_interval_minutes: 60, loop_skip_reason: i === 1 ? 'awaiting_review' : '',
 }))
 const assignments = agents.flatMap(agent => Array.from({ length: 3 }, (_, i) => ({
   id: `${agent.id}-work-${i}`, agent_id: agent.id, title: `Verify contract ${agent.id} ${i}`,
@@ -148,6 +149,15 @@ try {
       await route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) })
     })
     await page.goto(studioDist ? 'http://studio.test/' : process.env.STUDIO_URL || 'http://127.0.0.1:5184/')
+
+    const waitingLane = page.locator('.sb-lane').filter({ hasText: 'CI specialist 2' }).first()
+    await waitingLane.getByText('Waiting for review', { exact: true }).waitFor()
+    await waitingLane.click()
+    assert.equal(await page.getByText('Waiting for review', { exact: true }).count(), 2)
+    await waitingLane.scrollIntoViewIfNeeded()
+    await page.screenshot({ path: join(output, `review-backpressure-${width}.png`) })
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false)
+    await page.getByRole('button', { name: 'Clear filters', exact: true }).click()
 
     // Review health: mixed sources and outcomes, every metric a doorway.
     const review = page.getByRole('region', { name: 'Review health' })

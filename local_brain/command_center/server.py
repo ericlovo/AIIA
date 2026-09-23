@@ -873,7 +873,10 @@ from local_brain.command_center.agent_registry import (
 )
 from local_brain.command_center.agent_suites import describe_suites, suite_prompt_line
 from local_brain.command_center.aiia_tasks import TaskRunner
-from local_brain.command_center.assignment_registry import AssignmentRegistry
+from local_brain.command_center.assignment_registry import (
+    MAX_PENDING_LOOP_REVIEWS,
+    AssignmentRegistry,
+)
 from local_brain.command_center.git_workspace_registry import GitWorkspaceRegistry
 from local_brain.command_center.git_write_registry import GitWriteRegistry
 from local_brain.command_center.persistence import PersistenceError
@@ -2322,6 +2325,17 @@ async def _run_scheduled_agent(agent: dict[str, Any]) -> dict[str, Any]:
                     result["agent"] = updated
             return result
         return {"assignment": open_work, "deduplicated": True}
+    pending_reviews = assignment_registry.pending_loop_reviews(agent["id"])
+    if pending_reviews >= MAX_PENDING_LOOP_REVIEWS:
+        updated = agent_registry.record_loop_skip(agent["id"], None, reason="awaiting_review")
+        if updated:
+            await broadcast_studio_event("agent", "skipped", updated)
+        return {
+            "agent": updated,
+            "skipped": True,
+            "reason": "awaiting_review",
+            "pending_reviews": pending_reviews,
+        }
     if input_hash and input_hash == agent.get("loop_input_hash"):
         updated = agent_registry.record_loop_skip(agent["id"], input_hash)
         if updated:
