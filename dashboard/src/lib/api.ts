@@ -733,6 +733,9 @@ export const api = {
     post<{ assignment: Assignment }>(`/api/assignments/${id}/review`, { decision, expected_version, note }),
   createAssignment: (data: AssignmentDefinition) =>
     post<{ assignment: Assignment }>('/api/assignments', data),
+  typesafeStatus: () => get<{ ready: boolean; enabled: boolean; configured: boolean }>('/api/integrations/typesafe/status'),
+  suggestAssignmentAgent: (data: { brief: string; candidate_agent_ids: string[]; allow_external: boolean }) =>
+    post<{ status: 'suggested' | 'no_match'; agent_id: string | null; confidence: number; model: string; usage: { input_tokens: number; output_tokens: number }; requires_confirmation: boolean }>('/api/assignments/suggest-agent', data),
   reviseAssignment: (id: string, expected_version: string, note: string) =>
     post<{ assignment: Assignment }>(`/api/assignments/${encodeURIComponent(id)}/revision`, { expected_version, note }),
   deleteAssignment: (id: string) =>

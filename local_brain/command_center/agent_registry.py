@@ -281,15 +281,22 @@ class AgentRegistry:
         return agent
 
     @_durable_mutation
-    def record_loop_skip(self, agent_id: str, input_hash: str) -> dict[str, Any] | None:
+    def record_loop_skip(
+        self,
+        agent_id: str,
+        input_hash: str | None,
+        *,
+        reason: str = "unchanged_repository_input",
+    ) -> dict[str, Any] | None:
         agent = self.get(agent_id)
         if not agent:
             return None
         now = datetime.now(timezone.utc).isoformat()
         agent["loop_checked_at"] = now
-        agent["loop_input_hash"] = input_hash
+        if input_hash is not None:
+            agent["loop_input_hash"] = input_hash
         agent["loop_skipped_at"] = now
-        agent["loop_skip_reason"] = "unchanged_repository_input"
+        agent["loop_skip_reason"] = reason
         agent["updated_at"] = now
         return agent
 

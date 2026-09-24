@@ -873,7 +873,17 @@ from local_brain.command_center.agent_registry import (
 )
 from local_brain.command_center.agent_suites import describe_suites, suite_prompt_line
 from local_brain.command_center.aiia_tasks import TaskRunner
-from local_brain.command_center.assignment_registry import AssignmentRegistry
+from local_brain.command_center.assignment_registry import (
+    MAX_PENDING_LOOP_REVIEWS,
+    AssignmentRegistry,
+)
+from local_brain.command_center.typesafe_advisor import (
+    RoutingAdvisor,
+    RoutingRequest,
+    advisor_status,
+)
+
+typesafe_advisor = RoutingAdvisor()
 from local_brain.command_center.git_workspace_registry import GitWorkspaceRegistry
 from local_brain.command_center.git_write_registry import GitWriteRegistry
 from local_brain.command_center.persistence import PersistenceError
@@ -1773,6 +1783,31 @@ async def list_assignments():
     }
 
 
+@app.get("/api/integrations/typesafe/status")
+async def typesafe_status():
+    return advisor_status()
+
+
+@app.post("/api/assignments/suggest-agent")
+async def suggest_assignment_agent(body: RoutingRequest):
+    ids = body.candidate_agent_ids
+    if len(set(ids)) != len(ids):
+        raise HTTPException(status_code=422, detail="duplicate_candidate_agents")
+    candidates = [agent_registry.get(agent_id) for agent_id in ids]
+    if any(candidate is None for candidate in candidates):
+        raise HTTPException(status_code=422, detail="agent_not_found")
+    try:
+        return await typesafe_advisor.suggest(body, candidates)
+    except ValueError as exc:
+        code = str(exc)
+        # A governance denial is the capability being unavailable, not a bad request.
+        unavailable = {"typesafe_not_configured", "typesafe_unavailable", "egress_denied"}
+        status = 503 if code in unavailable else 422
+        if code == "routing_advisor_busy":
+            status = 429
+        raise HTTPException(status_code=status, detail=code) from None
+
+
 @app.get("/api/assignments/{assignment_id}/history")
 async def assignment_history(assignment_id: str, offset: int = 0):
     assignment = assignment_registry.get_assignment(assignment_id)
@@ -2322,6 +2357,17 @@ async def _run_scheduled_agent(agent: dict[str, Any]) -> dict[str, Any]:
                     result["agent"] = updated
             return result
         return {"assignment": open_work, "deduplicated": True}
+    pending_reviews = assignment_registry.pending_loop_reviews(agent["id"])
+    if pending_reviews >= MAX_PENDING_LOOP_REVIEWS:
+        updated = agent_registry.record_loop_skip(agent["id"], None, reason="awaiting_review")
+        if updated:
+            await broadcast_studio_event("agent", "skipped", updated)
+        return {
+            "agent": updated,
+            "skipped": True,
+            "reason": "awaiting_review",
+            "pending_reviews": pending_reviews,
+        }
     if input_hash and input_hash == agent.get("loop_input_hash"):
         updated = agent_registry.record_loop_skip(agent["id"], input_hash)
         if updated:

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { RotateCcw } from 'lucide-react'
 import { AssignmentHistory } from './AssignmentHistory'
+import { RoutingAdvisor } from './RoutingAdvisor'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   api,
@@ -410,6 +411,7 @@ function AssignmentForm({ agents, draft, pending, error, onChange, onSubmit }: {
       <Field label="Objective"><textarea value={draft.objective} onChange={event => onChange({ ...draft, objective: event.target.value })} rows={5} placeholder="Return the five highest-leverage integration points." /></Field>
       <Field label="Context"><textarea value={draft.context} onChange={event => onChange({ ...draft, context: event.target.value })} rows={4} placeholder="Relevant decisions, constraints, or source material." /></Field>
       <Field label="Success criteria"><textarea value={draft.success_criteria} onChange={event => onChange({ ...draft, success_criteria: event.target.value })} rows={3} placeholder="What must be true for this work to be done?" /></Field>
+      <RoutingAdvisor agents={agents} onSelect={agent_id => onChange({ ...draft, agent_id })} />
       {error && <ErrorNotice error={error} />}
       <button disabled={!draft.title.trim() || !draft.objective.trim() || !draft.agent_id || pending} onClick={onSubmit} className="w-full bg-cyan-400 px-3 py-2.5 text-sm font-medium text-neutral-950 disabled:cursor-not-allowed disabled:opacity-40">{pending ? 'Creating…' : 'Create assignment'}</button>
     </Panel>
