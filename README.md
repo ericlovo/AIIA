@@ -89,8 +89,10 @@ and tune an agent, run it, wire a handoff, or tune a whole suite at once.
 command in allowlisted channels land in a local inbox; a human reviews each one in
 Studio and either dismisses it or logs it as a Brain memory with its provenance. A
 logged memory can be given a priority and, on explicit approval, posted back to
-one private channel. Everything else stays on the box: the air-gap denies every
-other cloud egress, fail-closed, and reports each denial as audit evidence.
+one private channel. One more exception is off by default: an advisory routing
+suggestion for picking an agent, which sends a brief you write and nothing else.
+Everything else stays on the box: the air-gap denies every other cloud egress,
+fail-closed, and reports each denial as audit evidence.
 
 The CLI is a thin client over both. Claude Code reaches AIIA over MCP.
 Your terminal reaches AIIA over `aiia`. Same brain. Both halves of the
