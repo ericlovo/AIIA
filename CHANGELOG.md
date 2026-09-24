@@ -6,6 +6,29 @@ All notable changes to AIIA are documented here. This project adheres to
 
 ## [Unreleased]
 
+## [0.7.0] — 2026-09-24
+
+Fifteen commits since 0.6.0, seven of them feature work and eight dependency
+updates, on one theme: **work now reaches a human queue on its own, and nothing
+runs without a person.**
+
+Before this release a finding lived in a report file that its next run
+overwrote. Now every source of work lands in one inbox a person reviews: a Slack
+capture, a scheduled loop's own output, and proposals filed by the backlog
+steward, code review and standup. Each is classified with a rationale that
+persists, and the Switchboard reports how a loop's findings actually resolved,
+so a loop that produces noise is visible as noise.
+
+The execution boundary did not move. Accepting a finding creates a **queued**
+assignment through the existing locked path; a person still starts it. Nothing
+in this release runs inference on its own that did not already.
+
+One new egress point, off by default: an advisory routing suggestion that helps
+pick an agent. It is registered, governed, denied under air-gap unless switched
+on, and requires per-request consent on top of that.
+
+Per-feature entries follow.
+
 ### Added
 - **Advisory agent routing (opt-in, off by default).** The New assignment form
   can ask an external model which of the candidate agents best fits a brief you
