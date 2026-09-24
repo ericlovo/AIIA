@@ -47,13 +47,14 @@ EGRESS_POINTS = {
     "anthropic.claude_code": "execution engine / story runner",
     "web.fetch": "research literature loop",
     "xai.realtime": "Voice Conductor ephemeral token",
+    "typesafe.routing": "advisory agent-routing suggestion (opt-in)",
 }
 
 PERMITTED_EGRESS = ["sanction control plane (metadata only)"]
 
-# Static exception for Voice Conductor. Save receipts and memory posts are each
-# separately opt-in below; never add them here. General slack.post remains denied
-# even when either Slack exception is enabled.
+# Static exception for Voice Conductor. Save receipts, memory posts and the
+# routing advisor are each separately opt-in below; never add them here. General
+# slack.post remains denied even when either Slack exception is enabled.
 AIRGAP_ALLOWED_EGRESS = frozenset({"xai.realtime"})
 
 _TIMEOUT = 5.0
@@ -65,6 +66,12 @@ def airgap_allows_tool(tool: str) -> bool:
         tool in AIRGAP_ALLOWED_EGRESS
         or (tool == "slack.capture_ack" and os.getenv("AIIA_SLACK_ACK_ENABLED", "") == "1")
         or (tool == "slack.memory_post" and os.getenv("AIIA_SLACK_MEMORY_POST_ENABLED", "") == "1")
+        # Advisory routing. Off unless switched on, and the call site still
+        # requires per-request consent from a human before it dials out.
+        or (
+            tool == "typesafe.routing"
+            and os.getenv("AIIA_TYPESAFE_ENABLED", "").lower() in {"1", "true"}
+        )
     )
 
 

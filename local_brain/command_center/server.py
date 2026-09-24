@@ -877,6 +877,13 @@ from local_brain.command_center.assignment_registry import (
     MAX_PENDING_LOOP_REVIEWS,
     AssignmentRegistry,
 )
+from local_brain.command_center.typesafe_advisor import (
+    RoutingAdvisor,
+    RoutingRequest,
+    advisor_status,
+)
+
+typesafe_advisor = RoutingAdvisor()
 from local_brain.command_center.git_workspace_registry import GitWorkspaceRegistry
 from local_brain.command_center.git_write_registry import GitWriteRegistry
 from local_brain.command_center.persistence import PersistenceError
@@ -1774,6 +1781,31 @@ async def list_assignments():
             for assignment in assignment_registry.list_assignments()
         ]
     }
+
+
+@app.get("/api/integrations/typesafe/status")
+async def typesafe_status():
+    return advisor_status()
+
+
+@app.post("/api/assignments/suggest-agent")
+async def suggest_assignment_agent(body: RoutingRequest):
+    ids = body.candidate_agent_ids
+    if len(set(ids)) != len(ids):
+        raise HTTPException(status_code=422, detail="duplicate_candidate_agents")
+    candidates = [agent_registry.get(agent_id) for agent_id in ids]
+    if any(candidate is None for candidate in candidates):
+        raise HTTPException(status_code=422, detail="agent_not_found")
+    try:
+        return await typesafe_advisor.suggest(body, candidates)
+    except ValueError as exc:
+        code = str(exc)
+        # A governance denial is the capability being unavailable, not a bad request.
+        unavailable = {"typesafe_not_configured", "typesafe_unavailable", "egress_denied"}
+        status = 503 if code in unavailable else 422
+        if code == "routing_advisor_busy":
+            status = 429
+        raise HTTPException(status_code=status, detail=code) from None
 
 
 @app.get("/api/assignments/{assignment_id}/history")
