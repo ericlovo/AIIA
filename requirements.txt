@@ -13,7 +13,7 @@ aiofiles>=23.0.0,<26.0.0
 
 # === LLM Providers ===
 # Anthropic Claude — primary cloud provider
-anthropic>=0.39.0,<1.0.0
+anthropic>=0.39.0,<2.0.0
 # Google Gemini — fallback provider
 google-generativeai>=0.8.0,<1.0.0
 # Token counting
