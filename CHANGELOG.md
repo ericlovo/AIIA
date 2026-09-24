@@ -7,6 +7,14 @@ All notable changes to AIIA are documented here. This project adheres to
 ## [Unreleased]
 
 ### Added
+- **Advisory agent routing (opt-in, off by default).** The New assignment form
+  can ask an external model which of the candidate agents best fits a brief you
+  write, returning a suggestion, a confidence and the tokens it cost. It is
+  advice: it creates no assignment, runs nothing, grants no permission, and no
+  scheduled loop calls it. `typesafe.routing` is a registered egress point that
+  asks `authorize_egress()` before dialing, denied under air-gap unless
+  `AIIA_TYPESAFE_ENABLED` is set, and per-request human consent is required on
+  top of that. Agent IDs never leave the Mini; candidates are aliased locally.
 - **Review health on the Switchboard.** A bounded UTC window of local proposals,
   grouped by source, project and recorded outcome: how many are open, how many
   became work, and the already-fixed, declined and external/tooling rates. Rates
