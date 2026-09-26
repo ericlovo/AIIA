@@ -1,6 +1,6 @@
 # Sprint: Agent Studio UX overhaul
 
-Status: PR 1 in review. Design canvas: private claude.ai artifact (link in
+Status: PR 1 and PR 2 in review. Design canvas: private claude.ai artifact (link in
 the PR or session notes; not embedded here because it is not public).
 
 ## Goal
@@ -91,12 +91,13 @@ first, then user-visible value.
 
 ### PR 2: `ci`: run the browser suites
 
-- Add a CI job that builds `dist/` and runs `tests/*.browser.mjs` with
-  `STUDIO_DIST_DIR` (all APIs mocked, no backend). Upload screenshots as an
-  artifact on failure.
-- Add an axe-core pass on each view as a non-blocking report first; make it
-  blocking after PR 4.
+- `npm run test:browser` serves the built `dist/` and runs every
+  `tests/*.browser.mjs` suite (all APIs mocked, no backend). CI runs it after
+  the build and uploads per-suite screenshots when it fails.
 - Rationale: every later PR changes layout. Without this, regressions ship.
+  Two suites had already rotted on `main` unnoticed (fixed in PR 1).
+- The axe-core accessibility pass moves to PR 4, where it lands as a blocking
+  check alongside the contrast and token fixes it would otherwise just report.
 
 ### PR 3: `refactor(studio)`: shell and routing (no visual redesign yet)
 
@@ -115,7 +116,8 @@ first, then user-visible value.
 - `focus-visible` ring everywhere.
 - Update `design/TODO.md` (it still says the dashboard has no Tailwind).
 - Tests: extend the computed-style check from this scoping pass into CI:
-  zero text under 12px, zero `neutral-600/700` text.
+  zero text under 12px, zero `neutral-600/700` text. Add a blocking axe-core
+  pass on every view.
 
 ### PR 5: `feat(studio)`: Today
 

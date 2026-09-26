@@ -88,6 +88,18 @@ pytest --collect-only local_brain/tests/  # what CI runs today
 pytest local_brain/tests/                 # once T4 lands
 ```
 
+Dashboard (`dashboard/`), all enforced in CI:
+
+```bash
+npm run lint
+npm test                 # unit tests (node --test)
+npm run build
+npm run test:browser     # Playwright suites against dist/, every API mocked
+npm run test:browser -- resilience   # run only suites whose name matches
+```
+
+Browser suites need Chromium: `npx playwright install chromium` locally.
+
 ## Conventions
 
 ### Commits
