@@ -34,7 +34,7 @@ jobs:
         id: playwright
         run: echo "version=$(node -p "require('playwright/package.json').version")" >> "$GITHUB_OUTPUT"
       - name: Cache Playwright browsers
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ~/.cache/ms-playwright
           key: playwright-${{ runner.os }}-${{ steps.playwright.outputs.version }}
@@ -46,7 +46,7 @@ jobs:
           SCREENSHOT_DIR: ${{ runner.temp }}/studio-screenshots
       - name: Upload screenshots on failure
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: studio-screenshots
           path: ${{ runner.temp }}/studio-screenshots
