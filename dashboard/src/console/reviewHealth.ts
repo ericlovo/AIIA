@@ -40,7 +40,8 @@ export function formatRate(rate: number | null): string {
 
 /** One line a person can act on, rather than six numbers they have to weigh. */
 export function reviewSummary(health: ReviewHealth | undefined): string {
-  if (!health) return 'Review health unavailable.'
+  // A partial payload (no totals) is as unusable as none, and must not crash Today.
+  if (!health?.totals) return 'Review health unavailable.'
   if (health.filed === 0) return `No local proposals filed in the last ${health.window_days} days.`
   const open = health.totals.open
   if (health.reviewed === 0) {

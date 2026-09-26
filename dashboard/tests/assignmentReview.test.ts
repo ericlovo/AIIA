@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import type { Assignment } from '../src/lib/api.ts'
-import { assignmentLabel, assignmentOrigin, attentionAssignments, reviewLabel } from '../src/console/assignmentReview.ts'
+import { assignmentLabel, assignmentOrigin, attentionAssignments, attentionSummary, reviewLabel } from '../src/console/assignmentReview.ts'
 
 const work = (id: string, overrides: Partial<Assignment> = {}): Assignment => ({
   id, title: id, objective: 'Assess evidence', agent_id: 'agent', priority: 'normal',
@@ -70,4 +70,17 @@ test('a capture-routed assignment names its source, not its trigger', () => {
   // It is created manually, by a human clicking, so the trigger alone would read "Manual".
   assert.equal(assignmentOrigin(work('capture', { trigger: 'manual', source_kind: 'memory_capture', source_ref: 'idea-1' })), 'From Slack capture')
   assert.equal(assignmentOrigin(work('plain', { trigger: 'manual', source_kind: 'manual' })), 'Manual')
+})
+
+test('attention summary is one definition: review, failed, and pending approvals', () => {
+  const records = [
+    work('review'), work('accepted', { review_status: 'accepted' }), work('failed', { status: 'failed', result: '' }),
+    work('dismissed', { status: 'failed', result: '', dismissed_at: '2026-09-16T19:00:00Z' }), work('running', { status: 'running' }),
+  ]
+  const workspaces = [{ id: 'ws-a', agent_id: 'agent', status: 'pending' as const }, { id: 'ws-b', agent_id: 'other', status: 'ready' as const }]
+  const writes = [{ workspace_id: 'ws-b', status: 'pending' as const }, { workspace_id: 'ws-a', status: 'completed' as const }]
+  assert.deepEqual(attentionSummary(records, workspaces, writes), { review: 1, failed: 1, approvals: 2, total: 4 })
+  // Scoping to an agent scopes approvals through its workspaces too.
+  assert.deepEqual(attentionSummary(records, workspaces, writes, 'other'), { review: 0, failed: 0, approvals: 1, total: 1 })
+  assert.deepEqual(attentionSummary([]), { review: 0, failed: 0, approvals: 0, total: 0 })
 })

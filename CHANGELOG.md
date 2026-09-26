@@ -6,6 +6,26 @@ All notable changes to AIIA are documented here. This project adheres to
 
 ## [Unreleased]
 
+### Fixed
+
+- **Studio: one bad record no longer takes the whole Studio down.** Each view
+  has its own error boundary with the tabs outside it, so a crash in one view
+  leaves navigation working. Partial API payloads that crashed Overview, Today
+  and assignment history now render as empty or unavailable.
+- **Studio: Today and Overview report the same "Needs attention" count.** Both
+  use one definition: output to review, failed runs, and pending git approvals.
+  Overview no longer counts an agent's stale `last_error`, which never cleared.
+  Overview's "Runs today" now uses UTC, matching Today.
+- **Studio: Space activates focused buttons and tabs again** when voice is
+  configured. Push-to-talk applies only when focus is not on a control, and
+  releasing Space mid-connect ends the hold.
+- **Studio: the Agents view shows live Mini status and the real default model**
+  instead of a hardcoded "Mini online" and `qwen3:8b`.
+
+### Removed
+
+- Unreachable Studio components `Direct`, `Mind` and `Files` (no importers).
+
 ## [0.7.0] — 2026-09-24
 
 Fifteen commits since 0.6.0, seven of them feature work and eight dependency

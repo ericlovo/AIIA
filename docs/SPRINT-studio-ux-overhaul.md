@@ -1,6 +1,6 @@
 # Sprint: Agent Studio UX overhaul
 
-Status: scoped, not started. Design canvas: private claude.ai artifact (link in
+Status: PR 1 in review. Design canvas: private claude.ai artifact (link in
 the PR or session notes; not embedded here because it is not public).
 
 ## Goal
@@ -139,17 +139,15 @@ first, then user-visible value.
 - Rename Memory to Inbox. One expanded row at a time, primary "Queue as work",
   "Log to memory", and a "Close as" menu that holds the four triage outcomes.
 
-## Decisions needed
+## Decisions (2026-09-26)
 
-1. **Orphaned components.** Recommend deleting `Direct`, `Mind`, `Files` in
-   PR 1. `RightNow` holds the only action-approval UI: either confirm that
-   approvals are handled elsewhere and delete it, or fold approvals into the
-   Today "Needs you" queue in PR 5.
-2. **Accent color.** Recommend emerald, because `design/` names aiia-console
-   canonical. The alternative is to update `tokens.json` to cyan and keep the
-   current look. Either is fine; two accents is not.
-3. **Voice Conductor.** Recommend moving it to a rail control that is hidden
-   when voice is not configured.
+1. **Orphaned components.** `Direct`, `Mind`, `Files` deleted in PR 1.
+   `RightNow` stays until PR 5, which folds its action approvals into the Today
+   "Needs you" queue, then deletes it.
+2. **Accent color.** Emerald, per `design/tokens.json`. Cyan, purple and fuchsia
+   go in PR 4.
+3. **Voice Conductor.** Moves to a rail control, hidden when voice is not
+   configured (PR 5).
 
 ## Risks
 

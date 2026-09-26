@@ -85,3 +85,9 @@ test('sources are summarised by what they filed and what is still open', () => {
     { source: 'code_review', label: 'code review', filed: 9, open: 2 },
   ])
 })
+
+test('a partial payload reads as unavailable instead of throwing', () => {
+  const partial = {} as ReviewHealth
+  assert.equal(reviewSummary(partial), 'Review health unavailable.')
+  assert.equal(reviewMetrics(partial).every(metric => metric.count === 0 && metric.rate === null), true)
+})
