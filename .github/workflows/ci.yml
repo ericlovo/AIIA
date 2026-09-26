@@ -28,6 +28,31 @@ jobs:
       - run: npm test
       - run: npm run build
 
+      # Browser behavior suites. Every API call and the Studio WebSocket are
+      # mocked inside each suite, so this needs no Brain, Command Center or Ollama.
+      - name: Resolve Playwright version
+        id: playwright
+        run: echo "version=$(node -p "require('playwright/package.json').version")" >> "$GITHUB_OUTPUT"
+      - name: Cache Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ steps.playwright.outputs.version }}
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+      - name: Browser suites
+        run: npm run test:browser
+        env:
+          SCREENSHOT_DIR: ${{ runner.temp }}/studio-screenshots
+      - name: Upload screenshots on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: studio-screenshots
+          path: ${{ runner.temp }}/studio-screenshots
+          if-no-files-found: ignore
+          retention-days: 7
+
   lint-and-test:
     name: Lint + test + sanitization guard
     runs-on: ubuntu-latest
