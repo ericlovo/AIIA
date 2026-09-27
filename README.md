@@ -98,6 +98,10 @@ The CLI is a thin client over both. Claude Code reaches AIIA over MCP.
 Your terminal reaches AIIA over `aiia`. Same brain. Both halves of the
 mirror in sync.
 
+For Claude Code, install the Python dependencies and run `claude mcp list` from
+the repository root to verify `aiia` connects. The checked-in configuration uses
+the [portable stdio launcher](docs/MCP-LAUNCHER.md), without personal paths.
+
 ---
 
 ## What AIIA is, that other tools aren't
