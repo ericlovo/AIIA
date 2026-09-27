@@ -2,7 +2,9 @@
 language: "en-US"
 tone_instructions: "Terse. No praise, no restating the diff. Lead with the defect, cite the line, propose the fix. Skip anything ruff already enforces."
 early_access: false
-enable_free_tier: false
+# The repo is public; the free tier covers it. With this false, a PR author
+# without a paid seat gets no review at all, which is what happened from #56 on.
+enable_free_tier: true
 reviews:
   profile: "chill"
   request_changes_workflow: false
@@ -23,14 +25,14 @@ reviews:
     - "!dashboard/dist/**"
     - "!eval-results/**"
     - "!**/*.lock"
-    - "!package-lock.json"
+    - "!**/package-lock.json"
   path_instructions:
     - path: "local_brain/execution/**"
       instructions: |
         This is the real security boundary: AUTO / SUPERVISED / GATED tiers, the pre-execution safety gate, and post-execution verification. Flag any change that lets an action skip the gate, downgrades a tier, widens an allowlist, or adds a fourth executor path. Sanction owns whether an edge may fire; this code must not decide policy itself.
     - path: "local_brain/egress.py"
       instructions: |
-        Airgap enforcement. Any new allowlisted host must be justified in docs/AIRGAP.md in the same PR. Default posture is fail-closed; flag any change that makes an unconfigured state permissive.
+        Egress governance. Any new egress point or airgap allowlist entry must be justified in docs/AIRGAP.md in the same PR. Under AIIA_AIRGAP the decision is deny except the explicit allowlist. When Sanction is configured, every failure mode (timeout, transport error, non-allow) must deny. When Sanction is NOT configured, egress is allowed by design (vanilla OSS install); do not flag that. Flag any change that turns a deny into an allow, or lets an audit-report failure change the decision.
     - path: "local_brain/**/*.py"
       instructions: |
         Ruff target is py310. Flag Python 3.11+ syntax (match on complex patterns, ExceptionGroup, tomllib, typing.Self, PEP 695 generics) outside guarded blocks. Prefer the existing pydantic settings in config.py over new env reads. No new hard dependencies without a pyproject entry.
@@ -39,10 +41,10 @@ reviews:
         Agent Studio and Command Center. Assignments, Runs, and Handoffs follow docs/EXECUTABLE-ORGANIZATION.md: the only legal agent-to-agent path is a typed Handoff with a Sanction grant. Flag side channels (direct calls, message/send, MCP tools that skip Handoff).
     - path: "local_brain/tests/**"
       instructions: |
-        Most tests need a live Ollama or Brain; CI runs collect-only. Flag new tests that would pass collection but silently require a live service without a skip marker.
+        CI runs pytest for real (not collect-only). Flag new tests that require a live Ollama, Brain, or Command Center without a skip marker or a mock, since they will fail CI.
     - path: "dashboard/**"
       instructions: |
-        Vite + React + TypeScript. Design tokens come from /design; flag hardcoded colors or spacing.
+        Vite + React + TypeScript + Tailwind 4. Design tokens come from /design; flag hardcoded colors, text under 12px, and neutral-600/700 used for text. Browser suites in dashboard/tests/*.browser.mjs mock every API; flag UI changes that alter copy or roles those suites select on without updating them in the same PR.
     - path: "docs/**"
       instructions: |
         Cut prose. docs/HANDOFF.md is the Mini/MacBook session notebook, never overwritten, newest entry on top. Do not suggest moving Assignment or Handoff records into it.
