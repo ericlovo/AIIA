@@ -19,7 +19,9 @@ import {
   type RepositoryResource,
 } from '../lib/api'
 import { assignmentLabel, assignmentOrigin, reviewLabel } from './assignmentReview'
-import { StudioTabs, type StudioView } from './StudioTabs'
+import type { StudioView } from './studioRoute'
+import { PageHeader } from './PageHeader'
+import { replaceRoute } from './useStudioRoute'
 
 const EMPTY_ASSIGNMENTS: Assignment[] = []
 const EMPTY_HANDOFFS: Handoff[] = []
@@ -48,7 +50,6 @@ const EMPTY_HANDOFF: HandoffDefinition = {
 interface WorkBoardProps {
   agents: Agent[]
   view: Extract<StudioView, 'assignments' | 'handoffs'>
-  onViewChange: (view: StudioView) => void
   onRouteHandoff: (sourceId: string, targetId: string) => void
   initialAgentId?: string
   initialAssignmentId?: string
@@ -59,7 +60,6 @@ interface WorkBoardProps {
 export function WorkBoard({
   agents,
   view,
-  onViewChange,
   onRouteHandoff,
   initialAgentId = '',
   initialAssignmentId = '',
@@ -99,6 +99,15 @@ export function WorkBoard({
   const repos = resourceData?.repos ?? EMPTY_REPOS
   const [selectedAssignmentId, setSelectedAssignmentId] = useState<string | null>(initialAssignmentId || null)
   const [selectedHandoffId, setSelectedHandoffId] = useState<string | null>(null)
+  // Selecting inside the view rewrites the address without a history entry, so
+  // a selected assignment can be copied or reloaded. The first render is the
+  // arrival itself, which already matches the address, so it is left alone.
+  const syncedSelection = useRef(selectedAssignmentId)
+  useEffect(() => {
+    if (view !== 'assignments' || syncedSelection.current === selectedAssignmentId) return
+    syncedSelection.current = selectedAssignmentId
+    replaceRoute(selectedAssignmentId ? { view: 'assignments', assignmentId: selectedAssignmentId } : { view: 'assignments' })
+  }, [view, selectedAssignmentId])
   const [assignmentDraft, setAssignmentDraft] = useState<AssignmentDefinition>(() => ({
     ...EMPTY_ASSIGNMENT,
     agent_id: initialAgentId,
@@ -193,21 +202,14 @@ export function WorkBoard({
 
   return (
     <main className="grid h-full min-h-0 max-h-full grid-cols-1 overflow-y-auto bg-neutral-950 lg:overflow-hidden lg:grid-cols-[minmax(0,1fr)_390px]">
-      <section className="min-w-0 border-b border-neutral-900 lg:overflow-hidden lg:border-r lg:border-b-0">
-        <div className="flex flex-col gap-5 border-b border-neutral-900 px-5 py-5 sm:flex-row sm:items-center sm:justify-between sm:px-7">
-          <div>
-            <div className="text-[10px] font-semibold tracking-[0.28em] uppercase text-cyan-400">Agent Studio</div>
-            <h1 className="mt-2 text-2xl font-medium text-white">{view === 'assignments' ? 'Assignment queue' : 'Handoff ledger'}</h1>
-            <div className="mt-2 flex gap-4 text-xs text-neutral-500">
-              <span>{assignments.length} assignments</span>
-              <span>{runningCount} running</span>
-              <span>{handoffs.length} handoffs</span>
-            </div>
-          </div>
-          <StudioTabs view={view} onChange={onViewChange} />
-        </div>
+      <section className="flex min-w-0 flex-col border-b border-neutral-900 lg:overflow-hidden lg:border-r lg:border-b-0">
+        <PageHeader title={view === 'assignments' ? 'Assignment queue' : 'Handoff ledger'} meta={<>
+          <span>{assignments.length} assignments</span>
+          <span>{runningCount} running</span>
+          <span>{handoffs.length} handoffs</span>
+        </>} />
 
-        <div className="min-h-[540px] overflow-y-auto px-5 py-6 sm:px-7 lg:h-[calc(100%-118px)]">
+        <div className="min-h-[540px] overflow-y-auto px-5 py-6 sm:px-7 lg:min-h-0 lg:flex-1">
           <div className="mx-auto max-w-5xl">
             <div className="mb-4 flex items-center justify-between gap-4">
               <div className="text-[10px] font-semibold tracking-[0.2em] uppercase text-neutral-600">

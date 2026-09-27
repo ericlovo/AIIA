@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api, MEMORY_CATEGORIES, MEMORY_PRIORITIES, type Agent, type MemoryCategory, type MemoryIdea, type MemoryIdeaStatus, type MemoryInboxSort, type MemoryPriority, type ReviewOutcome, type ReviewBucket } from '../lib/api'
-import { StudioTabs, type StudioView } from './StudioTabs'
+import { PageHeader } from './PageHeader'
 import { captureText, MEMORY_POST_CHANNEL, memoryPostLabel, priorityLabel, receiptLabel, type PriorityTone, type ReceiptTone } from './memoryText'
 
 type Filter = MemoryIdeaStatus | ''
@@ -42,12 +42,12 @@ const OUTCOME_LABELS: Record<ReviewBucket, string> = {
   unclassified: 'Unclassified',
 }
 
-export function MemoryLog({ agents, view, onViewChange, intent }: { agents: Agent[]; view: StudioView; onViewChange: (view: StudioView) => void; intent?: { bucket: ReviewBucket | ''; revision: number } }) {
+export function MemoryLog({ agents, intent }: { agents: Agent[]; intent?: { bucket: ReviewBucket | '' } }) {
   const qc = useQueryClient()
   // Arriving from a Switchboard metric: open on that slice of the same inbox,
   // with the status tabs cleared so the rows the number counted are visible.
   // The caller remounts on each metric click, so this is read once, at mount.
-  const arrived = Boolean(intent?.revision)
+  const arrived = Boolean(intent)
   const [filter, setFilter] = useState<Filter>(arrived ? '' : 'unreviewed')
   const [origin, setOrigin] = useState<Origin>(arrived ? 'loops' : 'slack')
   const scope = ORIGINS.find(item => item.id === origin) ?? ORIGINS[0]
@@ -100,19 +100,12 @@ export function MemoryLog({ agents, view, onViewChange, intent }: { agents: Agen
 
   return (
     <main className="h-full min-h-0 flex-1 overflow-y-auto bg-neutral-950">
-      <header className="flex flex-col gap-5 border-b border-neutral-900 px-5 py-5 sm:flex-row sm:items-center sm:justify-between sm:px-7">
-        <div>
-          <div className="text-[10px] font-semibold uppercase tracking-[0.28em] text-cyan-400">Agent Studio</div>
-          <h1 className="mt-2 text-2xl font-medium text-white">Memory log</h1>
-          <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-neutral-500">
-            <span>{agents.length} agents</span>
-            <span>{counts ? `${counts.unreviewed} unreviewed` : 'Loading inbox'}</span>
-            <span>{counts ? `${counts.promoted} logged to memory` : ''}</span>
-            <span>{slackSummary(slack.data, slack.isError)}</span>
-          </div>
-        </div>
-        <StudioTabs view={view} onChange={onViewChange} />
-      </header>
+      <PageHeader title="Memory log" meta={<>
+        <span>{agents.length} agents</span>
+        <span>{counts ? `${counts.unreviewed} unreviewed` : 'Loading inbox'}</span>
+        <span>{counts ? `${counts.promoted} logged to memory` : ''}</span>
+        <span>{slackSummary(slack.data, slack.isError)}</span>
+      </>} />
 
       {notice && <div role={notice.tone === 'error' ? 'alert' : 'status'} className={`sticky top-0 z-20 flex items-start justify-between gap-4 border-b border-neutral-800 bg-neutral-950 px-5 py-3 text-sm sm:px-7 ${notice.tone === 'error' ? 'text-red-300' : 'text-cyan-200'}`}>
         <span>{notice.text}</span>
