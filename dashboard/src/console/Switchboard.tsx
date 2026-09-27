@@ -8,8 +8,8 @@ import { AgentTokenUsage } from './AgentTokenUsage'
 import { runTokens } from './runTokens'
 import { DEVELOPMENT_LOOPS } from './developmentLoops'
 import { loopState, DOT_COLOR } from './taskStatus'
-import { assignmentOrigin, attentionAssignments, reviewLabel } from './assignmentReview'
-import { formatRate, reviewMetrics, reviewSummary, type ReviewMetric } from './reviewHealth'
+import { assignmentOrigin, attentionAssignments, attentionSummary, reviewLabel } from './assignmentReview'
+import { activeSources, formatRate, reviewMetrics, reviewSummary, type ReviewMetric } from './reviewHealth'
 import './switchboard.css'
 
 interface Props {
@@ -45,9 +45,12 @@ export function Switchboard({ agents, loading, agentError, onViewChange, onManag
   const activity = useQuery({ queryKey: ['studio-activity', agentId, day, status], queryFn: () => api.studioActivity(agentId, day, status), retry: false, refetchInterval: 5_000 })
   const assignments = useQuery({ queryKey: ['assignments'], queryFn: api.assignments, retry: false, refetchInterval: 5_000 })
   const tasks = useQuery({ queryKey: ['pulse-tasks'], queryFn: api.tasks, refetchInterval: 5_000 })
+  const workspaces = useQuery({ queryKey: ['git-workspaces'], queryFn: api.gitWorkspaces, refetchInterval: 5_000 })
+  const writes = useQuery({ queryKey: ['git-writes'], queryFn: () => api.gitWrites(), refetchInterval: 5_000 })
   const [reviewWindow, setReviewWindow] = useState(14)
   const review = useQuery({ queryKey: ['review-health', reviewWindow], queryFn: () => api.reviewHealth(reviewWindow), retry: false, refetchInterval: 30_000 })
   const metrics = reviewMetrics(review.data)
+  const sources = activeSources(review.data)
   const detail = useQuery({ queryKey: ['studio-run', runId], queryFn: () => api.studioRun(runId), enabled: Boolean(runId) })
   const loop = useMutation({ mutationFn: ({ id, enabled }: { id: string; enabled: boolean }) => api.setAgentLoop(id, enabled), onSuccess: () => qc.invalidateQueries({ queryKey: ['agents'] }) })
   const data = activity.data
@@ -55,6 +58,7 @@ export function Switchboard({ agents, loading, agentError, onViewChange, onManag
   const selectedTask = tasks.data?.find(item => item.task_id === taskId)
   const selectedWork = assignments.data?.assignments.filter(item => (!agentId || item.agent_id === agentId) && (item.status === 'queued' || item.status === 'running')) ?? []
   const attention = attentionAssignments(assignments.data?.assignments ?? [], agentId)
+  const summary = attentionSummary(assignments.data?.assignments ?? [], workspaces.data?.workspaces, writes.data?.writes, agentId)
   const today = data?.today ?? new Date().toISOString().slice(0, 10)
   const todayCount = data?.days.find(item => item.day === today)
   const total = data?.days.reduce((sum, item) => sum + item.total, 0) ?? 0
@@ -91,9 +95,10 @@ export function Switchboard({ agents, loading, agentError, onViewChange, onManag
     <div className="sb-body">
       <div className="sb-main">
         <section className="sb-attention" aria-label="Needs attention">
-          <div className="sb-section-title"><div><h2>Needs attention {assignments.data ? `(${attention.length})` : ''}</h2><p>{agent?.name || 'All agents'} · completed runs still need output review</p></div></div>
+          <div className="sb-section-title"><div><h2>Needs attention {assignments.data ? `(${summary.total})` : ''}</h2><p>{agent?.name || 'All agents'} · {summary.review} to review · {summary.failed} failed · {summary.approvals} approvals</p></div></div>
           {assignments.isError ? <p role="alert">Assignment status unavailable. {assignments.data ? 'Showing last loaded work.' : 'Retry to load work.'}</p> : assignments.isLoading ? <p>Loading assignments...</p> : null}
-          {assignments.data && !assignments.isError && attention.length === 0 && <p>No assignments need attention in this view.</p>}
+          {assignments.data && !assignments.isError && summary.total === 0 && <p>Nothing needs attention in this view.</p>}
+          {summary.approvals > 0 && <button className="sb-work" onClick={() => onViewChange('assignments')}><span>{summary.approvals} git {summary.approvals === 1 ? 'approval' : 'approvals'} pending<small>Workspace or write requests waiting for a human decision</small></span><ArrowRight size={14} /></button>}
           {(showAllAttention ? attention : attention.slice(0, 8)).map(work => <button className="sb-work" key={work.id} onClick={() => onOpenAssignment(work.id)}><span>{work.title}<small>{reviewLabel(work)} · {assignmentOrigin(work)} · {agents.find(item => item.id === work.agent_id)?.name || 'Removed agent'} · {work.priority}</small></span><ArrowRight size={14} /></button>)}
           {attention.length > 8 && <button className="sb-command" onClick={() => setShowAllAttention(!showAllAttention)}>{showAllAttention ? 'Show fewer' : `Show all ${attention.length} assignments`}</button>}
         </section>
@@ -119,10 +124,8 @@ export function Switchboard({ agents, loading, agentError, onViewChange, onManag
               </button>
             ))}
           </div>
-          {review.data && review.data.by_source.length > 0 && <div className="sb-review-sources">
-            {review.data.by_source.map(row => (
-              <span key={row.source}>{row.source.replace(/_/g, ' ')}: {row.open} open of {row.open + row.needs_work + row.already_fixed + row.declined + row.external_failure + row.unclassified} filed</span>
-            ))}
+          {sources.length > 0 && <div className="sb-review-sources">
+            {sources.map(row => <span key={row.source}>{row.label}: {row.open} open of {row.filed} filed</span>)}
           </div>}
           <button className="sb-command" onClick={() => onOpenReview('')}>Open the review inbox</button>
         </section>

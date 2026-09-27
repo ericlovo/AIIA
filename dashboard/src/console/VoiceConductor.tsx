@@ -7,6 +7,10 @@ type TranscriptLine = { role: 'user' | 'assistant'; text: string }
 type ToolChip = { id: string; name: string; state: 'running' | 'ok' | 'error'; detail: string }
 
 const SAMPLE_RATE = 24_000
+const SPACE_CONTROLS = [
+  'input', 'textarea', 'select', 'button', 'a[href]', 'summary', '[contenteditable=""]', '[contenteditable="true"]',
+  '[role="button"]', '[role="tab"]', '[role="link"]', '[role="checkbox"]', '[role="switch"]', '[role="menuitem"]', '[role="option"]',
+].join(',')
 
 export function VoiceConductor() {
   const qc = useQueryClient()
@@ -22,6 +26,7 @@ export function VoiceConductor() {
   const [transcript, setTranscript] = useState<TranscriptLine[]>([])
   const [chips, setChips] = useState<ToolChip[]>([])
   const sessionRef = useRef<LiveSession | null>(null)
+  const spaceHeld = useRef(false)
 
   const configured = data?.status === 'connected'
   const reason = data?.reason ?? (isError ? 'status_unavailable' : '')
@@ -68,14 +73,25 @@ export function VoiceConductor() {
   }, [configured, phase, qc])
 
   useEffect(() => {
+    // Space is push-to-talk only when focus is not on something Space already
+    // activates; otherwise it would swallow button clicks and tab switches.
+    // The held flag lives in a ref: this effect re-runs as the phase changes
+    // mid-hold, and a local flag would reset and strand the mic open.
     const onKey = (event: KeyboardEvent) => {
       if (event.code !== 'Space' || event.repeat) return
-      const target = event.target as HTMLElement | null
-      if (target && ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName)) return
+      if (event.type === 'keyup') {
+        if (!spaceHeld.current) return
+        spaceHeld.current = false
+        event.preventDefault()
+        void stopTalking()
+        return
+      }
+      const target = event.target instanceof Element ? event.target : null
+      if (target?.closest(SPACE_CONTROLS)) return
       if (!configured) return
+      spaceHeld.current = true
       event.preventDefault()
-      if (event.type === 'keydown') void startTalking()
-      else void stopTalking()
+      void startTalking()
     }
     window.addEventListener('keydown', onKey)
     window.addEventListener('keyup', onKey)

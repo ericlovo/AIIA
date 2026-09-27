@@ -9,6 +9,7 @@ import {
   type GitWriteStatus,
 } from '../lib/api'
 import { StudioTabs, type StudioView } from './StudioTabs'
+import { attentionSummary } from './assignmentReview'
 
 type ActivityFilter = 'all' | 'runs' | 'work' | 'git'
 type ActivityKind = 'run' | 'assignment' | 'handoff' | 'git'
@@ -176,10 +177,7 @@ export function ActivityOverview({ agents, isLoading, view, onViewChange }: { ag
   const runsToday = agents.reduce((total, agent) => total + agent.runs.filter(run => isToday(run.at)).length, 0)
   const completedAssignments = assignments.filter(item => item.status === 'completed').length
   const running = agents.filter(agent => agent.status === 'running').length + assignments.filter(item => item.status === 'running').length
-  const pendingApprovals = workspaces.filter(item => item.status === 'pending').length + writes.filter(item => item.status === 'pending').length
-  const failedRuns = agents.filter(agent => agent.status === 'error' || Boolean(agent.last_error)).length
-  const failures = failedRuns + assignments.filter(item => item.status === 'failed').length + handoffs.filter(item => item.status === 'failed').length + workspaces.filter(item => item.status === 'failed').length + writes.filter(item => item.status === 'failed').length
-  const attention = pendingApprovals + failures
+  const attention = attentionSummary(assignments, workspaces, writes)
   const scheduled = agents.filter(agent => agent.loop_enabled).length
 
   return (
@@ -203,10 +201,10 @@ export function ActivityOverview({ agents, isLoading, view, onViewChange }: { ag
       </div>}
 
       <section aria-label="Operations summary" className="grid border-b border-neutral-900 sm:grid-cols-2 xl:grid-cols-4">
-        <Metric label="Runs today" value={runsToday} detail={`${events.filter(event => event.kind === 'run').length} direct retained`} />
+        <Metric label="Runs today (UTC)" value={runsToday} detail={`${events.filter(event => event.kind === 'run').length} direct retained`} />
         <Metric label="In progress" value={running} detail={`${assignments.filter(item => item.status === 'queued').length} queued`} tone={running ? 'active' : 'neutral'} />
         <Metric label="Assignments done" value={completedAssignments} detail={`${handoffs.filter(item => item.status === 'completed').length} handoffs complete`} />
-        <Metric label="Needs attention" value={attention} detail={`${pendingApprovals} approvals · ${failures} failures`} tone={attention ? 'warning' : 'good'} />
+        <Metric label="Needs attention" value={attention.total} detail={`${attention.review} to review · ${attention.failed} failed · ${attention.approvals} approvals`} tone={attention.total ? 'warning' : 'good'} />
       </section>
 
       <div className="grid min-h-[620px] lg:h-[calc(100vh-294px)] lg:min-h-0 lg:grid-cols-[minmax(0,1fr)_360px]">
@@ -329,10 +327,10 @@ function timestamp(value: string | null | undefined) {
   return Number.isNaN(parsed) ? 0 : parsed
 }
 
+// UTC, matching Today's "Runs today / UTC", so the two views count the same day.
 function isToday(value: string) {
   const date = new Date(value)
-  const today = new Date()
-  return date.getFullYear() === today.getFullYear() && date.getMonth() === today.getMonth() && date.getDate() === today.getDate()
+  return !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === new Date().toISOString().slice(0, 10)
 }
 
 function relativeTime(value: string | null) {
@@ -364,8 +362,9 @@ function formatWriteResult(result: Record<string, unknown>) {
   return entries.slice(0, 3).map(([key, value]) => `${formatToken(key)}: ${String(value)}`).join(' · ')
 }
 
-function cleanSnippet(value: string) {
-  return value
+// Records come from the API; a missing field must not crash the ledger.
+function cleanSnippet(value: string | null | undefined) {
+  return (value ?? '')
     .replace(/^#{1,6}\s+/gm, '')
     .replace(/\*\*/g, '')
     .replace(/`/g, '')

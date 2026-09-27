@@ -1,4 +1,4 @@
-import type { Assignment } from '../lib/api'
+import type { Assignment, GitWorkspace, GitWrite } from '../lib/api'
 
 /** The output verdict, which survives dismissal. */
 export function reviewLabel(assignment: Assignment): string {
@@ -34,4 +34,31 @@ export function attentionAssignments(assignments: Assignment[], agentId = ''): A
     && (item.status === 'failed' || (item.status === 'completed' && (!item.result.trim() || item.review_status !== 'accepted'))))
     .sort((a, b) => rank(a) - rank(b) || priority[a.priority] - priority[b.priority]
       || a.created_at.localeCompare(b.created_at) || a.id.localeCompare(b.id))
+}
+
+export interface AttentionSummary {
+  review: number
+  failed: number
+  approvals: number
+  total: number
+}
+
+/**
+ * The single "needs attention" count. Today and Overview both render it, so
+ * they can never disagree. Everything counted here can be cleared by a human:
+ * review or dismiss the assignment, or decide the approval.
+ */
+export function attentionSummary(
+  assignments: Assignment[],
+  workspaces: Pick<GitWorkspace, 'id' | 'agent_id' | 'status'>[] = [],
+  writes: Pick<GitWrite, 'workspace_id' | 'status'>[] = [],
+  agentId = '',
+): AttentionSummary {
+  const flagged = attentionAssignments(assignments, agentId)
+  const failed = flagged.filter(item => item.status === 'failed').length
+  const scoped = agentId ? workspaces.filter(item => item.agent_id === agentId) : workspaces
+  const scopedIds = new Set(scoped.map(item => item.id))
+  const approvals = scoped.filter(item => item.status === 'pending').length
+    + writes.filter(item => item.status === 'pending' && (!agentId || scopedIds.has(item.workspace_id))).length
+  return { review: flagged.length - failed, failed, approvals, total: flagged.length + approvals }
 }

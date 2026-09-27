@@ -32,7 +32,7 @@ export function AssignmentHistory({ assignmentId }: { assignmentId: string }) {
       {!data.attempt_id && <p className="text-xs text-neutral-500">Current attempt identity was not recorded.</p>}
       {data.total === 0 && <p className="text-xs text-neutral-500">No saved attempts for this assignment.</p>}
       <ol className="divide-y divide-neutral-800">
-        {data.runs.map(run => <li key={run.id}>
+        {(data.runs ?? []).map(run => <li key={run.id}>
           <button type="button" aria-expanded={selectedId === run.id} onClick={() => setSelectedId(selectedId === run.id ? '' : run.id)} className="w-full space-y-1 py-3 text-left text-xs">
             <span className="flex flex-wrap justify-between gap-2"><span className={run.status === 'failed' ? 'text-red-300' : 'text-emerald-300'}>{run.status === 'failed' ? 'Failed attempt' : 'Output saved'}</span><time className="text-neutral-400" dateTime={run.at}>{new Date(run.at).toLocaleString()}</time></span>
             <span className="block break-words text-neutral-300">{run.model || 'Model unrecorded'} · {run.latency_ms ? `${(run.latency_ms / 1000).toFixed(1)}s` : 'Duration unrecorded'} · {runTokens(run)}{run.legacy ? ' · Imported' : ''}</span>
