@@ -2430,9 +2430,19 @@ async def get_task_history():
 # ─── Action Queue API ─────────────────────────────────────
 
 
+def _require_action_transition(action_id: str, allowed: set[str]):
+    action_queue.expire_old()
+    action = action_queue.get_action(action_id)
+    if action is None:
+        raise HTTPException(status_code=404, detail="Action not found")
+    if action["status"] not in allowed:
+        raise HTTPException(status_code=409, detail="Action status does not allow this transition")
+
+
 @app.get("/api/actions")
 async def get_actions(status: str | None = None, action_type: str | None = None, limit: int = 50):
     """List action items, optionally filtered."""
+    action_queue.expire_old()
     return {
         "actions": action_queue.list_actions(status=status, action_type=action_type, limit=limit),
         "summary": action_queue.summary(),
@@ -2486,6 +2496,7 @@ async def create_action(body: dict = Body(...)):
 @app.get("/api/actions/summary")
 async def get_action_summary():
     """Count of actions by status and severity."""
+    action_queue.expire_old()
     return action_queue.summary()
 
 
@@ -2496,6 +2507,7 @@ async def approve_action(action_id: str):
     AUTO-tier actions (lint_fix, verify_*) execute immediately on approval.
     SUPERVISED/GATED actions stay in 'approved' status awaiting explicit trigger.
     """
+    _require_action_transition(action_id, {"pending"})
     action = action_queue.approve(action_id)
     if not action:
         return {"error": f"Action {action_id} not found"}
@@ -2527,6 +2539,7 @@ async def approve_action(action_id: str):
 @app.post("/api/actions/{action_id}/reject")
 async def reject_action(action_id: str, body: dict[str, Any] = {}):
     """Reject an action with optional reason."""
+    _require_action_transition(action_id, {"pending", "approved"})
     reason = body.get("reason", "")
     action = action_queue.reject(action_id, reason=reason)
     if not action:
@@ -2538,6 +2551,7 @@ async def reject_action(action_id: str, body: dict[str, Any] = {}):
 @app.post("/api/actions/{action_id}/complete")
 async def complete_action(action_id: str, body: dict[str, Any] = {}):
     """Mark an approved action as completed."""
+    _require_action_transition(action_id, {"approved", "executing"})
     result = body.get("result", "")
     action = action_queue.complete(action_id, result=result)
     if not action:
