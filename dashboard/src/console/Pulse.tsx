@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { api } from '../lib/api'
 import { loopState, DOT_COLOR, type LoopState } from './taskStatus'
+import { navigate } from './useStudioRoute'
 
 function timeAgo(iso: string | null): string {
   if (!iso) return 'never'
@@ -57,7 +58,7 @@ export function Pulse() {
               key={t.task_id}
               aria-label={`Open ${t.name}: ${state}`}
               title={`${t.name}: ${state}`}
-              onClick={() => window.dispatchEvent(new CustomEvent('studio:switchboard', { detail: { taskId: t.task_id } }))}
+              onClick={() => navigate({ view: 'switchboard', taskId: t.task_id })}
               onFocus={() => setHovered(t.task_id)}
               onBlur={() => setHovered(null)}
               onMouseEnter={() => setHovered(t.task_id)}

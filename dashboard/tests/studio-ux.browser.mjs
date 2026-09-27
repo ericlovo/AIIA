@@ -184,7 +184,7 @@ try {
     await filtered.getByText('No proposals under Already fixed in this view.', { exact: true }).waitFor()
     await filtered.getByRole('button', { name: 'Clear the Already fixed filter' }).click()
     await filtered.getByText('Classify CodeRabbit findings and surface vendor quota failures separately', { exact: true }).waitFor()
-    await page.getByRole('tab', { name: 'Today', exact: true }).click()
+    await page.getByRole('navigation', { name: 'Studio' }).getByRole('link', { name: 'Today', exact: true }).click()
 
     // Zero data is a sentence, not an empty grid or a division by zero.
     emptyReview = true
@@ -233,7 +233,7 @@ try {
     await runInspector.scrollIntoViewIfNeeded()
     await page.screenshot({ path: join(output, `run-tokens-${width}.png`) })
 
-    await page.getByRole('tab', { name: 'Memory', exact: true }).click()
+    await page.getByRole('navigation', { name: 'Studio' }).getByRole('link', { name: 'Memory', exact: true }).click()
     const memory = page.getByRole('region', { name: 'Memory log' })
     await memory.getByText('log this EPIC for LNS', { exact: true }).waitFor()
     assert.ok(!(await memory.innerText()).includes('<@U0C1DCQFMRC>'))
@@ -264,7 +264,7 @@ try {
     await page.screenshot({ path: join(output, `memory-logged-${width}.png`) })
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false)
 
-    await page.getByRole('tab', { name: 'Map', exact: true }).click()
+    await page.getByRole('navigation', { name: 'Studio' }).getByRole('link', { name: 'Map', exact: true }).click()
     await page.waitForFunction(() => document.querySelectorAll('[data-graph-node]').length === 48)
     const assertNoOverlaps = async count => {
       const rects = await page.locator('[data-graph-node]').evaluateAll(nodes => nodes.map(node => {

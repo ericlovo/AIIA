@@ -126,7 +126,7 @@ try {
     })
 
     await page.goto(process.env.STUDIO_URL || 'http://127.0.0.1:5191/')
-    await page.getByRole('tab', { name: 'Map', exact: true }).click()
+    await page.getByRole('navigation', { name: 'Studio' }).getByRole('link', { name: 'Map', exact: true }).click()
     await page.waitForFunction(() => document.querySelectorAll('[data-graph-node]').length === 3)
     const inspector = page.getByRole('complementary', { name: 'Node controls' })
     const config = inspector.getByRole('definition')
