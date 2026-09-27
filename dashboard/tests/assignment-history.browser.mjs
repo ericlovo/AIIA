@@ -82,7 +82,7 @@ try {
     })
 
     await page.goto(process.env.STUDIO_URL || 'http://127.0.0.1:5186/')
-    await page.getByRole('tab', { name: 'Assignments', exact: true }).click()
+    await page.getByRole('navigation', { name: 'Studio' }).getByRole('link', { name: 'Assignments', exact: true }).click()
     await page.getByText('Audit the FLOW-01 fixture', { exact: true }).click()
 
     const history = page.getByRole('region', { name: 'Assignment attempt history' })

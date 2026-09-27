@@ -88,7 +88,7 @@ try {
 
     const openMemory = async () => {
       await page.goto(process.env.STUDIO_URL || 'http://127.0.0.1:5193/')
-      await page.getByRole('tab', { name: 'Memory', exact: true }).click()
+      await page.getByRole('navigation', { name: 'Studio' }).getByRole('link', { name: 'Memory', exact: true }).click()
       await page.getByRole('region', { name: 'Memory log' }).getByText('ship the cron contract first', { exact: true }).waitFor()
     }
     const memory = page.getByRole('region', { name: 'Memory log' })

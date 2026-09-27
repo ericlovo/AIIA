@@ -11,7 +11,7 @@ import {
   type Handoff,
 } from '../lib/api'
 import { AgentGraphOverlay } from './AgentGraphOverlay'
-import { StudioTabs, type StudioView } from './StudioTabs'
+import { PageHeader } from './PageHeader'
 import { GRAPH_WIDTH, filterBySuite, graphGeometry, suiteGroups } from './graphLayout'
 import { SuiteLegend } from './SuiteLegend'
 import { SuitePanel } from './SuitePanel'
@@ -22,7 +22,6 @@ interface AgentWorldCanvasProps {
   agents: Agent[]
   loading: boolean
   agentError: boolean
-  onViewChange: (view: StudioView) => void
   onManageAgent: (agentId: string) => void
   onAssignAgent: (agentId: string) => void
   onOpenAssignment: (assignmentId: string) => void
@@ -69,7 +68,6 @@ export function AgentWorldCanvas({
   agents,
   loading,
   agentError,
-  onViewChange,
   onManageAgent,
   onAssignAgent,
   onOpenAssignment,
@@ -260,13 +258,7 @@ export function AgentWorldCanvas({
 
   return (
     <main className="h-full min-h-0 flex flex-1 flex-col overflow-hidden bg-neutral-950 [&_*]:tracking-normal">
-      <header className="flex shrink-0 flex-wrap items-center justify-between gap-4 border-b border-neutral-900 px-5 py-4 sm:px-7">
-        <div className="min-w-48">
-          <div className="text-[10px] font-semibold uppercase text-cyan-400">Agent Studio / Map</div>
-          <h1 className="mt-1.5 text-xl font-medium text-white">Agent control map</h1>
-        </div>
-        <StudioTabs view="world" onChange={onViewChange} />
-      </header>
+      <PageHeader title="Agent control map" />
       <div className="flex shrink-0 flex-wrap items-center gap-4 border-b border-white/10 px-5 py-3 text-xs text-neutral-400">
         <span>{loading ? 'Loading agents' : `${activeSuite ? `${mapAgents.length} of ${agents.length}` : agents.length} agents / ${activeCount} running`} / {assignmentLoading ? 'Loading work' : `${assignments.length} assignments`}</span>
         <label className="flex items-center gap-2"><input type="checkbox" checked={showCompleted} onChange={event => setShowCompleted(event.target.checked)} />Completed assignments</label>

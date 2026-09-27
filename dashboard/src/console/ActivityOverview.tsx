@@ -8,7 +8,7 @@ import {
   type GitWorkspaceStatus,
   type GitWriteStatus,
 } from '../lib/api'
-import { StudioTabs, type StudioView } from './StudioTabs'
+import { PageHeader } from './PageHeader'
 import { attentionSummary } from './assignmentReview'
 
 type ActivityFilter = 'all' | 'runs' | 'work' | 'git'
@@ -33,7 +33,7 @@ const FILTERS: { id: ActivityFilter; label: string }[] = [
   { id: 'git', label: 'Git' },
 ]
 
-export function ActivityOverview({ agents, isLoading, view, onViewChange }: { agents: Agent[]; isLoading: boolean; view: StudioView; onViewChange: (view: StudioView) => void }) {
+export function ActivityOverview({ agents, isLoading }: { agents: Agent[]; isLoading: boolean }) {
   const queryClient = useQueryClient()
   const runInFlight = useRef(false)
   const [filter, setFilter] = useState<ActivityFilter>('all')
@@ -181,20 +181,13 @@ export function ActivityOverview({ agents, isLoading, view, onViewChange }: { ag
   const scheduled = agents.filter(agent => agent.loop_enabled).length
 
   return (
-    <main className="h-full min-h-0 flex-1 overflow-y-auto bg-neutral-950">
-      <header className="flex flex-col gap-5 border-b border-neutral-900 px-5 py-5 sm:flex-row sm:items-center sm:justify-between sm:px-7">
-        <div>
-          <div className="text-[10px] font-semibold uppercase tracking-[0.28em] text-cyan-400">Agent Studio</div>
-          <h1 className="mt-2 text-2xl font-medium text-white">Operations overview</h1>
-          <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-neutral-500">
-            <span>{agents.length} agents</span>
-            <span>{scheduled} scheduled</span>
-            <span>{assignments.length} assignments</span>
-            <span>{handoffs.length} handoffs</span>
-          </div>
-        </div>
-        <StudioTabs view={view} onChange={onViewChange} />
-      </header>
+    <main className="flex h-full min-h-0 flex-1 flex-col overflow-y-auto bg-neutral-950 lg:overflow-hidden">
+      <PageHeader title="Operations overview" meta={<>
+        <span>{agents.length} agents</span>
+        <span>{scheduled} scheduled</span>
+        <span>{assignments.length} assignments</span>
+        <span>{handoffs.length} handoffs</span>
+      </>} />
 
       {(rerun.isPending || rerun.isSuccess || rerun.isError) && <div role={rerun.isError ? 'alert' : 'status'} className={`sticky top-0 z-20 border-b border-neutral-800 bg-neutral-950 px-5 py-3 text-sm sm:px-7 ${rerun.isError ? 'text-red-300' : 'text-cyan-200'}`}>
         {rerun.isPending ? `Running ${rerun.variables.agentName}...` : rerun.isError ? `${rerun.variables.agentName}: ${rerun.error.message}` : `${rerun.variables.agentName}: run completed.`}
@@ -207,7 +200,7 @@ export function ActivityOverview({ agents, isLoading, view, onViewChange }: { ag
         <Metric label="Needs attention" value={attention.total} detail={`${attention.review} to review · ${attention.failed} failed · ${attention.approvals} approvals`} tone={attention.total ? 'warning' : 'good'} />
       </section>
 
-      <div className="grid min-h-[620px] lg:h-[calc(100vh-294px)] lg:min-h-0 lg:grid-cols-[minmax(0,1fr)_360px]">
+      <div className="grid min-h-[620px] shrink-0 lg:min-h-0 lg:flex-1 lg:shrink lg:grid-cols-[minmax(0,1fr)_360px]">
         <section className="min-w-0 border-b border-neutral-900 lg:overflow-y-auto lg:border-r lg:border-b-0">
           <div className="sticky top-0 z-10 flex flex-col gap-3 border-b border-neutral-900 bg-neutral-950/95 px-5 py-4 backdrop-blur sm:flex-row sm:items-center sm:justify-between sm:px-7">
             <div>

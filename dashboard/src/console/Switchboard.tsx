@@ -2,7 +2,8 @@ import { useEffect, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { ArrowRight, Check, CirclePause, FileText, GitBranch, Layers3, Play, RefreshCw, Search, X } from 'lucide-react'
 import { api, type Agent, type AgentDefinition, type StudioRun } from '../lib/api'
-import { StudioTabs, type StudioView } from './StudioTabs'
+import type { StudioView } from './studioRoute'
+import { PageHeader } from './PageHeader'
 import { TokenUsage } from './TokenUsage'
 import { AgentTokenUsage } from './AgentTokenUsage'
 import { runTokens } from './runTokens'
@@ -81,10 +82,11 @@ export function Switchboard({ agents, loading, agentError, onViewChange, onManag
 
   return <main className="switchboard">
     {import.meta.env.VITE_STUDIO_PREVIEW === 'true' && <div className="sb-preview" role="status">Isolated preview · execution disabled · copied local data</div>}
-    <header className="sb-header">
-      <div><div className="sb-eyebrow">AIIA / Agent Studio</div><h1>Today</h1><p>{loading ? 'Loading agents' : `${agents.length} agents`} <span>/</span> {scheduled.length} loops enabled <span>/</span> Mini execution</p></div>
-      <StudioTabs view="switchboard" onChange={onViewChange} />
-    </header>
+    <PageHeader title="Today" meta={<>
+      <span>{loading ? 'Loading agents' : `${agents.length} agents`}</span>
+      <span>{scheduled.length} loops enabled</span>
+      <span>Mini execution</span>
+    </>} />
     {(activity.isError || agentError || assignments.isError) && <div role="alert" className="sb-alert">Some live data is unavailable. {activity.error?.message || 'Check the Command Center connection.'} <button onClick={refresh}>Retry</button></div>}
     <section className="sb-metrics" aria-label="Switchboard summary">
       <div><span>Runs today / UTC</span><strong>{data ? todayCount?.total ?? 0 : '--'}</strong><small>{agent ? agent.name : 'All agents'} · recorded attempts</small></div>

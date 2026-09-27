@@ -1,6 +1,6 @@
 # Sprint: Agent Studio UX overhaul
 
-Status: PR 1 and PR 2 in review. Design canvas: private claude.ai artifact (link in
+Status: PRs 1-3 in review. Design canvas: private claude.ai artifact (link in
 the PR or session notes; not embedded here because it is not public).
 
 ## Goal
@@ -101,13 +101,21 @@ first, then user-visible value.
 
 ### PR 3: `refactor(studio)`: shell and routing (no visual redesign yet)
 
-- `StudioShell` renders nav once; views render into it. Delete the 6
-  `StudioTabs` call sites and the per-view page headers in favor of one
-  `PageHeader`.
-- Hash router (small, in-repo) replaces `useState` view switching, the
-  `studio:switchboard` CustomEvent, and the key-remount intents.
-- One `useStudioSocket` hook shared by Overview and Map (finding 14).
-- Tests: browser test for deep links and back/forward on every route.
+- `StudioNav` renders once in the shell; the six per-view tab bars and page
+  headers are replaced by one `PageHeader`. Nav items are links with
+  `aria-current`, not ARIA tabs (there were no tab panels).
+- Hash routes (`#/today`, `#/assignments/:id`, `#/agents/:id`,
+  `#/memory?review=…`, `#/handoffs?from=…&to=…`, `#/today?task=…`) replace
+  `useState` view switching, the `studio:switchboard` CustomEvent, and the
+  key-remount "intent + revision" state. Moving between views pushes history;
+  selecting inside a view rewrites the address without a history entry.
+- Hard-coded `calc(100% - Npx)` view heights become flex layouts.
+- `useStudioSocket` moves to PR 5: Overview and Map are never mounted at the
+  same time, so there is no duplicate connection to remove, only duplicate
+  code, and Overview's socket is folded into Today there anyway.
+- Tests: `studioRoute` unit tests; `studio-routing` browser suite (links,
+  back/forward, deep links with slow data, silent selection, redirects,
+  cross-view doorways).
 
 ### PR 4: `design(studio)`: adopt tokens
 

@@ -22,6 +22,14 @@ All notable changes to AIIA are documented here. This project adheres to
 - **Studio: the Agents view shows live Mini status and the real default model**
   instead of a hardcoded "Mini online" and `qwen3:8b`.
 
+### Changed
+
+- **Studio: every view has an address.** The Studio uses hash routes
+  (`#/today`, `#/assignments/<id>`, `#/agents/<id>`, `#/memory`, `#/map`, ...),
+  so views and records can be linked, reloaded, and reached with back and
+  forward. Navigation renders once, in a fixed place, and every view uses the
+  same page header.
+
 ### Removed
 
 - Unreachable Studio components `Direct`, `Mind` and `Files` (no importers).
