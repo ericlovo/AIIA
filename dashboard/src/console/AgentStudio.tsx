@@ -2,7 +2,10 @@ import { useEffect, useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api, type Agent, type AgentDefinition } from '../lib/api'
 import { AgentWorldCanvas } from './AgentWorldCanvas'
-import { StudioTabs, type StudioView } from './StudioTabs'
+import { StudioNav } from './StudioNav'
+import { VIEWS, type StudioView } from './studioRoute'
+import { PageHeader } from './PageHeader'
+import { navigate, replaceRoute, useStudioRoute } from './useStudioRoute'
 import { WorkBoard } from './WorkBoard'
 import { ActivityOverview } from './ActivityOverview'
 import { Switchboard } from './Switchboard'
@@ -11,13 +14,6 @@ import { PanelBoundary } from './ErrorBoundary'
 import type { ReviewBucket } from '../lib/api'
 
 type Draft = AgentDefinition
-
-interface WorkBoardIntent {
-  agentId?: string
-  assignmentId?: string
-  handoffSourceId?: string
-  handoffTargetId?: string
-}
 
 const EMPTY_DRAFT: Draft = {
   name: '',
@@ -36,11 +32,8 @@ const EMPTY_DRAFT: Draft = {
 
 const EMPTY_AGENTS: Agent[] = []
 
-// Each view gets its own boundary, so one bad record cannot take the tabs with it.
-const VIEW_NAMES: Record<StudioView, string> = {
-  switchboard: 'Today', activity: 'Overview', agents: 'Agents', assignments: 'Assignments',
-  handoffs: 'Handoffs', memory: 'Memory', world: 'Map',
-}
+// Each view gets its own boundary, so one bad record cannot take the navigation with it.
+const VIEW_NAMES = Object.fromEntries(VIEWS.map(item => [item.id, item.label])) as Record<StudioView, string>
 
 const SKILL_LIBRARY = ['Research', 'Planning', 'Writing', 'Analysis', 'Coding', 'Memory']
 const TOOL_LIBRARY = ['Local memory', 'Repository read', 'GitHub read', 'Git workspace']
@@ -56,21 +49,23 @@ export function AgentStudio() {
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [draft, setDraft] = useState<Draft>(EMPTY_DRAFT)
   const [task, setTask] = useState('')
-  const [view, setView] = useState<StudioView>('switchboard')
-  const [switchboardIntent, setSwitchboardIntent] = useState({ taskId: '', revision: 0 })
+  const { route, key } = useStudioRoute()
+  const view = route.view
+  const routeAgentId = route.view === 'agents' ? route.agentId : undefined
+  // Arriving at #/agents/:id selects that agent once, as soon as it has loaded.
+  // Adjusting state during render (not in an effect) avoids a flash of the old selection.
+  const [appliedKey, setAppliedKey] = useState('')
+  if (view === 'agents' && appliedKey !== key) {
+    const target = routeAgentId ? agents.find(agent => agent.id === routeAgentId) : undefined
+    if (!routeAgentId) setAppliedKey(key)
+    else if (target) { setAppliedKey(key); selectAgent(target) }
+    else if (!isLoading) { setAppliedKey(key); selectAgent(null) }
+  }
+  // Once the arrival is applied, the address follows the selection on screen.
   useEffect(() => {
-    const open = (event: Event) => {
-      const taskId = (event as CustomEvent<{ taskId: string }>).detail.taskId
-      setSwitchboardIntent(previous => ({ taskId, revision: previous.revision + 1 }))
-      setView('switchboard')
-    }
-    window.addEventListener('studio:switchboard', open)
-    return () => window.removeEventListener('studio:switchboard', open)
-  }, [])
-  const [workBoardIntent, setWorkBoardIntent] = useState<WorkBoardIntent | null>(null)
-  // A review metric is a doorway into the existing inbox, not a second screen.
-  // The revision lets the same metric be reopened after the filter was cleared.
-  const [reviewIntent, setReviewIntent] = useState<{ bucket: ReviewBucket | ''; revision: number }>({ bucket: '', revision: 0 })
+    if (view !== 'agents' || appliedKey !== key) return
+    replaceRoute(selectedId ? { view: 'agents', agentId: selectedId } : { view: 'agents' })
+  }, [view, appliedKey, key, selectedId])
   const selected = agents.find(agent => agent.id === selectedId) ?? null
   const needsRepo = draft.tools.some(tool => ['Repository read', 'GitHub read', 'Git workspace'].includes(tool))
   const githubConnected = resources?.github.status === 'connected'
@@ -92,37 +87,28 @@ export function AgentStudio() {
   }
 
   function changeView(nextView: StudioView) {
-    setWorkBoardIntent(null)
-    // Revision 0 means "no intent", so opening Memory from the tabs later shows
-    // the default view rather than silently re-applying the last metric filter.
-    setReviewIntent({ bucket: '', revision: 0 })
-    setSwitchboardIntent(previous => ({ taskId: '', revision: previous.revision + 1 }))
-    setView(nextView)
+    navigate({ view: nextView })
   }
 
   function manageAgent(agentId: string) {
-    selectAgent(agents.find(agent => agent.id === agentId) ?? null)
-    changeView('agents')
+    navigate({ view: 'agents', agentId })
   }
 
   function assignAgent(agentId: string) {
-    setWorkBoardIntent({ agentId })
-    setView('assignments')
+    navigate({ view: 'assignments', agentId })
   }
 
+  // A review metric is a doorway into the existing inbox, not a second screen.
   function openReview(bucket: ReviewBucket | '') {
-    setReviewIntent(previous => ({ bucket, revision: previous.revision + 1 }))
-    setView('memory')
+    navigate({ view: 'memory', review: bucket || 'all' })
   }
 
   function openAssignment(assignmentId: string) {
-    setWorkBoardIntent({ assignmentId })
-    setView('assignments')
+    navigate({ view: 'assignments', assignmentId })
   }
 
-  function routeHandoff(handoffSourceId: string, handoffTargetId: string) {
-    setWorkBoardIntent({ handoffSourceId, handoffTargetId })
-    setView('handoffs')
+  function routeHandoff(from: string, to: string) {
+    navigate({ view: 'handoffs', from, to: to || undefined })
   }
 
   const save = useMutation({
@@ -155,14 +141,14 @@ export function AgentStudio() {
 
   const page = (() => {
     if (view === 'switchboard') {
-      return <Switchboard key={switchboardIntent.revision} agents={agents} loading={isLoading} agentError={isError}
+      return <Switchboard key={key} agents={agents} loading={isLoading} agentError={isError}
         onViewChange={changeView} onManageAgent={manageAgent} onAssignAgent={assignAgent}
-        onOpenAssignment={openAssignment} onOpenReview={openReview} initialTaskId={switchboardIntent.taskId}
+        onOpenAssignment={openAssignment} onOpenReview={openReview} initialTaskId={route.view === 'switchboard' ? route.taskId : undefined}
         onTemplate={template => { selectAgent(null); setDraft(template); changeView('agents') }} />
     }
 
     if (view === 'activity') {
-      return <ActivityOverview agents={agents} isLoading={isLoading} view={view} onViewChange={changeView} />
+      return <ActivityOverview agents={agents} isLoading={isLoading} />
     }
 
     if (view === 'world') {
@@ -171,7 +157,6 @@ export function AgentStudio() {
           agents={agents}
           loading={isLoading}
           agentError={isError}
-          onViewChange={changeView}
           onManageAgent={manageAgent}
           onAssignAgent={assignAgent}
           onOpenAssignment={openAssignment}
@@ -181,44 +166,35 @@ export function AgentStudio() {
     }
 
     if (view === 'memory') {
-      return <MemoryLog key={reviewIntent.revision} agents={agents} view={view} onViewChange={changeView} intent={reviewIntent} />
+      const review = route.view === 'memory' ? route.review : undefined
+      return <MemoryLog key={key} agents={agents} intent={review ? { bucket: review === 'all' ? '' : review } : undefined} />
     }
 
     if (view !== 'agents') {
       return (
         <WorkBoard
-          key={`${view}:${JSON.stringify(workBoardIntent)}`}
+          key={key}
           agents={agents}
           view={view}
-          onViewChange={changeView}
           onRouteHandoff={routeHandoff}
-          initialAgentId={workBoardIntent?.agentId}
-          initialAssignmentId={workBoardIntent?.assignmentId}
-          initialHandoffSourceId={workBoardIntent?.handoffSourceId}
-          initialHandoffTargetId={workBoardIntent?.handoffTargetId}
+          initialAgentId={route.view === 'assignments' ? route.agentId : undefined}
+          initialAssignmentId={route.view === 'assignments' ? route.assignmentId : undefined}
+          initialHandoffSourceId={route.view === 'handoffs' ? route.from : undefined}
+          initialHandoffTargetId={route.view === 'handoffs' ? route.to : undefined}
         />
       )
     }
 
     return (
       <main className="min-h-0 flex h-full flex-1 flex-col overflow-y-auto bg-neutral-950 lg:grid lg:grid-cols-[minmax(0,1fr)_360px] lg:overflow-hidden">
-        <section className="relative min-w-0 shrink-0 border-b border-neutral-900 lg:overflow-hidden lg:border-r lg:border-b-0">
-          <div className="flex flex-col gap-5 border-b border-neutral-900 px-5 py-6 sm:flex-row sm:items-start sm:justify-between sm:px-7">
-            <div>
-              <div className="text-[10px] font-semibold tracking-[0.28em] uppercase text-cyan-400">Agent Studio</div>
-              <h1 className="mt-2 text-2xl font-medium text-white">Build a local team that can cook.</h1>
-              <p className="mt-2 text-sm text-neutral-500">Define the role. Give it a task. The Mini runs it locally.</p>
-            </div>
-            <div className="flex shrink-0 flex-col items-start gap-3 sm:items-end">
-              <StudioTabs view={view} onChange={changeView} />
-              <div className="hidden items-center gap-3 text-xs text-neutral-500 sm:flex">
-                <span className="inline-flex items-center gap-2"><i aria-hidden="true" className={`h-2 w-2 rounded-full ${miniState === 'online' ? 'bg-green-500' : miniState === 'offline' ? 'bg-red-500' : 'bg-neutral-600'}`} />{miniState === 'checking' ? 'Checking Mini…' : `Mini ${miniState}`}</span>
-                <span>{activeCount} running</span>
-              </div>
-            </div>
-          </div>
+        <section className="relative flex min-w-0 shrink-0 flex-col border-b border-neutral-900 lg:overflow-hidden lg:border-r lg:border-b-0">
+          <PageHeader title="Agents" meta={<>
+            <span>Define the role. Give it a task. The Mini runs it locally.</span>
+            <span className="inline-flex items-center gap-2"><i aria-hidden="true" className={`h-2 w-2 rounded-full ${miniState === 'online' ? 'bg-green-500' : miniState === 'offline' ? 'bg-red-500' : 'bg-neutral-600'}`} />{miniState === 'checking' ? 'Checking Mini…' : `Mini ${miniState}`}</span>
+            <span>{activeCount} running</span>
+          </>} />
 
-          <div className="relative min-h-[540px] overflow-y-auto px-5 py-8 sm:px-7 lg:h-[calc(100%-126px)]">
+          <div className="relative min-h-[540px] overflow-y-auto px-5 py-8 sm:px-7 lg:min-h-0 lg:flex-1">
             <div className="absolute left-[50%] top-24 bottom-16 w-px bg-cyan-500/20" />
             <div className="relative mx-auto flex w-full max-w-4xl flex-col items-center gap-8">
               <div className="z-10 w-44 border border-cyan-400/50 bg-cyan-500/10 px-4 py-4 text-center shadow-[0_0_36px_rgba(34,211,238,0.08)]">
@@ -323,9 +299,14 @@ export function AgentStudio() {
   })()
 
   return (
-    <PanelBoundary key={view} name={VIEW_NAMES[view]} header={<StudioTabs view={view} onChange={changeView} />}>
-      {page}
-    </PanelBoundary>
+    <div className="flex h-full min-h-0 flex-col">
+      <div className="flex shrink-0 items-center border-b border-neutral-900 px-5 py-2 sm:px-7">
+        <StudioNav view={view} />
+      </div>
+      <div className="min-h-0 flex-1">
+        <PanelBoundary key={view} name={VIEW_NAMES[view]}>{page}</PanelBoundary>
+      </div>
+    </div>
   )
 }
 
