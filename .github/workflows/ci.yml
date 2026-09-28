@@ -77,10 +77,13 @@ jobs:
 
       - name: ruff lint (enforced)
         # Initial enforcement landed 2026-05-13. The auto-fixable backlog
-        # (~912 sites) was cleaned in the same PR; ~73 remaining sites are
+        # (~912 sites) was cleaned in the same PR; ignored backlog sites are
         # listed under [tool.ruff.lint.ignore] in pyproject.toml with a
         # site count per rule, to be un-ignored as the backlog drains.
         run: ruff check local_brain/
+
+      - name: Ignored-rule backlog ratchet
+        run: python scripts/ruff_ratchet.py
 
       - name: ruff format check (enforced)
         run: ruff format --check local_brain/

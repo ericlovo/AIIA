@@ -71,6 +71,7 @@ dev = [
     "pytest>=8.0",
     "pytest-asyncio>=0.23",
     "mypy>=1.10",
+    "tomli>=2.0; python_version < '3.11'",
 ]
 
 [project.urls]
@@ -100,22 +101,22 @@ select = ["E", "F", "I", "UP", "B", "SIM"]
 ignore = [
     "E501",  # line too long — handled by formatter
     "B008",  # function calls in argument defaults (common in FastAPI)
-    # Backlog from initial enforcement (2026-05-13). Each is real code-quality
-    # signal we want to keep, but cleaning all 73 sites in one pass would
-    # bloat the enforcement PR. Tracked as individual follow-up tasks; rules
-    # should be un-ignored one at a time as the backlog drains to zero.
-    "E402",  # module-import-not-at-top — 12 sites
+    # Backlog measured 2026-09-27: 101 sites with Ruff 0.16.9.
+    # scripts/ruff-baseline.json enforces per-rule ceilings in CI.
+    # Lower ceilings as rules are cleaned; remove rules from both ignore and
+    # baseline when drained. E501 and B008 above are intentional exemptions.
+    "E402",  # module-import-not-at-top — 27 sites
     "B006",  # mutable-argument-default — 11 sites
     "E741",  # ambiguous-variable-name — 11 sites
-    "SIM105",  # suppressible-exception — 9 sites
+    "SIM105",  # suppressible-exception — 11 sites
     "F841",  # unused-variable — 6 sites
-    "SIM102",  # collapsible-if — 6 sites
+    "SIM102",  # collapsible-if — 7 sites
     "B007",  # unused-loop-control-variable — 4 sites
     "UP035",  # deprecated-import — 4 sites (mostly typing.List/Dict legacy)
     "B904",  # raise-without-from-inside-except — 3 sites
     "SIM115",  # open-file-with-context-handler — 3 sites
-    "SIM110",  # reimplemented-builtin — 2 sites
-    "B905",  # zip-without-explicit-strict — 1 site
+    "SIM110",  # reimplemented-builtin — 4 sites
+    "B905",  # zip-without-explicit-strict — 9 sites
     "SIM108",  # if-else-block-instead-of-if-exp — 1 site
 ]
 
