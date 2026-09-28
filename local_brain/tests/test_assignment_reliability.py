@@ -60,8 +60,10 @@ def test_failed_mutation_restores_both_lists_and_references(linked, monkeypatch,
     with pytest.raises(PersistenceError):
         operations[operation]()
     assert (registry.assignments, registry.handoffs) == before
-    for records, originals in zip((registry.assignments, registry.handoffs), references):
-        assert all(record is original for record, original in zip(records, originals))
+    for records, originals in zip(
+        (registry.assignments, registry.handoffs), references, strict=True
+    ):
+        assert all(record is original for record, original in zip(records, originals, strict=True))
     assert registry.data_file.read_bytes() == disk
     assert not list(registry.data_file.parent.glob(".*.tmp"))
 

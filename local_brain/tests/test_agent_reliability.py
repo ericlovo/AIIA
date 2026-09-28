@@ -46,7 +46,7 @@ def test_failed_mutation_restores_memory_disk_and_references(registry, monkeypat
     with pytest.raises(PersistenceError):
         actions[operation]()
     assert registry.agents == before
-    assert all(a is b for a, b in zip(registry.agents, references))
+    assert all(a is b for a, b in zip(registry.agents, references, strict=True))
     assert registry.data_file.read_bytes() == disk
     assert not list(registry.data_file.parent.glob(".*.tmp"))
 
