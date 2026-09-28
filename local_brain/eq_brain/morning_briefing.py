@@ -260,7 +260,6 @@ class MorningBriefing:
         """Pre-LLM heuristic: scan commit's changed files for risky patterns."""
         flags = []
         files = commit.get("files", [])
-        subject = commit.get("subject", "").lower()
 
         for f in files:
             file_path = (f if isinstance(f, str) else f.get("path", "")).lower()

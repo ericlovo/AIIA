@@ -101,7 +101,7 @@ select = ["E", "F", "I", "UP", "B", "SIM"]
 ignore = [
     "E501",  # line too long — handled by formatter
     "B008",  # function calls in argument defaults (common in FastAPI)
-    # Backlog measured 2026-09-27: 101 sites with Ruff 0.16.9.
+    # Backlog after F841 cleanup: 95 sites with Ruff 0.16.9.
     # scripts/ruff-baseline.json enforces per-rule ceilings in CI.
     # Lower ceilings as rules are cleaned; remove rules from both ignore and
     # baseline when drained. E501 and B008 above are intentional exemptions.
@@ -109,7 +109,6 @@ ignore = [
     "B006",  # mutable-argument-default — 11 sites
     "E741",  # ambiguous-variable-name — 11 sites
     "SIM105",  # suppressible-exception — 11 sites
-    "F841",  # unused-variable — 6 sites
     "SIM102",  # collapsible-if — 7 sites
     "B007",  # unused-loop-control-variable — 4 sites
     "UP035",  # deprecated-import — 4 sites (mostly typing.List/Dict legacy)

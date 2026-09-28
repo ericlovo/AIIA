@@ -1315,8 +1315,6 @@ async def aiia_speak(request: SpeakRequest):
     # Kill any existing speech before starting new one
     await _kill_current_tts()
 
-    engine = "google_tts"
-
     # Try Google TTS first — synthesize MP3, play with afplay
     if _google_tts and _google_tts.is_available:
         try:
@@ -1356,7 +1354,6 @@ async def aiia_speak(request: SpeakRequest):
             }
         except Exception as e:
             logger.warning(f"Google TTS failed, falling back to macOS say: {e}")
-            engine = "macos_say"
 
     # Fallback: macOS say
     async def _speak():
@@ -1589,7 +1586,6 @@ async def aiia_session_start(request: SessionStartRequest):
     }
 
     # Gather extra context from Command Center (best-effort)
-    security_snapshot = {}
     routing_stats = {}
     recent_insights = []
     token_summary = {}
@@ -2035,8 +2031,7 @@ async def review_commit(request: ReviewCommitRequest):
         try:
             async with httpx.AsyncClient(timeout=5.0) as client:
                 if syntax_issues:
-                    for si in syntax_issues[:3]:
-                        filepath = si.split(":")[0].strip()
+                    for _si in syntax_issues[:3]:
                         # Create action via POST to a simple create endpoint
                         # (we'll store the review as a memory instead for now)
                         created_actions += 1
