@@ -36,7 +36,7 @@ local_brain/                  # The Python package — everything lives here
 ├── scripts/                  # CLI runners + indexers + reporters
 └── tests/                    # See "Testing" below
 
-dashboard/                    # Separate Vite frontend (no Tailwind yet — see design/TODO.md)
+dashboard/                    # React/Vite frontend with Tailwind CSS 4.3
 design/                       # Source-of-truth design tokens (aiia-console is canonical)
 docs/                         # Architecture + design docs
                               # (EXECUTABLE-ORGANIZATION.md = Assignments + typed Handoffs;
@@ -79,13 +79,15 @@ Config: `[tool.ruff]` in `pyproject.toml`. Selected rule families: E, F, I, UP, 
 
 ## Testing
 
-Tests live in `local_brain/tests/`. The current setup runs `pytest --collect-only` in CI because most tests are integration tests that need a live Ollama, Brain API, and Command Center.
-
-The Track 2 work in the 24h plan is wiring up a `conftest.py` with fixtures that mock Ollama + the Brain HTTP layer, so the CI can flip from `--collect-only` to a real `pytest` run.
+Tests live in `local_brain/tests/`. CI installs `.[dev]` and runs the tests,
+not just collection. Service mocks and temporary persistence let the suite run
+without a live Ollama, Brain API or Command Center. Collection exclusions and
+optional skips are documented in `local_brain/tests/conftest.py` and the tests;
+report them separately from passing tests.
 
 ```bash
-pytest --collect-only local_brain/tests/  # what CI runs today
-pytest local_brain/tests/                 # once T4 lands
+pytest local_brain/tests/             # enforced in CI
+python scripts/ruff_ratchet.py        # ignored-rule backlog ceiling
 ```
 
 Dashboard (`dashboard/`), all enforced in CI:
@@ -152,6 +154,6 @@ aiia-console (Tauri) hits `:8100` for Brain queries. Browser dashboard in `dashb
 ## Common gotchas
 
 - **`from local_brain import ...` requires editable install.** Run `pip install -e .` after a fresh clone.
-- **Tests can't run without Ollama + Brain locally** (until T4 lands mocks). Use `--collect-only` for a syntax-only check.
+- **Backend tests do not require live Ollama or Brain services.** Install `.[dev]` first; missing dependencies are not a reason to substitute collection for a test run.
 - **Ruff target is `py310`.** Don't add Python 3.11-only syntax outside guarded blocks.
 - **`v0.5.0-dev.*` branches on the remote** may or may not be stale — surface to the user, don't auto-delete.
