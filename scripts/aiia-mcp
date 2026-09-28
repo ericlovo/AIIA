@@ -1,0 +1,29 @@
+#!/bin/sh
+set -eu
+
+fail() {
+    printf '%s\n' "AIIA MCP: $1" >&2
+    exit 1
+}
+
+ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd) || exit 1
+cd "$ROOT" || exit 1
+
+if [ -x "$ROOT/.venv/bin/python3" ]; then
+    PYTHON="$ROOT/.venv/bin/python3"
+elif command -v python3 >/dev/null 2>&1; then
+    PYTHON=$(command -v python3)
+else
+    fail 'Install Python 3.10+ and run python3 -m pip install -e . in this repo.'
+fi
+
+if ! "$PYTHON" -c 'import local_brain; from mcp.server.fastmcp import FastMCP' >/dev/null 2>&1; then
+    fail 'Install dependencies with python3 -m pip install -e . using the repo .venv if present, then retry.'
+fi
+
+if [ -z "${EQ_BRAIN_DATA_DIR:-}" ]; then
+    [ -n "${HOME:-}" ] || fail 'Set HOME or EQ_BRAIN_DATA_DIR, then retry.'
+    EQ_BRAIN_DATA_DIR="$HOME/.aiia/eq_data"
+fi
+export EQ_BRAIN_DATA_DIR
+exec "$PYTHON" -m local_brain.mcp_server
