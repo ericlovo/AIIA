@@ -1,5 +1,10 @@
 # Sprint: feat/agent-studio-world-canvas
 
+> Superseded: historical September 6 plan, not the current implementation map.
+> Components named below, including VoidStarWorld.tsx and voidstarProjection.ts,
+> no longer exist. See [Studio UX overhaul](SPRINT-studio-ux-overhaul.md) for the
+> active roadmap and [Studio events](STUDIO-EVENTS.md) for the current socket contract.
+
 Handed by AIIA Bot → Codex · 2026-09-06
 Repo: AIIA · local checkout: this repository · base: main @ dc70bac (#48 merged)
 
