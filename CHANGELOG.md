@@ -6,6 +6,15 @@ All notable changes to AIIA are documented here. This project adheres to
 
 ## [Unreleased]
 
+### Security
+
+- **Command Center listens on loopback by default.** It has no auth of its
+  own; remote access goes through the Cloudflare tunnel, which authenticates
+  at the edge. It bound `0.0.0.0:8200`, so the Mini's LAN could skip that
+  login and reach the approve endpoints. It now binds `127.0.0.1`
+  (`COMMAND_CENTER_HOST` overrides), and Docker publishes 8200 on the host's
+  loopback only.
+
 ### Fixed
 
 - **Studio: one bad record no longer takes the whole Studio down.** Each view

@@ -85,8 +85,17 @@ source in the memory inbox, and review outcomes (`needs_work`,
 ## Open security finding
 
 From #66, verified 2026-09-27: Command Center (`command_center/server.py`)
-has no authentication, only CORS, and binds `0.0.0.0:8200`. CORS does not
-stop non-browser clients. Anyone who can reach the Mini on the network can
-call the ingest endpoint, and also the approve endpoints for actions, git
-workspaces and git writes, and agent runs. Tracked separately; see the
-session notes for the proposed fix.
+has no authentication of its own, only CORS. Remote access to
+`aiia.getsanction.com` goes through a Cloudflare tunnel behind Cloudflare
+Access (see `docs/SLACK-PERFORMANCE-LABS.md`), but the server bound
+`0.0.0.0:8200`, so anyone on the Mini's LAN could skip that login and call
+the approve endpoints for actions, git workspaces and git writes, and agent
+runs.
+
+- **Fixed:** the Command Center now binds `127.0.0.1` by default
+  (`COMMAND_CENTER_HOST` overrides), and Docker publishes 8200 on the host's
+  loopback only. The tunnel reaches it on localhost.
+- **Open:** defense in depth. Verify the Cloudflare Access JWT
+  (`Cf-Access-Jwt-Assertion`) in the app, exempting only the two
+  signature-verified Slack paths, so a misconfigured Access policy fails
+  closed instead of open.
