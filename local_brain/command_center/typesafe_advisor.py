@@ -53,7 +53,7 @@ class RoutingAdvisor:
         aliases = {f"candidate_{i}": candidate["id"] for i, candidate in enumerate(candidates)}
         criteria = {
             alias: {"name": candidate["name"], "skills": candidate.get("skills", [])}
-            for alias, candidate in zip(aliases, candidates)
+            for alias, candidate in zip(aliases, candidates, strict=True)
         }
         criteria["no_match"] = (
             "No candidate is a suitable specialist, or the brief is insufficient."

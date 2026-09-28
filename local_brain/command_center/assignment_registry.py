@@ -70,8 +70,8 @@ def _durable_mutation(method):
             return result
         except Exception:
             # Restore referenced records and list order, including nested handoff creation.
-            for records, snapshots in zip((assignments, handoffs), before):
-                for record, snapshot in zip(records, snapshots):
+            for records, snapshots in zip((assignments, handoffs), before, strict=True):
+                for record, snapshot in zip(records, snapshots, strict=True):
                     record.clear()
                     record.update(snapshot)
             self.assignments[:] = assignments

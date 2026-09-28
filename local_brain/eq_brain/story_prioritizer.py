@@ -41,7 +41,7 @@ GEOMETRIC_WEIGHT = 0.3
 
 
 def _dot(a: list[float], b: list[float]) -> float:
-    return sum(x * y for x, y in zip(a, b))
+    return sum(x * y for x, y in zip(a, b, strict=True))
 
 
 def _magnitude(v: list[float]) -> float:

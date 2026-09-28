@@ -48,7 +48,7 @@ def _durable_mutation(method):
             return result
         except Exception:
             # Preserve references held by in-flight requests as well as list order.
-            for agent, snapshot in zip(references, before):
+            for agent, snapshot in zip(references, before, strict=True):
                 agent.clear()
                 agent.update(snapshot)
             self.agents[:] = references
