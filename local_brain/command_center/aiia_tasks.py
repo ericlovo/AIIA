@@ -1107,7 +1107,7 @@ class TaskRunner:
         """Git pull + re-index changed files into ChromaDB."""
         await self._progress("repo_sync", 5, "Getting current commit SHA")
 
-        current_sha = await self._run_git("rev-parse", "HEAD")
+        await self._run_git("rev-parse", "HEAD")
         last_sha = self._extra.get("last_commit_sha")
 
         await self._progress("repo_sync", 10, "Pulling from origin")
@@ -2058,20 +2058,6 @@ Be specific and reference actual file names. Keep each point to 1-2 sentences.""
             platform_commits = []
 
         await self._progress("weekly_default_status", 25, "Parsing commit stats")
-
-        # 3. Detailed stats for DefaultApp changes
-        try:
-            stat_output = await self._run_git(
-                "diff",
-                "--stat",
-                "--since=7 days ago",
-                "HEAD@{7 days ago}..HEAD",
-                "--",
-                "products/default-app/",
-            )
-        except Exception:
-            # Fallback: use shortlog
-            stat_output = ""
 
         # Parse commit types
         features, fixes, chores, other = [], [], [], []
