@@ -187,7 +187,7 @@ async def search_files(query: str, n_results: int = 8) -> list[dict]:
     metas = results.get("metadatas", [[]])[0]
     distances = results.get("distances", [[]])[0]
 
-    for doc, meta, dist in zip(docs, metas, distances):
+    for doc, meta, dist in zip(docs, metas, distances, strict=True):
         path = meta.get("path", "")
         score = round(1 - dist, 3)
         hits.append(

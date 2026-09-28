@@ -101,7 +101,7 @@ select = ["E", "F", "I", "UP", "B", "SIM"]
 ignore = [
     "E501",  # line too long — handled by formatter
     "B008",  # function calls in argument defaults (common in FastAPI)
-    # Backlog after F841 cleanup: 95 sites with Ruff 0.16.9.
+    # Backlog after B905 and F841 cleanup: 86 sites with Ruff 0.16.9.
     # scripts/ruff-baseline.json enforces per-rule ceilings in CI.
     # Lower ceilings as rules are cleaned; remove rules from both ignore and
     # baseline when drained. E501 and B008 above are intentional exemptions.
@@ -115,7 +115,6 @@ ignore = [
     "B904",  # raise-without-from-inside-except — 3 sites
     "SIM115",  # open-file-with-context-handler — 3 sites
     "SIM110",  # reimplemented-builtin — 4 sites
-    "B905",  # zip-without-explicit-strict — 9 sites
     "SIM108",  # if-else-block-instead-of-if-exp — 1 site
 ]
 
