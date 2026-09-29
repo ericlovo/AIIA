@@ -48,6 +48,9 @@ VALID_SOURCE_KINDS = {
     "loop_schedule",
     "agent_handoff",
     "revision",
+    # A scheduled check whose inputs could not be read. No model ran; the item
+    # exists so the failure is seen, and it is never treated as an all-clear.
+    "loop_check",
 }
 
 
@@ -196,14 +199,27 @@ class AssignmentRegistry:
         objective: str,
         schedule_key: str,
         interval_minutes: int,
+        observed_fingerprint: str = "",
     ) -> tuple[dict[str, Any], bool]:
-        """Create one reviewable item for a loop window, with queue backpressure."""
+        """Create one reviewable item for a loop window, with queue backpressure.
+
+        `observed_fingerprint` identifies the inputs the check saw. One observed
+        state yields at most one reviewable item, across windows and restarts.
+        """
         existing = next(
             (
                 assignment
                 for assignment in self.assignments
                 if assignment.get("trigger") == "interval"
-                and assignment.get("schedule_key") == schedule_key
+                and (
+                    assignment.get("schedule_key") == schedule_key
+                    or (
+                        observed_fingerprint
+                        and assignment.get("agent_id") == agent_id
+                        and assignment.get("observed_fingerprint") == observed_fingerprint
+                        and assignment.get("status") != "failed"
+                    )
+                )
             ),
             None,
         )
@@ -227,15 +243,79 @@ class AssignmentRegistry:
             source_kind="loop_schedule",
             source_ref=schedule_key,
         )
+        if observed_fingerprint:
+            assignment["observed_fingerprint"] = observed_fingerprint
+        return assignment, True
+
+    @_durable_mutation
+    def record_check_failure(
+        self,
+        *,
+        agent_id: str,
+        agent_name: str,
+        objective: str,
+        failures: tuple[str, ...] | list[str],
+    ) -> tuple[dict[str, Any], bool]:
+        """Surface a scheduled check that could not read its inputs.
+
+        One open item per agent: a repeat updates the count and reason rather than
+        adding another. It stays failed until a person dismisses it, even if a later
+        check succeeds, because the gap in coverage already happened.
+        """
+        now = _now()
+        reason = "check_incomplete: " + ", ".join(failures or ("unknown",))
+        existing = next(
+            (
+                assignment
+                for assignment in self.assignments
+                if assignment.get("agent_id") == agent_id
+                and assignment.get("source_kind") == "loop_check"
+                and assignment.get("status") == "failed"
+                and not assignment.get("dismissed_at")
+            ),
+            None,
+        )
+        if existing:
+            existing["error"] = reason[:2_000]
+            existing["occurrences"] = int(existing.get("occurrences", 1)) + 1
+            existing["last_failed_at"] = now
+            existing["updated_at"] = now
+            return existing, False
+        assignment = self.create_assignment(
+            title=f"Check failed: {agent_name}"[:120],
+            objective=objective,
+            agent_id=agent_id,
+            context=(
+                "Created by the Agent Studio loop scheduler. The scheduled check could "
+                "not read its inputs, so no model ran and nothing was verified."
+            ),
+            trigger="interval",
+            schedule_key=f"{agent_id}:check_failed:{now}",
+            source_kind="loop_check",
+            source_ref=agent_id,
+        )
+        assignment.update(self._new_review())
+        assignment["status"] = "failed"
+        assignment["error"] = reason[:2_000]
+        assignment["completed_at"] = now
+        assignment["occurrences"] = 1
+        assignment["last_failed_at"] = now
         return assignment, True
 
     def _make_assignment_room(self) -> None:
         while len(self.assignments) >= MAX_ASSIGNMENTS:
+            # Only work a person has closed (reviewed or dismissed) is evicted. Output
+            # awaiting review and unacknowledged failures are never dropped silently;
+            # a full registry raises instead, so the backlog becomes visible.
             disposable = next(
                 (
                     assignment
                     for assignment in reversed(self.assignments)
                     if assignment["status"] in {"completed", "failed"}
+                    and (
+                        assignment.get("dismissed_at")
+                        or assignment.get("review_status", "unreviewed") != "unreviewed"
+                    )
                     and not assignment.get("source_handoff_id")
                     and not assignment.get("revision_of")
                     and not assignment.get("revision_ids")

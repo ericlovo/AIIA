@@ -2,6 +2,8 @@ import type { Assignment, GitWorkspace, GitWrite } from '../lib/api'
 
 /** The output verdict, which survives dismissal. */
 export function reviewLabel(assignment: Assignment): string {
+  // A scheduled check that could not read its inputs: no model ran, nothing was verified.
+  if (assignment.source_kind === 'loop_check') return 'Check incomplete'
   if (assignment.status === 'failed') return assignment.error === 'interrupted_by_restart' ? 'Interrupted run' : 'Failed run'
   if (assignment.status !== 'completed') return ''
   if (!assignment.result.trim()) return 'Missing output'
@@ -19,6 +21,7 @@ export function assignmentLabel(assignment: Assignment): string {
 
 export function assignmentOrigin(assignment: Assignment): string {
   if (assignment.source_kind === 'memory_capture') return 'From Slack capture'
+  if (assignment.source_kind === 'loop_check') return 'Scheduled check'
   if (assignment.trigger === 'interval') return 'Scheduled loop'
   if (assignment.trigger === 'handoff') return 'Handoff'
   if (assignment.trigger === 'revision') return 'Revision'

@@ -84,3 +84,12 @@ test('attention summary is one definition: review, failed, and pending approvals
   assert.deepEqual(attentionSummary(records, workspaces, writes, 'other'), { review: 0, failed: 0, approvals: 1, total: 1 })
   assert.deepEqual(attentionSummary([]), { review: 0, failed: 0, approvals: 0, total: 0 })
 })
+
+test('an incomplete scheduled check is surfaced first and never reads as a model run or an all-clear', () => {
+  const check = work('check', { status: 'failed', result: '', error: 'check_incomplete: git_status_failed', trigger: 'interval', source_kind: 'loop_check' })
+  const records = [work('awaiting', { trigger: 'interval', source_kind: 'loop_schedule' }), check]
+  assert.deepEqual(attentionAssignments(records).map(item => item.id), ['check', 'awaiting'])
+  assert.equal(reviewLabel(check), 'Check incomplete')
+  assert.equal(assignmentOrigin(check), 'Scheduled check')
+  assert.equal(assignmentLabel({ ...check, dismissed_at: '2026-09-29T00:00:00Z' }), 'Check incomplete · Dismissed')
+})

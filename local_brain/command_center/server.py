@@ -891,6 +891,8 @@ from local_brain.command_center.repository_tools import (
     available_repos,
     github_snapshot,
     github_status,
+    observe_github,
+    observe_repository,
     repo_available,
     repo_snapshot,
 )
@@ -1453,6 +1455,18 @@ async def studio_activity(agent_id: str = "", day: str = "", status: str = ""):
             status_code=503,
             detail="Run history unavailable; saved outputs are retained for recovery.",
         ) from exc
+
+
+@app.get("/api/studio/loop-checks")
+async def studio_loop_checks(agent_id: str = "", limit: int = 50):
+    """Scheduled checks that ran no model: verified unchanged, or incomplete."""
+    if not 1 <= limit <= 200:
+        raise HTTPException(status_code=422, detail="invalid_limit")
+    try:
+        checks = agent_registry.recover_runs().loop_checks(agent_id=agent_id, limit=limit)
+    except (RunHistoryUnavailable, sqlite3.Error) as exc:
+        raise HTTPException(status_code=503, detail="Run history unavailable.") from exc
+    return {"checks": checks}
 
 
 @app.get("/api/studio/runs/{run_id}")
@@ -2323,15 +2337,44 @@ def _loop_schedule_key(agent: dict[str, Any]) -> str:
     return f"{agent['id']}:{last_run}:{interval}"
 
 
-def _scheduled_input_hash(agent: dict[str, Any]) -> str:
+@dataclass(frozen=True)
+class LoopObservation:
+    """What a scheduled check read before any model ran.
+
+    `fingerprint` covers the observed inputs and the agent's configuration, so an
+    identical fingerprint means the check saw exactly what it saw last time.
+    `complete` is False when any read failed; such a check proves nothing.
+    """
+
+    fingerprint: str
+    complete: bool
+    failures: tuple[str, ...] = ()
+
+
+OBSERVABLE_LOOP_TOOLS = {"Repository read", "GitHub read"}
+
+
+def _observe_scheduled_inputs(agent: dict[str, Any]) -> LoopObservation | None:
+    """Read a loop agent's inputs, or None when they cannot be observed.
+
+    Only agents whose tools are all read-only observers (plus Git workspace) are
+    observable. Anything else always runs and always produces a reviewable item,
+    because there is no evidence to call its inputs unchanged.
+    """
     tools = set(agent.get("tools", []))
-    if "Repository read" not in tools or tools.difference({"Repository read", "Git workspace"}):
-        return ""
+    if not tools & OBSERVABLE_LOOP_TOOLS or tools.difference(
+        OBSERVABLE_LOOP_TOOLS | {"Git workspace"}
+    ):
+        return None
     repo_id = str(agent.get("repo_id") or "")
-    if not repo_id or not repo_available(repo_id):
-        return ""
+    observations = []
+    if "Repository read" in tools:
+        observations.append(observe_repository(repo_id))
+    if "GitHub read" in tools:
+        observations.append(observe_github(repo_id))
+    failures = tuple(failure for item in observations for failure in item.failures)
     payload = {
-        "repository": repo_snapshot(repo_id),
+        "observations": [item.text for item in observations],
         "task": agent.get("loop_task", ""),
         "mission": agent.get("mission", ""),
         "persona": agent.get("persona", ""),
@@ -2342,11 +2385,68 @@ def _scheduled_input_hash(agent: dict[str, Any]) -> str:
         "think": agent.get("think", False),
     }
     encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
-    return hashlib.sha256(encoded).hexdigest()
+    return LoopObservation(hashlib.sha256(encoded).hexdigest(), not failures, failures)
+
+
+def _record_loop_check(
+    agent: dict[str, Any], outcome: str, observation: LoopObservation | None
+) -> None:
+    """Keep a check that ran no model in activity history. Best effort: a history
+    outage must not stop the scheduler, and the agent's own fields still record it."""
+    try:
+        agent_registry.recover_runs().record_check(
+            agent,
+            outcome=outcome,
+            fingerprint=observation.fingerprint if observation else "",
+            failures=observation.failures if observation else (),
+        )
+    except (RunHistoryUnavailable, sqlite3.Error) as exc:
+        logger.warning("Loop check not recorded for %s: %s", agent.get("id"), exc)
+
+
+async def _skip_scheduled_agent(
+    agent: dict[str, Any], reason: str, input_hash: str | None = None, **extra: Any
+) -> dict[str, Any]:
+    updated = agent_registry.record_loop_skip(agent["id"], input_hash, reason=reason)
+    if updated:
+        await broadcast_studio_event("agent", "skipped", updated)
+    return {"agent": updated, "skipped": True, "reason": reason, **extra}
+
+
+async def _surface_incomplete_check(
+    agent: dict[str, Any], observation: LoopObservation
+) -> dict[str, Any]:
+    """A check that could not read its inputs is a failure, never an all-clear."""
+    try:
+        item, created = assignment_registry.record_check_failure(
+            agent_id=agent["id"],
+            agent_name=agent["name"],
+            objective=agent.get("loop_task", ""),
+            failures=observation.failures,
+        )
+    except ValueError as exc:
+        logger.warning("Check failure for %s not recorded as work: %s", agent["id"], exc)
+        item, created = None, False
+    if item:
+        await broadcast_assignment_event("created" if created else "updated", item)
+    _record_loop_check(agent, "check_incomplete", observation)
+    return await _skip_scheduled_agent(
+        agent,
+        "check_incomplete",
+        failures=list(observation.failures),
+        assignment=item,
+    )
 
 
 async def _run_scheduled_agent(agent: dict[str, Any]) -> dict[str, Any]:
-    input_hash = _scheduled_input_hash(agent)
+    # git and gh are blocking subprocesses with multi-second timeouts; off the event
+    # loop, a hung GitHub API cannot stall every other Command Center request.
+    observation = await asyncio.to_thread(_observe_scheduled_inputs, agent)
+    if observation and not observation.complete:
+        # Checked first: queued work would otherwise run against inputs we know
+        # we could not read.
+        return await _surface_incomplete_check(agent, observation)
+    input_hash = observation.fingerprint if observation else ""
     open_work = assignment_registry.open_scheduled_assignment(agent["id"])
     if open_work:
         if open_work["status"] == "queued":
@@ -2359,31 +2459,28 @@ async def _run_scheduled_agent(agent: dict[str, Any]) -> dict[str, Any]:
         return {"assignment": open_work, "deduplicated": True}
     pending_reviews = assignment_registry.pending_loop_reviews(agent["id"])
     if pending_reviews >= MAX_PENDING_LOOP_REVIEWS:
-        updated = agent_registry.record_loop_skip(agent["id"], None, reason="awaiting_review")
-        if updated:
-            await broadcast_studio_event("agent", "skipped", updated)
-        return {
-            "agent": updated,
-            "skipped": True,
-            "reason": "awaiting_review",
-            "pending_reviews": pending_reviews,
-        }
+        return await _skip_scheduled_agent(
+            agent, "awaiting_review", pending_reviews=pending_reviews
+        )
     if input_hash and input_hash == agent.get("loop_input_hash"):
-        updated = agent_registry.record_loop_skip(agent["id"], input_hash)
-        if updated:
-            await broadcast_studio_event("agent", "skipped", updated)
-        return {
-            "agent": updated,
-            "skipped": True,
-            "reason": "unchanged_repository_input",
-        }
-    assignment, created = assignment_registry.create_scheduled_assignment(
-        agent_id=agent["id"],
-        agent_name=agent["name"],
-        objective=agent["loop_task"],
-        schedule_key=_loop_schedule_key(agent),
-        interval_minutes=agent.get("loop_interval_minutes", 60),
-    )
+        # Verified no change: every read succeeded and saw exactly the inputs of
+        # the last executed run. History only; no attention item, no model run,
+        # and nothing here counts as a human review.
+        _record_loop_check(agent, "verified_unchanged", observation)
+        return await _skip_scheduled_agent(agent, "unchanged_repository_input", input_hash)
+    try:
+        assignment, created = assignment_registry.create_scheduled_assignment(
+            agent_id=agent["id"],
+            agent_name=agent["name"],
+            objective=agent["loop_task"],
+            schedule_key=_loop_schedule_key(agent),
+            interval_minutes=agent.get("loop_interval_minutes", 60),
+            observed_fingerprint=input_hash,
+        )
+    except ValueError as exc:
+        if str(exc) != "assignment_capacity_reached":
+            raise
+        return await _skip_scheduled_agent(agent, "assignment_capacity_reached")
     if created:
         await broadcast_assignment_event("created", assignment)
     if assignment["status"] != "queued":

@@ -204,6 +204,8 @@ function interval(minutes: number) { return minutes >= 60 && minutes % 60 === 0 
 function time(value: string | null) { return value ? new Date(value).toLocaleString() : 'Never' }
 function loopDue(agent: Agent, today: string) {
   if (agent.loop_skip_reason === 'awaiting_review') return 'Waiting for review'
+  if (agent.loop_skip_reason === 'check_incomplete') return 'Check failed · see Needs attention'
+  if (agent.loop_skip_reason === 'assignment_capacity_reached') return 'Work registry full · review or dismiss items'
   if (agent.loop_day === today && agent.loop_runs_today >= agent.loop_max_runs_per_day) return 'Daily cap reached'
   if (agent.loop_backoff_until) {
     const backoffMinutes = Math.ceil((Date.parse(agent.loop_backoff_until) - Date.now()) / 60_000)
