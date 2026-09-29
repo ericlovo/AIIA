@@ -15,11 +15,14 @@ services:
     container_name: aiia
     ports:
       - "8100:8100"   # Local Brain API
-      - "8200:8200"   # Command Center Dashboard
+      - "127.0.0.1:8200:8200"   # Command Center: host loopback only (no auth of its own)
     env_file: .env
     environment:
       - OLLAMA_URL=http://ollama:11434
       - EQ_BRAIN_DATA_DIR=/data/eq_data
+      # All interfaces inside the container; the port above is published on
+      # the host's loopback only, so the LAN still cannot reach it.
+      - COMMAND_CENTER_HOST=0.0.0.0
     volumes:
       - aiia-data:/data
     depends_on:

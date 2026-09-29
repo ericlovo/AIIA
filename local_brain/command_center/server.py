@@ -4287,8 +4287,22 @@ async def shutdown():
 
 # ─── Entry Point ─────────────────────────────────────────────
 
+
+def bind_host() -> str:
+    """Interface to listen on: loopback unless COMMAND_CENTER_HOST overrides it.
+
+    The Command Center has no auth of its own. Remote access goes through the
+    Cloudflare tunnel, which authenticates at the edge and reaches this process
+    on localhost. Binding 0.0.0.0 would let anyone on the Mini's LAN skip that
+    login and call the approve endpoints directly. Override only where the port
+    is otherwise restricted, e.g. 0.0.0.0 inside a container whose published
+    port is bound to the host's loopback.
+    """
+    return os.getenv("COMMAND_CENTER_HOST", "127.0.0.1")
+
+
 if __name__ == "__main__":
     import uvicorn
 
     logging.basicConfig(level=logging.INFO)
-    uvicorn.run(app, host="0.0.0.0", port=8200)  # nosec B104
+    uvicorn.run(app, host=bind_host(), port=8200)

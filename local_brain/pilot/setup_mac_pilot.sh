@@ -293,8 +293,9 @@ BRAIN_PID=$!
 
 sleep 2
 echo "Starting Command Center on :8200..."
+# Loopback only: remote access goes through the authenticated Cloudflare tunnel.
 python -m uvicorn local_brain.local_brain.command_center.server:app \
-    --host 0.0.0.0 \
+    --host ${COMMAND_CENTER_HOST:-127.0.0.1} \
     --port 8200 &
 CMD_PID=$!
 
