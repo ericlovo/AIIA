@@ -24,13 +24,21 @@ interface Props {
   onOpenReview: (bucket: ReviewMetric['bucket'] | '') => void
   onTemplate: (draft: AgentDefinition) => void
   initialTaskId?: string
+  initialAttention?: boolean
 }
 
-export function Switchboard({ agents, loading, agentError, onViewChange, onManageAgent, onAssignAgent, onOpenAssignment, onOpenReview, onTemplate, initialTaskId }: Props) {
+export function Switchboard({ agents, loading, agentError, onViewChange, onManageAgent, onAssignAgent, onOpenAssignment, onOpenReview, onTemplate, initialTaskId, initialAttention }: Props) {
   const qc = useQueryClient()
   const inspectorRef = useRef<HTMLElement>(null)
   const ledgerRef = useRef<HTMLElement>(null)
-  const [showAllAttention, setShowAllAttention] = useState(false)
+  const attentionRef = useRef<HTMLElement>(null)
+  const [showAllAttention, setShowAllAttention] = useState(Boolean(initialAttention))
+  useEffect(() => {
+    if (initialAttention) {
+      attentionRef.current?.focus({ preventScroll: true })
+      attentionRef.current?.scrollIntoView({ block: 'start' })
+    }
+  }, [initialAttention])
   // Bulk dismissal: id -> the review version seen when it was ticked, so a later
   // change to that item refuses the whole batch instead of dismissing unseen work.
   const [selecting, setSelecting] = useState(false)
@@ -137,7 +145,7 @@ export function Switchboard({ agents, loading, agentError, onViewChange, onManag
     </section>
     <div className="sb-body">
       <div className="sb-main">
-        <section className="sb-attention" aria-label="Needs attention">
+        <section ref={attentionRef} tabIndex={-1} className="sb-attention focus-visible:outline-2 focus-visible:outline-cyan-300" aria-label="Needs attention">
           <div className="sb-section-title"><div><h2>Needs attention {assignments.data ? `(${summary.total})` : ''}</h2><p>{agent?.name || 'All agents'} · {summary.review} to review · {summary.failed} failed · {summary.approvals} approvals</p></div>
             {attention.length > 0 && <button type="button" className="sb-select-toggle" aria-pressed={selecting} onClick={() => selecting ? stopSelecting() : startSelecting()}>{selecting ? 'Cancel' : 'Select to dismiss'}</button>}
           </div>

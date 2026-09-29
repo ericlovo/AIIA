@@ -5,7 +5,7 @@
 // Every API response and the Studio WebSocket are intercepted with synthetic
 // data; nothing is written to a real Brain or Command Center.
 import assert from 'node:assert/strict'
-import { readFile } from 'node:fs/promises'
+import { mkdir, readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 
 const { chromium } = await import(process.env.PLAYWRIGHT_MODULE || 'playwright')
@@ -20,8 +20,8 @@ const work = (id, title, agentId) => ({ id, agent_id: agentId, title, objective:
 const assignments = [work('asg-1', 'Scan the repository', 'a0'), work('asg-2', 'Draft the partner brief', 'a1')]
 const tasks = [{ task_id: 'nightly-sync', name: 'Nightly sync', description: 'Syncs memory overnight.', interval_seconds: 86400, last_run: null, next_run: null, last_status: 'success', run_count: 3, fail_count: 0, enabled: true }]
 
-async function open(path = '', { agentsDelayMs = 0 } = {}) {
-  const context = await browser.newContext({ viewport: { width: 1440, height: 900 } })
+async function open(path = '', { agentsDelayMs = 0, width = 1440, workItems = assignments } = {}) {
+  const context = await browser.newContext({ viewport: { width, height: 900 } })
   const page = await context.newPage()
   page.setDefaultTimeout(12000)
   const pageErrors = []
@@ -41,7 +41,7 @@ async function open(path = '', { agentsDelayMs = 0 } = {}) {
       '/api/agents': { agents },
       '/api/agents/resources': { repos: [], github: { status: 'disconnected' } },
       '/api/agents/models': { default: 'synthetic-model:1b', models: [] },
-      '/api/assignments': { assignments },
+      '/api/assignments': { assignments: workItems },
       '/api/handoffs': { handoffs: [] },
       '/api/git-workspaces': { workspaces: [] },
       '/api/git-writes': { writes: [] },
@@ -65,6 +65,35 @@ const hash = page => page.evaluate(() => window.location.hash)
 const heading = (page, name) => page.getByRole('heading', { level: 1, name, exact: true })
 
 try {
+  for (const width of [1440, 390]) {
+    const workItems = Array.from({ length: 3 }, (_, i) => ({ ...work(`failure-${i}`, `Investigate failure ${i}`, 'a0'), status: 'failed', error: `failure evidence ${i}`, review_status: 'unreviewed' }))
+    workItems.push({ ...work('dismissed', 'Already dismissed', 'a0'), status: 'failed', dismissed_at: `${date}T13:00:00Z` })
+    const { context, page, pageErrors } = await open('#/overview', { width, workItems })
+    const link = page.getByRole('link', { name: 'Needs attention: 3. Investigate', exact: true })
+    await link.waitFor()
+    const output = process.env.SCREENSHOT_DIR || '/tmp/aiia-overview-attention'
+    await mkdir(output, { recursive: true })
+    await link.scrollIntoViewIfNeeded()
+    await page.screenshot({ path: join(output, `attention-link-${width}.png`) })
+    if (width === 1440) { await link.focus(); await page.keyboard.press('Enter') }
+    else await link.click()
+    assert.equal(await hash(page), '#/today?attention=1')
+    const queue = page.getByRole('region', { name: 'Needs attention', exact: true })
+    await queue.getByRole('heading', { name: 'Needs attention (3)', exact: true }).waitFor()
+    assert.equal(await queue.evaluate(element => document.activeElement === element), true)
+    assert.equal(await queue.getByText('Already dismissed', { exact: true }).count(), 0)
+    await page.screenshot({ path: join(output, `attention-queue-${width}.png`) })
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false)
+    await queue.getByRole('button', { name: /Investigate failure 0/ }).click()
+    assert.equal(await hash(page), '#/assignments/failure-0')
+    await page.goBack()
+    await queue.waitFor()
+    await page.reload()
+    await queue.waitFor()
+    assert.equal(await queue.evaluate(element => document.activeElement === element), true)
+    assert.deepEqual(pageErrors, [])
+    await context.close()
+  }
   // 1. Every nav item is a real link to its own address, and one is current.
   {
     const { context, page, pageErrors } = await open()

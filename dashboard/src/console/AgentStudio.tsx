@@ -146,6 +146,7 @@ export function AgentStudio() {
       return <Switchboard key={key} agents={agents} loading={isLoading} agentError={isError}
         onViewChange={changeView} onManageAgent={manageAgent} onAssignAgent={assignAgent}
         onOpenAssignment={openAssignment} onOpenReview={openReview} initialTaskId={route.view === 'switchboard' ? route.taskId : undefined}
+        initialAttention={route.view === 'switchboard' && route.attention}
         onTemplate={template => { selectAgent(null); setDraft(template); changeView('agents') }} />
     }
 

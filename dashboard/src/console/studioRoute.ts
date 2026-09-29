@@ -19,7 +19,7 @@ export const VIEWS: { id: StudioView; label: string }[] = [
  * can be linked to, reloaded, and reached with the back button.
  */
 export type StudioRoute =
-  | { view: 'switchboard'; taskId?: string }
+  | { view: 'switchboard'; taskId?: string; attention?: boolean }
   | { view: 'activity' }
   | { view: 'agents'; agentId?: string }
   | { view: 'assignments'; assignmentId?: string; agentId?: string }
@@ -53,7 +53,7 @@ export function parseRoute(hash: string): StudioRoute | null {
   const query = new URLSearchParams(rawQuery ?? '')
   const param = (name: string) => query.get(name) || undefined
   switch (view) {
-    case 'switchboard': return id ? null : { view, taskId: param('task') }
+    case 'switchboard': return id ? null : { view, taskId: param('task'), ...(param('attention') === '1' ? { attention: true } : {}) }
     case 'agents': return { view, agentId: id }
     case 'assignments': return { view, assignmentId: id, agentId: id ? undefined : param('agent') }
     case 'handoffs': return id ? null : { view, from: param('from'), to: param('to') }
@@ -72,7 +72,10 @@ export function formatRoute(route: StudioRoute): string {
   const query = new URLSearchParams()
   let id = ''
   switch (route.view) {
-    case 'switchboard': if (route.taskId) query.set('task', route.taskId); break
+    case 'switchboard':
+      if (route.taskId) query.set('task', route.taskId)
+      if (route.attention) query.set('attention', '1')
+      break
     case 'agents': id = route.agentId ?? ''; break
     case 'assignments':
       id = route.assignmentId ?? ''
