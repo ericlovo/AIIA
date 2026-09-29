@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { ArrowRight, Check, CirclePause, FileText, GitBranch, Layers3, Play, RefreshCw, Search, X } from 'lucide-react'
-import { api, type Agent, type AgentDefinition, type StudioRun } from '../lib/api'
+import { api, type Agent, type AgentDefinition, type Assignment, type StudioRun } from '../lib/api'
 import type { StudioView } from './studioRoute'
 import { PageHeader } from './PageHeader'
 import { TokenUsage } from './TokenUsage'
@@ -9,7 +9,7 @@ import { AgentTokenUsage } from './AgentTokenUsage'
 import { runTokens } from './runTokens'
 import { DEVELOPMENT_LOOPS } from './developmentLoops'
 import { loopState, DOT_COLOR } from './taskStatus'
-import { assignmentOrigin, attentionAssignments, attentionSummary, reviewLabel } from './assignmentReview'
+import { assignmentOrigin, attentionAssignments, attentionSummary, bulkDismissError, reviewLabel } from './assignmentReview'
 import { activeSources, formatRate, reviewMetrics, reviewSummary, type ReviewMetric } from './reviewHealth'
 import './switchboard.css'
 
@@ -31,6 +31,12 @@ export function Switchboard({ agents, loading, agentError, onViewChange, onManag
   const inspectorRef = useRef<HTMLElement>(null)
   const ledgerRef = useRef<HTMLElement>(null)
   const [showAllAttention, setShowAllAttention] = useState(false)
+  // Bulk dismissal: id -> the review version seen when it was ticked, so a later
+  // change to that item refuses the whole batch instead of dismissing unseen work.
+  const [selecting, setSelecting] = useState(false)
+  const [picked, setPicked] = useState<Record<string, string>>({})
+  const [dismissNote, setDismissNote] = useState('')
+  const [dismissedCount, setDismissedCount] = useState(0)
   const [agentId, setAgentId] = useState('')
   const [day, setDay] = useState('')
   const [status, setStatus] = useState('')
@@ -59,6 +65,41 @@ export function Switchboard({ agents, loading, agentError, onViewChange, onManag
   const selectedTask = tasks.data?.find(item => item.task_id === taskId)
   const selectedWork = assignments.data?.assignments.filter(item => (!agentId || item.agent_id === agentId) && (item.status === 'queued' || item.status === 'running')) ?? []
   const attention = attentionAssignments(assignments.data?.assignments ?? [], agentId)
+  const pickedWork = attention.filter(work => picked[work.id])
+  const bulkDismiss = useMutation({
+    mutationFn: () => api.dismissAssignments(pickedWork.map(work => ({ id: work.id, expected_version: picked[work.id] })), dismissNote.trim()),
+    onSuccess: result => {
+      setDismissedCount(result.dismissed)
+      setPicked({})
+      setDismissNote('')
+      setSelecting(false)
+      void qc.invalidateQueries({ queryKey: ['assignments'] })
+      void qc.invalidateQueries({ queryKey: ['review-health'] })
+    },
+    onError: error => {
+      // The item that stopped the batch is unticked, so it is only resubmitted after
+      // a person re-checks and ticks it again; the refetch brings current versions.
+      const [, blocking] = error.message.split(':')
+      if (blocking) setPicked(current => { const next = { ...current }; delete next[blocking]; return next })
+      void qc.invalidateQueries({ queryKey: ['assignments'] })
+    },
+  })
+  // A new selection or reason is a new attempt: the last refusal no longer applies.
+  function togglePick(work: Assignment) {
+    bulkDismiss.reset()
+    setPicked(current => {
+      const next = { ...current }
+      if (next[work.id]) delete next[work.id]
+      else next[work.id] = work.review_version ?? ''
+      return next
+    })
+  }
+  function pickAllShown() {
+    bulkDismiss.reset()
+    setPicked(Object.fromEntries(attention.filter(work => work.review_version).map(work => [work.id, work.review_version!])))
+  }
+  function startSelecting() { setSelecting(true); setDismissedCount(0) }
+  function stopSelecting() { setSelecting(false); setPicked({}); bulkDismiss.reset() }
   const summary = attentionSummary(assignments.data?.assignments ?? [], workspaces.data?.workspaces, writes.data?.writes, agentId)
   const today = data?.today ?? new Date().toISOString().slice(0, 10)
   const todayCount = data?.days.find(item => item.day === today)
@@ -97,12 +138,27 @@ export function Switchboard({ agents, loading, agentError, onViewChange, onManag
     <div className="sb-body">
       <div className="sb-main">
         <section className="sb-attention" aria-label="Needs attention">
-          <div className="sb-section-title"><div><h2>Needs attention {assignments.data ? `(${summary.total})` : ''}</h2><p>{agent?.name || 'All agents'} · {summary.review} to review · {summary.failed} failed · {summary.approvals} approvals</p></div></div>
+          <div className="sb-section-title"><div><h2>Needs attention {assignments.data ? `(${summary.total})` : ''}</h2><p>{agent?.name || 'All agents'} · {summary.review} to review · {summary.failed} failed · {summary.approvals} approvals</p></div>
+            {attention.length > 0 && <button type="button" className="sb-select-toggle" aria-pressed={selecting} onClick={() => selecting ? stopSelecting() : startSelecting()}>{selecting ? 'Cancel' : 'Select to dismiss'}</button>}
+          </div>
+          {dismissedCount > 0 && !selecting && <p role="status" className="sb-bulk-done">Dismissed {dismissedCount} {dismissedCount === 1 ? 'item' : 'items'}. No verdict was recorded.</p>}
+          {selecting && <div className="sb-bulk" role="group" aria-label="Dismiss selected assignments">
+            <p>Dismissing stops tracking an item without judging its output: nothing is accepted, and existing verdicts are kept. {agent ? `Showing ${agent.name} only.` : 'Pick an agent below to narrow the list.'}</p>
+            <div className="sb-bulk-row">
+              <button type="button" className="sb-link" onClick={pickAllShown}>Select all shown ({attention.length})</button>
+              {pickedWork.length > 0 && <button type="button" className="sb-link" onClick={() => { bulkDismiss.reset(); setPicked({}) }}>Clear</button>}
+              <span>{pickedWork.length} selected</span>
+            </div>
+            <label className="sb-bulk-note">Reason (required)<textarea value={dismissNote} maxLength={2000} rows={2} onChange={event => { bulkDismiss.reset(); setDismissNote(event.target.value) }} placeholder="Why these no longer need attention" /></label>
+            <button type="button" className="sb-command" disabled={!pickedWork.length || !dismissNote.trim() || bulkDismiss.isPending} onClick={() => bulkDismiss.mutate()}>{bulkDismiss.isPending ? 'Dismissing...' : `Dismiss ${pickedWork.length} ${pickedWork.length === 1 ? 'item' : 'items'}`}</button>
+            {bulkDismiss.error && <p role="alert">{bulkDismissError(bulkDismiss.error.message, id => attention.find(work => work.id === id)?.title ?? '')}</p>}
+          </div>}
           {assignments.isError ? <p role="alert">Assignment status unavailable. {assignments.data ? 'Showing last loaded work.' : 'Retry to load work.'}</p> : assignments.isLoading ? <p>Loading assignments...</p> : null}
           {assignments.data && !assignments.isError && summary.total === 0 && <p>Nothing needs attention in this view.</p>}
           {summary.approvals > 0 && <button className="sb-work" onClick={() => onViewChange('assignments')}><span>{summary.approvals} git {summary.approvals === 1 ? 'approval' : 'approvals'} pending<small>Workspace or write requests waiting for a human decision</small></span><ArrowRight size={14} /></button>}
-          {(showAllAttention ? attention : attention.slice(0, 8)).map(work => <button className="sb-work" key={work.id} onClick={() => onOpenAssignment(work.id)}><span>{work.title}<small>{reviewLabel(work)} · {assignmentOrigin(work)} · {agents.find(item => item.id === work.agent_id)?.name || 'Removed agent'} · {work.priority}</small></span><ArrowRight size={14} /></button>)}
-          {attention.length > 8 && <button className="sb-command" onClick={() => setShowAllAttention(!showAllAttention)}>{showAllAttention ? 'Show fewer' : `Show all ${attention.length} assignments`}</button>}
+          {selecting && attention.map(work => <label className="sb-work sb-pick" key={work.id}><input type="checkbox" checked={Boolean(picked[work.id])} disabled={!work.review_version} onChange={() => togglePick(work)} /><span>{work.title}<small>{reviewLabel(work)} · {assignmentOrigin(work)} · {agents.find(item => item.id === work.agent_id)?.name || 'Removed agent'} · {new Date(work.created_at).toLocaleDateString()}</small></span></label>)}
+          {!selecting && (showAllAttention ? attention : attention.slice(0, 8)).map(work => <button className="sb-work" key={work.id} onClick={() => onOpenAssignment(work.id)}><span>{work.title}<small>{reviewLabel(work)} · {assignmentOrigin(work)} · {agents.find(item => item.id === work.agent_id)?.name || 'Removed agent'} · {work.priority}</small></span><ArrowRight size={14} /></button>)}
+          {!selecting && attention.length > 8 && <button className="sb-command" onClick={() => setShowAllAttention(!showAllAttention)}>{showAllAttention ? 'Show fewer' : `Show all ${attention.length} assignments`}</button>}
         </section>
         <section className="sb-review" aria-label="Review health">
           <div className="sb-section-title">

@@ -34,6 +34,18 @@ All notable changes to AIIA are documented here. This project adheres to
 
 - Unreachable Studio components `Direct`, `Mind` and `Files` (no importers).
 
+### Added
+
+- **Bulk dismiss on Today.** "Select to dismiss" on Needs attention turns rows
+  into checkboxes with Select all (narrowed by the agent filter), a required
+  reason and a "Dismiss N items" button. `POST /api/assignments/dismiss` is all
+  or nothing: each item carries the review version the person saw, and a
+  missing, unsettled, already-dismissed or changed item refuses the whole batch
+  and is named in the error. The Studio then refetches and unticks that item so
+  it is only resubmitted after a person re-checks it. Dismissal never records a
+  verdict: existing verdicts are kept and nothing becomes accepted. Capped at
+  250 items per batch.
+
 ## [0.7.0] — 2026-09-24
 
 Fifteen commits since 0.6.0, seven of them feature work and eight dependency

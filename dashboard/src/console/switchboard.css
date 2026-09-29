@@ -160,3 +160,19 @@
 .sb-review-sources { display:flex; flex-wrap:wrap; gap:14px; font-size:11px; color:#98a2a8; margin-bottom:12px; }
 @media (max-width:900px) { .sb-review-grid { grid-template-columns:repeat(3,minmax(0,1fr)); } }
 @media (max-width:560px) { .sb-review { padding:16px 20px; } .sb-review-grid { grid-template-columns:repeat(2,minmax(0,1fr)); } .sb-review-count { font-size:19px; } }
+
+/* Bulk dismissal on Needs attention */
+.sb-select-toggle { flex-shrink:0; padding:6px 12px; border:1px solid #364950; border-radius:4px; color:#b5e1e4; font-size:12px; }
+.sb-select-toggle[aria-pressed="true"] { background:#1c3035; }
+.sb-bulk { border:1px solid #2c3d43; border-radius:4px; padding:14px; margin-bottom:12px; display:grid; gap:10px; }
+.sb-bulk p { font-size:12px; line-height:1.5; color:#9aaab3; margin:0; }
+.sb-bulk p[role="alert"] { color:#f0b4a8; }
+.sb-bulk-row { display:flex; flex-wrap:wrap; gap:14px; align-items:center; font-size:12px; color:#9aaab3; }
+.sb-link { color:#8fd3d6; text-decoration:underline; font-size:12px; }
+.sb-bulk-note { display:grid; gap:6px; font-size:12px; color:#ced7dc; }
+.sb-bulk-note textarea { width:100%; background:#0f1719; border:1px solid #364950; border-radius:4px; color:#e5ecef; padding:8px; font:inherit; }
+.sb-bulk .sb-command { margin:0; }
+.sb-bulk .sb-command:disabled { opacity:.45; cursor:not-allowed; }
+.sb-pick { justify-content:flex-start; align-items:flex-start; cursor:pointer; }
+.sb-pick input { margin-top:4px; flex-shrink:0; width:16px; height:16px; accent-color:#72c9cc; }
+.sb-bulk-done { font-size:12px; color:#91bca3; margin:0 0 10px; }
