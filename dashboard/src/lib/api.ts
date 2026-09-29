@@ -633,7 +633,25 @@ export interface GitWorkspace {
 }
 
 // API calls
+export interface SignalJobStatus {
+  ready: boolean;
+  retrieval_enabled: boolean;
+  screening_enabled: boolean;
+  configured: boolean;
+  jobs: {
+    id: string; name: string; specialty: string; enabled: boolean; interval_hours: number;
+    last_run: null | {
+      started: number; status: string;
+      result: { retrieved?: number; screened?: number; created?: number; error?: string;
+        usage?: null | { input_tokens: number; output_tokens: number } };
+    };
+  }[];
+}
+
 export const api = {
+  signalJobs: () => get<SignalJobStatus>('/api/signal-jobs'),
+  runSignalJob: (id: string) => post<{ status: string }>(`/api/signal-jobs/${encodeURIComponent(id)}/run`),
+  configureSignalJob: (id: string, enabled: boolean) => put<SignalJobStatus>(`/api/signal-jobs/${encodeURIComponent(id)}`, { enabled }),
   studioActivity: (agentId = '', day = '', status = '') =>
     get<StudioActivity>(`/api/studio/activity?${new URLSearchParams({ agent_id: agentId, day, status })}`),
   studioRun: (id: string) => get<{ run: StudioRun }>(`/api/studio/runs/${encodeURIComponent(id)}`),

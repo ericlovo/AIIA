@@ -1,11 +1,12 @@
 import type { ReviewBucket } from '../lib/api'
 
-export type StudioView = 'switchboard' | 'activity' | 'agents' | 'assignments' | 'handoffs' | 'memory' | 'world'
+export type StudioView = 'switchboard' | 'activity' | 'agents' | 'assignments' | 'handoffs' | 'memory' | 'world' | 'signals'
 
 export const VIEWS: { id: StudioView; label: string }[] = [
   { id: 'switchboard', label: 'Today' },
   { id: 'activity', label: 'Overview' },
   { id: 'agents', label: 'Agents' },
+  { id: 'signals', label: 'Signals' },
   { id: 'assignments', label: 'Assignments' },
   { id: 'handoffs', label: 'Handoffs' },
   { id: 'memory', label: 'Memory' },
@@ -25,12 +26,13 @@ export type StudioRoute =
   | { view: 'handoffs'; from?: string; to?: string }
   | { view: 'memory'; review?: ReviewBucket | 'all' }
   | { view: 'world' }
+  | { view: 'signals' }
 
 export const DEFAULT_ROUTE: StudioRoute = { view: 'switchboard' }
 
 const PATHS: Record<StudioView, string> = {
   switchboard: 'today', activity: 'overview', agents: 'agents', assignments: 'assignments',
-  handoffs: 'handoffs', memory: 'memory', world: 'map',
+  handoffs: 'handoffs', memory: 'memory', world: 'map', signals: 'signals',
 }
 const VIEW_BY_PATH = Object.fromEntries(Object.entries(PATHS).map(([view, path]) => [path, view])) as Record<string, StudioView>
 const REVIEW_BUCKETS: readonly string[] = ['open', 'needs_work', 'already_fixed', 'declined', 'external_failure', 'unclassified', 'all']

@@ -17,7 +17,8 @@ IDEA_SORTS = ("newest", "priority")
 # these are what an unattended loop proposed. The filter name is what the console
 # asks for when it wants every local source at once rather than one loop.
 LOCAL_PROPOSALS_FILTER = "local_proposals"
-LOCAL_PROPOSAL_SOURCES = ("backlog_steward", "code_review", "standup")
+LOCAL_PROPOSAL_SOURCES = ("backlog_steward", "code_review", "standup", "public_signals")
+PROPOSAL_SOURCE_SQL = "ideas.source IN (" + ",".join("?" for _ in LOCAL_PROPOSAL_SOURCES) + ")"
 REVIEW_OUTCOMES = ("needs_work", "already_fixed", "declined", "external_failure")
 # A row that was closed before outcomes existed, or promoted without a work
 # verdict, has no outcome. It is reported under its own name. Folding it into
@@ -478,7 +479,7 @@ class MemoryInbox:
         if days < 1 or days > MAX_REVIEW_WINDOW_DAYS:
             raise ValueError("invalid_review_window")
         since = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
-        clauses = ["ideas.source IN (?,?,?)", "ideas.created_at>=?"]
+        clauses = [PROPOSAL_SOURCE_SQL, "ideas.created_at>=?"]
         args: list = [*LOCAL_PROPOSAL_SOURCES, since]
         if project:
             clauses.append("ideas.project=?")
@@ -547,7 +548,7 @@ class MemoryInbox:
             clauses.append("ideas.project=?")
             args.append(project)
         if source == LOCAL_PROPOSALS_FILTER:
-            clauses.append("ideas.source IN (?,?,?)")
+            clauses.append(PROPOSAL_SOURCE_SQL)
             args.extend(LOCAL_PROPOSAL_SOURCES)
         elif source:
             clauses.append("ideas.source=?")

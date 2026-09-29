@@ -48,6 +48,8 @@ EGRESS_POINTS = {
     "web.fetch": "research literature loop",
     "xai.realtime": "Voice Conductor ephemeral token",
     "typesafe.routing": "advisory agent-routing suggestion (opt-in)",
+    "news.fetch": "fixed public market-news searches (opt-in)",
+    "typesafe.signals": "public market-evidence screening (opt-in)",
 }
 
 PERMITTED_EGRESS = ["sanction control plane (metadata only)"]
@@ -72,6 +74,8 @@ def airgap_allows_tool(tool: str) -> bool:
             tool == "typesafe.routing"
             and os.getenv("AIIA_TYPESAFE_ENABLED", "").lower() in {"1", "true"}
         )
+        or (tool == "news.fetch" and os.getenv("AIIA_NEWS_ENABLED", "") == "1")
+        or (tool == "typesafe.signals" and os.getenv("AIIA_SIGNALS_ENABLED", "") == "1")
     )
 
 

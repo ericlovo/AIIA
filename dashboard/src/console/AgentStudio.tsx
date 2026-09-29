@@ -10,6 +10,7 @@ import { WorkBoard } from './WorkBoard'
 import { ActivityOverview } from './ActivityOverview'
 import { Switchboard } from './Switchboard'
 import { MemoryLog } from './MemoryLog'
+import { SignalJobs } from './SignalJobs'
 import { PanelBoundary } from './ErrorBoundary'
 import type { ReviewBucket } from '../lib/api'
 
@@ -140,6 +141,7 @@ export function AgentStudio() {
   const activeCount = useMemo(() => agents.filter(agent => agent.status === 'running').length, [agents])
 
   const page = (() => {
+    if (view === 'signals') return <SignalJobs />
     if (view === 'switchboard') {
       return <Switchboard key={key} agents={agents} loading={isLoading} agentError={isError}
         onViewChange={changeView} onManageAgent={manageAgent} onAssignAgent={assignAgent}

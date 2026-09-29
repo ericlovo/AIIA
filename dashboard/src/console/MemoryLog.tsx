@@ -14,10 +14,11 @@ const FILTERS: { id: Filter; label: string }[] = [
 // Two things arrive in this inbox: what a person said in Slack, and what an
 // unattended loop proposed. They are reviewed the same way but read differently,
 // so the view names which one you are looking at.
-type Origin = 'slack' | 'loops' | 'all'
+type Origin = 'slack' | 'loops' | 'signals' | 'all'
 const ORIGINS: { id: Origin; label: string; source: string; project: string; blurb: string }[] = [
   { id: 'slack', label: 'From Slack', source: 'slack', project: 'mindmoor', blurb: 'Captures from the allowed Slack channels.' },
-  { id: 'loops', label: 'From loops', source: 'local_proposals', project: '', blurb: 'Proposals filed by backlog, code-review, and standup loops. A rerun does not refile the same finding.' },
+  { id: 'loops', label: 'From loops', source: 'local_proposals', project: '', blurb: 'Proposals from development loops and public-signal jobs.' },
+  { id: 'signals', label: 'Public signals', source: 'public_signals', project: '', blurb: 'Public news and lead research awaiting verification.' },
   { id: 'all', label: 'All', source: '', project: '', blurb: 'Everything waiting for review, whoever raised it.' },
 ]
 const TONE: Record<ReceiptTone, string> = {
