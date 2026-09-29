@@ -10,6 +10,8 @@ import {
 } from '../lib/api'
 import { PageHeader } from './PageHeader'
 import { attentionSummary } from './assignmentReview'
+import { formatRoute } from './studioRoute'
+import { ArrowRight } from 'lucide-react'
 
 type ActivityFilter = 'all' | 'runs' | 'work' | 'git'
 type ActivityKind = 'run' | 'assignment' | 'handoff' | 'git'
@@ -197,7 +199,7 @@ export function ActivityOverview({ agents, isLoading }: { agents: Agent[]; isLoa
         <Metric label="Runs today (UTC)" value={runsToday} detail={`${events.filter(event => event.kind === 'run').length} direct retained`} />
         <Metric label="In progress" value={running} detail={`${assignments.filter(item => item.status === 'queued').length} queued`} tone={running ? 'active' : 'neutral'} />
         <Metric label="Assignments done" value={completedAssignments} detail={`${handoffs.filter(item => item.status === 'completed').length} handoffs complete`} />
-        <Metric label="Needs attention" value={attention.total} detail={`${attention.review} to review · ${attention.failed} failed · ${attention.approvals} approvals`} tone={attention.total ? 'warning' : 'good'} />
+        <Metric label="Needs attention" value={attention.total} detail={`${attention.review} to review · ${attention.failed} failed · ${attention.approvals} approvals`} tone={attention.total ? 'warning' : 'good'} href={formatRoute({ view: 'switchboard', attention: true })} />
       </section>
 
       <div className="grid min-h-[620px] shrink-0 lg:min-h-0 lg:flex-1 lg:shrink lg:grid-cols-[minmax(0,1fr)_360px]">
@@ -241,15 +243,17 @@ export function ActivityOverview({ agents, isLoading }: { agents: Agent[]; isLoa
   )
 }
 
-function Metric({ label, value, detail, tone = 'neutral' }: { label: string; value: number; detail: string; tone?: 'neutral' | 'active' | 'warning' | 'good' }) {
+function Metric({ label, value, detail, tone = 'neutral', href }: { label: string; value: number; detail: string; tone?: 'neutral' | 'active' | 'warning' | 'good'; href?: string }) {
   const color = tone === 'warning' ? 'text-amber-300' : tone === 'active' ? 'text-cyan-300' : tone === 'good' ? 'text-emerald-300' : 'text-white'
-  return (
-    <div className="min-h-24 border-b border-neutral-900 px-5 py-4 sm:border-r sm:px-7 xl:border-b-0">
-      <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-neutral-600">{label}</div>
+  const content = <>
+      <div className="flex items-center justify-between gap-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-neutral-500">{label}{href && <ArrowRight size={14} aria-hidden="true" />}</div>
       <div className={`mt-2 text-2xl font-medium ${color}`}>{value}</div>
-      <div className="mt-1 truncate text-xs text-neutral-600">{detail}</div>
-    </div>
-  )
+      <div className="mt-1 text-xs text-neutral-500">{detail}</div>
+    </>
+  const style = 'min-h-24 border-b border-neutral-900 px-5 py-4 sm:border-r sm:px-7 xl:border-b-0'
+  return href
+    ? <a href={href} aria-label={`${label}: ${value}. Investigate`} className={`${style} block hover:bg-neutral-900 focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-cyan-300`}>{content}</a>
+    : <div className={style}>{content}</div>
 }
 
 function ActivityRow({ event, miniBusy, onRun }: { event: ActivityEvent; miniBusy: boolean; onRun: () => void }) {
