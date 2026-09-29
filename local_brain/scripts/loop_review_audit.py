@@ -11,8 +11,11 @@ It reads assignment_data.json and agent_data.json and runs `git` read commands.
 It prints counts, dates, lengths and short hashes only, never run output, so the
 report is safe to paste. Nothing is reviewed, dismissed, deleted or rewritten.
 
-    python -m local_brain.scripts.loop_review_audit
-    python -m local_brain.scripts.loop_review_audit --data-dir /path/to/command_center
+It needs only the Python standard library, so any `python3` runs it, including
+a standalone copy outside the checkout:
+
+    python3 -m local_brain.scripts.loop_review_audit
+    python3 loop_review_audit.py --repo ~/aiia-brain/AIIA-public
 """
 
 from __future__ import annotations
@@ -27,18 +30,39 @@ from pathlib import Path
 GUARD_COMMIT = "44ee3a1"  # #71: scheduled-loop review backpressure landed on main
 MAX_ASSIGNMENTS = 250  # assignment_registry: beyond this, the oldest finished item is evicted
 REPO_ROOT = Path(__file__).resolve().parents[2]
-DEFAULT_DATA_DIR = REPO_ROOT / "local_brain" / "command_center"
 
 
-def _git(*args: str) -> tuple[int, str]:
-    proc = subprocess.run(  # noqa: S603 - fixed git argv, read-only commands
-        ["git", "-C", str(REPO_ROOT), *args],  # noqa: S607
-        capture_output=True,
-        text=True,
-        check=False,
-        timeout=10,
-    )
+def _git(repo: Path, *args: str) -> tuple[int, str]:
+    try:
+        proc = subprocess.run(  # noqa: S603 - fixed git argv, read-only commands
+            ["git", "-C", str(repo), *args],  # noqa: S607
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=10,
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        return 127, str(exc)
     return proc.returncode, proc.stdout.strip() or proc.stderr.strip()
+
+
+def _command_center_processes() -> list[str]:
+    """Start time and command of running Command Center processes (read-only `ps`)."""
+    try:
+        proc = subprocess.run(  # noqa: S603
+            ["ps", "-axo", "lstart=,command="],  # noqa: S607
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=10,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return ["unavailable: ps could not run"]
+    return [
+        line.strip()[:200]
+        for line in proc.stdout.splitlines()
+        if "command_center" in line and "loop_review_audit" not in line
+    ]
 
 
 def _load(path: Path) -> list[dict]:
@@ -58,20 +82,37 @@ def _short(text: str) -> str:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("--data-dir", type=Path, default=DEFAULT_DATA_DIR)
+    parser.add_argument(
+        "--repo", type=Path, default=REPO_ROOT, help="AIIA checkout the Command Center runs from"
+    )
+    parser.add_argument("--data-dir", type=Path, help="default: <repo>/local_brain/command_center")
     args = parser.parse_args()
+    repo = args.repo.expanduser()
+    data_dir = (args.data_dir or repo / "local_brain" / "command_center").expanduser()
+    for name in ("assignment_data.json", "agent_data.json"):
+        if not (data_dir / name).exists():
+            print(f"{data_dir / name} not found. Is this the machine that runs the")
+            print("Command Center? Pass --repo (or --data-dir) to point at its checkout.")
+            return 2
 
     print("== Code on disk")
-    code, head = _git("rev-parse", "--short", "HEAD")
+    code, head = _git(repo, "rev-parse", "--short", "HEAD")
+    print(f"checkout: {repo}")
     print(f"checked-out commit: {head if code == 0 else 'unavailable: ' + head}")
-    code, _ = _git("merge-base", "--is-ancestor", GUARD_COMMIT, "HEAD")
-    verdict = {0: "yes", 1: "NO"}.get(code, "unknown (commit not found locally)")
+    code, when = _git(repo, "log", "-1", "--format=%cI", GUARD_COMMIT)
+    code_in, _ = _git(repo, "merge-base", "--is-ancestor", GUARD_COMMIT, "HEAD")
+    verdict = {0: "yes", 1: "NO"}.get(code_in, "unknown (run `git fetch`: commit not found)")
     print(f"contains guard commit {GUARD_COMMIT} (#71): {verdict}")
-    print("note: this is the code on disk, not proof the running process loaded it;")
-    print("      restart time vs. the dates below is the evidence for that.")
+    if code == 0:
+        print(f"guard commit date: {when}")
 
-    assignments = _load(args.data_dir / "assignment_data.json")
-    agents = {a.get("id"): a for a in _load(args.data_dir / "agent_data.json")}
+    print("\n== Running Command Center (start time is when it loaded its code)")
+    for line in _command_center_processes() or ["none found"]:
+        print(f"- {line}")
+    print("If it started before the checkout gained the guard, the guard is not live.")
+
+    assignments = _load(data_dir / "assignment_data.json")
+    agents = {a.get("id"): a for a in _load(data_dir / "agent_data.json")}
 
     print("\n== Agents with loops")
     for agent in agents.values():
