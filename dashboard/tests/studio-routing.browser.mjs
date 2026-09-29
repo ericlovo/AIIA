@@ -73,6 +73,7 @@ try {
     const links = await nav(page).getByRole('link').evaluateAll(items => items.map(item => [item.textContent, item.getAttribute('href'), item.getAttribute('aria-current')]))
     assert.deepEqual(links, [
       ['Today', '#/today', 'page'], ['Overview', '#/overview', null], ['Agents', '#/agents', null],
+      ['Signals', '#/signals', null],
       ['Assignments', '#/assignments', null], ['Handoffs', '#/handoffs', null], ['Memory', '#/memory', null], ['Map', '#/map', null],
     ])
     assert.equal(await page.getByRole('tab', { name: 'Today', exact: true }).count(), 0, 'navigation is not an ARIA tab list')

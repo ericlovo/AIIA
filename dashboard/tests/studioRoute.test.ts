@@ -8,7 +8,7 @@ test('every route survives a round trip through the URL', () => {
     { view: 'agents' }, { view: 'agents', agentId: 'a/b c' }, { view: 'assignments' },
     { view: 'assignments', assignmentId: 'asg-1' }, { view: 'assignments', agentId: 'agent-2' },
     { view: 'handoffs', from: 'asg-1', to: 'agent-3' }, { view: 'memory' }, { view: 'memory', review: 'declined' },
-    { view: 'memory', review: 'all' }, { view: 'world' },
+    { view: 'memory', review: 'all' }, { view: 'world' }, { view: 'signals' },
   ]
   for (const route of routes) {
     const parsed = parseRoute(formatRoute(route))

@@ -33,6 +33,8 @@ from fastapi.responses import HTMLResponse, JSONResponse, Response, StreamingRes
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict, Field
 
+from local_brain.command_center.signal_routes import router as signal_router
+
 logger = logging.getLogger("aiia.console")
 
 # ─────────────────────────────────────────────────────────────
@@ -559,6 +561,7 @@ from local_brain.command_center.slack_capture import inbox as memory_capture_inb
 from local_brain.command_center.slack_capture import router as slack_capture_router
 
 app.include_router(slack_capture_router)
+app.include_router(signal_router)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
