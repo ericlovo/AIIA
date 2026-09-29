@@ -65,3 +65,19 @@ export function attentionSummary(
     + writes.filter(item => item.status === 'pending' && (!agentId || scopedIds.has(item.workspace_id))).length
   return { review: flagged.length - failed, failed, approvals, total: flagged.length + approvals }
 }
+
+/** A refused bulk dismissal names the item that stopped it ("code:assignment_id"). Nothing was dismissed. */
+export function bulkDismissError(message: string, titleOf: (id: string) => string): string {
+  const [code, id] = message.split(':')
+  const item = id ? `"${titleOf(id) || id}"` : 'An item'
+  const reasons: Record<string, string> = {
+    review_changed_refresh_required: `${item} changed after you selected it. Re-check it, then dismiss again.`,
+    assignment_already_dismissed: `${item} was already dismissed. Clear it from the selection and try again.`,
+    assignment_not_settled: `${item} is still queued or running.`,
+    assignment_not_found: `${item} no longer exists. Refresh and select again.`,
+    dismiss_note_required: 'Add a reason before dismissing.',
+    too_many_assignments: 'Select at most 250 items at a time.',
+    review_persistence_failed: 'Storage is unavailable.',
+  }
+  return `Nothing was dismissed. ${reasons[code] ?? message}`
+}

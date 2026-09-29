@@ -877,8 +877,10 @@ from local_brain.command_center.agent_registry import (
 from local_brain.command_center.agent_suites import describe_suites, suite_prompt_line
 from local_brain.command_center.aiia_tasks import TaskRunner
 from local_brain.command_center.assignment_registry import (
+    MAX_BULK_DISMISS,
     MAX_PENDING_LOOP_REVIEWS,
     AssignmentRegistry,
+    BulkDismissRejected,
 )
 from local_brain.command_center.typesafe_advisor import (
     RoutingAdvisor,
@@ -1256,6 +1258,16 @@ class AssignmentDismissRequest(BaseModel):
     dismissed: bool
     expected_version: str = Field(min_length=1, max_length=64)
     note: str = Field(default="", max_length=2_000)
+
+
+class AssignmentSelection(BaseModel):
+    id: str = Field(min_length=1, max_length=80)
+    expected_version: str = Field(min_length=1, max_length=64)
+
+
+class AssignmentBulkDismissRequest(BaseModel):
+    items: list[AssignmentSelection] = Field(min_length=1, max_length=MAX_BULK_DISMISS)
+    note: str = Field(min_length=1, max_length=2_000)
 
 
 class AssignmentRevisionRequest(BaseModel):
@@ -1898,6 +1910,28 @@ async def review_assignment(assignment_id: str, body: AssignmentReviewRequest):
         status = 404 if code == "assignment_not_found" else 409
         raise HTTPException(status_code=status, detail=code) from exc
     return {"assignment": assignment}
+
+
+@app.post("/api/assignments/dismiss")
+async def dismiss_assignments(body: AssignmentBulkDismissRequest):
+    """Dismiss the selected assignments together, or none of them.
+
+    Dismissal stops tracking without judging output, so this can never mark
+    work accepted. Each item carries the version the person saw.
+    """
+    try:
+        dismissed = assignment_registry.dismiss_assignments(
+            [(item.id, item.expected_version) for item in body.items], note=body.note
+        )
+    except PersistenceError as exc:
+        raise HTTPException(status_code=503, detail="review_persistence_failed") from exc
+    except BulkDismissRejected as exc:
+        status = 404 if exc.code == "assignment_not_found" else 409
+        # "code:assignment_id", a string like every other detail, so the Studio's
+        # shared error parser can show which item stopped the batch.
+        detail = f"{exc.code}:{exc.assignment_id}" if exc.assignment_id else exc.code
+        raise HTTPException(status_code=status, detail=detail) from exc
+    return {"assignments": dismissed, "dismissed": len(dismissed)}
 
 
 @app.post("/api/assignments/{assignment_id}/dismiss")

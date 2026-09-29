@@ -33,6 +33,7 @@ _COLLAPSED = re.compile(
 ASSIGNMENT_DATA_FILE = Path(__file__).parent / "assignment_data.json"
 MAX_ASSIGNMENTS = 250
 MAX_PENDING_LOOP_REVIEWS = 3
+MAX_BULK_DISMISS = 250
 MAX_HANDOFFS = 250
 MAX_RESULT_LENGTH = 40_000
 MAX_CONTEXT_LENGTH = MAX_RESULT_LENGTH + 1_000
@@ -52,6 +53,15 @@ VALID_SOURCE_KINDS = {
     # exists so the failure is seen, and it is never treated as an all-clear.
     "loop_check",
 }
+
+
+class BulkDismissRejected(ValueError):
+    """A bulk dismissal refused as a whole; `assignment_id` names the item that stopped it."""
+
+    def __init__(self, code: str, assignment_id: str = ""):
+        super().__init__(code)
+        self.code = code
+        self.assignment_id = assignment_id
 
 
 def _now() -> str:
@@ -436,6 +446,45 @@ class AssignmentRegistry:
             updated_at=now,
         )
         return assignment
+
+    @_durable_mutation
+    def dismiss_assignments(
+        self, selections: list[tuple[str, str]], *, note: str
+    ) -> list[dict[str, Any]]:
+        """Dismiss several settled assignments as one all-or-nothing change.
+
+        Each selection is (assignment id, review_version the person saw). If any
+        one is missing, unsettled, already dismissed or changed since it was
+        seen, nothing is dismissed. Dismissal only stops tracking: the review
+        verdict is untouched, so no bulk action can record work as accepted.
+        """
+        if not selections:
+            raise BulkDismissRejected("no_assignments_selected")
+        if len(selections) > MAX_BULK_DISMISS:
+            raise BulkDismissRejected("too_many_assignments")
+        if not note.strip():
+            raise BulkDismissRejected("dismiss_note_required")
+        seen: set[str] = set()
+        dismissed = []
+        for assignment_id, expected_version in selections:
+            if assignment_id in seen:
+                raise BulkDismissRejected("duplicate_assignment", assignment_id)
+            seen.add(assignment_id)
+            existing = self.get_assignment(assignment_id)
+            if existing and existing.get("dismissed_at"):
+                raise BulkDismissRejected("assignment_already_dismissed", assignment_id)
+            try:
+                dismissed.append(
+                    self.dismiss_assignment(
+                        assignment_id,
+                        dismissed=True,
+                        expected_version=expected_version,
+                        note=note,
+                    )
+                )
+            except ValueError as exc:
+                raise BulkDismissRejected(str(exc), assignment_id) from exc
+        return dismissed
 
     @_durable_mutation
     def review_assignment(

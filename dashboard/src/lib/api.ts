@@ -745,6 +745,9 @@ export const api = {
     get<ReviewHealth>(`/api/memory-inbox/review-health?days=${days}${project ? `&project=${encodeURIComponent(project)}` : ''}`),
   slackCaptureStatus: () => get<SlackCaptureStatus>('/api/integrations/slack/status'),
   assignments: () => get<{ assignments: Assignment[] }>('/api/assignments'),
+  /** All or nothing; each item carries the review version the person saw. Never records a verdict. */
+  dismissAssignments: (items: { id: string; expected_version: string }[], note: string) =>
+    post<{ assignments: Assignment[]; dismissed: number }>('/api/assignments/dismiss', { items, note }),
   dismissAssignment: (id: string, dismissed: boolean, expected_version: string, note = '') =>
     post<{ assignment: Assignment }>(`/api/assignments/${encodeURIComponent(id)}/dismiss`, { dismissed, expected_version, note }),
   reviewAssignment: (id: string, decision: ReviewStatus, expected_version: string, note: string) =>
