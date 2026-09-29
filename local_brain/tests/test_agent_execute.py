@@ -219,7 +219,7 @@ async def test_scheduled_review_backpressure(tmp_path, monkeypatch, release):
     monkeypatch.setattr(
         cc,
         "_observe_scheduled_inputs",
-        lambda agent: cc.LoopObservation("new-unexecuted-input", True),
+        lambda agent, memory=None: cc.LoopObservation("new-unexecuted-input", True),
     )
     monkeypatch.setattr(cc, "_loop_schedule_key", lambda agent: "next-window")
     blocked = await cc._run_scheduled_agent(agent)

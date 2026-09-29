@@ -888,6 +888,7 @@ from local_brain.command_center.git_workspace_registry import GitWorkspaceRegist
 from local_brain.command_center.git_write_registry import GitWriteRegistry
 from local_brain.command_center.persistence import PersistenceError
 from local_brain.command_center.repository_tools import (
+    Observation,
     available_repos,
     github_snapshot,
     github_status,
@@ -2351,15 +2352,18 @@ class LoopObservation:
     failures: tuple[str, ...] = ()
 
 
-OBSERVABLE_LOOP_TOOLS = {"Repository read", "GitHub read"}
+OBSERVABLE_LOOP_TOOLS = {"Repository read", "GitHub read", "Local memory"}
 
 
-def _observe_scheduled_inputs(agent: dict[str, Any]) -> LoopObservation | None:
+def _observe_scheduled_inputs(
+    agent: dict[str, Any], memory_context: str | None = None
+) -> LoopObservation | None:
     """Read a loop agent's inputs, or None when they cannot be observed.
 
     Only agents whose tools are all read-only observers (plus Git workspace) are
     observable. Anything else always runs and always produces a reviewable item,
-    because there is no evidence to call its inputs unchanged.
+    because there is no evidence to call its inputs unchanged. `memory_context`
+    is the Local memory text the run would see, fetched by the caller.
     """
     tools = set(agent.get("tools", []))
     if not tools & OBSERVABLE_LOOP_TOOLS or tools.difference(
@@ -2368,6 +2372,17 @@ def _observe_scheduled_inputs(agent: dict[str, Any]) -> LoopObservation | None:
         return None
     repo_id = str(agent.get("repo_id") or "")
     observations = []
+    if "Local memory" in tools:
+        # A failed fetch becomes a placeholder sentence in the prompt, which a model
+        # can read past; here it makes the check incomplete instead.
+        memory_ok = bool(memory_context) and memory_context != LOCAL_MEMORY_UNAVAILABLE
+        observations.append(
+            Observation(
+                memory_context or LOCAL_MEMORY_UNAVAILABLE,
+                memory_ok,
+                () if memory_ok else ("local_memory_unavailable",),
+            )
+        )
     if "Repository read" in tools:
         observations.append(observe_repository(repo_id))
     if "GitHub read" in tools:
@@ -2439,9 +2454,12 @@ async def _surface_incomplete_check(
 
 
 async def _run_scheduled_agent(agent: dict[str, Any]) -> dict[str, Any]:
+    memory_context = (
+        await _local_memory_context(agent) if "Local memory" in agent.get("tools", []) else None
+    )
     # git and gh are blocking subprocesses with multi-second timeouts; off the event
     # loop, a hung GitHub API cannot stall every other Command Center request.
-    observation = await asyncio.to_thread(_observe_scheduled_inputs, agent)
+    observation = await asyncio.to_thread(_observe_scheduled_inputs, agent, memory_context)
     if observation and not observation.complete:
         # Checked first: queued work would otherwise run against inputs we know
         # we could not read.

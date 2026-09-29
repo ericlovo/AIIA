@@ -304,3 +304,47 @@ def test_audit_script_is_read_only(tmp_path, capsys, monkeypatch):
     out = capsys.readouterr().out
     assert "pending review (guard's count) = 1" in out
     assert "private run output" not in out  # counts and hashes only, never output
+
+
+MINI_LOOP_TOOLS = ["GitHub read", "Local memory", "Repository read"]  # both live loops
+
+
+def _observe_all(cc, monkeypatch, memory):
+    monkeypatch.setattr(cc, "observe_repository", lambda repo_id: Observation("tree", True))
+    monkeypatch.setattr(cc, "observe_github", lambda repo_id: Observation("ci green", True))
+
+    async def fetch(agent):
+        return memory["text"]
+
+    monkeypatch.setattr(cc, "_local_memory_context", fetch)
+
+
+async def test_live_loop_tool_set_is_observable(tmp_path, monkeypatch):
+    cc, agents, assignments, _events, fake = _studio(tmp_path, monkeypatch, content="Report.")
+    memory = {"text": "Local memory retrieved for this run (1 entries). - [m1] fact"}
+    _observe_all(cc, monkeypatch, memory)
+    agent = _repo_agent(agents, tools=MINI_LOOP_TOOLS)
+
+    assert cc._observe_scheduled_inputs(agent, memory["text"]) is not None
+    await cc._run_scheduled_agent(agent)
+    skipped = await cc._run_scheduled_agent(agent)
+    assert skipped["reason"] == "unchanged_repository_input"
+    assert len(fake.posts) == 1
+
+    memory["text"] += "\n- [m2] new fact"
+    await cc._run_scheduled_agent(agent)
+    assert len(fake.posts) == 2  # a memory change is an input change
+    assert len(assignments.list_assignments()) == 2
+
+
+async def test_failed_memory_fetch_is_an_incomplete_check(tmp_path, monkeypatch):
+    cc, agents, assignments, _events, fake = _studio(tmp_path, monkeypatch, content="All good.")
+    _observe_all(cc, monkeypatch, {"text": cc.LOCAL_MEMORY_UNAVAILABLE})
+    agent = _repo_agent(agents, tools=MINI_LOOP_TOOLS)
+
+    result = await cc._run_scheduled_agent(agent)
+
+    assert result["reason"] == "check_incomplete"
+    assert result["failures"] == ["local_memory_unavailable"]
+    assert fake.posts == []
+    assert assignments.list_assignments()[0]["source_kind"] == "loop_check"

@@ -19,9 +19,11 @@ All notable changes to AIIA are documented here. This project adheres to
   - *Incomplete check* (any git or GitHub read failed): no model runs, queued
     work is held, and one deduplicated failure item surfaces until a person
     dismisses it. It is never treated as an all-clear.
-  GitHub-read agents now join the fingerprint, so an unchanged CI state no
-  longer produces a new review every 30 minutes. `GET /api/studio/loop-checks`
-  lists the history.
+  GitHub reads and Local memory now join the fingerprint (both live loops use
+  GitHub read, Local memory and Repository read, so they could never skip
+  before), and a failed memory fetch makes the check incomplete instead of
+  handing the model a placeholder. `GET /api/studio/loop-checks` lists the
+  history.
 - **A failed git read no longer reads as "clean".** The repository snapshot
   turned any git command that exited with an error into `clean`, so a model
   could report an all-clear for a check that never ran. Failed reads now show
