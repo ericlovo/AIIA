@@ -9,6 +9,7 @@ from fastapi import HTTPException
 
 from local_brain.command_center.agent_registry import AgentRegistry
 from local_brain.command_center.assignment_registry import AssignmentRegistry
+from local_brain.command_center.repository_tools import Observation
 
 
 class _FakeResponse:
@@ -215,7 +216,11 @@ async def test_scheduled_review_backpressure(tmp_path, monkeypatch, release):
         await cc._run_scheduled_agent(agent)
 
     agents.record_loop_input(agent["id"], "last-executed-input")
-    monkeypatch.setattr(cc, "_scheduled_input_hash", lambda agent: "new-unexecuted-input")
+    monkeypatch.setattr(
+        cc,
+        "_observe_scheduled_inputs",
+        lambda agent, memory=None: cc.LoopObservation("new-unexecuted-input", True),
+    )
     monkeypatch.setattr(cc, "_loop_schedule_key", lambda agent: "next-window")
     blocked = await cc._run_scheduled_agent(agent)
     assert blocked["reason"] == "awaiting_review"
@@ -261,8 +266,9 @@ async def test_scheduled_repository_run_skips_unchanged_input(tmp_path, monkeypa
         tmp_path, monkeypatch, content="No material regression risk."
     )
     snapshot = {"value": "commit abc123, clean tree"}
-    monkeypatch.setattr(cc, "repo_available", lambda repo_id: repo_id == "test")
-    monkeypatch.setattr(cc, "repo_snapshot", lambda repo_id: snapshot["value"])
+    monkeypatch.setattr(
+        cc, "observe_repository", lambda repo_id: Observation(snapshot["value"], True)
+    )
     agent = _create_agent(
         agents,
         tools=["Repository read"],
@@ -298,8 +304,7 @@ async def test_queued_scheduled_work_runs_before_unchanged_suppression(tmp_path,
     cc, agents, assignments, _events, fake = _studio(
         tmp_path, monkeypatch, content="Recovered queued work."
     )
-    monkeypatch.setattr(cc, "repo_available", lambda repo_id: repo_id == "test")
-    monkeypatch.setattr(cc, "repo_snapshot", lambda repo_id: "unchanged")
+    monkeypatch.setattr(cc, "observe_repository", lambda repo_id: Observation("unchanged", True))
     agent = _create_agent(
         agents,
         tools=["Repository read"],
@@ -307,7 +312,7 @@ async def test_queued_scheduled_work_runs_before_unchanged_suppression(tmp_path,
         loop_enabled=True,
         loop_task="Inspect.",
     )
-    input_hash = cc._scheduled_input_hash(agent)
+    input_hash = cc._observe_scheduled_inputs(agent).fingerprint
     agents.record_loop_input(agent["id"], input_hash)
     queued, _ = assignments.create_scheduled_assignment(
         agent_id=agent["id"],

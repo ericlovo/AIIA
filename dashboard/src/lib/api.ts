@@ -455,7 +455,7 @@ export type AssignmentStatus = 'queued' | 'running' | 'completed' | 'failed';
 export type ReviewStatus = 'unreviewed' | 'accepted' | 'rejected';
 export type AssignmentPriority = 'low' | 'normal' | 'high' | 'urgent';
 export type AssignmentTrigger = 'manual' | 'interval' | 'handoff' | 'revision';
-export type AssignmentSource = 'manual' | 'memory_capture' | 'loop_schedule' | 'agent_handoff' | 'revision';
+export type AssignmentSource = 'manual' | 'memory_capture' | 'loop_schedule' | 'agent_handoff' | 'revision' | 'loop_check';
 
 export interface Assignment {
   revision_of?: string;

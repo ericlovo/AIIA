@@ -106,6 +106,15 @@ def test_capacity_preserves_links_and_active_work(linked, monkeypatch):
     assert registry.assignments == before
     assert registry.data_file.read_bytes() == disk
     registry.finish_assignment(spare["id"], error="Synthetic failure")
+    # An unacknowledged failure is still open work: it is kept, and the registry
+    # reports it is full instead of evicting it.
+    with pytest.raises(ValueError, match="assignment_capacity_reached"):
+        create(registry)
+    assert registry.get_assignment(spare["id"])["status"] == "failed"
+    failed = registry.get_assignment(spare["id"])
+    registry.dismiss_assignment(
+        spare["id"], dismissed=True, expected_version=failed["review_version"]
+    )
     new = create(registry)
     restored = AssignmentRegistry(registry.data_file)
     assert restored.get_assignment(spare["id"]) is None
@@ -117,6 +126,11 @@ def test_capacity_preserves_links_and_active_work(linked, monkeypatch):
 def test_failed_eviction_restores_exact_order(linked, monkeypatch):
     registry, _, _, _, spare = linked
     registry.finish_assignment(spare["id"], error="Synthetic")
+    failed = registry.get_assignment(spare["id"])
+    # Only closed work is evictable; dismiss it so the eviction path runs.
+    registry.dismiss_assignment(
+        spare["id"], dismissed=True, expected_version=failed["review_version"]
+    )
     monkeypatch.setattr(module, "MAX_ASSIGNMENTS", 3)
     before, disk = deepcopy(registry.assignments), registry.data_file.read_bytes()
     monkeypatch.setattr(module, "atomic_write_json", Mock(side_effect=PersistenceError("injected")))

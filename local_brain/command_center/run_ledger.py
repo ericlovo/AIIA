@@ -43,6 +43,14 @@ class RunLedger:
             for column in ("input_tokens", "output_tokens"):
                 if column not in columns:
                     db.execute(f"ALTER TABLE runs ADD COLUMN {column} INTEGER")
+            # Scheduled-loop checks that ran no model: kept apart from `runs` so run
+            # counts, token usage and review metrics only ever describe inference.
+            db.execute("""CREATE TABLE IF NOT EXISTS loop_checks (
+                id INTEGER PRIMARY KEY AUTOINCREMENT, agent_id TEXT NOT NULL,
+                agent_name TEXT NOT NULL, at TEXT NOT NULL, outcome TEXT NOT NULL,
+                fingerprint TEXT NOT NULL, failures TEXT NOT NULL
+            )""")
+            db.execute("CREATE INDEX IF NOT EXISTS loop_checks_agent ON loop_checks(agent_id,at)")
 
     @contextmanager
     def connect(self):
@@ -98,6 +106,39 @@ class RunLedger:
                 ),
             )
         return run_id
+
+    def record_check(
+        self,
+        agent: dict,
+        *,
+        outcome: str,
+        fingerprint: str = "",
+        failures: tuple[str, ...] | list[str] = (),
+    ) -> None:
+        """One scheduled check that ran no model: verified unchanged or incomplete."""
+        with self.connect() as db:
+            db.execute(
+                """INSERT INTO loop_checks (agent_id,agent_name,at,outcome,fingerprint,failures)
+                VALUES (?,?,?,?,?,?)""",
+                (
+                    agent["id"],
+                    agent.get("name", ""),
+                    datetime.now(timezone.utc).isoformat(),
+                    outcome,
+                    fingerprint,
+                    json.dumps(list(failures)),
+                ),
+            )
+
+    def loop_checks(self, *, agent_id: str = "", limit: int = 50) -> list[dict]:
+        clause, args = ("WHERE agent_id = ?", [agent_id]) if agent_id else ("", [])
+        with self.connect() as db:
+            rows = db.execute(
+                f"""SELECT agent_id,agent_name,at,outcome,fingerprint,failures FROM loop_checks
+                {clause} ORDER BY id DESC LIMIT ?""",  # nosec B608 - fixed clause, bound args
+                [*args, limit],
+            ).fetchall()
+        return [{**dict(row), "failures": json.loads(row["failures"])} for row in rows]
 
     def backfill(self, agents: list[dict]) -> None:
         for agent in agents:

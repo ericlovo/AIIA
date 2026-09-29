@@ -17,6 +17,33 @@ All notable changes to AIIA are documented here. This project adheres to
 
 ### Fixed
 
+- **Scheduled loops classify on evidence, not on what the model wrote.** A
+  failed or incomplete read can produce reassuring output, so model prose never
+  clears anything:
+  - *Verified no change* (every read succeeded and matched the last run's
+    inputs): recorded in a new `loop_checks` history, with no attention item,
+    no model run and no review verdict.
+  - *Changed inputs*: one reviewable item per observed state, deduplicated by
+    fingerprint across windows and restarts.
+  - *Incomplete check* (any git or GitHub read failed): no model runs, queued
+    work is held, and one deduplicated failure item surfaces until a person
+    dismisses it. It is never treated as an all-clear.
+  GitHub reads and Local memory now join the fingerprint (both live loops use
+  GitHub read, Local memory and Repository read, so they could never skip
+  before), and a failed memory fetch makes the check incomplete instead of
+  handing the model a placeholder. `GET /api/studio/loop-checks` lists the
+  history.
+- **A failed git read no longer reads as "clean".** The repository snapshot
+  turned any git command that exited with an error into `clean`, so a model
+  could report an all-clear for a check that never ran. Failed reads now show
+  `unavailable (read failed)` and mark the check incomplete.
+- **Unreviewed work is never evicted.** At 250 assignments the registry deleted
+  the oldest finished item, including output still awaiting review and
+  unacknowledged failures. Only reviewed or dismissed items are evicted now; a
+  full registry raises instead, and the scheduler reports it.
+- **Read-only loop audit.** `python -m local_brain.scripts.loop_review_audit`
+  reports whether the backpressure guard is in the checked-out code and where
+  unreviewed scheduled items come from, without changing any record.
 - **Studio: one bad record no longer takes the whole Studio down.** Each view
   has its own error boundary with the tabs outside it, so a crash in one view
   leaves navigation working. Partial API payloads that crashed Overview, Today
