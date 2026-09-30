@@ -1,5 +1,18 @@
 const BASE = '';
 
+export interface LeadReviewDraft {
+  status: 'research' | 'watch' | 'qualified' | 'rejected';
+  company: string;
+  evidence_url: string;
+  account_fit: string;
+  observed_change: string;
+  note: string;
+}
+export interface LeadReview extends LeadReviewDraft {
+  version: number;
+  updated_at: string;
+}
+
 export interface TokenUsageDay {
   date: string;
   total_tokens: number;
@@ -655,6 +668,8 @@ export const api = {
   studioActivity: (agentId = '', day = '', status = '') =>
     get<StudioActivity>(`/api/studio/activity?${new URLSearchParams({ agent_id: agentId, day, status })}`),
   studioRun: (id: string) => get<{ run: StudioRun }>(`/api/studio/runs/${encodeURIComponent(id)}`),
+  leadReview: (id: string) => get<{ review: LeadReview | null; history: LeadReview[] }>(`/api/public-signals/${encodeURIComponent(id)}/qualification`),
+  saveLeadReview: (id: string, body: LeadReviewDraft & { expected_version: number }) => put<{ review: LeadReview }>(`/api/public-signals/${encodeURIComponent(id)}/qualification`, body),
   health: () => get<{ aiia: { status: string }; ollama: { status: string } }>('/api/health'),
   checkin: () => get<CheckinData>('/api/checkin'),
   workContext: () => get<WorkContext>('/api/work/context'),
