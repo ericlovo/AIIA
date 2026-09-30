@@ -1,3 +1,4 @@
+import { openStudioView } from "./studio-navigation.mjs"
 // Attempt history on an assignment: saved attempts with model, duration and
 // measured tokens, expanding one to read its task and output, paging, the
 // applied-attempt marker, and an explicit failure when history is unavailable.
@@ -82,7 +83,7 @@ try {
     })
 
     await page.goto(process.env.STUDIO_URL || 'http://127.0.0.1:5186/')
-    await page.getByRole('navigation', { name: 'Studio' }).getByRole('link', { name: 'Assignments', exact: true }).click()
+    await openStudioView(page, "Assignments")
     await page.getByText('Audit the FLOW-01 fixture', { exact: true }).click()
 
     const history = page.getByRole('region', { name: 'Assignment attempt history' })

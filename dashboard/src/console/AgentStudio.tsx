@@ -303,7 +303,7 @@ export function AgentStudio() {
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div className="flex shrink-0 items-center border-b border-neutral-900 px-5 py-2 sm:px-7">
+      <div className="relative z-30 flex shrink-0 items-center border-b border-neutral-900 px-3 py-2 sm:px-7">
         <StudioNav view={view} />
       </div>
       <div className="min-h-0 flex-1">

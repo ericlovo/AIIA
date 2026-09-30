@@ -1,3 +1,4 @@
+import { openStudioView } from "./studio-navigation.mjs"
 // The Map's agent inspector shows the agent's real configuration and edits it
 // one field at a time, and runs it. Every response is synthetic; no Command Center, Brain or
 // model is reached.
@@ -126,7 +127,7 @@ try {
     })
 
     await page.goto(process.env.STUDIO_URL || 'http://127.0.0.1:5191/')
-    await page.getByRole('navigation', { name: 'Studio' }).getByRole('link', { name: 'Map', exact: true }).click()
+    await openStudioView(page, "Map")
     await page.waitForFunction(() => document.querySelectorAll('[data-graph-node]').length === 3)
     const inspector = page.getByRole('complementary', { name: 'Node controls' })
     const config = inspector.getByRole('definition')

@@ -1,3 +1,4 @@
+import { openStudioView } from "./studio-navigation.mjs"
 // Studio resilience: one bad record must not take the navigation with it, Space
 // must still activate focused controls when voice is configured, and Today and
 // Overview must report the same "needs attention" count.
@@ -84,7 +85,7 @@ try {
     const { context, page, pageErrors } = await open()
     await page.getByRole('heading', { name: `Needs attention (${EXPECTED_ATTENTION})` }).waitFor()
     await page.getByText('2 git approvals pending').waitFor()
-    await page.getByRole('navigation', { name: 'Studio' }).getByRole('link', { name: 'Overview', exact: true }).click()
+    await openStudioView(page, "Overview")
     const metric = page.getByText('Needs attention', { exact: true }).locator('..')
     await metric.getByText(String(EXPECTED_ATTENTION), { exact: true }).waitFor()
     await metric.getByText('2 to review · 1 failed · 2 approvals').waitFor()
@@ -97,7 +98,7 @@ try {
   {
     const partial = { id: 'h-partial', source_assignment_id: 'review-1', target_assignment_id: '', from_agent_id: 'a0', to_agent_id: 'a1', artifact_type: 'summary', status: 'queued', created_at: `${date}T12:00:00Z`, updated_at: `${date}T12:00:00Z` }
     const { context, page, pageErrors } = await open({ handoffs: [partial] })
-    await page.getByRole('navigation', { name: 'Studio' }).getByRole('link', { name: 'Overview', exact: true }).click()
+    await openStudioView(page, "Overview")
     await page.getByText('Signal Scout to Repo Warden').waitFor()
     assert.equal(await page.getByText(/crashed/i).count(), 0)
     assert.deepEqual(pageErrors, [])
@@ -107,9 +108,9 @@ try {
   // 3. A view that does crash keeps the tabs, and the operator can leave it.
   {
     const { context, page } = await open({ handoffs: [null] })
-    await page.getByRole('navigation', { name: 'Studio' }).getByRole('link', { name: 'Overview', exact: true }).click()
+    await openStudioView(page, "Overview")
     await page.getByRole('alert').getByText('OVERVIEW CRASHED').waitFor()
-    await page.getByRole('navigation', { name: 'Studio' }).getByRole('link', { name: 'Today', exact: true }).click()
+    await openStudioView(page, "Today")
     await page.getByRole('heading', { name: `Needs attention (${EXPECTED_ATTENTION})` }).waitFor()
     await context.close()
   }
