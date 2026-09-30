@@ -1,3 +1,4 @@
+import { openStudioView } from "./studio-navigation.mjs"
 import assert from 'node:assert/strict'
 import { mkdir, readFile } from 'node:fs/promises'
 import { join } from 'node:path'
@@ -55,7 +56,7 @@ try {
       await route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) })
     })
     await page.goto('http://studio.test/')
-    await page.getByRole('navigation', { name: 'Studio' }).getByRole('link', { name: 'Assignments', exact: true }).click()
+    await openStudioView(page, "Assignments")
     const advisor = page.getByRole('region', { name: 'Jev routing advisor' })
     const suggest = advisor.getByRole('button', { name: 'Suggest specialist' })
     await advisor.getByRole('textbox', { name: 'Routing brief' }).fill('Review CI')
@@ -84,7 +85,7 @@ try {
     assert.equal(await assigned.inputValue(), 'ci')
     ready = false
     await page.reload()
-    await page.getByRole('navigation', { name: 'Studio' }).getByRole('link', { name: 'Assignments', exact: true }).click()
+    await openStudioView(page, "Assignments")
     await advisor.getByText('Not connected. Manual assignment is available.', { exact: true }).waitFor()
     assert.deepEqual(errors, [])
     console.log(`${width}px: consent, explicit selection, stale advice, no-match, outage, disconnected passed`)

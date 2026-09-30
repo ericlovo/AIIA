@@ -1,3 +1,4 @@
+import { openStudioView } from "./studio-navigation.mjs"
 // Memory log priority and approved memory posts: a human sets priority when logging,
 // the log can filter and sort by it, and "Post to #aiia-memory" appears only when the
 // Mini reports posting configured. Every response is synthetic; the server's filter,
@@ -88,7 +89,7 @@ try {
 
     const openMemory = async () => {
       await page.goto(process.env.STUDIO_URL || 'http://127.0.0.1:5193/')
-      await page.getByRole('navigation', { name: 'Studio' }).getByRole('link', { name: 'Memory', exact: true }).click()
+      await openStudioView(page, "Memory")
       await page.getByRole('region', { name: 'Memory log' }).getByText('ship the cron contract first', { exact: true }).waitFor()
     }
     const memory = page.getByRole('region', { name: 'Memory log' })

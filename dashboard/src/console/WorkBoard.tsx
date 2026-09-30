@@ -19,7 +19,7 @@ import {
   type RepositoryResource,
 } from '../lib/api'
 import { assignmentLabel, assignmentOrigin, reviewLabel } from './assignmentReview'
-import type { StudioView } from './studioRoute'
+import { formatRoute, type StudioView } from './studioRoute'
 import { PageHeader } from './PageHeader'
 import { replaceRoute } from './useStudioRoute'
 
@@ -451,9 +451,14 @@ function AssignmentDetails({ assignment, agent, agentName, workspace, writes, re
   const workspaceWrites = workspace ? writes.filter(item => item.workspace_id === workspace.id) : []
   return (
     <Panel title={assignment.title} eyebrow="Assignment controls">
-      <Meta label="Owner" value={agentName} />
-      <div className="grid grid-cols-2 gap-3"><Meta label="Status" value={assignment.status} /><Meta label="Priority" value={assignment.priority} /></div>
-      <Meta label="Started by" value={assignmentOrigin(assignment)} />
+      <a href={formatRoute({ view: 'switchboard', attention: true })} className="inline-flex min-h-11 items-center text-sm text-cyan-200 underline">Back to attention queue</a>
+      <dl className="grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
+        <div className="min-w-0"><dt className="text-xs text-neutral-500">Owner</dt><dd className="mt-1 break-words text-neutral-200">{agentName}</dd></div>
+        <div><dt className="text-xs text-neutral-500">Status</dt><dd className="mt-1 capitalize text-neutral-200">{assignment.status}</dd></div>
+        <div><dt className="text-xs text-neutral-500">Priority</dt><dd className="mt-1 capitalize text-neutral-200">{assignment.priority}</dd></div>
+        <div><dt className="text-xs text-neutral-500">Started by</dt><dd className="mt-1 text-neutral-200">{assignmentOrigin(assignment)}</dd></div>
+      </dl>
+      {assignment.error && <section aria-label="Failure evidence" className="border-l-2 border-red-500 bg-red-950/20 p-3 text-sm text-red-200"><h3 className="font-medium">What went wrong</h3><p className="mt-2 whitespace-pre-wrap break-words">{assignment.error}</p></section>}
       <TextBlock label="Objective" value={assignment.objective} />
       {assignment.success_criteria && <TextBlock label="Success criteria" value={assignment.success_criteria} />}
       {assignment.context && <TextBlock label="Context" value={assignment.context} muted />}
@@ -461,8 +466,9 @@ function AssignmentDetails({ assignment, agent, agentName, workspace, writes, re
       {assignment.revision_of && <button onClick={() => onOpenAssignment(assignment.revision_of!)} className="text-sm text-cyan-200 underline">Open original assignment</button>}
       {assignment.status === 'completed' && assignment.result.trim() && <ArtifactReview key={assignment.id} assignment={assignment} />}
       {assignment.review_status === 'rejected' && <RevisionPanel key={`revision-${assignment.id}`} assignment={assignment} onOpen={onOpenAssignment} />}
+      {error && <ErrorNotice error={error} />}
+      {runnable && <button disabled={isRunning} onClick={onRun} className="min-h-11 w-full bg-white px-3 py-2.5 text-sm font-medium text-neutral-950 disabled:cursor-not-allowed disabled:opacity-40">{isRunning ? 'Mini is working…' : assignment.status === 'failed' ? 'Retry assignment' : 'Run assignment'}</button>}
       {(assignment.status === 'completed' || assignment.status === 'failed') && <DismissalPanel key={`dismiss-${assignment.id}`} assignment={assignment} />}
-      {assignment.error && <div className="border border-red-900/60 bg-red-950/30 p-3 text-xs text-red-300">{assignment.error}</div>}
       <OutputRecovery key={`recovery-${assignment.id}`} assignment={assignment} busy={isRunning} />
       <AssignmentHistory key={`history-${assignment.id}`} assignmentId={assignment.id} />
       {assignment.status === 'completed' && (
@@ -482,8 +488,6 @@ function AssignmentDetails({ assignment, agent, agentName, workspace, writes, re
           onRejectWrite={onRejectWrite}
         />
       )}
-      {error && <ErrorNotice error={error} />}
-      {runnable && <button disabled={isRunning} onClick={onRun} className="w-full bg-white px-3 py-2.5 text-sm font-medium text-neutral-950 disabled:cursor-not-allowed disabled:opacity-40">{isRunning ? 'Mini is working…' : assignment.status === 'failed' ? 'Retry assignment' : 'Run assignment'}</button>}
       {assignment.status === 'completed' && <button onClick={onHandoff} className="w-full bg-cyan-400 px-3 py-2.5 text-sm font-medium text-neutral-950">Hand off work</button>}
       <button disabled={isRemoving || assignment.status === 'running' || hasHandoff} onClick={onRemove} title={hasHandoff ? 'Unlink the handoff before deleting connected work' : undefined} className="w-full px-3 py-2 text-xs text-neutral-600 hover:text-red-300 disabled:opacity-30">Delete assignment</button>
     </Panel>

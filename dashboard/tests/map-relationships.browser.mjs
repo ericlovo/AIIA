@@ -1,3 +1,4 @@
+import { openStudioView } from "./studio-navigation.mjs"
 // Map relationships: the handoff wire creates the handoff in place, edges can be
 // inspected and removed, and suites colour, filter and bulk-tune the Map.
 // Every response is synthetic; nothing reaches a running Command Center.
@@ -131,7 +132,7 @@ try {
     })
 
     await page.goto(process.env.STUDIO_URL || 'http://127.0.0.1:5192/')
-    await page.getByRole('navigation', { name: 'Studio' }).getByRole('link', { name: 'Map', exact: true }).click()
+    await openStudioView(page, "Map")
     await page.getByRole('checkbox', { name: 'Completed assignments', exact: true }).check()
     await page.waitForFunction(() => document.querySelectorAll('[data-graph-node]').length === 6)
     await page.locator('[data-edge="handoff:hof-existing"]').waitFor({ state: 'attached' })
@@ -300,7 +301,7 @@ try {
     await page.locator('div.text-lg', { hasText: 'Draft summary' }).waitFor()
 
     // Removing reflects what the server did, not what the Map assumed.
-    await page.getByRole('navigation', { name: 'Studio' }).getByRole('link', { name: 'Map', exact: true }).click()
+    await openStudioView(page, "Map")
     const newEdge = page.getByRole('button', { name: /^Handoff from Signal Scout to Review Gate/ })
     handoffs = handoffs.map(item => item.id === 'hof-new' ? { ...item, status: 'running' } : item)
     await newEdge.focus()
@@ -316,7 +317,7 @@ try {
     // Someone else already removed it: the Map drops the edge instead of keeping a ghost.
     handoffs = handoffs.map(item => item.id === 'hof-new' ? { ...item, status: 'queued' } : item)
     await page.reload()
-    await page.getByRole('navigation', { name: 'Studio' }).getByRole('link', { name: 'Map', exact: true }).click()
+    await openStudioView(page, "Map")
     await page.waitForFunction(() => document.querySelector('[data-edge="handoff:hof-new"]')?.getAttribute('aria-label')?.includes('queued'))
     await newEdge.focus()
     await page.keyboard.press('Enter')
@@ -331,7 +332,7 @@ try {
     // describing it with "Removed agent" while its edge is hidden.
     handoffs = seedHandoffs()
     await page.reload()
-    await page.getByRole('navigation', { name: 'Studio' }).getByRole('link', { name: 'Map', exact: true }).click()
+    await openStudioView(page, "Map")
     const crossSuiteEdge = page.getByRole('button', { name: /^Handoff from Brief Writer to Review Gate/ })
     await crossSuiteEdge.focus()
     await page.keyboard.press('Enter')
@@ -413,7 +414,7 @@ try {
       await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(body) })
     })
     await page.goto(process.env.STUDIO_URL || 'http://127.0.0.1:5192/')
-    await page.getByRole('navigation', { name: 'Studio' }).getByRole('link', { name: 'Map', exact: true }).click()
+    await openStudioView(page, "Map")
     await page.waitForFunction(() => document.querySelectorAll('[data-graph-node]').length === 36)
     const legend = page.getByRole('group', { name: 'Suite legend' })
     const expectedSuites = new Set(agents.map(item => item.suite).filter(Boolean))
