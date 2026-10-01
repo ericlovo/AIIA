@@ -77,6 +77,39 @@ def signal(inbox):
     )[0]
 
 
+def test_lead_queue_review_to_research_flow(studio, monkeypatch):
+    from local_brain.command_center import lead_reviews
+
+    server, agents, _, inbox = studio
+    monkeypatch.setattr(lead_reviews, "inbox", lambda: inbox)
+    idea = signal(inbox)
+    client = TestClient(server.app)
+    assert client.get("/api/public-signals/leads?status=unreviewed").json()["total"] == 1
+    review = {
+        "expected_version": 0,
+        "status": "qualified",
+        "company": "Example",
+        "evidence_url": "https://example.com/news",
+        "account_fit": "Iowa family business",
+        "observed_change": "Expansion",
+        "note": "Review primary announcement",
+    }
+    assert (
+        client.put(f"/api/public-signals/{idea['id']}/qualification", json=review).status_code
+        == 200
+    )
+    assert client.get("/api/public-signals/leads?status=qualified").json()["total"] == 1
+    response = assign(server, idea["id"], agent_id=agents.agents[0]["id"])
+    assert response.status_code == 200
+    assignment = response.json()["assignment"]
+    assert assignment["status"] == "queued"
+    assert "Iowa family business" in assignment["context"]
+    listed = client.get("/api/public-signals/leads?status=qualified").json()["leads"][0]
+    assert listed["assignment_id"] == assignment["id"]
+    assert listed["review"]["version"] == 1
+    assert assign(server, idea["id"], agent_id=agents.agents[0]["id"]).status_code == 409
+
+
 def save_review(inbox, idea_id, *, version=0, status="qualified"):
     from local_brain.command_center.lead_reviews import prepare
 

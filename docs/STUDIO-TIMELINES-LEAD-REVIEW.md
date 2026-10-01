@@ -5,7 +5,8 @@
 1. Open Agents and select an agent. Activity shows recent recorded attempts;
    expand one for its task, output or failure evidence, and assignment link.
    Configuration remains a separate view. This is not a tool-call trace.
-2. Open Signals, then Review inbox. Public signals are selected immediately.
+2. Open Signals. Lead queue lists public signals with a qualification filter,
+   company-name search, and 25-signal pages. Open Review inbox for full triage.
 3. Expand Lead qualification on a signal. Record a decision and rationale.
    Qualified for follow-up additionally requires a company, HTTPS primary-source
    URL, account fit, and observed change. Sources are human-reviewed, not
@@ -40,7 +41,18 @@ separately without a Brain restart.
 - Agent timelines use the existing activity endpoint's 91-day window, capped at
   200 matching runs. Older history is not exposed by this view.
 - Lead decisions are attached to individual signals, not deduplicated company
-  records. A company-level pipeline and qualification filters are later work.
+  records. Queue groups use trimmed, lowercased entered names within the current
+  page only; unnamed signals stay separate. These are not verified company
+  identities or account-level verdicts. Company-level deduplication is later work.
+- The queue includes dismissed and assigned signals with their disposition.
+  Dismissed items cannot queue research here; existing assignment links open Work.
+  Qualification saves refresh filtered results. Research queues but never starts
+  an agent. The saved review, not unsaved form fields, enters the assignment.
+- `GET /api/public-signals/leads` supports status, company, offset and limit
+  (default 25, maximum 100). Company search is a literal substring, ASCII
+  case-insensitive using SQLite lower(); SQL wildcard characters remain literal.
+  Counts and rows share a read transaction. Private captures are never included.
+  No extra model calls, news retrieval, or outbound messages are triggered.
 - New public-signal research assignments carry the original capture plus the
   saved qualification snapshot as untrusted evidence. Research briefs must cover
   ownership, geography and account fit, observed change, dated citations,

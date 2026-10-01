@@ -108,9 +108,83 @@ def test_storage_failure(setup, monkeypatch):
 
     monkeypatch.setattr(inbox, "connect", broken)
     assert client.get(path).status_code == 503
+    assert client.get("/api/public-signals/leads").status_code == 503
     assert (
         client.put(
             path, json={"expected_version": 0, "status": "watch", "note": "Wait"}
         ).status_code
         == 503
     )
+
+
+def test_queue_before_reviews_and_source_isolation(setup):
+    client, inbox, _ = setup
+    inbox.ingest(text="Private", source_key="private", source="slack", project="pl")
+    data = client.get("/api/public-signals/leads").json()
+    assert data["total"] == 1
+    assert data["leads"][0]["decision"] == "unreviewed"
+    assert data["leads"][0]["review"] is None
+    assert client.get("/api/public-signals/leads?status=qualified").json()["total"] == 0
+
+
+@pytest.mark.parametrize("status", ["research", "watch", "qualified", "rejected"])
+def test_queue_filters_saved_decision_and_literal_company(setup, status):
+    client, _, path = setup
+    body = dict(
+        expected_version=0,
+        status=status,
+        company="Example 100% Iowa",
+        evidence_url="https://example.com",
+        account_fit="Family owned",
+        observed_change="Expansion",
+        note="Reviewed",
+    )
+    assert client.put(path, json=body).status_code == 200
+    data = client.get(
+        "/api/public-signals/leads", params={"status": status, "company": "IOWA"}
+    ).json()
+    assert data["total"] == 1
+    assert data["leads"][0]["review"]["version"] == 1
+    assert data["leads"][0]["review"]["note"] == "Reviewed"
+    assert client.get("/api/public-signals/leads", params={"company": "%"}).json()["total"] == 1
+    assert client.get("/api/public-signals/leads", params={"company": "_"}).json()["total"] == 0
+    assert client.get("/api/public-signals/leads?status=unreviewed").json()["total"] == 0
+
+
+def test_queue_pagination_and_disposition(setup):
+    client, inbox, path = setup
+    for i in range(30):
+        inbox.ingest(
+            text=f"Signal {i}", source_key=f"key{i}", source="public_signals", project="pl"
+        )
+    idea_id = path.split("/")[3]
+    with inbox.connect() as db:
+        db.execute(
+            "UPDATE ideas SET status='dismissed',assignment_id='work-1' WHERE id=?", (idea_id,)
+        )
+    first = client.get("/api/public-signals/leads").json()
+    second = client.get("/api/public-signals/leads?offset=25").json()
+    assert first["total"] == second["total"] == 31
+    assert len(first["leads"]) == 25
+    assert len(second["leads"]) == 6
+    assert not {row["id"] for row in first["leads"]} & {row["id"] for row in second["leads"]}
+    all_rows = first["leads"] + second["leads"]
+    archived = next(row for row in all_rows if row["id"] == idea_id)
+    assert archived["inbox_status"] == "dismissed"
+    assert archived["assignment_id"] == "work-1"
+
+
+@pytest.mark.parametrize(
+    "query", ["status=invalid", "offset=-1", "limit=101", "limit=0", "company=" + "x" * 201]
+)
+def test_queue_invalid_query(setup, query):
+    assert setup[0].get("/api/public-signals/leads?" + query).status_code == 422
+
+
+@pytest.mark.parametrize("payload", ["not json", "{}", '{"status":"qualified"}', "[]"])
+def test_queue_corrupt_json_is_not_an_empty_queue(setup, payload):
+    client, inbox, path = setup
+    client.put(path, json=dict(expected_version=0, status="watch", note="Wait"))
+    with inbox.connect() as db:
+        db.execute("UPDATE lead_reviews SET payload=?", (payload,))
+    assert client.get("/api/public-signals/leads").status_code == 503
