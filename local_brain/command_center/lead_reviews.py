@@ -67,6 +67,32 @@ def record(row):
     }
 
 
+def review_snapshot(storage, idea_id):
+    """Read an immutable handoff snapshot without initializing review storage."""
+    with storage.connect() as db:
+        exists = db.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='lead_reviews'"
+        ).fetchone()
+        if not exists:
+            return None
+        row = db.execute("SELECT * FROM lead_reviews WHERE idea_id=?", (idea_id,)).fetchone()
+        if not row:
+            return None
+        saved = record(row)
+        # A corrupt review must not silently become an unqualified assignment.
+        Qualification.model_validate(
+            {
+                **{
+                    key: value
+                    for key, value in saved.items()
+                    if key not in {"version", "updated_at"}
+                },
+                "expected_version": saved["version"],
+            }
+        )
+        return saved
+
+
 @router.get("/api/public-signals/{idea_id}/qualification")
 def get_qualification(idea_id: str):
     try:

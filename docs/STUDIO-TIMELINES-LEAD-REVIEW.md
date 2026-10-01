@@ -11,6 +11,9 @@
    URL, account fit, and observed change. Sources are human-reviewed, not
    automatically fetched or verified by this form.
 4. Use the existing agent selection and Accept as work action to queue research.
+   Public-signal assignments include a snapshot of the latest saved qualification
+   read before the capture is claimed, including revision and timestamp. Unsaved
+   browser drafts are not included. Later reviews do not rewrite existing work.
    Qualification itself neither sends outreach nor closes the inbox item.
 
 Review history records revisions and timestamps, not named reviewer identity:
@@ -38,6 +41,16 @@ separately without a Brain restart.
   200 matching runs. Older history is not exposed by this view.
 - Lead decisions are attached to individual signals, not deduplicated company
   records. A company-level pipeline and qualification filters are later work.
-- Existing research assignments carry the original captured signal; the review
-  stays attached to the inbox record, not silently injected into existing work.
+- New public-signal research assignments carry the original capture plus the
+  saved qualification snapshot as untrusted evidence. Research briefs must cover
+  ownership, geography and account fit, observed change, dated citations,
+  counter-evidence, and open questions. Missing tool access must be reported,
+  not treated as source verification. Nothing fetches a URL at assignment time.
+- Signals without a review remain assignable for research and are explicitly
+  marked unverified. Research/watch/rejected decisions are preserved verbatim;
+  assigning research never upgrades them to qualified.
+- A missing review table means no reviews have been recorded. A corrupt review
+  or unavailable storage refuses assignment before claiming the capture.
+  Existing assignments are unchanged. The scope of this policy is the research
+  brief, not a new execution permission boundary; tool permissions still apply.
 - Jev screens public evidence; a human qualifies an account for follow-up.
