@@ -29,13 +29,17 @@ export function SignalJobs() {
       </div>
       {query.data && <div className="mt-3 flex flex-wrap gap-x-5 gap-y-2 text-xs text-neutral-400">
         <span>Retrieval {query.data.retrieval_enabled ? 'enabled' : 'disabled'}</span>
-        <span>Jev {query.data.screening_enabled && query.data.configured ? 'configured' : 'not configured'}</span>
+        <span>Jev {query.data.configured ? query.data.screening_enabled ? 'enabled' : 'disabled' : 'credential missing'}</span>
         <span>3 items / run · 6 pending maximum</span><span>No outreach</span>
       </div>}
     </div>
     {query.isPending && <p role="status" className="p-7">Loading jobs...</p>}
     {query.isError && <div role="alert" className="p-7 text-red-300">Signal jobs unavailable. <button aria-label="Retry signal jobs" title="Retry signal jobs" onClick={() => void query.refetch()}><RefreshCw size={16} /></button></div>}
     {error && <p role="alert" className="px-7 py-3 text-sm text-red-300">{error.message}</p>}
+    <LeadQueue />
+    <details className="border-t border-neutral-800">
+      <summary className="cursor-pointer px-5 py-5 text-sm font-medium focus-visible:outline-2 focus-visible:outline-cyan-300 sm:px-7">Discovery automation{query.data ? ` (${query.data.jobs.filter(job => job.enabled).length}/${query.data.jobs.length} scheduled)` : ''}</summary>
+      {query.data && !query.data.ready && <p role="status" className="px-5 pb-4 text-sm text-amber-200 sm:px-7">Discovery is paused.{!query.data.retrieval_enabled && ' Public retrieval is disabled.'}{!query.data.screening_enabled && ' Jev screening is disabled.'}{!query.data.configured && ' A Jev credential is required.'}</p>}
     <div className="divide-y divide-neutral-800">
       {query.data?.jobs.map(job => {
         const last = job.last_run
@@ -62,6 +66,6 @@ export function SignalJobs() {
         </section>
       })}
     </div>
-    <LeadQueue />
+    </details>
   </main>
 }

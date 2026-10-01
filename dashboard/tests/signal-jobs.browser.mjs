@@ -55,6 +55,7 @@ try {
       await route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) })
     })
     await page.goto('http://studio.test/#/signals')
+    await page.locator('summary').filter({ hasText: 'Discovery automation' }).click()
     await page.getByText('Ready for review', { exact: true }).waitFor()
     assert.equal(await page.getByRole('button', { name: 'Run Lead Signal Scout' }).isDisabled(), true)
     assert.equal(calls, 0)
@@ -66,7 +67,8 @@ try {
     assert.equal(await page.getByRole('button', { name: 'Run Market Signal Scout' }).isDisabled(), true)
     ready = false
     await page.reload()
-    await page.getByText('Jev not configured', { exact: true }).waitFor()
+    await page.getByText('Jev credential missing', { exact: true }).waitFor()
+    await page.locator('summary').filter({ hasText: 'Discovery automation' }).click()
     await page.getByRole('checkbox').nth(1).click()
     await page.waitForFunction(() => !document.querySelectorAll('input[type="checkbox"]')[1].checked)
     assert.equal(jobs[1].enabled, false)
