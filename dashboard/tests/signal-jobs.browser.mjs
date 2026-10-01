@@ -44,7 +44,8 @@ try {
         assert.deepEqual(route.request().postDataJSON(), { enabled: false })
         jobs[1].enabled = false
         body = { ready, jobs }
-      } else if (path === '/api/agents') body = { agents: [] }
+      } else if (path === '/api/public-signals/leads') body = { leads: [], total: 0, offset: 0, limit: 25 }
+      else if (path === '/api/agents') body = { agents: [] }
       else if (path === '/api/tasks') body = []
       else if (path === '/api/agents/resources') body = { repos: [], github: { status: 'disconnected' } }
       else if (path === '/api/health') body = { aiia: { status: 'online' }, ollama: { status: 'online' } }

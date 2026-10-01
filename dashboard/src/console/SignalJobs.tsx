@@ -3,6 +3,7 @@ import { ArrowRight, Play, Radar, RefreshCw } from 'lucide-react'
 import { api } from '../lib/api'
 import { PageHeader } from './PageHeader'
 import { navigate } from './useStudioRoute'
+import { LeadQueue } from './LeadQueue'
 
 const STATES: Record<string, string> = {
   running: 'Screening', failed: 'Run failed', interrupted: 'Interrupted',
@@ -61,5 +62,6 @@ export function SignalJobs() {
         </section>
       })}
     </div>
+    <LeadQueue />
   </main>
 }

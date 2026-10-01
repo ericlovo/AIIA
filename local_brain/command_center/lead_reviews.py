@@ -6,12 +6,79 @@ from datetime import datetime, timezone
 from typing import Literal
 from urllib.parse import urlsplit
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, ConfigDict, Field, StrictInt, model_validator
 
 from local_brain.command_center.slack_capture import inbox
 
 router = APIRouter()
+
+
+@router.get("/api/public-signals/leads")
+def list_leads(
+    status: Literal["all", "unreviewed", "research", "watch", "qualified", "rejected"] = "all",
+    company: str = Query(default="", max_length=200),
+    offset: int = Query(default=0, ge=0),
+    limit: int = Query(default=25, ge=1, le=100),
+):
+    try:
+        with inbox().connect() as db:
+            db.execute("BEGIN")
+            exists = db.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='table' AND name='lead_reviews'"
+            ).fetchone()
+            reviews = (
+                "lead_reviews"
+                if exists
+                else "(SELECT NULL AS idea_id, NULL AS payload, NULL AS version, NULL AS updated_at)"
+            )
+            base = f"""WITH signals AS (
+                SELECT i.id, i.text, i.created_at, i.status AS inbox_status, i.assignment_id,
+                    r.payload, r.version, r.updated_at,
+                    CASE WHEN r.idea_id IS NULL THEN 'unreviewed'
+                         ELSE json_extract(r.payload, '$.status') END AS decision,
+                    COALESCE(json_extract(r.payload, '$.company'), '') AS company
+                FROM ideas i LEFT JOIN {reviews} r ON r.idea_id=i.id
+                WHERE i.source='public_signals')
+            """  # nosec B608 - reviews is selected from two fixed expressions
+            where = "WHERE (?='all' OR decision=?) AND instr(lower(company),lower(?))>0"
+            args = (status, status, company.strip())
+            total = db.execute(base + "SELECT COUNT(*) FROM signals " + where, args).fetchone()[0]
+            rows = db.execute(
+                base
+                + "SELECT * FROM signals "
+                + where
+                + " ORDER BY created_at DESC,id DESC LIMIT ? OFFSET ?",
+                (*args, limit, offset),
+            ).fetchall()
+            for row in rows:
+                if row["payload"] is not None:
+                    Qualification.model_validate(
+                        {**json.loads(row["payload"]), "expected_version": row["version"]}
+                    )
+            return {
+                "total": total,
+                "offset": offset,
+                "limit": limit,
+                "leads": [
+                    {
+                        key: row[key]
+                        for key in (
+                            "id",
+                            "text",
+                            "created_at",
+                            "inbox_status",
+                            "assignment_id",
+                            "decision",
+                            "company",
+                        )
+                    }
+                    | {"review": record(row) if row["payload"] is not None else None}
+                    for row in rows
+                ],
+            }
+    except (sqlite3.Error, OSError, ValueError, TypeError) as exc:
+        raise HTTPException(status_code=503, detail="lead_queue_unavailable") from exc
 
 
 class Qualification(BaseModel):

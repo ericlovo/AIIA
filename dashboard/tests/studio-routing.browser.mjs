@@ -39,6 +39,7 @@ async function open(path = '', { agentsDelayMs = 0, width = 1440, workItems = as
     if (path === '/api/agents' && agentsDelayMs) await new Promise(resolve => setTimeout(resolve, agentsDelayMs))
     const bodies = {
       '/api/agents': { agents },
+      '/api/public-signals/leads': { leads: [], total: 0, offset: 0, limit: 25 },
       '/api/agents/resources': { repos: [], github: { status: 'disconnected' } },
       '/api/agents/models': { default: 'synthetic-model:1b', models: [] },
       '/api/assignments': { assignments: workItems },

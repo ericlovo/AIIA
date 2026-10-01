@@ -20,7 +20,10 @@ function ReviewForm({ ideaId, review, history }: { ideaId: string; review: LeadR
   const client = useQueryClient()
   const save = useMutation({
     mutationFn: () => api.saveLeadReview(ideaId, { ...draft, expected_version: review?.version ?? 0 }),
-    onSuccess: data => client.setQueryData(['lead-review', ideaId], { review: data.review, history: [data.review, ...history].slice(0, 20) }),
+    onSuccess: data => {
+      client.setQueryData(['lead-review', ideaId], { review: data.review, history: [data.review, ...history].slice(0, 20) })
+      void client.invalidateQueries({ queryKey: ['lead-queue'] })
+    },
   })
   const qualified = draft.status === 'qualified'
   const conflict = save.error?.message === 'qualification_changed_reload_before_saving'

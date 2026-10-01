@@ -13,6 +13,18 @@ export interface LeadReview extends LeadReviewDraft {
   updated_at: string;
 }
 
+export type LeadDecision = LeadReviewDraft['status'] | 'unreviewed';
+export interface LeadSignal {
+  id: string;
+  text: string;
+  created_at: string;
+  inbox_status: string;
+  assignment_id: string;
+  decision: LeadDecision;
+  company: string;
+  review: LeadReview | null;
+}
+
 export interface TokenUsageDay {
   date: string;
   total_tokens: number;
@@ -669,6 +681,7 @@ export const api = {
     get<StudioActivity>(`/api/studio/activity?${new URLSearchParams({ agent_id: agentId, day, status })}`),
   studioRun: (id: string) => get<{ run: StudioRun }>(`/api/studio/runs/${encodeURIComponent(id)}`),
   leadReview: (id: string) => get<{ review: LeadReview | null; history: LeadReview[] }>(`/api/public-signals/${encodeURIComponent(id)}/qualification`),
+  leadQueue: (status: LeadDecision | 'all', company: string, offset: number) => get<{ leads: LeadSignal[]; total: number; offset: number; limit: number }>(`/api/public-signals/leads?${new URLSearchParams({ status, company, offset: String(offset) })}`),
   saveLeadReview: (id: string, body: LeadReviewDraft & { expected_version: number }) => put<{ review: LeadReview }>(`/api/public-signals/${encodeURIComponent(id)}/qualification`, body),
   health: () => get<{ aiia: { status: string }; ollama: { status: string } }>('/api/health'),
   checkin: () => get<CheckinData>('/api/checkin'),
