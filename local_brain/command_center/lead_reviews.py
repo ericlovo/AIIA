@@ -40,13 +40,14 @@ def list_leads(
                     COALESCE(json_extract(r.payload, '$.company'), '') AS company
                 FROM ideas i LEFT JOIN {reviews} r ON r.idea_id=i.id
                 WHERE i.source='public_signals')
-            """  # nosec B608 - reviews is selected from two fixed expressions
+            """
             where = "WHERE (?='all' OR decision=?) AND instr(lower(company),lower(?))>0"
             args = (status, status, company.strip())
-            total = db.execute(base + "SELECT COUNT(*) FROM signals " + where, args).fetchone()[0]
+            # SQL fragments above are fixed; all request values are bound in args.
+            total = db.execute(base + "SELECT COUNT(*) FROM signals " + where, args).fetchone()[0]  # nosec B608
             rows = db.execute(
                 base
-                + "SELECT * FROM signals "
+                + "SELECT * FROM signals "  # nosec B608
                 + where
                 + " ORDER BY created_at DESC,id DESC LIMIT ? OFFSET ?",
                 (*args, limit, offset),
