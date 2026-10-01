@@ -70,7 +70,7 @@ try {
     await page.waitForFunction(() => !document.querySelectorAll('input[type="checkbox"]')[1].checked)
     assert.equal(jobs[1].enabled, false)
     await page.getByRole('button', { name: 'Review inbox' }).click()
-    assert.match(page.url(), /#\/memory\?review=open/)
+    assert.match(page.url(), /#\/memory\?source=signals/)
     fail = true
     await page.goto('http://studio.test/#/signals')
     await page.reload()

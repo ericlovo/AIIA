@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api, type Agent, type AgentDefinition } from '../lib/api'
 import { AgentWorldCanvas } from './AgentWorldCanvas'
@@ -11,6 +11,7 @@ import { ActivityOverview } from './ActivityOverview'
 import { Switchboard } from './Switchboard'
 import { MemoryLog } from './MemoryLog'
 import { SignalJobs } from './SignalJobs'
+import { AgentTimeline } from './AgentTimeline'
 import { PanelBoundary } from './ErrorBoundary'
 import type { ReviewBucket } from '../lib/api'
 
@@ -48,6 +49,11 @@ export function AgentStudio() {
   const miniState = !health ? 'checking' : health.ollama?.status === 'online' ? 'online' : 'offline'
   const agents = data?.agents ?? EMPTY_AGENTS
   const [selectedId, setSelectedId] = useState<string | null>(null)
+  const inspector = useRef<HTMLElement>(null)
+  useEffect(() => {
+    if (selectedId && window.matchMedia('(max-width: 1023px)').matches) inspector.current?.scrollIntoView({ block: 'start' })
+  }, [selectedId])
+  const [inspectorView, setInspectorView] = useState<'activity' | 'configuration'>('activity')
   const [draft, setDraft] = useState<Draft>(EMPTY_DRAFT)
   const [task, setTask] = useState('')
   const { route, key } = useStudioRoute()
@@ -170,7 +176,7 @@ export function AgentStudio() {
 
     if (view === 'memory') {
       const review = route.view === 'memory' ? route.review : undefined
-      return <MemoryLog key={key} agents={agents} intent={review ? { bucket: review === 'all' ? '' : review } : undefined} />
+      return <MemoryLog key={key} agents={agents} source={route.view === 'memory' ? route.source : undefined} intent={review ? { bucket: review === 'all' ? '' : review } : undefined} />
     }
 
     if (view !== 'agents') {
@@ -241,7 +247,11 @@ export function AgentStudio() {
           </div>
         </section>
 
-        <aside className="shrink-0 bg-neutral-950 lg:min-h-0 lg:overflow-y-auto">
+        <aside ref={inspector} className="shrink-0 bg-neutral-950 lg:min-h-0 lg:overflow-y-auto">
+          {selected && <div className="flex gap-2 border-b border-neutral-800 p-3" aria-label="Agent view">
+            {(['activity', 'configuration'] as const).map(value => <button key={value} aria-pressed={inspectorView === value} onClick={() => setInspectorView(value)} className={`min-h-11 flex-1 px-3 text-sm ${inspectorView === value ? 'bg-neutral-800 text-white' : 'text-neutral-400'}`}>{value === 'activity' ? 'Activity' : 'Configuration'}</button>)}
+          </div>}
+          {selected && inspectorView === 'activity' ? <AgentTimeline key={selected.id} agent={selected} /> : <>
           <div className="border-b border-neutral-900 px-6 py-5">
             <div className="text-[10px] font-semibold tracking-[0.24em] uppercase text-neutral-500">{selected ? 'Agent controls' : 'New agent'}</div>
             <div className="mt-2 text-lg text-white">{selected?.name || 'Define a role'}</div>
@@ -296,6 +306,7 @@ export function AgentStudio() {
             {run.isError && <p role="alert" className="mt-3 text-xs text-red-300">{run.error.message}</p>}
             {(selected.last_result || selected.last_error) && <div className="mt-5 border border-neutral-800 bg-neutral-900/70 p-3"><div className="text-[10px] uppercase tracking-[0.14em] text-neutral-600">Latest run</div><p className="mt-2 whitespace-pre-wrap text-xs leading-relaxed text-neutral-300">{selected.last_error || selected.last_result}</p></div>}
           </div>}
+          </>}
         </aside>
       </main>
     )

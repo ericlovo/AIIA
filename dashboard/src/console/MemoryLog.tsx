@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api, MEMORY_CATEGORIES, MEMORY_PRIORITIES, type Agent, type MemoryCategory, type MemoryIdea, type MemoryIdeaStatus, type MemoryInboxSort, type MemoryPriority, type ReviewOutcome, type ReviewBucket } from '../lib/api'
 import { PageHeader } from './PageHeader'
+import { LeadQualification } from './LeadQualification'
 import { captureText, MEMORY_POST_CHANNEL, memoryPostLabel, priorityLabel, receiptLabel, type PriorityTone, type ReceiptTone } from './memoryText'
 
 type Filter = MemoryIdeaStatus | ''
@@ -43,14 +44,14 @@ const OUTCOME_LABELS: Record<ReviewBucket, string> = {
   unclassified: 'Unclassified',
 }
 
-export function MemoryLog({ agents, intent }: { agents: Agent[]; intent?: { bucket: ReviewBucket | '' } }) {
+export function MemoryLog({ agents, intent, source }: { agents: Agent[]; intent?: { bucket: ReviewBucket | '' }; source?: 'signals' }) {
   const qc = useQueryClient()
   // Arriving from a Switchboard metric: open on that slice of the same inbox,
   // with the status tabs cleared so the rows the number counted are visible.
   // The caller remounts on each metric click, so this is read once, at mount.
   const arrived = Boolean(intent)
   const [filter, setFilter] = useState<Filter>(arrived ? '' : 'unreviewed')
-  const [origin, setOrigin] = useState<Origin>(arrived ? 'loops' : 'slack')
+  const [origin, setOrigin] = useState<Origin>(source ?? (arrived ? 'loops' : 'slack'))
   const scope = ORIGINS.find(item => item.id === origin) ?? ORIGINS[0]
   const [query, setQuery] = useState('')
   const [offset, setOffset] = useState(0)
@@ -266,6 +267,7 @@ function IdeaRow({ idea, busy, canPost, agents, onPromote, onDismiss, onRestore,
           {idea.status === 'dismissed' && <button type="button" disabled={busy} onClick={onRestore} className="h-8 border border-neutral-800 px-3 text-xs text-neutral-300 hover:text-white disabled:opacity-40">Restore</button>}
         </div>
       </div>
+      {idea.source === 'public_signals' && <LeadQualification ideaId={idea.id} />}
     </li>
   )
 }

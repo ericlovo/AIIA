@@ -24,7 +24,7 @@ export function SignalJobs() {
     <div className="border-b border-neutral-800 px-5 py-4 sm:px-7">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2 text-sm"><Radar size={18} className="text-emerald-300" /><strong>Jev</strong><span className="text-neutral-400">Public evidence screening</span></div>
-        <button onClick={() => navigate({ view: 'memory', review: 'open' })} className="inline-flex items-center gap-2 text-sm text-cyan-300">Review inbox <ArrowRight size={16} /></button>
+        <button onClick={() => navigate({ view: 'memory', source: 'signals' })} className="inline-flex min-h-11 items-center gap-2 text-sm text-cyan-300">Review inbox <ArrowRight size={16} /></button>
       </div>
       {query.data && <div className="mt-3 flex flex-wrap gap-x-5 gap-y-2 text-xs text-neutral-400">
         <span>Retrieval {query.data.retrieval_enabled ? 'enabled' : 'disabled'}</span>

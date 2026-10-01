@@ -179,7 +179,7 @@ try {
   {
     const { context, page, pageErrors } = await open('#/agents/a1', { agentsDelayMs: 800 })
     await heading(page, 'Agents').waitFor()
-    await page.getByText('Agent controls', { exact: true }).waitFor()
+    await page.getByRole('region', { name: 'Repo Warden activity' }).waitFor()
     await page.locator('aside').getByText('Repo Warden', { exact: true }).waitFor()
     assert.equal(await hash(page), '#/agents/a1', 'a slow agent list must not erase the deep link')
     // Choosing another agent keeps the address in step.

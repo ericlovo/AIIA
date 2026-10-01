@@ -24,7 +24,7 @@ export type StudioRoute =
   | { view: 'agents'; agentId?: string }
   | { view: 'assignments'; assignmentId?: string; agentId?: string }
   | { view: 'handoffs'; from?: string; to?: string }
-  | { view: 'memory'; review?: ReviewBucket | 'all' }
+  | { view: 'memory'; review?: ReviewBucket | 'all'; source?: 'signals' }
   | { view: 'world' }
   | { view: 'signals' }
 
@@ -61,7 +61,7 @@ export function parseRoute(hash: string): StudioRoute | null {
       if (id) return null
       const review = param('review')
       if (review && !REVIEW_BUCKETS.includes(review)) return null
-      return { view, review: review as ReviewBucket | 'all' | undefined }
+      return { view, review: review as ReviewBucket | 'all' | undefined, ...(param('source') === 'signals' ? { source: 'signals' as const } : {}) }
     }
     default: return id ? null : { view }
   }
@@ -85,7 +85,10 @@ export function formatRoute(route: StudioRoute): string {
       if (route.from) query.set('from', route.from)
       if (route.to) query.set('to', route.to)
       break
-    case 'memory': if (route.review) query.set('review', route.review); break
+    case 'memory':
+      if (route.review) query.set('review', route.review)
+      if (route.source) query.set('source', route.source)
+      break
   }
   const search = query.toString()
   return `${path}${id ? `/${encodeURIComponent(id)}` : ''}${search ? `?${search}` : ''}`
