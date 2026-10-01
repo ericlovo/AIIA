@@ -1,6 +1,8 @@
 """Routing a Slack capture into queued work: the claim, the guards, the provenance."""
 
 import asyncio
+import json
+import sqlite3
 from unittest.mock import AsyncMock
 
 import pytest
@@ -64,6 +66,90 @@ def test_capture_becomes_queued_work_with_provenance_and_no_run(studio):
     assert assignment["result"] == ""
     assert agents.agents[0]["status"] == "idle"
     assert response.json()["idea"]["assignment_id"] == assignment["id"]
+
+
+def signal(inbox):
+    return inbox.ingest(
+        text="Iowa manufacturer expands",
+        source_key="public:1",
+        source="public_signals",
+        project="pl",
+    )[0]
+
+
+def save_review(inbox, idea_id, *, version=0, status="qualified"):
+    from local_brain.command_center.lead_reviews import prepare
+
+    payload = {
+        "status": status,
+        "company": "Example Manufacturing",
+        "evidence_url": "https://example.com/news",
+        "account_fit": "Family-owned in Iowa",
+        "observed_change": "New facility",
+        "note": "Check announcement",
+    }
+    with inbox.connect() as db:
+        prepare(db, idea_id)
+        db.execute(
+            "INSERT OR REPLACE INTO lead_reviews VALUES (?,?,?,?)",
+            (idea_id, version + 1, json.dumps(payload), "2026-09-30T12:00:00Z"),
+        )
+
+
+@pytest.mark.parametrize("status", ["research", "watch", "qualified", "rejected"])
+def test_signal_assignment_snapshots_review_without_running(studio, status):
+    server, agents, assignments, inbox = studio
+    idea = signal(inbox)
+    save_review(inbox, idea["id"], status=status)
+    response = assign(server, idea["id"], agent_id=agents.agents[0]["id"])
+    assert response.status_code == 200
+    assignment = response.json()["assignment"]
+    assert assignment["status"] == "queued"
+    assert assignment["trigger"] == "manual"
+    assert agents.agents[0]["id"] == assignment["agent_id"]
+    assert agents.agents[0]["status"] == "idle"
+    assert '"version": 1' in assignment["context"]
+    assert f'"status": "{status}"' in assignment["context"]
+    assert "Family-owned in Iowa" in assignment["context"]
+    assert "https://example.com/news" in assignment["context"]
+    assert "untrusted evidence" in assignment["context"]
+    assert "do not send outreach" in assignment["success_criteria"]
+    save_review(inbox, idea["id"], version=1, status="watch")
+    assert assignments.get_assignment(assignment["id"])["context"] == assignment["context"]
+
+
+def test_signal_without_review_is_explicitly_unverified(studio):
+    server, agents, _, inbox = studio
+    idea = signal(inbox)
+    response = assign(server, idea["id"], agent_id=agents.agents[0]["id"])
+    assert response.status_code == 200
+    assert "No human qualification recorded" in response.json()["assignment"]["context"]
+
+
+@pytest.mark.parametrize("failure", [sqlite3.OperationalError("offline"), ValueError("corrupt")])
+def test_review_failure_does_not_claim_signal(studio, monkeypatch, failure):
+    server, agents, _, inbox = studio
+    idea = signal(inbox)
+
+    def broken(*args):
+        raise failure
+
+    monkeypatch.setattr(server, "review_snapshot", broken)
+    response = assign(server, idea["id"], agent_id=agents.agents[0]["id"])
+    assert response.status_code == 503
+    assert response.json()["detail"] == "qualification_storage_unavailable"
+    assert not inbox.get(idea["id"])["assignment_id"]
+
+
+def test_corrupt_review_refuses_assignment(studio):
+    server, agents, _, inbox = studio
+    idea = signal(inbox)
+    save_review(inbox, idea["id"])
+    with inbox.connect() as db:
+        db.execute("UPDATE lead_reviews SET payload='{}'")
+    response = assign(server, idea["id"], agent_id=agents.agents[0]["id"])
+    assert response.status_code == 503
+    assert not inbox.get(idea["id"])["assignment_id"]
 
 
 def test_captured_text_is_quoted_as_untrusted_input(studio):
