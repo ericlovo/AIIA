@@ -9,6 +9,9 @@ import { navigate, replaceRoute, useStudioRoute } from './useStudioRoute'
 import { WorkBoard } from './WorkBoard'
 import { ActivityOverview } from './ActivityOverview'
 import { Switchboard } from './Switchboard'
+import { Today } from './Today'
+import { Jobs } from './Jobs'
+import { Projects } from './Projects'
 import { MemoryLog } from './MemoryLog'
 import { SignalJobs } from './SignalJobs'
 import { AgentTimeline } from './AgentTimeline'
@@ -148,11 +151,14 @@ export function AgentStudio() {
 
   const page = (() => {
     if (view === 'signals') return <SignalJobs />
-    if (view === 'switchboard') {
-      return <Switchboard key={key} agents={agents} loading={isLoading} agentError={isError}
+    if (view === 'jobs') return <Jobs agents={agents} loading={isLoading} agentError={isError} />
+    if (view === 'projects') return <Projects />
+    if (view === 'switchboard' && !(route.view === 'switchboard' && route.taskId)) return <Today key={key} agents={agents} loading={isLoading} agentError={isError} attention={route.view === 'switchboard' && route.attention} />
+    if (view === 'switchboard' || view === 'history') {
+      return <Switchboard key={key} title={view === 'history' ? 'Activity history' : 'System task'} agents={agents} loading={isLoading} agentError={isError}
         onViewChange={changeView} onManageAgent={manageAgent} onAssignAgent={assignAgent}
         onOpenAssignment={openAssignment} onOpenReview={openReview} initialTaskId={route.view === 'switchboard' ? route.taskId : undefined}
-        initialAttention={route.view === 'switchboard' && route.attention}
+        initialAttention={(route.view === 'switchboard' || route.view === 'history') && route.attention}
         onTemplate={template => { selectAgent(null); setDraft(template); changeView('agents') }} />
     }
 

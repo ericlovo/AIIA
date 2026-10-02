@@ -93,8 +93,8 @@ try {
     await page.getByRole('heading', { name: /Needs attention \(2\)/ }).waitFor()
 
     // A failed run has no work product, so it gets tracking but no review panel.
-    await openStudioView(page, "Assignments")
-    await page.getByText('Review verified cron contract patch', { exact: true }).click()
+    await page.getByRole('region', { name: 'Needs attention', exact: true }).getByRole('link', { name: /Review verified cron contract patch/ }).click()
+    assert.equal(await page.evaluate(() => window.location.hash), '#/assignments/failed-1')
     const tracking = page.getByRole('region', { name: 'Attention tracking' })
     await tracking.waitFor()
     assert.equal(await page.getByRole('region', { name: 'Artifact review' }).count(), 0)
@@ -108,6 +108,7 @@ try {
 
     await openStudioView(page, "Today")
     await page.getByRole('heading', { name: /Needs attention \(1\)/ }).waitFor()
+    assert.equal(await page.getByRole('region', { name: 'Needs attention', exact: true }).getByRole('link', { name: /Review verified cron contract patch/ }).count(), 0)
 
     // Rejected work keeps its verdict through dismissal; both states show together.
     await openStudioView(page, "Assignments")

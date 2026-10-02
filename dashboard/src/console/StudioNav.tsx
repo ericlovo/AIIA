@@ -9,7 +9,7 @@ import { navigate } from './useStudioRoute'
  */
 export function StudioNav({ view }: { view: StudioView }) {
   const menu = useRef<HTMLDetailsElement>(null)
-  const primary: StudioView[] = ['switchboard', 'agents', 'assignments']
+  const primary: StudioView[] = ['switchboard', 'jobs', 'assignments', 'projects']
   const advanced = VIEWS.filter(item => !primary.includes(item.id))
   const activeAdvanced = advanced.find(item => item.id === view)
   useEffect(() => {
@@ -32,36 +32,23 @@ export function StudioNav({ view }: { view: StudioView }) {
     navigate({ view: id })
   }
   return (
-    <>
-    <nav aria-label="Studio" className="grid w-full grid-cols-4 gap-1 lg:hidden">
-      {primary.map(id => <a key={id} href={formatRoute({ view: id })} aria-current={view === id ? 'page' : undefined} onClick={event => open(event, id)} className={`flex min-h-11 items-center justify-center rounded text-sm focus-visible:outline-2 focus-visible:outline-cyan-300 ${view === id ? 'bg-neutral-800 text-white' : 'text-neutral-400 hover:text-white'}`}>
-        {id === 'switchboard' ? 'Today' : id === 'agents' ? 'Agents' : 'Work'}
+    <nav aria-label="Studio" className="flex w-full min-w-0 items-center gap-1">
+      <div className="grid min-w-0 flex-1 grid-cols-4 gap-1 sm:flex">
+      {primary.map(id => <a key={id} href={formatRoute({ view: id })} aria-current={view === id ? 'page' : undefined} onClick={event => open(event, id)} className={`flex min-h-11 items-center justify-center rounded text-sm sm:px-5 focus-visible:outline-2 focus-visible:outline-emerald-300 ${view === id ? 'bg-neutral-800 text-white' : 'text-neutral-400 hover:text-white'}`}>
+        {VIEWS.find(item => item.id === id)?.label}
       </a>)}
-      <details ref={menu} className="relative" onKeyDown={event => {
+      </div>
+      <details ref={menu} className="relative shrink-0" onKeyDown={event => {
         if (event.key === 'Escape' && menu.current?.open) {
           menu.current.open = false
           menu.current.querySelector('summary')?.focus()
         }
       }}>
-        <summary aria-label="Studio tools" className={`flex min-h-11 cursor-pointer list-none items-center justify-center gap-1 rounded text-sm focus-visible:outline-2 focus-visible:outline-cyan-300 [&::-webkit-details-marker]:hidden ${activeAdvanced ? 'bg-neutral-800 text-white' : 'text-neutral-400'}`}><LayoutGrid size={14} aria-hidden="true" />Studio<ChevronDown size={12} aria-hidden="true" /></summary>
+        <summary aria-label="Studio tools" title={activeAdvanced?.label || 'Studio tools'} className={`flex min-h-11 min-w-11 cursor-pointer list-none items-center justify-center gap-2 rounded px-2 text-sm focus-visible:outline-2 focus-visible:outline-emerald-300 [&::-webkit-details-marker]:hidden ${activeAdvanced ? 'bg-neutral-800 text-white' : 'text-neutral-300'}`}><LayoutGrid size={18} aria-hidden="true" /><span className="hidden sm:inline">{activeAdvanced?.label || 'Studio'}</span><ChevronDown size={14} className="hidden sm:block" aria-hidden="true" /></summary>
         <div className="absolute right-0 top-full z-50 mt-1 w-52 max-w-[80vw] rounded border border-neutral-700 bg-neutral-950 p-1 shadow-lg">
           {advanced.map(item => <a key={item.id} href={formatRoute({ view: item.id })} onClick={event => open(event, item.id)} aria-current={view === item.id ? 'page' : undefined} className={`flex min-h-11 items-center px-3 text-sm focus-visible:outline-2 focus-visible:outline-cyan-300 ${view === item.id ? 'bg-neutral-800 text-white' : 'text-neutral-300 hover:bg-neutral-900'}`}>{item.label}</a>)}
         </div>
       </details>
     </nav>
-    <nav aria-label="Studio" className="hidden h-9 max-w-full shrink-0 overflow-x-auto border border-neutral-800 bg-neutral-900/70 p-0.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden lg:flex">
-      {VIEWS.map(item => (
-        <a
-          key={item.id}
-          href={formatRoute({ view: item.id })}
-          aria-current={view === item.id ? 'page' : undefined}
-          onClick={event => open(event, item.id)}
-          className={`flex min-w-[68px] shrink-0 items-center justify-center px-2 text-[11px] transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-emerald-500 sm:min-w-20 sm:px-3 sm:text-xs ${view === item.id ? 'bg-neutral-700 text-white' : 'text-neutral-400 hover:text-neutral-200'}`}
-        >
-          {item.label}
-        </a>
-      ))}
-    </nav>
-    </>
   )
 }

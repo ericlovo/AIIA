@@ -14,6 +14,7 @@ import { activeSources, formatRate, reviewMetrics, reviewSummary, type ReviewMet
 import './switchboard.css'
 
 interface Props {
+  title?: string
   agents: Agent[]
   loading: boolean
   agentError: boolean
@@ -27,7 +28,7 @@ interface Props {
   initialAttention?: boolean
 }
 
-export function Switchboard({ agents, loading, agentError, onViewChange, onManageAgent, onAssignAgent, onOpenAssignment, onOpenReview, onTemplate, initialTaskId, initialAttention }: Props) {
+export function Switchboard({ title = 'Activity history', agents, loading, agentError, onViewChange, onManageAgent, onAssignAgent, onOpenAssignment, onOpenReview, onTemplate, initialTaskId, initialAttention }: Props) {
   const qc = useQueryClient()
   const inspectorRef = useRef<HTMLElement>(null)
   const ledgerRef = useRef<HTMLElement>(null)
@@ -131,7 +132,7 @@ export function Switchboard({ agents, loading, agentError, onViewChange, onManag
 
   return <main className="switchboard">
     {import.meta.env.VITE_STUDIO_PREVIEW === 'true' && <div className="sb-preview" role="status">Isolated preview · execution disabled · copied local data</div>}
-    <PageHeader title="Today" meta={<>
+    <PageHeader title={title} meta={<>
       <span>{loading ? 'Loading agents' : `${agents.length} agents`}</span>
       <span>{scheduled.length} loops enabled</span>
       <span>Mini execution</span>

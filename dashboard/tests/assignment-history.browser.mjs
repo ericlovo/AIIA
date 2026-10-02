@@ -87,6 +87,8 @@ try {
     await page.getByText('Audit the FLOW-01 fixture', { exact: true }).click()
 
     const history = page.getByRole('region', { name: 'Assignment attempt history' })
+    assert.equal(await history.isVisible(), false)
+    await page.getByRole('complementary', { name: 'Selected work', exact: true }).locator('summary').filter({ hasText: /^Attempt history$/ }).click()
     await history.getByText('25 saved attempts').waitFor()
 
     // Measured tokens ride alongside model and duration; the applied attempt is marked.
