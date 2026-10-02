@@ -35,6 +35,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from local_brain.command_center.lead_reviews import review_snapshot
 from local_brain.command_center.lead_reviews import router as lead_review_router
+from local_brain.command_center.project_status import router as project_status_router
 from local_brain.command_center.signal_routes import router as signal_router
 
 logger = logging.getLogger("aiia.console")
@@ -565,6 +566,7 @@ from local_brain.command_center.slack_capture import router as slack_capture_rou
 app.include_router(slack_capture_router)
 app.include_router(signal_router)
 app.include_router(lead_review_router)
+app.include_router(project_status_router)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
