@@ -131,6 +131,46 @@ async def test_verified_unchanged_is_history_only(tmp_path, monkeypatch):
     assert agents.recover_runs().activity()["total"] == 1
 
 
+@pytest.mark.parametrize("observation_kind", ["unchanged", "changed", "incomplete"])
+async def test_full_review_queue_preserves_check_evidence(tmp_path, monkeypatch, observation_kind):
+    cc, agents, assignments, _events, fake = _studio(tmp_path, monkeypatch, content="Report.")
+    observed = {"value": Observation("tree", True)}
+    monkeypatch.setattr(cc, "observe_repository", lambda repo_id: observed["value"])
+    monkeypatch.setattr(cc, "MAX_PENDING_LOOP_REVIEWS", 1)
+    agent = _repo_agent(agents)
+    await cc._run_scheduled_agent(agent)
+    original = assignments.list_assignments()[0].copy()
+    baseline = agents.get(agent["id"])["loop_input_hash"]
+    if observation_kind == "changed":
+        observed["value"] = Observation("new commit", True)
+    elif observation_kind == "incomplete":
+        observed["value"] = Observation("unreadable", False, ("git_status_failed",))
+
+    result = await cc._run_scheduled_agent(agents.get(agent["id"]))
+
+    expected = {
+        "unchanged": "unchanged_repository_input",
+        "changed": "awaiting_review",
+        "incomplete": "check_incomplete",
+    }
+    assert result["reason"] == expected[observation_kind]
+    assert len(fake.posts) == 1
+    assert assignments.get_assignment(original["id"]) == original
+    assert agents.get(agent["id"])["loop_input_hash"] == baseline
+    checks = _checks(agents)
+    if observation_kind == "unchanged":
+        assert [check["outcome"] for check in checks] == ["verified_unchanged"]
+        assert len(assignments.list_assignments()) == 1
+    elif observation_kind == "changed":
+        assert checks == []
+        assert result["pending_reviews"] == 1
+        assert len(assignments.list_assignments()) == 1
+    else:
+        assert [check["outcome"] for check in checks] == ["check_incomplete"]
+        assert result["assignment"]["status"] == "failed"
+        assert len(assignments.list_assignments()) == 2
+
+
 async def test_github_reads_join_the_fingerprint(tmp_path, monkeypatch):
     cc, agents, assignments, _events, fake = _studio(tmp_path, monkeypatch, content="CI report.")
     remote = {"text": "runs: ci success"}
