@@ -2547,17 +2547,17 @@ async def _run_scheduled_agent(agent: dict[str, Any]) -> dict[str, Any]:
                     result["agent"] = updated
             return result
         return {"assignment": open_work, "deduplicated": True}
-    pending_reviews = assignment_registry.pending_loop_reviews(agent["id"])
-    if pending_reviews >= MAX_PENDING_LOOP_REVIEWS:
-        return await _skip_scheduled_agent(
-            agent, "awaiting_review", pending_reviews=pending_reviews
-        )
     if input_hash and input_hash == agent.get("loop_input_hash"):
         # Verified no change: every read succeeded and saw exactly the inputs of
         # the last executed run. History only; no attention item, no model run,
         # and nothing here counts as a human review.
         _record_loop_check(agent, "verified_unchanged", observation)
         return await _skip_scheduled_agent(agent, "unchanged_repository_input", input_hash)
+    pending_reviews = assignment_registry.pending_loop_reviews(agent["id"])
+    if pending_reviews >= MAX_PENDING_LOOP_REVIEWS:
+        return await _skip_scheduled_agent(
+            agent, "awaiting_review", pending_reviews=pending_reviews
+        )
     try:
         assignment, created = assignment_registry.create_scheduled_assignment(
             agent_id=agent["id"],
