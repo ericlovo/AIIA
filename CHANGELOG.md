@@ -60,6 +60,12 @@ All notable changes to AIIA are documented here. This project adheres to
 
 ### Changed
 
+- **New repository job recipes request concise, evidence-only briefs.** Reports
+  use Evidence, Findings and one Next action, with a 220-word instruction and a
+  900-token generation cap. Unknown CI/deployment and failed reads must stay
+  explicit; tracked file inventories are not evidence of changes. Existing
+  agents and schedules are not rewritten, and output still needs human review.
+
 - **Studio: every view has an address.** The Studio uses hash routes
   (`#/today`, `#/assignments/<id>`, `#/agents/<id>`, `#/memory`, `#/map`, ...),
   so views and records can be linked, reloaded, and reached with back and
@@ -71,6 +77,13 @@ All notable changes to AIIA are documented here. This project adheres to
 - Unreachable Studio components `Direct`, `Mind` and `Files` (no importers).
 
 ### Added
+
+- **Opt-in local recipe evaluation.** Four synthetic cases cover runtime noise,
+  uncommitted source changes, untrusted README instructions, failed Git reads,
+  and unverified deployment claims. The runner uses the actual job definitions
+  and shared Studio prompt builders, creates no Studio records, and saves
+  reports and measured usage locally. Format checks are not a truth verdict.
+  See [the quality rubric and commands](docs/STUDIO-REPOSITORY-JOB-QUALITY.md).
 
 - **Bulk dismiss on Today.** "Select to dismiss" on Needs attention turns rows
   into checkboxes with Select all (narrowed by the agent filter), a required

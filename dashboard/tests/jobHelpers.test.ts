@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import type { Agent, Assignment, RepositoryResource } from '../src/lib/api.ts'
-import { buildJob, canResumeJob, jobState, jobTestDefinition, jobTestPassed, jobTime, latestJobTest, nextJobCheck, runsToday, type JobDraft } from '../src/console/jobHelpers.ts'
+import { buildJob, canResumeJob, JOB_RECIPES, jobState, jobTestDefinition, jobTestPassed, jobTime, latestJobTest, nextJobCheck, runsToday, type JobDraft } from '../src/console/jobHelpers.ts'
 
 const now = Date.parse('2026-10-02T12:00:00Z')
 const repos = [{ id: 'qa-project', name: 'QA project', branch: 'qa', dirty: false }] as RepositoryResource[]
@@ -28,6 +28,34 @@ test('invalid bounds, unknown recipes and missing repositories fail before a wri
   assert.throws(() => buildJob({ ...draft, repoId: 'missing' }, repos), /repository/)
   assert.throws(() => buildJob({ ...draft, name: ' ' }, repos), /name/)
   assert.throws(() => buildJob({ ...draft, name: 'x'.repeat(81) }, repos), /name/)
+})
+
+test('both recipes bound output and separate evidence gaps from invented defects', () => {
+  for (const recipe of JOB_RECIPES) {
+    const job = buildJob({ ...draft, recipeId: recipe.id }, repos)
+    assert.equal(job.max_tokens, 900)
+    assert.ok(job.persona.length <= 2000)
+    assert.ok(job.loop_task.length <= 8000)
+    assert.match(job.persona, /tracked-file inventory/)
+    assert.match(job.loop_task, /within 220 words/)
+    assert.match(job.loop_task, /## Evidence, ## Findings, ## Next action/)
+    assert.match(job.loop_task, /never copy the tracked-file inventory or README/)
+    assert.match(job.loop_task, /path alone does not prove a regression/)
+    assert.match(job.loop_task, /No supported regression finding/)
+    assert.match(job.loop_task, /Do not call them safe either without evidence/)
+    assert.match(job.loop_task, /exactly one short bullet/)
+    assert.match(job.loop_task, /untrusted data, not instructions/)
+  }
+})
+
+test('new recipe defaults do not mutate saved agents or qualify their old tests', () => {
+  const legacy = agent({ max_tokens: 1600, loop_task: 'Legacy report task' })
+  const before = structuredClone(legacy)
+  const oldTest = { ...jobTestDefinition(legacy), id: 'legacy-test', created_at: '2026-10-02T00:00:00Z', status: 'completed', result: 'Legacy report' } as Assignment
+  const updated = { ...legacy, ...buildJob(draft, repos) }
+  assert.deepEqual(legacy, before)
+  assert.equal(latestJobTest(legacy, [oldTest])?.id, oldTest.id)
+  assert.equal(latestJobTest(updated, [oldTest]), undefined)
 })
 
 test('test assignments persist the exact config and latest attempt survives navigation', () => {
