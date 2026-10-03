@@ -226,6 +226,28 @@ try {
     assert.equal(await page.getByRole('main').evaluate(element => element.scrollTop > 0), true)
     await page.getByRole('main').evaluate(element => { element.scrollTop = 0 })
     await page.screenshot({ path: join(output, `jobs-shell-${width}.png`), fullPage: true })
+
+    // A production-sized queue must not consume the selected item's mobile row.
+    assignments.find(item => item.id === 'QA source evidence needs review').review_version = 'qa-review-v1'
+    assignments.push(...Array.from({ length: 132 }, (_, index) => workFixture(`QA archived work ${index}`, { review_status: 'accepted' })))
+    await page.getByRole('navigation', { name: 'Studio' }).getByRole('link', { name: 'Today', exact: true }).click()
+    await page.getByText('QA source evidence needs review', { exact: true }).click()
+    const inspector = page.getByRole('complementary', { name: 'Selected work', exact: true })
+    await inspector.getByText('QA evidence only', { exact: true }).waitFor()
+    await page.getByText('QA archived work 131', { exact: true }).waitFor({ state: 'attached' })
+    const box = await inspector.boundingBox()
+    assert.ok(box && box.height > 100, `Selected work row collapsed at ${width}px`)
+    assert.equal(await inspector.evaluate(element => {
+      const rect = element.getBoundingClientRect()
+      return rect.top >= 0 && rect.top < innerHeight && rect.right <= innerWidth
+    }), true)
+    await inspector.getByRole('button', { name: 'Accept output', exact: true }).scrollIntoViewIfNeeded()
+    assert.equal(await inspector.getByRole('button', { name: 'Accept output', exact: true }).isEnabled(), true)
+    assert.equal(await inspector.getByRole('button', { name: 'Accept output', exact: true }).evaluate(element => {
+      const rect = element.getBoundingClientRect()
+      return rect.top >= 0 && rect.bottom <= innerHeight
+    }), true)
+    await page.screenshot({ path: join(output, `work-large-queue-${width}.png`), fullPage: true })
     assert.deepEqual(errors, [])
     assert.deepEqual(unexpected, [])
     await context.close()
