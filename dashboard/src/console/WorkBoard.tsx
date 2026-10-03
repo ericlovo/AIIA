@@ -228,7 +228,7 @@ export function WorkBoard({
   const inspectorOpen = view === 'handoffs' || creatingAssignment || Boolean(selectedAssignmentId)
 
   return (
-    <main className={`grid h-full min-h-0 max-h-full grid-cols-1 overflow-y-auto bg-neutral-950 lg:overflow-hidden [&_button]:min-h-11 [&_button]:min-w-11 [&_summary]:min-h-11 [&_summary]:tracking-normal ${inspectorOpen ? 'lg:grid-cols-[minmax(0,1fr)_minmax(390px,480px)]' : ''}`}>
+    <main className={`grid h-full min-h-0 max-h-full auto-rows-max grid-cols-1 overflow-y-auto bg-neutral-950 lg:grid-rows-[minmax(0,1fr)] lg:overflow-hidden [&_button]:min-h-11 [&_button]:min-w-11 [&_summary]:min-h-11 [&_summary]:tracking-normal ${inspectorOpen ? 'lg:grid-cols-[minmax(0,1fr)_minmax(390px,480px)]' : ''}`}>
       <section className={`flex min-w-0 flex-col border-neutral-900 lg:overflow-hidden ${inspectorOpen ? 'border-b lg:border-r lg:border-b-0' : ''}`}>
         <PageHeader title={view === 'assignments' ? 'Assignment queue' : 'Handoff ledger'} meta={<>
           <span>{assignments.length} assignments</span>
