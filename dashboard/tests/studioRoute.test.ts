@@ -4,6 +4,7 @@ import { formatRoute, parseRoute, type StudioRoute } from '../src/console/studio
 
 test('every route survives a round trip through the URL', () => {
   const routes: StudioRoute[] = [
+    { view: 'jobs' }, { view: 'projects' }, { view: 'history' }, { view: 'history', attention: true },
     { view: 'switchboard' }, { view: 'switchboard', taskId: 'nightly-sync' }, { view: 'activity' },
     { view: 'agents' }, { view: 'agents', agentId: 'a/b c' }, { view: 'assignments' },
     { view: 'assignments', assignmentId: 'asg-1' }, { view: 'assignments', agentId: 'agent-2' },

@@ -5,8 +5,10 @@ import { AgentStudio } from './AgentStudio'
 import { VoiceConductor } from './VoiceConductor'
 
 export function Console() {
+  const [voiceOpen, setVoiceOpen] = useState(false)
+  const [statusOpen, setStatusOpen] = useState(false)
   return (
-    <div className="h-screen flex flex-col bg-neutral-950 text-neutral-300 overflow-hidden">
+    <div className="h-dvh flex flex-col bg-neutral-950 text-neutral-300 overflow-hidden">
       <PanelBoundary name="top bar">
         <TopBar />
       </PanelBoundary>
@@ -17,13 +19,19 @@ export function Console() {
         </div>
       </div>
 
-      <PanelBoundary name="voice conductor">
+      {voiceOpen && <PanelBoundary name="voice conductor">
         <VoiceConductor />
-      </PanelBoundary>
+      </PanelBoundary>}
 
-      <PanelBoundary name="pulse">
+      {statusOpen && <PanelBoundary name="pulse">
         <Pulse />
-      </PanelBoundary>
+      </PanelBoundary>}
+      <footer className="flex shrink-0 items-center justify-end gap-2 border-t border-neutral-800 px-3">
+        <button type="button" aria-expanded={voiceOpen} onClick={() => setVoiceOpen(open => !open)} className="inline-flex min-h-11 items-center gap-2 rounded px-3 text-sm text-neutral-400 hover:text-white focus-visible:outline-2 focus-visible:outline-emerald-300"><Mic size={16} aria-hidden="true" />Voice</button>
+        <button type="button" aria-expanded={statusOpen} onClick={() => setStatusOpen(open => !open)} className="inline-flex min-h-11 items-center gap-2 rounded px-3 text-sm text-neutral-400 hover:text-white focus-visible:outline-2 focus-visible:outline-emerald-300"><Activity size={16} aria-hidden="true" />System status</button>
+      </footer>
     </div>
   )
 }
+import { useState } from 'react'
+import { Activity, Mic } from 'lucide-react'

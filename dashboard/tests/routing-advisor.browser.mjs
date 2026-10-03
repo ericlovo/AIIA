@@ -57,6 +57,8 @@ try {
     })
     await page.goto('http://studio.test/')
     await openStudioView(page, "Assignments")
+    await page.getByRole('button', { name: 'New work', exact: true }).click()
+    await page.locator('summary').filter({ hasText: /^Routing advice \(optional\)$/ }).click()
     const advisor = page.getByRole('region', { name: 'Jev routing advisor' })
     const suggest = advisor.getByRole('button', { name: 'Suggest specialist' })
     await advisor.getByRole('textbox', { name: 'Routing brief' }).fill('Review CI')
@@ -86,6 +88,8 @@ try {
     ready = false
     await page.reload()
     await openStudioView(page, "Assignments")
+    await page.getByRole('button', { name: 'New work', exact: true }).click()
+    await page.locator('summary').filter({ hasText: /^Routing advice \(optional\)$/ }).click()
     await advisor.getByText('Not connected. Manual assignment is available.', { exact: true }).waitFor()
     assert.deepEqual(errors, [])
     console.log(`${width}px: consent, explicit selection, stale advice, no-match, outage, disconnected passed`)

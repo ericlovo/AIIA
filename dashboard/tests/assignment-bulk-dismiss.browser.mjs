@@ -1,4 +1,4 @@
-// Bulk dismissal on Today: a person ticks items, gives a reason, and dismisses them
+// Bulk dismissal in Activity history: a person ticks items, gives a reason, and dismisses them
 // together or not at all. Dismissal never records a verdict, a changed item stops
 // the whole batch, and the error names it. Every response is synthetic.
 import assert from 'node:assert/strict'
@@ -82,7 +82,12 @@ try {
 
     await page.goto(process.env.STUDIO_URL || 'http://127.0.0.1:5188/')
     await page.getByRole('heading', { name: /Needs attention \(12\)/ }).waitFor()
+    assert.equal(await page.getByRole('button', { name: 'Select to dismiss' }).count(), 0)
+    await page.getByRole('region', { name: 'Needs attention', exact: true }).getByRole('link', { name: 'Review all', exact: true }).click()
+    await page.getByRole('heading', { name: 'Activity history', exact: true }).waitFor()
+    assert.equal(await page.evaluate(() => window.location.hash), '#/history?attention=1')
     const attention = page.getByRole('region', { name: 'Needs attention' })
+    assert.equal(await attention.evaluate(element => document.activeElement === element), true)
     // Rows by title: the list sorts rejected work first, so positions are not stable.
     const row = title => attention.getByRole('checkbox', { name: new RegExp(`^${title.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?!\\d)`) })
 

@@ -7,6 +7,7 @@
 import assert from 'node:assert/strict'
 import { mkdir, readFile } from 'node:fs/promises'
 import { join } from 'node:path'
+import { openStudioView } from './studio-navigation.mjs'
 
 const { chromium } = await import(process.env.PLAYWRIGHT_MODULE || 'playwright')
 const studioDist = process.env.STUDIO_DIST_DIR
@@ -85,7 +86,7 @@ try {
     assert.equal(await queue.getByText('Already dismissed', { exact: true }).count(), 0)
     await page.screenshot({ path: join(output, `attention-queue-${width}.png`) })
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false)
-    await queue.getByRole('button', { name: /Investigate failure 0/ }).click()
+    await queue.getByRole('link', { name: /Investigate failure 0/ }).click()
     assert.equal(await hash(page), '#/assignments/failure-0')
     const evidence = page.getByRole('region', { name: 'Failure evidence' })
     await evidence.getByText('failure evidence 0', { exact: true }).waitFor()
@@ -100,11 +101,11 @@ try {
     assert.deepEqual(pageErrors, [])
     await context.close()
   }
-  for (const width of [320, 390, 653]) {
+  for (const width of [320, 390, 653, 1440]) {
     const { context, page, pageErrors } = await open('#/today', { width })
     await heading(page, 'Today').waitFor()
-    assert.deepEqual(await nav(page).getByRole('link').allTextContents(), ['Today', 'Agents', 'Work'])
-    const tools = nav(page).getByText('Studio', { exact: true })
+    assert.deepEqual(await nav(page).getByRole('link').allTextContents(), ['Today', 'Jobs', 'Work', 'Projects'])
+    const tools = nav(page).locator('summary[aria-label="Studio tools"]')
     await tools.click()
     await nav(page).getByRole('link', { name: 'Signals', exact: true }).waitFor()
     await heading(page, 'Today').click({ position: { x: 5, y: 5 } })
@@ -131,11 +132,14 @@ try {
     const { context, page, pageErrors } = await open()
     await heading(page, 'Today').waitFor()
     assert.equal(await hash(page), '#/today', 'an empty address lands on Today')
+    assert.deepEqual(await nav(page).getByRole('link').allTextContents(), ['Today', 'Jobs', 'Work', 'Projects'])
+    await nav(page).locator('summary[aria-label="Studio tools"]').click()
     const links = await nav(page).getByRole('link').evaluateAll(items => items.map(item => [item.textContent, item.getAttribute('href'), item.getAttribute('aria-current')]))
     assert.deepEqual(links, [
-      ['Today', '#/today', 'page'], ['Overview', '#/overview', null], ['Agents', '#/agents', null],
+      ['Today', '#/today', 'page'], ['Jobs', '#/jobs', null], ['Work', '#/assignments', null], ['Projects', '#/projects', null],
+      ['Activity history', '#/history', null], ['Overview', '#/overview', null], ['Agents', '#/agents', null],
       ['Signals', '#/signals', null],
-      ['Assignments', '#/assignments', null], ['Handoffs', '#/handoffs', null], ['Memory', '#/memory', null], ['Map', '#/map', null],
+      ['Handoffs', '#/handoffs', null], ['Memory', '#/memory', null], ['Map', '#/map', null],
     ])
     assert.equal(await page.getByRole('tab', { name: 'Today', exact: true }).count(), 0, 'navigation is not an ARIA tab list')
     assert.deepEqual(pageErrors, [])
@@ -146,13 +150,14 @@ try {
   {
     const { context, page } = await open('#/today')
     await heading(page, 'Today').waitFor()
-    await nav(page).getByRole('link', { name: 'Map', exact: true }).click()
+    await openStudioView(page, 'Map')
     await heading(page, 'Agent control map').waitFor()
-    await nav(page).getByRole('link', { name: 'Memory', exact: true }).click()
+    await openStudioView(page, 'Memory')
     await heading(page, 'Memory log').waitFor()
     assert.equal(await hash(page), '#/memory')
     await page.goBack()
     await heading(page, 'Agent control map').waitFor()
+    await nav(page).locator('summary[aria-label="Studio tools"]').click()
     assert.equal(await nav(page).getByRole('link', { name: 'Map', exact: true }).getAttribute('aria-current'), 'page')
     await page.goBack()
     await heading(page, 'Today').waitFor()
@@ -168,7 +173,10 @@ try {
     await heading(page, 'Today').waitFor()
     await page.evaluate(() => { window.location.hash = '#/assignments/asg-2' })
     await heading(page, 'Assignment queue').waitFor()
-    await page.getByText('Objective for Draft the partner brief.').first().waitFor()
+    const detail = page.getByRole('complementary', { name: 'Selected work', exact: true })
+    await detail.getByRole('heading', { name: 'Draft the partner brief', exact: true }).waitFor()
+    await detail.locator('summary').filter({ hasText: /^Assignment brief$/ }).click()
+    await detail.getByText('Objective for Draft the partner brief.', { exact: true }).waitFor()
     await page.getByText('Scan the repository', { exact: true }).first().click()
     await page.waitForFunction(() => window.location.hash === '#/assignments/asg-1')
     await page.goBack()
@@ -196,7 +204,7 @@ try {
     await heading(page, 'Today').waitFor()
     await page.waitForFunction(() => window.location.hash === '#/today')
     // Following a bad link from the Map, back returns to the Map, not the bad link.
-    await nav(page).getByRole('link', { name: 'Map', exact: true }).click()
+    await openStudioView(page, 'Map')
     await heading(page, 'Agent control map').waitFor()
     await page.evaluate(() => { window.location.hash = '#/bogus' })
     await page.waitForFunction(() => window.location.hash === '#/today')
@@ -211,13 +219,38 @@ try {
   {
     const { context, page } = await open('#/today')
     await heading(page, 'Today').waitFor()
-    await page.getByRole('button', { name: 'Open the review inbox' }).click()
+    await page.getByRole('link', { name: 'Open the review inbox' }).click()
     await heading(page, 'Memory log').waitFor()
     assert.equal(await hash(page), '#/memory?review=all')
+    assert.equal(await page.getByRole('button', { name: /^Open Nightly sync/ }).count(), 0)
+    await page.getByRole('button', { name: 'System status', exact: true }).click()
     await page.getByRole('button', { name: /^Open Nightly sync/ }).click()
-    await heading(page, 'Today').waitFor()
+    await heading(page, 'System task').waitFor()
     assert.equal(await hash(page), '#/today?task=nightly-sync')
     await page.getByRole('heading', { level: 2, name: 'Nightly sync' }).waitFor()
+    await context.close()
+  }
+
+  // 7. Creation is explicit, while the existing agent-prefilled URL still opens it.
+  for (const width of [1440, 390]) {
+    const { context, page, pageErrors } = await open('#/assignments', { width })
+    await heading(page, 'Assignment queue').waitFor()
+    assert.equal(await page.getByRole('button', { name: 'Create assignment', exact: true }).count(), 0)
+    await page.getByRole('button', { name: 'New work', exact: true }).click()
+    await page.getByRole('button', { name: 'Create assignment', exact: true }).waitFor()
+    assert.equal(await page.getByRole('button', { name: 'Create assignment', exact: true }).isDisabled(), true)
+    await page.getByRole('button', { name: 'Close new work', exact: true }).click()
+    assert.equal(await page.getByRole('button', { name: 'New work', exact: true }).evaluate(element => element === document.activeElement), true)
+    await page.evaluate(() => { window.location.hash = '#/assignments?agent=a1' })
+    const assigned = page.getByRole('combobox', { name: 'Assigned agent', exact: true })
+    await assigned.waitFor()
+    assert.equal(await assigned.inputValue(), 'a1')
+    await page.reload()
+    await assigned.waitFor()
+    assert.equal(await assigned.inputValue(), 'a1')
+    assert.equal(await hash(page), '#/assignments?agent=a1')
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false)
+    assert.deepEqual(pageErrors, [])
     await context.close()
   }
 

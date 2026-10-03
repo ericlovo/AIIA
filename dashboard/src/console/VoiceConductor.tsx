@@ -27,11 +27,14 @@ export function VoiceConductor() {
   const [chips, setChips] = useState<ToolChip[]>([])
   const sessionRef = useRef<LiveSession | null>(null)
   const spaceHeld = useRef(false)
+  const lifecycle = useRef<AbortController | null>(null)
+  const talkHeld = useRef(false)
 
   const configured = data?.status === 'connected'
   const reason = data?.reason ?? (isError ? 'status_unavailable' : '')
 
   const stopTalking = useCallback(async () => {
+    talkHeld.current = false
     const session = sessionRef.current
     if (!session) return
     await session.commit()
@@ -40,11 +43,15 @@ export function VoiceConductor() {
 
   const startTalking = useCallback(async () => {
     if (!configured || phase === 'connecting') return
+    talkHeld.current = true
+    const signal = lifecycle.current?.signal
+    if (!signal || signal.aborted) return
     setError('')
     try {
       if (!sessionRef.current) {
         setPhase('connecting')
         const minted = await api.voiceSession()
+        if (signal.aborted || !talkHeld.current) { setPhase('idle'); return }
         sessionRef.current = await LiveSession.connect(minted, {
           onPhase: setPhase,
           onTranscript: line => setTranscript(prev => mergeTranscript(prev, line)),
@@ -61,11 +68,16 @@ export function VoiceConductor() {
             sessionRef.current = null
             setPhase('idle')
           },
-        })
+        }, signal)
       }
+      if (signal.aborted) return
+      if (!talkHeld.current) { setPhase('idle'); return }
       await sessionRef.current.startMic()
+      if (signal.aborted) return
+      if (!talkHeld.current) { sessionRef.current?.stopMic(); setPhase('idle'); return }
       setPhase('listening')
     } catch (err) {
+      if (signal.aborted) return
       sessionRef.current = null
       setPhase('idle')
       setError(err instanceof Error ? err.message : 'voice_session_failed')
@@ -101,9 +113,15 @@ export function VoiceConductor() {
     }
   }, [configured, startTalking, stopTalking])
 
-  useEffect(() => () => {
-    sessionRef.current?.close()
-    sessionRef.current = null
+  useEffect(() => {
+    const controller = new AbortController()
+    lifecycle.current = controller
+    return () => {
+      talkHeld.current = false
+      controller.abort()
+      sessionRef.current?.close()
+      sessionRef.current = null
+    }
   }, [])
 
   return (
@@ -270,8 +288,9 @@ class LiveSession {
     this.handlers = handlers
   }
 
-  static connect(session: VoiceSessionResponse, handlers: SessionHandlers): Promise<LiveSession> {
+  static connect(session: VoiceSessionResponse, handlers: SessionHandlers, signal: AbortSignal): Promise<LiveSession> {
     return new Promise((resolve, reject) => {
+      if (signal.aborted) { reject(new Error('voice_cancelled')); return }
       const url = session.realtime_url || 'wss://api.x.ai/v1/realtime?model=grok-voice-latest'
       const ws = new WebSocket(url, [`xai-client-secret.${session.token}`])
       const live = new LiveSession(ws, handlers)
@@ -279,6 +298,12 @@ class LiveSession {
         ws.close()
         reject(new Error('grok_voice_timeout'))
       }, 12_000)
+      const abort = () => {
+        window.clearTimeout(timer)
+        live.close()
+        reject(new Error('voice_cancelled'))
+      }
+      signal.addEventListener('abort', abort, { once: true })
       ws.onopen = () => {
         window.clearTimeout(timer)
         ws.send(JSON.stringify({ type: 'session.update', session: session.session }))
@@ -289,9 +314,12 @@ class LiveSession {
         reject(new Error('grok_voice_unavailable'))
       }
       ws.onclose = () => {
+        window.clearTimeout(timer)
+        signal.removeEventListener('abort', abort)
         live.closed = true
         live.stopMic()
         handlers.onClose()
+        reject(new Error('voice_closed'))
       }
       ws.onmessage = event => {
         void live.onMessage(event.data)
@@ -300,12 +328,15 @@ class LiveSession {
   }
 
   async startMic() {
-    if (this.media) return
+    if (this.closed || this.media) return
     this.audioCtx = this.audioCtx ?? new AudioContext({ sampleRate: SAMPLE_RATE })
     if (this.audioCtx.state === 'suspended') await this.audioCtx.resume()
-    this.media = await navigator.mediaDevices.getUserMedia({
+    if (this.closed) return
+    const media = await navigator.mediaDevices.getUserMedia({
       audio: { echoCancellation: true, noiseSuppression: true, channelCount: 1 },
     })
+    if (this.closed) { media.getTracks().forEach(track => track.stop()); return }
+    this.media = media
     this.source = this.audioCtx.createMediaStreamSource(this.media)
     this.processor = this.audioCtx.createScriptProcessor(4096, 1, 1)
     this.processor.onaudioprocess = event => {
@@ -340,7 +371,8 @@ class LiveSession {
 
   close() {
     this.stopMic()
-    if (!this.closed && this.ws.readyState === WebSocket.OPEN) this.ws.close()
+    this.closed = true
+    if (this.ws.readyState === WebSocket.OPEN || this.ws.readyState === WebSocket.CONNECTING) this.ws.close()
     void this.audioCtx?.close()
     this.audioCtx = null
   }

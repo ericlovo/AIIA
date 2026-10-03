@@ -2,58 +2,46 @@ import { useQuery } from '@tanstack/react-query'
 import { api } from '../lib/api'
 
 export function TopBar() {
-  const { data: health } = useQuery({
+  const { data: health, isError: healthError } = useQuery({
     queryKey: ['health'],
     queryFn: api.health,
     refetchInterval: 15_000,
   })
-  const { data: monitor } = useQuery({
+  const { data: monitor, isError: monitorError } = useQuery({
     queryKey: ['monitor'],
     queryFn: api.monitor,
     refetchInterval: 15_000,
-  })
-  const { data: autonomy } = useQuery({
-    queryKey: ['autonomyStatus'],
-    queryFn: () => fetch('/api/autonomy/status').then(r => r.ok ? r.json() : null).catch(() => null),
-    refetchInterval: 30_000,
   })
 
   const services = monitor?.services ? Object.values(monitor.services) : []
   const online = services.filter(s => s.status === 'online').length
   const allOnline = online === services.length && services.length > 0
   // Tri-state for status so we don't lie by defaulting to "down" during load
-  const brainState = !health ? 'loading' : health.aiia?.status === 'online' ? 'up' : 'down'
-  const ollamaState = !health ? 'loading' : health.ollama?.status === 'online' ? 'up' : 'down'
-
-  const phase = (autonomy as { level?: string } | null)?.level ?? 'phase1'
-  const phase2 = phase === 'phase2'
+  const brainState = healthError ? 'unknown' : !health ? 'loading' : health.aiia?.status === 'online' ? 'up' : 'down'
+  const ollamaState = healthError ? 'unknown' : !health ? 'loading' : health.ollama?.status === 'online' ? 'up' : 'down'
 
   return (
     <header className="h-14 shrink-0 border-b border-neutral-900 flex items-center justify-between px-3 sm:px-6 bg-neutral-950">
       <div className="flex min-w-0 items-center gap-3 sm:gap-8">
         {/* Brand */}
         <div className="flex items-baseline gap-2">
-          <span className="text-xs font-bold text-purple-400 tracking-[0.3em]">AIIA</span>
-          <span className="text-[10px] text-neutral-700">console</span>
+          <span className="text-base font-semibold text-white">AIIA</span>
+          <span className="text-xs text-neutral-500">Studio</span>
         </div>
 
         {/* Status pills */}
         <div className="hidden items-center gap-4 text-xs sm:flex">
           <Pill
             dot={brainState === 'up' ? 'green' : brainState === 'loading' ? 'gray' : 'red'}
-            label={brainState === 'loading' ? 'checking brain…' : brainState === 'up' ? 'brain online' : 'brain down'}
+            label={brainState === 'loading' ? 'checking brain…' : brainState === 'up' ? 'brain online' : brainState === 'unknown' ? 'brain status unavailable' : 'brain down'}
           />
           <Pill
             dot={ollamaState === 'up' ? 'green' : ollamaState === 'loading' ? 'gray' : 'amber'}
-            label={ollamaState === 'loading' ? 'checking ollama…' : ollamaState === 'up' ? 'ollama ready' : 'ollama warming'}
+            label={ollamaState === 'loading' ? 'checking ollama…' : ollamaState === 'up' ? 'ollama ready' : 'ollama unavailable'}
           />
           <Pill
             dot={!monitor ? 'gray' : allOnline ? 'green' : 'amber'}
-            label={!monitor ? 'checking services…' : `${online}/${services.length} services`}
-          />
-          <Pill
-            dot={phase2 ? 'purple' : 'gray'}
-            label={phase2 ? 'phase2 active' : 'phase1'}
+            label={monitorError ? 'service status unavailable' : !monitor ? 'checking services…' : `${online}/${services.length} services`}
           />
         </div>
       </div>
