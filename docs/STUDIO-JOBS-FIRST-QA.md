@@ -80,6 +80,10 @@ layout and request/response behavior without mutating live records or invoking
 models. Passing them is not evidence of a real Mini run, Tony's authentication,
 or live scheduling after restart.
 
+For recipe output quality, use the opt-in local evaluation and human rubric in
+[Repository job report quality](STUDIO-REPOSITORY-JOB-QUALITY.md). Passing browser
+flows or matching report headings does not establish factual grounding.
+
 ## Rollout boundary
 
 Deploy frontend and Command Center together: Projects requires the new
