@@ -54,7 +54,7 @@ try {
         '/api/agents': { agents: [{ id: 'a1', name: 'Market Researcher' }] },
         '/api/agents/resources': { repos: [], github: { status: 'disconnected' } },
         '/api/agents/models': { models: [] }, '/api/tasks': [],
-        '/api/signal-jobs': { jobs: [], ready: false },
+        '/api/signal-jobs': { jobs: [{ id: 'lead_signals', name: 'Lead Signal Scout', specialty: 'Public expansion evidence', enabled: false, interval_hours: 12, last_run: null }], ready: false, configured: true, retrieval_enabled: false, screening_enabled: false },
         '/api/health': { aiia: { status: 'online' }, ollama: { status: 'online' } },
         '/api/monitor': { services: {} },
       }
@@ -63,6 +63,12 @@ try {
     await page.goto('http://studio.test/#/signals')
     const queue = page.getByRole('region', { name: 'Lead queue', exact: true })
     await queue.getByText(/26 matching signals/).waitFor()
+    await page.getByText('Jev disabled', { exact: true }).waitFor()
+    assert.equal(await page.getByRole('button', { name: 'Run Lead Signal Scout' }).isVisible(), false)
+    await page.getByText('Discovery automation (0/1 scheduled)', { exact: true }).click()
+    await page.getByText('Discovery is paused.', { exact: false }).waitFor()
+    assert.equal(await page.getByRole('button', { name: 'Run Lead Signal Scout' }).isDisabled(), true)
+    await page.getByText('Discovery automation (0/1 scheduled)', { exact: true }).click()
     assert.equal(await queue.getByRole('region', { name: 'Example Manufacturing', exact: true }).count(), 1)
     await queue.getByRole('button', { name: 'Next lead page' }).click()
     await queue.getByText('Public expansion signal 25', { exact: true }).waitFor()
