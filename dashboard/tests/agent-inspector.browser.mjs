@@ -342,7 +342,7 @@ try {
     await inspector.getByRole('form', { name: 'Run agent' }).getByLabel('Task for this run', { exact: true }).fill('Check the docs.')
     await inspector.getByRole('button', { name: 'Close node controls' }).focus()
     const reached = []
-    for (let i = 0; i < 11; i++) {
+    for (let i = 0; i < 13; i++) {
       await page.keyboard.press('Tab')
       reached.push(await page.evaluate(() => {
         const el = document.activeElement
@@ -351,7 +351,8 @@ try {
       }))
     }
     assert.deepEqual(reached, [
-      'select:Model', 'input:Temperature', 'input:Max tokens', 'input:Suite', 'input:Loop',
+      'select:Model', 'input:Temperature', 'input:Max tokens', 'input:One-liner',
+      'select:Output channel', 'input:Suite', 'input:Loop',
       'input:Loop interval (min)', 'input:Loop runs per day', 'textarea:Task for this run',
       'button:Run now', 'button:Assign work', 'button:Edit agent',
     ])
