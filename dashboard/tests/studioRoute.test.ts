@@ -4,6 +4,8 @@ import { formatRoute, parseRoute, type StudioRoute } from '../src/console/studio
 
 test('every route survives a round trip through the URL', () => {
   const routes: StudioRoute[] = [
+    { view: 'inbox' }, { view: 'inbox', source: 'slack' }, { view: 'inbox', source: 'loops' },
+    { view: 'inbox', source: 'signals' }, { view: 'inbox', source: 'all' },
     { view: 'jobs' }, { view: 'projects' }, { view: 'history' }, { view: 'history', attention: true },
     { view: 'switchboard' }, { view: 'switchboard', taskId: 'nightly-sync' }, { view: 'activity' },
     { view: 'agents' }, { view: 'agents', agentId: 'a/b c' }, { view: 'assignments' },
@@ -25,7 +27,7 @@ test('paths are the names people see, not internal view ids', () => {
 })
 
 test('unknown or malformed addresses are rejected, never guessed', () => {
-  for (const hash of ['', '#', '#/', '#/nowhere', '#today', '#/memory?review=bogus', '#/today/extra', '#/map/1', '#/agents/%E0%A4%A']) {
+  for (const hash of ['', '#', '#/', '#/nowhere', '#today', '#/memory?review=bogus', '#/inbox?source=bogus', '#/inbox/extra', '#/today/extra', '#/map/1', '#/agents/%E0%A4%A']) {
     assert.equal(parseRoute(hash), null, hash)
   }
 })

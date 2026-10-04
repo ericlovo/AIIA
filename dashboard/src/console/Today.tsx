@@ -5,6 +5,7 @@ import { api, type Agent, type Assignment } from '../lib/api'
 import { attentionAssignments, attentionSummary, reviewLabel } from './assignmentReview'
 import { PageHeader } from './PageHeader'
 import { jobState, jobTime } from './jobHelpers'
+import { InboxQueues } from './InboxQueues'
 
 const link = 'inline-flex min-h-11 items-center gap-2 rounded px-2 text-sm text-emerald-300 hover:text-emerald-200 focus-visible:outline-2 focus-visible:outline-emerald-300'
 
@@ -37,6 +38,7 @@ export function Today({ agents, loading, agentError, attention }: { agents: Agen
     <PageHeader title="Today" actions={<div className="flex items-center gap-2"><button type="button" aria-label="Refresh today" title="Refresh today" className="flex h-11 w-11 items-center justify-center rounded text-neutral-400 focus-visible:outline-2 focus-visible:outline-emerald-300" disabled={assignments.isFetching || workspaces.isFetching || writes.isFetching} onClick={() => { void assignments.refetch(); void workspaces.refetch(); void writes.refetch() }}><RefreshCw size={16} aria-hidden="true" /></button><a className={link} href="#/jobs"><Plus size={16} aria-hidden="true" />Set up a job</a></div>} />
     <div className="min-h-0 flex-1 overflow-y-auto">
       <div className="mx-auto max-w-5xl px-5 pb-8 sm:px-7">
+        <section aria-label="Inbox" className="pt-5"><h2 className="text-lg font-medium text-white">Inbox</h2><InboxQueues /></section>
         <section ref={attentionRef} tabIndex={-1} aria-label="Needs attention" className="border-b border-neutral-800 py-6 outline-none focus-visible:ring-2 focus-visible:ring-emerald-400">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <h2 className="text-lg font-medium text-white">Needs attention {checking ? '' : `(${summary.total})`}</h2>
@@ -48,7 +50,7 @@ export function Today({ agents, loading, agentError, attention }: { agents: Agen
             {flagged.slice(0, 5).map(item => <WorkRow key={item.id} item={item} detail={reviewLabel(item)} />)}
             {approvals.slice(0, 3).map(item => <a key={item.id} href={`#/assignments/${encodeURIComponent(item.assignmentId)}`} className="flex min-h-16 items-center justify-between gap-3 border-t border-neutral-900 py-3 text-sm focus-visible:outline-2 focus-visible:outline-emerald-300"><div className="min-w-0"><p className="break-words text-white">{work.find(assignment => assignment.id === item.assignmentId)?.title || 'Work approval'}</p><p className="mt-1 text-amber-300">{item.label}</p></div><ArrowRight size={16} className="shrink-0" aria-hidden="true" /></a>)}
             {summary.approvals > 0 && <a href="#/assignments" className={`${link} mt-2`}>Open {summary.approvals} pending approvals<ArrowRight size={16} aria-hidden="true" /></a>}
-            {summary.total === 0 && !incomplete && <p className="py-4 text-sm text-neutral-400">Nothing needs a decision right now.</p>}
+            {summary.total === 0 && !incomplete && <p className="py-4 text-sm text-neutral-400">No work reports, failures, or approvals waiting.</p>}
           </>}
         </section>
 
@@ -70,7 +72,7 @@ export function Today({ agents, loading, agentError, attention }: { agents: Agen
         </section>
 
         {!!accepted.length && <section aria-label="Recently accepted" className="border-b border-neutral-800 py-6"><h2 className="mb-3 text-lg font-medium text-white">Recently accepted</h2>{accepted.map(item => <WorkRow key={item.id} item={item} detail="Accepted output" />)}</section>}
-        <footer className="flex flex-wrap justify-between gap-2 pt-5"><a href="#/memory?review=all" className={link}>Open the review inbox<ArrowRight size={16} aria-hidden="true" /></a><a href="#/history" className={link}>Activity and usage<ArrowRight size={16} aria-hidden="true" /></a></footer>
+        <footer className="flex flex-wrap justify-between gap-2 pt-5"><a href="#/inbox" className={link}>Open the review inbox<ArrowRight size={16} aria-hidden="true" /></a><a href="#/history" className={link}>Activity and usage<ArrowRight size={16} aria-hidden="true" /></a></footer>
       </div>
     </div>
   </main>

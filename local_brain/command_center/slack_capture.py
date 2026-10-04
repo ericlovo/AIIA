@@ -438,6 +438,10 @@ async def capture_mention(request: Request):
             r"[0-9]{1,16}\.[0-9]{1,6}", thread_ts
         ):
             raise HTTPException(status_code=400, detail="invalid_slack_timestamp")
+    # Match promotion's content check before creating an idea and its save receipt.
+    # Acknowledge the event only; retries of mention-only messages have no side effects.
+    if not capture_text(text):
+        return {"ok": True}
     key = "slack:event:" + hashlib.sha256(f"{team}:{event_id}".encode()).hexdigest()
     try:
         inbox().capture(
@@ -474,7 +478,7 @@ async def capture_command(request: Request):
         raise HTTPException(status_code=400, detail="invalid_slack_payload")
     if fields["command"] != "/aiia-capture":
         raise HTTPException(status_code=400, detail="unsupported_slack_command")
-    if not fields["text"].strip():
+    if not capture_text(fields["text"]):
         return {"response_type": "ephemeral", "text": "Use /aiia-capture followed by your idea."}
     key = "slack:" + hashlib.sha256(f"{team}:{fields['trigger_id']}".encode()).hexdigest()
     try:

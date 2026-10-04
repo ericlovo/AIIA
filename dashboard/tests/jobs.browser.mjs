@@ -66,6 +66,7 @@ try {
       } else if (path === '/api/assignments' && method === 'GET') body = { assignments }
       else if (path === '/api/git-workspaces') body = { workspaces: [] }
       else if (path === '/api/git-writes') body = { writes: [] }
+      else if (path === '/api/memory-inbox' && method === 'GET') body = { ideas: [], total: 0, offset: 0, counts: { unreviewed: 0, promoted: 0, dismissed: 0 } }
       else if (path === '/api/agents/models') body = { default: 'qa-model', models: [] }
       else if (path === '/api/health') body = { aiia: { status: 'online' }, ollama: { status: 'online' } }
       else if (path === '/api/monitor') body = { services: {} }
