@@ -33,6 +33,11 @@ from fastapi.responses import HTMLResponse, JSONResponse, Response, StreamingRes
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict, Field
 
+from local_brain.command_center.agent_output import (
+    inbox_title,
+    present_agents,
+    resolve_delivery,
+)
 from local_brain.command_center.agent_prompts import agent_system_prompt
 from local_brain.command_center.agent_prompts import assignment_prompt as _assignment_prompt
 from local_brain.command_center.lead_reviews import review_snapshot
@@ -876,11 +881,6 @@ routing_history = RoutingHistoryState()
 
 # ─── Action Queue + Task Runner ───────────────────────────
 from local_brain.command_center.action_queue import ActionQueue
-from local_brain.command_center.agent_output import (
-    inbox_title,
-    present_agents,
-    resolve_delivery,
-)
 from local_brain.command_center.agent_registry import (
     AgentRegistry,
     BulkUpdateRejected,
