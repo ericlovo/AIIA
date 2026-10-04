@@ -192,6 +192,8 @@ export interface TaskInfo {
   run_count: number;
   fail_count: number;
   enabled: boolean;
+  pausable?: boolean;
+  schedule?: string;
 }
 
 export interface ExecutionStatus {

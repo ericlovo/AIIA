@@ -187,9 +187,9 @@ export function Jobs({ agents, loading, agentError }: JobsProps) {
           {tasks.isError && <ErrorMessage message={`System tasks unavailable: ${jobError(tasks.error)}`} />}
           {tasks.data?.length === 0 && <p className="py-4 text-neutral-400">No system tasks reported.</p>}
           <ul className="divide-y divide-neutral-800">{tasks.data?.map(task => <li key={task.task_id} className="py-4">
-            <div className="flex flex-wrap justify-between gap-2"><h3 className="break-words font-medium text-neutral-100">{task.name}</h3><span className="text-neutral-400">{task.enabled ? 'Enabled' : 'Disabled'} / {task.last_status || 'Not run yet'}</span></div>
+            <div className="flex flex-wrap justify-between gap-2"><h3 className="break-words font-medium text-neutral-100">{task.name}</h3><span className="text-neutral-400">{task.enabled === false ? 'Disabled' : task.pausable === false ? 'Always on' : 'Enabled'}{task.schedule ? ` / ${task.schedule}` : ''} / {task.last_status || 'Not run yet'}</span></div>
             <p className="mt-1 break-words text-neutral-400">{task.description}</p>
-            <div className="mt-2 flex flex-wrap gap-x-6 gap-y-1"><span>Last run: {jobTime(task.last_run)}</span><span className="inline-flex items-center gap-2"><Clock3 size={16} />Next run: {task.enabled ? jobTime(task.next_run) : 'Disabled'}</span></div>
+            <div className="mt-2 flex flex-wrap gap-x-6 gap-y-1"><span>Last run: {jobTime(task.last_run)}</span><span className="inline-flex items-center gap-2"><Clock3 size={16} />Next run: {task.enabled === false ? 'Disabled' : jobTime(task.next_run)}</span></div>
           </li>)}</ul>
         </details>
       </section>

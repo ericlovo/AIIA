@@ -20,6 +20,7 @@ import json
 import logging
 import os
 import re
+import sys
 import time
 from collections.abc import Callable, Coroutine
 from datetime import datetime, timezone
@@ -31,6 +32,33 @@ import httpx
 from local_brain.scripts.daily_report import generate_report
 
 logger = logging.getLogger("aiia.tasks")
+
+# Built-in test runner: pytest decides collection under this root (conftest.py
+# owns the ignore list), and a suite that never ran is a runner failure.
+TEST_ROOT = "local_brain/tests"
+TEST_RUNNER_TIMEOUT = 300
+# The Brain's Ollama timeout is 300s; the brief must not give up before it.
+DAILY_BRIEF_TIMEOUT_SECONDS = 330.0
+
+_SUMMARY_COUNT = re.compile(r"(\d+) (passed|failed|error)")
+
+
+def parse_pytest_summary(lines: list[str]) -> tuple[int, int, int]:
+    """Counts from the last pytest summary line, e.g. ``3 passed, 1 failed, 2 errors in 1.2s``.
+
+    Returns (passed, failed, errors). A line that only mentions the words
+    without counts (an error message, a test id) is skipped.
+    """
+    for line in reversed(lines):
+        found = _SUMMARY_COUNT.findall(line)
+        if not found or " in " not in line:
+            continue
+        counts = {"passed": 0, "failed": 0, "error": 0}
+        for number, word in found:
+            counts[word] = int(number)
+        return counts["passed"], counts["failed"], counts["error"]
+    return 0, 0, 0
+
 
 # ─────────────────────────────────────────────────────────────
 # project_pulse — fetch project backlogs → prioritized cards
@@ -748,15 +776,32 @@ class TaskRunner:
     # ─── API Methods ─────────────────────────────────────────
 
     def get_all_tasks(self) -> list[dict[str, Any]]:
-        """Return all tasks with current status."""
-        return [
-            {
-                **task,
-                "interval_seconds": TASK_DEFINITIONS[task_id].get("schedule_seconds", 86_400),
-                "last_status": (task["run_history"][0]["status"] if task["run_history"] else None),
-            }
-            for task_id, task in self.tasks.items()
-        ]
+        """Return all tasks with current status.
+
+        Built-in tasks have no pause switch, so ``enabled`` is always true; the
+        Jobs view showed every one of them as "Disabled" while they ran because
+        the field was missing. ``schedule`` says how a cron task fires (UTC).
+        """
+        rows = []
+        for task_id, task in self.tasks.items():
+            defn = TASK_DEFINITIONS[task_id]
+            if "schedule_seconds" in defn:
+                schedule = f"every {defn['schedule_seconds'] // 60} min"
+            else:
+                schedule = f"daily {defn['schedule_cron_hour']:02d}:{defn.get('schedule_cron_minute', 0):02d} UTC"
+            rows.append(
+                {
+                    **task,
+                    "enabled": True,
+                    "pausable": False,
+                    "schedule": schedule,
+                    "interval_seconds": defn.get("schedule_seconds", 86_400),
+                    "last_status": (
+                        task["run_history"][0]["status"] if task["run_history"] else None
+                    ),
+                }
+            )
+        return rows
 
     def get_history(self) -> list[dict[str, Any]]:
         """Return recent run history across all tasks."""
@@ -1526,16 +1571,25 @@ RECENT MEMORIES:
                     "question": prompt,
                     "context": "You are AIIA generating the morning briefing for the development team. Be concise, actionable, and specific. Use the 4-section format requested. Prioritize recommendations based on revenue impact and client deadlines.",
                     "n_results": 3,
+                    # qwen3 thinks by default and spends the budget on hidden reasoning.
+                    "think": False,
                 },
-                timeout=90.0,
+                # The Brain's own Ollama timeout is 300s; a shorter client timeout
+                # here just abandons a brief that is still being written.
+                timeout=DAILY_BRIEF_TIMEOUT_SECONDS,
             )
-            brief = result.get("answer", "Brief generation failed — no response from AIIA")
+            brief = str(result.get("answer") or "").strip()
+            if not brief:
+                raise RuntimeError("empty_answer")
         except Exception as e:
-            brief = f"Brief generation failed: {str(e)[:200]}"
+            # httpx timeouts stringify to "", which hid every failure for weeks.
+            reason = f"{type(e).__name__}: {str(e)[:160]}".rstrip(": ")
+            raise RuntimeError(f"Brief generation failed ({reason})") from e
 
         await self._progress("daily_brief", 80, "Storing brief")
 
-        # Store as memory
+        # Store as memory. Only a real brief is remembered: a failure line here
+        # would feed every Local-memory agent's fingerprint and context.
         brief_summary = brief[:500] if len(brief) > 500 else brief
         await self._aiia_request(
             "POST",
@@ -1890,9 +1944,12 @@ Be specific and reference actual file names. Keep each point to 1-2 sentences.""
 
         repo = Path(self.repo_path)
 
-        # Find test files
+        # Count test files for the trend line, but let pytest and conftest.py
+        # decide what to collect. Passing every path explicitly bypassed the
+        # conftest ignore list, so one stale module aborted collection and the
+        # task reported "0 passed, 1 errors" on every run.
         test_files = []
-        for root, dirs, files in os.walk(repo):
+        for root, dirs, files in os.walk(repo / TEST_ROOT):
             dirs[:] = [d for d in dirs if d not in SKIP_DIRS]
             for f in files:
                 if f.startswith("test_") and f.endswith(".py") or f.endswith("_test.py"):
@@ -1904,50 +1961,58 @@ Be specific and reference actual file names. Keep each point to 1-2 sentences.""
 
         await self._progress("test_runner", 20, f"Running {len(test_files)} test files")
 
-        # Try pytest first, fall back to unittest
         passed = 0
         failed = 0
         errors = 0
         output_lines = []
+        interrupted = False
 
+        proc = None
         try:
             proc = await asyncio.create_subprocess_exec(
-                "python3",
+                sys.executable,
                 "-m",
                 "pytest",
                 "--tb=short",
                 "-q",
-                *test_files,
+                "-p",
+                "no:cacheprovider",
+                TEST_ROOT,
                 cwd=self.repo_path,
                 stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.STDOUT,
                 env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1"},
             )
-            stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=120)
-            output = stdout.decode()
+            stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=TEST_RUNNER_TIMEOUT)
+            output = stdout.decode(errors="replace")
             output_lines = output.strip().split("\n")
-
-            # Parse pytest summary line like "5 passed, 2 failed"
-            for line in reversed(output_lines):
-                if "passed" in line or "failed" in line or "error" in line:
-                    import re
-
-                    p = re.search(r"(\d+) passed", line)
-                    f = re.search(r"(\d+) failed", line)
-                    e = re.search(r"(\d+) error", line)
-                    if p:
-                        passed = int(p.group(1))
-                    if f:
-                        failed = int(f.group(1))
-                    if e:
-                        errors = int(e.group(1))
-                    break
+            passed, failed, errors = parse_pytest_summary(output_lines)
+            interrupted = any(
+                line.startswith("!!!") or "Interrupted:" in line for line in output_lines
+            )
+            if proc.returncode not in (0, 1) and not (passed or failed):
+                # 2 = interrupted, 3 = internal error, 4 = usage error, 5 = nothing collected
+                errors = max(errors, 1)
+                interrupted = True
         except asyncio.TimeoutError:
-            output_lines = ["Tests timed out after 120s"]
+            if proc is not None:
+                proc.kill()
+            output_lines = [f"Tests timed out after {TEST_RUNNER_TIMEOUT}s"]
             errors = 1
+            interrupted = True
         except Exception as e:
-            output_lines = [f"Test runner error: {str(e)[:200]}"]
+            output_lines = [f"Test runner error: {type(e).__name__}: {str(e)[:200]}"]
             errors = 1
+            interrupted = True
+
+        if interrupted or (passed == 0 and failed == 0):
+            # No test ran. That is a runner failure, not a quality signal; raise
+            # so the task's fail_count moves and the first ERROR line is visible.
+            detail = next(
+                (line for line in output_lines if "ERROR" in line or "error" in line.lower()),
+                output_lines[-1] if output_lines else "no output",
+            )
+            raise RuntimeError(f"Test suite did not run: {detail[:200]}")
 
         await self._progress("test_runner", 85, "Recording results")
 
