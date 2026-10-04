@@ -28,7 +28,7 @@ export function listSummary(items: string[] | undefined): string {
 }
 
 export type AgentPatch = Partial<AgentDefinition>
-export type EditableField = 'model' | 'temperature' | 'max_tokens' | 'suite' | 'loop_enabled' | 'loop_interval_minutes' | 'loop_max_runs_per_day'
+export type EditableField = 'model' | 'temperature' | 'max_tokens' | 'suite' | 'loop_enabled' | 'loop_interval_minutes' | 'loop_max_runs_per_day' | 'one_liner' | 'output_channel'
 
 export const FIELD_LABELS: Record<EditableField, string> = {
   model: 'Model',
@@ -38,7 +38,15 @@ export const FIELD_LABELS: Record<EditableField, string> = {
   loop_enabled: 'Loop',
   loop_interval_minutes: 'Loop interval',
   loop_max_runs_per_day: 'Loop daily maximum',
+  one_liner: 'One-liner',
+  output_channel: 'Output channel',
 }
+
+export const ONE_LINER_MAX = 120
+export const OUTPUT_CHANNELS = [
+  { id: 'studio_inbox' as const, label: 'Studio inbox' },
+  { id: 'slack' as const, label: 'Slack' },
+]
 
 /** Mirrors AgentCreateRequest so an out-of-range value is caught before a round trip. */
 export const NUMBER_LIMITS = {

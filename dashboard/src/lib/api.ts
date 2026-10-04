@@ -217,6 +217,16 @@ export interface ExecutionStatus {
   };
 }
 
+export type OutputChannel = 'studio_inbox' | 'slack'
+
+export interface AgentValue {
+  window_days: number;
+  runs: number;
+  last_run_at: string | null;
+  reviewed: number;
+  unreviewed: number;
+}
+
 export interface Agent {
   id: string;
   name: string;
@@ -242,6 +252,11 @@ export interface Agent {
   model?: string;
   suite?: string;
   memory_namespace?: string;
+  one_liner?: string;
+  one_liner_derived?: boolean;
+  output_channel?: OutputChannel;
+  output_channel_note?: string;
+  value?: AgentValue;
   status: 'idle' | 'running' | 'error';
   last_run_at: string | null;
   last_result: string;
@@ -270,6 +285,8 @@ export interface AgentRun {
   assignment_id?: string;
   model?: string;
   latency_ms?: number;
+  delivered_channel?: string;
+  delivery_note?: string;
 }
 
 export interface StudioRun {
@@ -286,6 +303,8 @@ export interface StudioRun {
   legacy: number;
   input_tokens?: number | null;
   output_tokens?: number | null;
+  delivered_channel?: string;
+  delivery_note?: string;
   task?: string;
   result?: string;
   error?: string;
@@ -449,6 +468,7 @@ export type AgentSuitePatch = Partial<{
   tools: string[];
   repo_id: string;
   memory_namespace: string;
+  output_channel: OutputChannel;
 }>;
 
 export interface SuitePatchFailure {
@@ -474,6 +494,8 @@ export type AgentDefinition = Pick<Agent,
   model?: string;
   suite?: string;
   memory_namespace?: string;
+  one_liner?: string;
+  output_channel?: OutputChannel;
 };
 
 export type AssignmentStatus = 'queued' | 'running' | 'completed' | 'failed';

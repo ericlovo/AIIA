@@ -1,6 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { api, type Agent, type AgentDefinition } from '../lib/api'
+import { api, type Agent, type AgentDefinition, type OutputChannel } from '../lib/api'
+import { ONE_LINER_MAX, OUTPUT_CHANNELS } from './agentConfig'
+import { ChannelChip } from './ChannelChip'
+import { filterAgents, hasSlackGap, noReviewedOutput, sortAgents, valueGlance, type ValueSort } from './agentValue'
 import { AgentWorldCanvas } from './AgentWorldCanvas'
 import { StudioNav } from './StudioNav'
 import { VIEWS, type StudioView } from './studioRoute'
@@ -33,6 +36,8 @@ const EMPTY_DRAFT: Draft = {
   loop_interval_minutes: 60,
   loop_task: '',
   loop_max_runs_per_day: 4,
+  one_liner: '',
+  output_channel: 'studio_inbox',
 }
 
 const EMPTY_AGENTS: Agent[] = []
@@ -59,6 +64,9 @@ export function AgentStudio() {
   const [inspectorView, setInspectorView] = useState<'activity' | 'configuration'>('activity')
   const [draft, setDraft] = useState<Draft>(EMPTY_DRAFT)
   const [task, setTask] = useState('')
+  const [agentQuery, setAgentQuery] = useState('')
+  const [onlyQuiet, setOnlyQuiet] = useState(false)
+  const [agentSort, setAgentSort] = useState<ValueSort>('reviewed')
   const { route, key } = useStudioRoute()
   const view = route.view
   const routeAgentId = route.view === 'agents' ? route.agentId : undefined
@@ -92,6 +100,8 @@ export function AgentStudio() {
           loop_interval_minutes: agent.loop_interval_minutes, loop_task: agent.loop_task,
           loop_max_runs_per_day: agent.loop_max_runs_per_day,
           model: agent.model ?? '', suite: agent.suite ?? '', memory_namespace: agent.memory_namespace ?? '',
+          one_liner: agent.one_liner_derived ? '' : agent.one_liner ?? '',
+          output_channel: agent.output_channel ?? 'studio_inbox',
         }
       : EMPTY_DRAFT)
   }
@@ -148,6 +158,8 @@ export function AgentStudio() {
   })
 
   const activeCount = useMemo(() => agents.filter(agent => agent.status === 'running').length, [agents])
+  const shownAgents = useMemo(() => sortAgents(filterAgents(agents, agentQuery, onlyQuiet), agentSort), [agents, agentQuery, onlyQuiet, agentSort])
+  const quietCount = useMemo(() => agents.filter(noReviewedOutput).length, [agents])
 
   const page = (() => {
     if (view === 'signals') return <SignalJobs />
@@ -219,19 +231,29 @@ export function AgentStudio() {
                 <div className="mt-1 text-[11px] text-neutral-500">{models?.default || 'Model unknown'} · local memory</div>
               </div>
 
+              <div className="relative z-10 mb-4 flex w-full max-w-4xl flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
+                <label className="min-w-0 flex-1 text-[10px] font-semibold tracking-[0.16em] uppercase text-neutral-500">Find agent<input value={agentQuery} onChange={event => setAgentQuery(event.target.value)} placeholder="Name, one-liner, or repo" className="mt-2 w-full border border-neutral-800 bg-neutral-900 px-3 py-2 text-sm normal-case tracking-normal text-white outline-none focus:border-cyan-500/60" /></label>
+                <label className="text-[10px] font-semibold tracking-[0.16em] uppercase text-neutral-500">Sort<select aria-label="Sort agents" value={agentSort} onChange={event => setAgentSort(event.target.value as ValueSort)} className="mt-2 border border-neutral-800 bg-neutral-900 px-3 py-2 text-sm normal-case tracking-normal text-white outline-none focus:border-cyan-500/60"><option value="reviewed">Least reviewed first</option><option value="runs">Most runs</option><option value="last_run">Last run</option><option value="name">Name</option></select></label>
+                <button type="button" aria-pressed={onlyQuiet} onClick={() => setOnlyQuiet(!onlyQuiet)} className={`mt-6 border px-3 py-2 text-xs ${onlyQuiet ? 'border-amber-400/70 bg-amber-500/10 text-amber-100' : 'border-neutral-800 text-neutral-400'}`}>No reviewed output in 14 days ({quietCount})</button>
+              </div>
               <div className="relative z-10 grid w-full grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
-                {agents.map(agent => (
+                {shownAgents.map(agent => (
                   <button
                     key={agent.id}
                     onClick={() => selectAgent(agent)}
-                    className={`group min-h-44 border p-5 text-left transition-colors ${selectedId === agent.id ? 'border-cyan-400/70 bg-cyan-500/10' : 'border-neutral-800 bg-neutral-900/60 hover:border-neutral-600'}`}
+                    className={`group min-h-44 border p-5 text-left transition-colors ${selectedId === agent.id ? 'border-cyan-400/70 bg-cyan-500/10' : noReviewedOutput(agent) ? 'border-amber-500/40 bg-amber-950/20 hover:border-amber-400/60' : 'border-neutral-800 bg-neutral-900/60 hover:border-neutral-600'}`}
                   >
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0">
                         <div className="truncate text-base font-medium text-white">{agent.name}</div>
-                        <div className="mt-1 line-clamp-2 text-xs leading-relaxed text-neutral-500">{agent.mission}</div>
+                        <div className="mt-1 line-clamp-2 text-xs leading-relaxed text-neutral-400">{agent.one_liner || agent.mission}</div>
                       </div>
                       <Status status={agent.status} />
+                    </div>
+                    <div className="mt-3 flex flex-wrap gap-1.5">
+                      <ChannelChip channel={agent.output_channel} note={agent.output_channel_note} />
+                      <span className={`border px-2 py-1 text-[10px] ${noReviewedOutput(agent) ? 'border-amber-400/50 text-amber-200' : 'border-neutral-700 text-neutral-400'}`}>{valueGlance(agent)}</span>
+                      {hasSlackGap(agent) && <span className="border border-amber-400/50 px-2 py-1 text-[10px] text-amber-200">slack not configured</span>}
                     </div>
                     <div className="mt-5 flex flex-wrap gap-1.5">
                       {agent.skills.slice(0, 4).map(skill => <span key={skill} className="border border-neutral-700 px-2 py-1 text-[10px] text-neutral-400">{skill}</span>)}
@@ -239,6 +261,9 @@ export function AgentStudio() {
                     <div className="mt-5 flex items-center justify-between text-[10px] uppercase tracking-[0.16em] text-neutral-600"><span>{agent.last_run_at ? 'ran locally' : 'ready to run'}</span><span>{agent.loop_enabled ? `${agent.loop_interval_minutes}m loop` : 'manual'}</span></div>
                   </button>
                 ))}
+                {shownAgents.length === 0 && agents.length > 0 && (
+                  <p className="col-span-full text-sm text-neutral-500">No agents match this filter.</p>
+                )}
                 {!isLoading && agents.length === 0 && (
                   <button onClick={() => selectAgent(null)} className="min-h-44 border border-dashed border-cyan-500/40 bg-cyan-500/[0.03] p-5 text-left hover:bg-cyan-500/[0.07]">
                     <div className="text-sm font-medium text-cyan-300">Create the first agent</div>
@@ -265,6 +290,13 @@ export function AgentStudio() {
           </div>
           <div className="space-y-5 px-6 py-6">
             <Field label="Name"><input value={draft.name} onChange={event => setDraft({ ...draft, name: event.target.value })} placeholder="Signal Scout" /></Field>
+            <Field label="One-liner"><input value={draft.one_liner ?? ''} maxLength={ONE_LINER_MAX} onChange={event => setDraft({ ...draft, one_liner: event.target.value })} placeholder="One sentence: what this agent is for." /></Field>
+            <Field label="Output channel">
+              <select aria-label="Output channel" className="w-full border border-neutral-800 bg-neutral-900 px-3 py-2 text-sm text-white outline-none focus:border-cyan-500/60" value={draft.output_channel ?? 'studio_inbox'} onChange={event => setDraft({ ...draft, output_channel: event.target.value as OutputChannel })}>
+                {OUTPUT_CHANNELS.map(channel => <option key={channel.id} value={channel.id}>{channel.label}</option>)}
+              </select>
+            </Field>
+            {draft.output_channel === 'slack' && <p className="text-xs text-amber-200/90">Slack is a declared destination. If Slack outbound is not configured on the Mini, results fall back to the Studio inbox.</p>}
             <Field label="Mission"><textarea value={draft.mission} onChange={event => setDraft({ ...draft, mission: event.target.value })} placeholder="Watch a domain, find signal, and make a clear recommendation." rows={3} /></Field>
             <Field label="Persona"><textarea value={draft.persona} onChange={event => setDraft({ ...draft, persona: event.target.value })} rows={3} /></Field>
             <div>
@@ -339,3 +371,4 @@ function Status({ status }: { status: Agent['status'] }) {
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return <label className="agent-field block"><span className="mb-2 block text-[10px] font-semibold tracking-[0.16em] uppercase text-neutral-500">{label}</span>{children}</label>
 }
+

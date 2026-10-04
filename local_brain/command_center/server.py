@@ -876,6 +876,11 @@ routing_history = RoutingHistoryState()
 
 # ─── Action Queue + Task Runner ───────────────────────────
 from local_brain.command_center.action_queue import ActionQueue
+from local_brain.command_center.agent_output import (
+    inbox_title,
+    present_agents,
+    resolve_delivery,
+)
 from local_brain.command_center.agent_registry import (
     AgentRegistry,
     BulkUpdateRejected,
@@ -1188,6 +1193,8 @@ class AgentCreateRequest(BaseModel):
     loop_max_runs_per_day: int = Field(default=4, ge=1, le=48)
     suite: str = Field(default="", max_length=64)
     memory_namespace: str = Field(default="", max_length=64)
+    one_liner: str = Field(default="", max_length=120)
+    output_channel: Literal["studio_inbox", "slack"] = "studio_inbox"
 
 
 class SuiteAgentsPatchRequest(BaseModel):
@@ -1212,6 +1219,7 @@ class SuiteAgentsPatchRequest(BaseModel):
     loop_task: str = Field(default=None, max_length=8_000)
     loop_max_runs_per_day: int = Field(default=None, ge=1, le=48)
     memory_namespace: str = Field(default=None, max_length=64)
+    output_channel: Literal["studio_inbox", "slack"] = Field(default=None)
 
 
 class AgentPatchRequest(SuiteAgentsPatchRequest):
@@ -1220,6 +1228,7 @@ class AgentPatchRequest(SuiteAgentsPatchRequest):
     name: str = Field(default=None, min_length=1, max_length=80)
     mission: str = Field(default=None, min_length=1, max_length=2_000)
     suite: str = Field(default=None, max_length=64)
+    one_liner: str = Field(default=None, max_length=120)
 
 
 class AgentRunRequest(BaseModel):
@@ -1390,9 +1399,74 @@ def _agent_system_prompt(agent: dict[str, Any], memory_context: str = "") -> str
     return agent_system_prompt(agent, contexts)
 
 
+def _agent_activity() -> dict[str, Any]:
+    try:
+        ledger = agent_registry.ledger or agent_registry.recover_runs()
+        return ledger.activity(days=14)
+    except (RunHistoryUnavailable, sqlite3.Error, OSError):
+        return {}
+
+
+def _public_agents(agents: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return present_agents(
+        agents,
+        assignment_registry.list_assignments(),
+        _agent_activity(),
+    )
+
+
+def _public_agent(agent: dict[str, Any] | None) -> dict[str, Any] | None:
+    if not agent:
+        return None
+    return _public_agents([agent])[0]
+
+
+def _surface_studio_inbox(agent: dict[str, Any], run: dict[str, Any]) -> dict[str, Any] | None:
+    """Put a manual/loop result without an assignment into the existing Work review queue."""
+    if run.get("assignment_id"):
+        return assignment_registry.get_assignment(str(run["assignment_id"]))
+    try:
+        assignment = assignment_registry.create_assignment(
+            title=inbox_title(agent, str(run.get("task") or "")),
+            objective=str(run.get("task") or agent.get("mission") or "Review this run."),
+            agent_id=agent["id"],
+            trigger="manual",
+            source_kind="manual",
+            source_ref=str(run.get("id") or ""),
+        )
+        return assignment_registry.finish_assignment(
+            assignment["id"],
+            result=str(run.get("result") or ""),
+            error=str(run.get("error") or ""),
+        )
+    except ValueError as exc:
+        logger.warning("Studio inbox delivery skipped for %s: %s", agent.get("id"), exc)
+        return None
+
+
+def _deliver_run_output(agent: dict[str, Any] | None) -> dict[str, Any] | None:
+    if not agent or not agent.get("runs"):
+        return agent
+    run = agent["runs"][0]
+    if run.get("delivered_channel") != "studio_inbox":
+        return agent
+    item = _surface_studio_inbox(agent, run)
+    if item and not run.get("assignment_id"):
+        run["assignment_id"] = item["id"]
+    return agent
+
+
+def _finish_agent_run(agent: dict[str, Any], *args: Any, **kwargs: Any) -> dict[str, Any] | None:
+    delivery = resolve_delivery(agent)
+    kwargs.setdefault("delivered_channel", delivery["delivered_channel"])
+    kwargs.setdefault("delivery_note", delivery["note"])
+    updated = agent_registry.finish_run(agent["id"], *args, **kwargs)
+    return _deliver_run_output(updated)
+
+
 @app.get("/api/agents")
 async def list_agents():
-    return {"agents": agent_registry.list()}
+    return {"agents": _public_agents(agent_registry.list())}
 
 
 @app.get("/api/agent-suites")
@@ -1439,9 +1513,10 @@ async def patch_suite_agents(suite: str, body: SuiteAgentsPatchRequest | None = 
             status_code=422,
             content={"detail": "suite_patch_rejected", "failures": exc.failures},
         )
-    for agent in updated:
+    shown = _public_agents(updated)
+    for agent in shown:
         await broadcast_studio_event("agent", "updated", agent)
-    return {"suite": suite, "count": len(updated), "agents": updated}
+    return {"suite": suite, "count": len(shown), "agents": shown}
 
 
 @app.get("/api/studio/activity")
@@ -1576,8 +1651,9 @@ async def create_agent(body: AgentCreateRequest):
         agent = agent_registry.create(**body.model_dump())
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
-    await broadcast_studio_event("agent", "created", agent)
-    return {"agent": agent}
+    shown = _public_agent(agent)
+    await broadcast_studio_event("agent", "created", shown)
+    return {"agent": shown}
 
 
 class AgentLoopState(BaseModel):
@@ -1592,8 +1668,9 @@ async def set_agent_loop(agent_id: str, body: AgentLoopState):
     if body.enabled and not agent.get("loop_task", "").strip():
         raise HTTPException(status_code=422, detail="loop_task_required")
     updated = agent_registry.update(agent_id, loop_enabled=body.enabled)
-    await broadcast_studio_event("agent", "updated", updated)
-    return {"agent": updated}
+    shown = _public_agent(updated)
+    await broadcast_studio_event("agent", "updated", shown)
+    return {"agent": shown}
 
 
 @app.put("/api/agents/{agent_id}")
@@ -1608,8 +1685,9 @@ async def update_agent(agent_id: str, body: AgentCreateRequest):
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     if not agent:
         raise HTTPException(status_code=404, detail="agent_not_found")
-    await broadcast_studio_event("agent", "updated", agent)
-    return {"agent": agent}
+    shown = _public_agent(agent)
+    await broadcast_studio_event("agent", "updated", shown)
+    return {"agent": shown}
 
 
 @app.patch("/api/agents/{agent_id}")
@@ -1633,8 +1711,9 @@ async def patch_agent(agent_id: str, body: AgentPatchRequest | None = None):
     if not updated:
         # Deleted while the model check awaited Ollama.
         raise HTTPException(status_code=404, detail="agent_not_found")
-    await broadcast_studio_event("agent", "updated", updated)
-    return {"agent": updated}
+    shown = _public_agent(updated)
+    await broadcast_studio_event("agent", "updated", shown)
+    return {"agent": shown}
 
 
 @app.delete("/api/agents/{agent_id}")
@@ -1697,8 +1776,8 @@ async def _execute_agent(
                 )
             trigger = "interval" if loop_run else "assignment" if assignment_id else "manual"
             if response.status_code != 200:
-                updated = agent_registry.finish_run(
-                    agent_id,
+                updated = _finish_agent_run(
+                    agent,
                     task,
                     error=f"local_model_error_{response.status_code}",
                     trigger=trigger,
@@ -1706,7 +1785,7 @@ async def _execute_agent(
                     run_id=run_id,
                 )
                 if updated:
-                    await broadcast_studio_event("agent", "failed", updated)
+                    await broadcast_studio_event("agent", "failed", _public_agent(updated))
                 raise HTTPException(status_code=503, detail=updated["last_error"])
             payload = response.json()
             result = str(payload.get("content") or "").strip()
@@ -1714,8 +1793,8 @@ async def _execute_agent(
             latency_ms = float(payload.get("latency_ms", 0) or 0)
             done_reason = str(payload.get("done_reason") or "")
             if not result:
-                updated = agent_registry.finish_run(
-                    agent_id,
+                updated = _finish_agent_run(
+                    agent,
                     task,
                     error="empty_agent_result",
                     trigger=trigger,
@@ -1727,10 +1806,10 @@ async def _execute_agent(
                     done_reason=done_reason,
                 )
                 if updated:
-                    await broadcast_studio_event("agent", "failed", updated)
+                    await broadcast_studio_event("agent", "failed", _public_agent(updated))
                 raise HTTPException(status_code=502, detail="empty_agent_result")
-            updated = agent_registry.finish_run(
-                agent_id,
+            updated = _finish_agent_run(
+                agent,
                 task,
                 result=result,
                 trigger=trigger,
@@ -1742,17 +1821,17 @@ async def _execute_agent(
                 done_reason=done_reason,
             )
             if updated:
-                await broadcast_studio_event("agent", "completed", updated)
+                await broadcast_studio_event("agent", "completed", _public_agent(updated))
             return {
-                "agent": updated,
+                "agent": _public_agent(updated),
                 "model": payload.get("model"),
                 "latency_ms": payload.get("latency_ms", 0),
             }
         except PersistenceError as exc:
             raise HTTPException(status_code=503, detail="run_output_persistence_failed") from exc
         except httpx.HTTPError as exc:
-            updated = agent_registry.finish_run(
-                agent_id,
+            updated = _finish_agent_run(
+                agent,
                 task,
                 error="local_model_unavailable",
                 trigger="interval" if loop_run else "assignment" if assignment_id else "manual",
@@ -1760,7 +1839,7 @@ async def _execute_agent(
                 run_id=run_id,
             )
             if updated:
-                await broadcast_studio_event("agent", "failed", updated)
+                await broadcast_studio_event("agent", "failed", _public_agent(updated))
             raise HTTPException(status_code=503, detail="local_model_unavailable") from exc
 
 

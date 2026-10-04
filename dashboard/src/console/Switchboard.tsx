@@ -10,6 +10,8 @@ import { runTokens } from './runTokens'
 import { DEVELOPMENT_LOOPS } from './developmentLoops'
 import { loopState, DOT_COLOR } from './taskStatus'
 import { assignmentOrigin, attentionAssignments, attentionSummary, bulkDismissError, reviewLabel } from './assignmentReview'
+import { ChannelChip } from './ChannelChip'
+import { filterAgents, hasSlackGap, noReviewedOutput, valueGlance, valueSummary } from './agentValue'
 import { activeSources, formatRate, reviewMetrics, reviewSummary, type ReviewMetric } from './reviewHealth'
 import './switchboard.css'
 
@@ -50,6 +52,7 @@ export function Switchboard({ title = 'Activity history', agents, loading, agent
   const [day, setDay] = useState('')
   const [status, setStatus] = useState('')
   const [search, setSearch] = useState('')
+  const [onlyQuiet, setOnlyQuiet] = useState(false)
   const [tab, setTab] = useState<'agents' | 'development' | 'ops'>(initialTaskId ? 'ops' : 'agents')
   const [taskId, setTaskId] = useState(initialTaskId ?? '')
   const [runId, setRunId] = useState('')
@@ -117,8 +120,8 @@ export function Switchboard({ title = 'Activity history', agents, loading, agent
   const active = agents.filter(item => item.status === 'running')
   const scheduled = agents.filter(item => item.loop_enabled)
   const dailyCap = scheduled.reduce((sum, item) => sum + item.loop_max_runs_per_day, 0)
-  const shownAgents = agents.filter(item => `${item.name} ${item.repo_id} ${item.mission}`.toLowerCase().includes(search.toLowerCase()))
-    .sort((a, b) => Number(b.status === 'running') - Number(a.status === 'running') || Number(b.loop_enabled) - Number(a.loop_enabled) || a.name.localeCompare(b.name))
+  const shownAgents = filterAgents(agents, search, onlyQuiet)
+    .sort((a, b) => Number(noReviewedOutput(b)) - Number(noReviewedOutput(a)) || Number(b.status === 'running') - Number(a.status === 'running') || Number(b.loop_enabled) - Number(a.loop_enabled) || a.name.localeCompare(b.name))
   const days = Array.from({ length: 91 }, (_, i) => {
     const date = new Date(`${today}T00:00:00Z`)
     date.setUTCDate(date.getUTCDate() - 90 + i)
@@ -217,17 +220,17 @@ export function Switchboard({ title = 'Activity history', agents, loading, agent
         </section>
 
         <section className="sb-fleet">
-          <div className="sb-fleet-tools"><div className="sb-segments" role="tablist" aria-label="Switchboard panels">{(['agents', 'development', 'ops'] as const).map(value => <button key={value} role="tab" aria-selected={tab === value} onClick={() => setTab(value)}>{value === 'agents' ? 'Agent lanes' : value === 'development' ? 'Development loops' : 'System loops'}</button>)}</div>{tab === 'agents' && <label className="sb-search"><Search size={14} /><input aria-label="Find agent" value={search} onChange={event => setSearch(event.target.value)} placeholder="Find agent or repository" /></label>}</div>
+          <div className="sb-fleet-tools"><div className="sb-segments" role="tablist" aria-label="Switchboard panels">{(['agents', 'development', 'ops'] as const).map(value => <button key={value} role="tab" aria-selected={tab === value} onClick={() => setTab(value)}>{value === 'agents' ? 'Agent lanes' : value === 'development' ? 'Development loops' : 'System loops'}</button>)}</div>{tab === 'agents' && <><label className="sb-search"><Search size={14} /><input aria-label="Find agent" value={search} onChange={event => setSearch(event.target.value)} placeholder="Find agent or repository" /></label><button type="button" className="sb-select-toggle" aria-pressed={onlyQuiet} onClick={() => setOnlyQuiet(!onlyQuiet)}>No reviewed output in 14 days</button></>}</div>
           {tab === 'agents' && <>
-            <div className="sb-lane-head"><span>Agent / repository</span><span>Last 14 days</span><span>Schedule / state</span></div>
+            <div className="sb-lane-head"><span>Agent / job / channel</span><span>Last 14 days</span><span>Schedule / value</span></div>
             {loading && <p className="sb-empty">Loading agent lanes...</p>}
             {!loading && shownAgents.length === 0 && <p className="sb-empty">No agents match this view.</p>}
             {shownAgents.map(item => {
               const queued = assignments.data?.assignments.filter(work => work.agent_id === item.id && work.status === 'queued').length ?? 0
               return <button key={item.id} className={`sb-lane ${agentId === item.id ? 'sb-lane-selected' : ''}`} onClick={() => pickAgent(item.id)} aria-pressed={agentId === item.id}>
-                <div className="sb-agent-label"><span className={`sb-status sb-status-${item.status}`} /><div><strong>{item.name}</strong><small><GitBranch size={11} /> {item.repo_id || 'No repository'} · {queued} queued</small></div></div>
+                <div className="sb-agent-label"><span className={`sb-status sb-status-${item.status}`} /><div><strong>{item.name}</strong><small>{item.one_liner || item.mission}</small><small><GitBranch size={11} /> {item.repo_id || 'No repository'} · {queued} queued · <ChannelChip channel={item.output_channel} note={item.output_channel_note} /></small></div></div>
                 <div className="sb-mini-history" aria-label="Recent recorded runs">{days.slice(-14).map(date => { const cell = data?.agent_days.find(row => row.agent_id === item.id && row.day === date); return <i key={date} title={`${date}: ${cell?.total ?? 0} recorded runs`} className={cell?.failed ? 'sb-mini-failed' : cell?.total ? 'sb-mini-done' : ''} /> })}</div>
-                <div className="sb-lane-state"><strong>{item.loop_enabled ? `Every ${interval(item.loop_interval_minutes)}` : 'Manual'}</strong><small>{item.status === 'running' ? 'Running' : item.status === 'error' ? 'Last run failed' : item.loop_enabled ? loopDue(item, today) : item.last_run_at ? 'Idle' : 'Never run'}</small></div>
+                <div className="sb-lane-state"><strong className={noReviewedOutput(item) ? 'sb-value-quiet' : ''}>{valueGlance(item)}</strong><small>{item.loop_enabled ? `Every ${interval(item.loop_interval_minutes)}` : 'Manual'} · {item.status === 'running' ? 'Running' : item.status === 'error' ? 'Last run failed' : item.loop_enabled ? loopDue(item, today) : item.last_run_at ? 'Idle' : 'Never run'}</small></div>
               </button>
             })}
             <p className="sb-coverage">Lane history: 14 UTC days. Green: completed. Coral: one or more failed attempts.</p>
@@ -249,7 +252,7 @@ export function Switchboard({ title = 'Activity history', agents, loading, agent
       <aside ref={inspectorRef} className="sb-inspector" aria-label="Activity inspector">
         {runId ? <><div className="sb-section-title"><h2>Run details</h2><button className="sb-icon" aria-label="Close run details" onClick={() => setRunId('')}><X size={16} /></button></div>{detail.isLoading && <p>Loading run...</p>}{detail.isError && <p role="alert">Could not load this run.</p>}{detail.data && <RunDetail run={detail.data.run} onOpenAssignment={onOpenAssignment} />}</>
         : selectedTask ? <><div className="sb-eyebrow">System loop</div><h2>{selectedTask.name}</h2><p>{selectedTask.description}</p><dl><dt>Current signal</dt><dd>{loopState(selectedTask)}</dd><dt>Last run</dt><dd>{time(selectedTask.last_run)}</dd><dt>Lifetime runs</dt><dd>{selectedTask.run_count}</dd><dt>Lifetime failures</dt><dd>{selectedTask.fail_count}</dd></dl><h3>Latest result</h3><pre>{selectedTask.last_result || 'No result recorded.'}</pre></>
-        : agent ? <><div className="sb-eyebrow">Agent controls</div><h2>{agent.name}</h2><p>{agent.mission}</p><dl><dt>State</dt><dd>{agent.status}</dd><dt>Repository</dt><dd>{agent.repo_id || 'None'}</dd><dt>Schedule</dt><dd>{agent.loop_enabled ? 'Enabled' : 'Paused'}</dd><dt>Interval</dt><dd>{interval(agent.loop_interval_minutes)}</dd><dt>Runs / UTC day</dt><dd>{agent.loop_day === today ? agent.loop_runs_today : 0} / {agent.loop_max_runs_per_day}</dd><dt>Last loop check</dt><dd>{agent.loop_checked_at ? time(agent.loop_checked_at) : 'Never'}</dd><dt>Last loop decision</dt><dd>{agent.loop_skip_reason === 'awaiting_review' ? 'Waiting for review' : agent.loop_skip_reason === 'unchanged_repository_input' ? 'Skipped · repository unchanged' : agent.last_run_at ? 'Executed' : 'No decision'}</dd><dt>Failure streak</dt><dd>{agent.loop_consecutive_failures ?? 0}</dd><dt>Backoff until</dt><dd>{agent.loop_backoff_until ? time(agent.loop_backoff_until) : 'None'}</dd><dt>Temperature</dt><dd>{agent.temperature}</dd><dt>Token cap</dt><dd>{agent.max_tokens}</dd></dl>
+        : agent ? <><div className="sb-eyebrow">Agent controls</div><h2>{agent.name}</h2><p>{agent.one_liner || agent.mission}</p>{hasSlackGap(agent) && <p className="sb-alert">slack not configured</p>}<p className="sb-coverage">{valueSummary(agent)}</p><dl><dt>Output</dt><dd><ChannelChip channel={agent.output_channel} note={agent.output_channel_note} /></dd><dt>State</dt><dd>{agent.status}</dd><dt>Repository</dt><dd>{agent.repo_id || 'None'}</dd><dt>Schedule</dt><dd>{agent.loop_enabled ? 'Enabled' : 'Paused'}</dd><dt>Interval</dt><dd>{interval(agent.loop_interval_minutes)}</dd><dt>Runs / UTC day</dt><dd>{agent.loop_day === today ? agent.loop_runs_today : 0} / {agent.loop_max_runs_per_day}</dd><dt>Last loop check</dt><dd>{agent.loop_checked_at ? time(agent.loop_checked_at) : 'Never'}</dd><dt>Last loop decision</dt><dd>{agent.loop_skip_reason === 'awaiting_review' ? 'Waiting for review' : agent.loop_skip_reason === 'unchanged_repository_input' ? 'Skipped · repository unchanged' : agent.last_run_at ? 'Executed' : 'No decision'}</dd><dt>Failure streak</dt><dd>{agent.loop_consecutive_failures ?? 0}</dd><dt>Backoff until</dt><dd>{agent.loop_backoff_until ? time(agent.loop_backoff_until) : 'None'}</dd><dt>Temperature</dt><dd>{agent.temperature}</dd><dt>Token cap</dt><dd>{agent.max_tokens}</dd></dl>
           {agent.loop_task && <button className="sb-command" disabled={loop.isPending} onClick={() => loop.mutate({ id: agent.id, enabled: !agent.loop_enabled })}>{agent.loop_enabled ? <CirclePause size={15} /> : <Play size={15} />}{agent.loop_enabled ? 'Pause loop' : 'Enable loop'}</button>}
           {loop.isError && <p role="alert" className="sb-alert">{loop.error.message}</p>}
           <button className="sb-command" onClick={() => onManageAgent(agent.id)}><Layers3 size={15} /> Edit configuration</button><button className="sb-command" onClick={() => onAssignAgent(agent.id)}><FileText size={15} /> Assign work</button>
@@ -262,7 +265,7 @@ export function Switchboard({ title = 'Activity history', agents, loading, agent
 }
 
 function RunDetail({ run, onOpenAssignment }: { run: StudioRun; onOpenAssignment: (id: string) => void }) {
-  return <><h2>{run.agent_name}</h2><dl><dt>Outcome</dt><dd>{run.status}</dd><dt>Trigger</dt><dd>{run.trigger}</dd><dt>Recorded</dt><dd>{new Date(run.at).toLocaleString()}</dd><dt>Model</dt><dd>{run.model || 'Unrecorded'}</dd><dt>Duration</dt><dd>{run.latency_ms ? `${(run.latency_ms / 1000).toFixed(1)}s` : 'Unrecorded'}</dd><dt>Input tokens</dt><dd>{run.input_tokens?.toLocaleString('en-US') ?? 'Unrecorded'}</dd><dt>Output tokens</dt><dd>{run.output_tokens?.toLocaleString('en-US') ?? 'Unrecorded'}</dd><dt>Total</dt><dd>{runTokens(run)}</dd></dl>{run.assignment_id && <button className="sb-command" onClick={() => onOpenAssignment(run.assignment_id)}><FileText size={15} /> Open assignment</button>}<h3>Task</h3><pre>{run.task}</pre><h3>{run.error ? 'Failure' : 'Work product'}</h3><pre>{run.error || run.result || 'No output recorded.'}</pre></>
+  return <><h2>{run.agent_name}</h2><dl><dt>Outcome</dt><dd>{run.status}</dd><dt>Delivered to</dt><dd>{run.delivered_channel || 'Unrecorded'}{run.delivery_note ? ` · ${run.delivery_note}` : ''}</dd><dt>Trigger</dt><dd>{run.trigger}</dd><dt>Recorded</dt><dd>{new Date(run.at).toLocaleString()}</dd><dt>Model</dt><dd>{run.model || 'Unrecorded'}</dd><dt>Duration</dt><dd>{run.latency_ms ? `${(run.latency_ms / 1000).toFixed(1)}s` : 'Unrecorded'}</dd><dt>Input tokens</dt><dd>{run.input_tokens?.toLocaleString('en-US') ?? 'Unrecorded'}</dd><dt>Output tokens</dt><dd>{run.output_tokens?.toLocaleString('en-US') ?? 'Unrecorded'}</dd><dt>Total</dt><dd>{runTokens(run)}</dd></dl>{run.assignment_id && <button className="sb-command" onClick={() => onOpenAssignment(run.assignment_id)}><FileText size={15} /> Open assignment</button>}<h3>Task</h3><pre>{run.task}</pre><h3>{run.error ? 'Failure' : 'Work product'}</h3><pre>{run.error || run.result || 'No output recorded.'}</pre></>
 }
 
 function interval(minutes: number) { return minutes >= 60 && minutes % 60 === 0 ? `${minutes / 60}h` : `${minutes}m` }
