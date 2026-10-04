@@ -9,7 +9,7 @@ import { navigate } from './useStudioRoute'
  */
 export function StudioNav({ view }: { view: StudioView }) {
   const menu = useRef<HTMLDetailsElement>(null)
-  const primary: StudioView[] = ['switchboard', 'jobs', 'assignments', 'projects']
+  const primary: StudioView[] = ['switchboard', 'inbox', 'jobs', 'assignments', 'projects']
   const advanced = VIEWS.filter(item => !primary.includes(item.id))
   const activeAdvanced = advanced.find(item => item.id === view)
   useEffect(() => {
@@ -33,8 +33,8 @@ export function StudioNav({ view }: { view: StudioView }) {
   }
   return (
     <nav aria-label="Studio" className="flex w-full min-w-0 items-center gap-1">
-      <div className="grid min-w-0 flex-1 grid-cols-4 gap-1 sm:flex">
-      {primary.map(id => <a key={id} href={formatRoute({ view: id })} aria-current={view === id ? 'page' : undefined} onClick={event => open(event, id)} className={`flex min-h-11 items-center justify-center rounded text-sm sm:px-5 focus-visible:outline-2 focus-visible:outline-emerald-300 ${view === id ? 'bg-neutral-800 text-white' : 'text-neutral-400 hover:text-white'}`}>
+      <div className="grid min-w-0 flex-1 grid-cols-5 gap-1 sm:flex">
+      {primary.map(id => <a key={id} href={formatRoute({ view: id })} aria-current={view === id ? 'page' : undefined} onClick={event => open(event, id)} className={`flex min-h-11 min-w-0 items-center justify-center rounded text-xs sm:px-4 sm:text-sm focus-visible:outline-2 focus-visible:outline-emerald-300 ${view === id ? 'bg-neutral-800 text-white' : 'text-neutral-400 hover:text-white'}`}>
         {VIEWS.find(item => item.id === id)?.label}
       </a>)}
       </div>

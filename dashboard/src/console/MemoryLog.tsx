@@ -3,6 +3,9 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api, MEMORY_CATEGORIES, MEMORY_PRIORITIES, type Agent, type MemoryCategory, type MemoryIdea, type MemoryIdeaStatus, type MemoryInboxSort, type MemoryPriority, type ReviewOutcome, type ReviewBucket } from '../lib/api'
 import { PageHeader } from './PageHeader'
 import { LeadQualification } from './LeadQualification'
+import { InboxQueues } from './InboxQueues'
+import type { InboxSource } from './studioRoute'
+import { navigate } from './useStudioRoute'
 import { captureText, MEMORY_POST_CHANNEL, memoryPostLabel, priorityLabel, receiptLabel, type PriorityTone, type ReceiptTone } from './memoryText'
 
 type Filter = MemoryIdeaStatus | ''
@@ -15,9 +18,9 @@ const FILTERS: { id: Filter; label: string }[] = [
 // Two things arrive in this inbox: what a person said in Slack, and what an
 // unattended loop proposed. They are reviewed the same way but read differently,
 // so the view names which one you are looking at.
-type Origin = 'slack' | 'loops' | 'signals' | 'all'
+type Origin = InboxSource
 const ORIGINS: { id: Origin; label: string; source: string; project: string; blurb: string }[] = [
-  { id: 'slack', label: 'From Slack', source: 'slack', project: 'mindmoor', blurb: 'Captures from the allowed Slack channels.' },
+  { id: 'slack', label: 'From Slack', source: 'slack', project: '', blurb: 'Captures from the allowed Slack channels.' },
   { id: 'loops', label: 'From loops', source: 'local_proposals', project: '', blurb: 'Proposals from development loops and public-signal jobs.' },
   { id: 'signals', label: 'Public signals', source: 'public_signals', project: '', blurb: 'Public news and lead research awaiting verification.' },
   { id: 'all', label: 'All', source: '', project: '', blurb: 'Everything waiting for review, whoever raised it.' },
@@ -44,7 +47,7 @@ const OUTCOME_LABELS: Record<ReviewBucket, string> = {
   unclassified: 'Unclassified',
 }
 
-export function MemoryLog({ agents, intent, source }: { agents: Agent[]; intent?: { bucket: ReviewBucket | '' }; source?: 'signals' }) {
+export function MemoryLog({ agents, intent, source, inbox = false }: { agents: Agent[]; intent?: { bucket: ReviewBucket | '' }; source?: InboxSource; inbox?: boolean }) {
   const qc = useQueryClient()
   // Arriving from a Switchboard metric: open on that slice of the same inbox,
   // with the status tabs cleared so the rows the number counted are visible.
@@ -59,9 +62,11 @@ export function MemoryLog({ agents, intent, source }: { agents: Agent[]; intent?
   const [sort, setSort] = useState<MemoryInboxSort>('newest')
   const [outcome, setOutcome] = useState<ReviewBucket | ''>(arrived ? intent?.bucket ?? '' : '')
   const [notice, setNotice] = useState<{ tone: 'ok' | 'error'; text: string } | null>(null)
+  const pendingProposals = inbox && origin === 'loops' && filter === 'unreviewed'
+  const effectiveOutcome = pendingProposals ? 'open' : outcome
   const page = useQuery({
-    queryKey: ['memory-inbox', scope.id, filter, outcome, query, offset, priority, sort],
-    queryFn: () => api.memoryInbox({ project: scope.project, source: scope.source, status: filter, outcome, query, offset, priority, sort }),
+    queryKey: ['memory-inbox', scope.id, filter, effectiveOutcome, query, offset, priority, sort],
+    queryFn: () => api.memoryInbox({ project: scope.project, source: scope.source, status: filter, outcome: effectiveOutcome, query, offset, priority, sort }),
     retry: false,
     refetchInterval: 15_000,
   })
@@ -102,23 +107,23 @@ export function MemoryLog({ agents, intent, source }: { agents: Agent[]; intent?
 
   return (
     <main className="h-full min-h-0 flex-1 overflow-y-auto bg-neutral-950">
-      <PageHeader title="Memory log" meta={<>
-        <span>{agents.length} agents</span>
-        <span>{counts ? `${counts.unreviewed} unreviewed` : 'Loading inbox'}</span>
-        <span>{counts ? `${counts.promoted} logged to memory` : ''}</span>
+      <PageHeader title={inbox ? 'Inbox' : 'Memory log'} meta={<>
+        <span>{counts ? inbox && origin === 'loops' ? `${data.total} ${pendingProposals ? 'pending' : 'captures'}` : `${counts.unreviewed} unreviewed` : 'Loading inbox'}</span>
+        <span>{counts && !(inbox && origin === 'loops') ? `${counts.promoted} logged to memory` : ''}</span>
         <span>{slackSummary(slack.data, slack.isError)}</span>
       </>} />
+      {inbox && <InboxQueues source={origin} />}
 
       {notice && <div role={notice.tone === 'error' ? 'alert' : 'status'} className={`sticky top-0 z-20 flex items-start justify-between gap-4 border-b border-neutral-800 bg-neutral-950 px-5 py-3 text-sm sm:px-7 ${notice.tone === 'error' ? 'text-red-300' : 'text-cyan-200'}`}>
         <span>{notice.text}</span>
         <button type="button" onClick={() => setNotice(null)} className="shrink-0 text-xs text-neutral-500 hover:text-neutral-200">Dismiss notice</button>
       </div>}
 
-      <section aria-label="Memory log" className="min-w-0">
+      <section aria-label={inbox ? 'Inbox captures' : 'Memory log'} className="min-w-0">
         <div className="sticky top-0 z-10 flex flex-col gap-3 border-b border-neutral-900 bg-neutral-950/95 px-5 py-4 backdrop-blur sm:flex-row sm:items-center sm:justify-between sm:px-7">
           <div>
             <div className="text-[10px] font-semibold uppercase tracking-[0.2em] text-neutral-500">Review inbox · {scope.label}</div>
-            <div className="mt-1 text-xs text-neutral-600">{sort === 'priority' ? 'Highest priority first' : 'Newest first'} · captures stay unreviewed until you log or dismiss them · refreshes every 15 seconds</div>
+            {!inbox && <div className="mt-1 text-xs text-neutral-600">{sort === 'priority' ? 'Highest priority first' : 'Newest first'} · captures stay unreviewed until you log or dismiss them · refreshes every 15 seconds</div>}
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <select value={priority} onChange={event => { setPriority(event.target.value as MemoryPriority | ''); setOffset(0) }} aria-label="Filter by priority" className="h-8 border border-neutral-800 bg-neutral-900 px-1 text-xs text-neutral-200">
@@ -133,7 +138,7 @@ export function MemoryLog({ agents, intent, source }: { agents: Agent[]; intent?
             {outcome && <button type="button" onClick={() => { setOutcome(''); setOffset(0) }} className="flex h-8 shrink-0 items-center gap-1 border border-cyan-500/50 bg-cyan-500/10 px-2 text-[11px] text-cyan-100" aria-label={`Clear the ${OUTCOME_LABELS[outcome]} filter`}>{OUTCOME_LABELS[outcome]} ✕</button>}
             <div className="flex h-8 max-w-full overflow-x-auto border border-neutral-800 p-0.5" role="tablist" aria-label="Capture origin">
               {ORIGINS.map(item => (
-                <button key={item.id} role="tab" aria-selected={origin === item.id} onClick={() => { setOrigin(item.id); setOffset(0) }} className={`shrink-0 px-3 text-[11px] transition-colors ${origin === item.id ? 'bg-neutral-700 text-white' : 'text-neutral-500 hover:text-neutral-200'}`}>
+                <button key={item.id} role="tab" aria-selected={origin === item.id} onClick={() => { if (inbox) navigate({ view: 'inbox', source: item.id }); else { setOrigin(item.id); setOffset(0); setOutcome('') } }} className={`shrink-0 px-3 text-[11px] transition-colors ${origin === item.id ? 'bg-neutral-700 text-white' : 'text-neutral-500 hover:text-neutral-200'}`}>
                   {item.label}
                 </button>
               ))}
@@ -141,7 +146,7 @@ export function MemoryLog({ agents, intent, source }: { agents: Agent[]; intent?
             <div className="flex h-8 max-w-full overflow-x-auto border border-neutral-800 p-0.5" role="tablist" aria-label="Capture filters">
               {FILTERS.map(item => (
                 <button key={item.id || 'all'} role="tab" aria-selected={filter === item.id} onClick={() => { setFilter(item.id); setOffset(0) }} className={`shrink-0 px-3 text-[11px] transition-colors ${filter === item.id ? 'bg-neutral-700 text-white' : 'text-neutral-500 hover:text-neutral-200'}`}>
-                  {item.label}{counts && item.id ? ` ${counts[item.id]}` : ''}
+                  {inbox && origin === 'loops' && item.id === 'unreviewed' ? 'Pending' : item.label}{counts && item.id && (!(inbox && origin === 'loops') || filter === item.id) ? ` ${counts[item.id]}` : ''}
                 </button>
               ))}
             </div>
@@ -170,9 +175,9 @@ export function MemoryLog({ agents, intent, source }: { agents: Agent[]; intent?
           </div>
         </div>}
 
-        <p className="px-5 py-4 text-[11px] leading-relaxed text-neutral-600 sm:px-7">
+        {!inbox && <p className="px-5 py-4 text-[11px] leading-relaxed text-neutral-600 sm:px-7">
           {scope.blurb} "Queue as work" turns a capture into a queued assignment for one agent, with the capture text carried as untrusted input and its origin recorded. Nothing runs until you start it in Work. {originHelp(origin)}
-        </p>
+        </p>}
       </section>
     </main>
   )
@@ -202,14 +207,16 @@ function IdeaRow({ idea, busy, canPost, agents, onPromote, onDismiss, onRestore,
   const localProposal = idea.source !== 'slack'
   const posted = memoryPostLabel(idea.memory_post_status, idea.memory_post_error, idea.post_requested === 1)
   const badge = priorityLabel(idea.priority)
-  const text = captureText(idea.text) || '(mention only, no text)'
+  const content = captureText(idea.text)
+  const text = content || '(mention only, no text)'
   const save = receiptLabel(idea.acknowledgement_status, idea.acknowledgement_error, 'Save')
   const memory = receiptLabel(idea.promotion_status, idea.promotion_error, 'Memory')
   return (
     <li className="px-5 py-4 sm:px-7" data-idea-status={idea.status} data-idea-priority={badge.tone}>
-      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+      <div className="flex flex-col gap-3">
         <div className="min-w-0 flex-1">
           <p className="whitespace-pre-wrap break-words text-sm text-neutral-100">{text}</p>
+          {!content && <p className="mt-2 text-sm text-amber-200">Incomplete capture: no idea text. The original message contained only a mention.</p>}
           <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-neutral-500">
             <span className={`uppercase tracking-wider ${idea.status === 'promoted' ? 'text-emerald-300' : idea.status === 'dismissed' ? 'text-neutral-500' : 'text-amber-300'}`}>{idea.status === 'promoted' ? 'Logged to memory' : idea.status === 'dismissed' ? 'Dismissed' : 'Unreviewed'}</span>
             {idea.status === 'promoted' && <span className={`border px-1.5 uppercase tracking-wider ${PRIORITY_TONE[badge.tone]}`} aria-label={`Priority ${badge.text}`}>{badge.text}</span>}
@@ -222,8 +229,8 @@ function IdeaRow({ idea, busy, canPost, agents, onPromote, onDismiss, onRestore,
             {idea.assignment_id && <span className="text-cyan-200">queued as work {idea.assignment_id.slice(0, 8)}</span>}
           </div>
           <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-[11px]">
-            <span className={TONE[save.tone]}>{save.text}</span>
-            {save.tone === 'failed' && <button type="button" disabled={busy} onClick={() => onRetry('capture')} className="underline text-neutral-400">Retry save receipt</button>}
+            <span className={TONE[save.tone]}>{!content && save.tone === 'sent' ? 'Legacy save receipt sent; no idea text captured' : save.text}</span>
+            {!!content && save.tone === 'failed' && <button type="button" disabled={busy} onClick={() => onRetry('capture')} className="underline text-neutral-400">Retry save receipt</button>}
             {idea.status === 'promoted' && <span className={TONE[memory.tone]}>{memory.text}</span>}
             {idea.status === 'promoted' && memory.tone === 'failed' && <button type="button" disabled={busy} onClick={() => onRetry('promotion')} className="underline text-neutral-400">Retry memory receipt</button>}
             {posted && <span className={TONE[posted.tone]}>{posted.text}</span>}
@@ -232,6 +239,7 @@ function IdeaRow({ idea, busy, canPost, agents, onPromote, onDismiss, onRestore,
         </div>
         <div className="flex shrink-0 flex-wrap items-center gap-2">
           {idea.status === 'unreviewed' && <>
+            {!!content && <>
             <label className="text-[11px] text-neutral-500">Category
               <select value={category} onChange={event => setCategory(event.target.value as MemoryCategory)} className="ml-1 h-8 border border-neutral-800 bg-neutral-900 px-1 text-xs text-neutral-200" aria-label={`Memory category for capture ${idea.id.slice(0, 8)}`}>
                 {MEMORY_CATEGORIES.map(item => <option key={item} value={item}>{item}</option>)}
@@ -246,7 +254,8 @@ function IdeaRow({ idea, busy, canPost, agents, onPromote, onDismiss, onRestore,
               <input type="checkbox" checked={postToSlack} onChange={event => setPostToSlack(event.target.checked)} className="accent-cyan-400" aria-label={`Post capture ${idea.id.slice(0, 8)} to ${MEMORY_POST_CHANNEL}`} />
               Post to {MEMORY_POST_CHANNEL}
             </label>}
-            <button type="button" disabled={busy} onClick={() => onPromote(category, priority, postToSlack)} className="h-8 border border-cyan-500/60 bg-cyan-500/10 px-3 text-xs text-cyan-100 hover:bg-cyan-500/20 disabled:opacity-40">Log to memory</button>
+            </>}
+            <button type="button" disabled={busy || !content} onClick={() => onPromote(category, priority, postToSlack)} className="h-8 border border-cyan-500/60 bg-cyan-500/10 px-3 text-xs text-cyan-100 hover:bg-cyan-500/20 disabled:opacity-40">Log to memory</button>
             {!localProposal && <button type="button" disabled={busy} onClick={onDismiss} className="h-8 border border-neutral-800 px-3 text-xs text-neutral-300 hover:text-white disabled:opacity-40">Dismiss</button>}
           </>}
           {localProposal && idea.status === 'unreviewed' && !idea.assignment_id && <>
@@ -256,13 +265,14 @@ function IdeaRow({ idea, busy, canPost, agents, onPromote, onDismiss, onRestore,
             <button type="button" disabled={busy || !reviewNote.trim()} onClick={() => onTriage('declined', reviewNote)} className="h-8 border border-neutral-800 px-3 text-xs text-neutral-300 hover:text-white disabled:opacity-40">Decline</button>
           </>}
           {idea.status !== 'dismissed' && !idea.assignment_id && agents.length > 0 && <>
+            {!!content &&
             <label className="text-[11px] text-neutral-500">Agent
-              <select value={owner} onChange={event => setOwner(event.target.value)} className="ml-1 h-8 border border-neutral-800 bg-neutral-900 px-1 text-xs text-neutral-200" aria-label={`Agent for capture ${idea.id.slice(0, 8)}`}>
+              <select value={owner} onChange={event => setOwner(event.target.value)} className="ml-1 h-8 max-w-56 border border-neutral-800 bg-neutral-900 px-1 text-xs text-neutral-200" aria-label={`Agent for capture ${idea.id.slice(0, 8)}`}>
                 <option value="">Choose agent</option>
                 {agents.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
               </select>
-            </label>
-            <button type="button" disabled={busy || !owner} onClick={() => onAssign(owner, reviewNote)} className="h-8 border border-neutral-800 px-3 text-xs text-neutral-300 hover:text-white disabled:opacity-40">{localProposal ? 'Accept as work' : 'Queue as work'}</button>
+            </label>}
+            <button type="button" disabled={busy || !owner || !content} onClick={() => onAssign(owner, reviewNote)} className="h-8 border border-neutral-800 px-3 text-xs text-neutral-300 hover:text-white disabled:opacity-40">{localProposal ? 'Accept as work' : 'Queue as work'}</button>
           </>}
           {idea.status === 'dismissed' && <button type="button" disabled={busy} onClick={onRestore} className="h-8 border border-neutral-800 px-3 text-xs text-neutral-300 hover:text-white disabled:opacity-40">Restore</button>}
         </div>

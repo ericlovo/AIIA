@@ -88,6 +88,32 @@ def test_claim_lease_and_restart_recovery(receipts):
     assert restarted.receipt_status() == {"sent": 1}
 
 
+def test_delivery_retry_after_restart_preserves_message_id(receipts):
+    capture(receipts)
+    messages = []
+
+    def handler(request):
+        messages.append(json.loads(request.content))
+        if len(messages) == 1:
+            raise httpx.ReadTimeout("synthetic-timeout")
+        return httpx.Response(200, json={"ok": True, "ts": "1789260568.123456"})
+
+    deliver(receipts, handler)
+    assert receipts.receipt_status() == {"pending": 1}
+    restarted = MemoryInbox(receipts.path)
+    capture(restarted)
+    with restarted.connect() as db:
+        db.execute("UPDATE capture_receipts SET next_attempt=0")
+    deliver(restarted, handler)
+    assert len(messages) == 2
+    assert messages[0]["client_msg_id"] == messages[1]["client_msg_id"]
+    assert messages[0] == messages[1]
+    assert restarted.list()["total"] == 1
+    assert restarted.receipt_status() == {"sent": 1}
+    capture(restarted)
+    deliver(restarted, lambda r: pytest.fail("duplicate receipt after restart"))
+
+
 @pytest.mark.parametrize(
     "env,value", [("AIIA_SLACK_ACK_ENABLED", "0"), ("AIIA_SLACK_BOT_TOKEN", "")]
 )

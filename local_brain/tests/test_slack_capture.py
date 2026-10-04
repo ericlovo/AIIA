@@ -11,7 +11,7 @@ import httpx
 import pytest
 from fastapi import FastAPI
 
-from local_brain.command_center import slack_capture
+from local_brain.command_center import slack_capture, slack_receipts
 from local_brain.command_center.memory_inbox import MemoryInbox
 
 
@@ -122,9 +122,31 @@ def test_oversize_or_empty_idea_is_not_saved(configured):
     assert not slack_capture.inbox().path.exists()
 
 
-def send_event(app, payload, *, bad_signature=False):
+@pytest.mark.parametrize("text", ["<@U123>", " \n<@U123> <@U456>\t", " \n\t"])
+def test_mention_only_command_returns_guidance_without_saving(configured, text):
+    first = send(configured, changes={"text": text})
+    second = send(configured, changes={"text": text})
+    assert first.status_code == second.status_code == 200
+    assert (
+        first.json()
+        == second.json()
+        == {
+            "response_type": "ephemeral",
+            "text": "Use /aiia-capture followed by your idea.",
+        }
+    )
+    assert not slack_capture.inbox().path.exists()
+
+
+def test_command_with_mention_and_idea_keeps_original_wording(configured):
+    text = "<@U123> Preserve this idea for the next sprint."
+    assert "Saved idea" in send(configured, changes={"text": text}).json()["text"]
+    assert slack_capture.inbox().list()["ideas"][0]["text"] == text
+
+
+def send_event(app, payload, *, bad_signature=False, retry_num=None, age=0):
     body = json.dumps(payload).encode()
-    timestamp = str(int(time.time()))
+    timestamp = str(int(time.time()) - age)
     signature = (
         "v0="
         + hmac.new(
@@ -142,6 +164,14 @@ def send_event(app, payload, *, bad_signature=False):
                 headers={
                     "x-slack-request-timestamp": timestamp,
                     "x-slack-signature": "bad" if bad_signature else signature,
+                    **(
+                        {
+                            "x-slack-retry-num": str(retry_num),
+                            "x-slack-retry-reason": "http_timeout",
+                        }
+                        if retry_num is not None
+                        else {}
+                    ),
                 },
             )
 
@@ -162,13 +192,100 @@ def mention():
     }
 
 
-def test_mention_durable_and_deduplicated(configured):
-    assert send_event(configured, mention()).status_code == 200
-    assert send_event(configured, mention()).status_code == 200
+@pytest.mark.parametrize(
+    "text",
+    [
+        "<@U123> Remember this Mindmoor idea.",
+        " \n<@U123> <@U456> Remember this Mindmoor idea.\t",
+        "Keep <@U456> in the original wording. <@U123>",
+    ],
+)
+def test_mention_durable_and_deduplicated(configured, text):
+    payload = mention()
+    payload["event"]["text"] = text
+    assert send_event(configured, payload).status_code == 200
+    assert send_event(configured, payload, retry_num=1).status_code == 200
     data = slack_capture.inbox().list(project="mindmoor")
     assert data["total"] == 1
-    assert data["ideas"][0]["text"] == mention()["event"]["text"]
+    assert data["ideas"][0]["text"] == text
     assert data["ideas"][0]["status"] == "unreviewed"
+
+
+@pytest.mark.parametrize("ack_enabled", ["0", "1"])
+@pytest.mark.parametrize(
+    "text",
+    [
+        "<@U123>",
+        " \t<@U123>\n ",
+        "<@U123> <@U456>",
+        "<@U123><@U456>",
+        "\n<@U123>\t\n<@U456>\n",
+        "\u00a0<@U123>\u00a0",
+    ],
+)
+def test_empty_mentions_never_save_or_send_receipts(configured, monkeypatch, ack_enabled, text):
+    monkeypatch.setenv("AIIA_SLACK_ACK_ENABLED", ack_enabled)
+    monkeypatch.setenv("AIIA_SLACK_BOT_TOKEN", "synthetic-bot-token")
+    payload = mention()
+    payload["event"].update(text=text, ts="1789260567.123456")
+    first = send_event(configured, payload)
+    retry = send_event(configured, payload, retry_num=1)
+    assert first.status_code == retry.status_code == 200
+    assert first.json() == retry.json() == {"ok": True}
+    assert not slack_capture.inbox().path.exists()
+
+    restarted = MemoryInbox(slack_capture.inbox().path)
+    monkeypatch.setattr(slack_capture, "inbox", lambda: restarted)
+    monkeypatch.setenv("AIIA_SLACK_ACK_ENABLED", "1")
+    assert send_event(configured, payload, retry_num=2).status_code == 200
+    assert not restarted.path.exists()
+    assert restarted.list()["total"] == 0
+    assert restarted.receipt_status() == {}
+    assert restarted.receipt_status("promotion") == {}
+    asyncio.run(
+        slack_receipts.deliver_one(
+            restarted,
+            transport=httpx.MockTransport(lambda r: pytest.fail("empty capture receipt")),
+        )
+    )
+
+
+@pytest.mark.parametrize("text", ["", " ", "\t\n", "\u00a0"])
+@pytest.mark.parametrize("ack_enabled", ["0", "1"])
+def test_blank_event_text_remains_invalid(configured, monkeypatch, text, ack_enabled):
+    monkeypatch.setenv("AIIA_SLACK_ACK_ENABLED", ack_enabled)
+    payload = mention()
+    payload["event"].update(text=text, ts="1789260567.123456")
+    for retry_num in (None, 1):
+        result = send_event(configured, payload, retry_num=retry_num)
+        assert result.status_code == 400
+        assert result.json()["detail"] == "invalid_slack_payload"
+    assert not slack_capture.inbox().path.exists()
+
+
+@pytest.mark.parametrize(
+    "changes,event_changes,kwargs,code",
+    [
+        ({}, {}, {"bad_signature": True}, 401),
+        ({}, {}, {"age": 301}, 401),
+        ({}, {}, {"age": -301}, 401),
+        ({"team_id": "T_OTHER"}, {}, {}, 403),
+        ({}, {"channel": "C_OTHER"}, {}, 403),
+        ({"event_id": ""}, {}, {}, 400),
+        ({}, {"user": ""}, {}, 400),
+        ({}, {"ts": "not-a-timestamp"}, {}, 400),
+    ],
+)
+def test_empty_mentions_still_require_valid_source(
+    configured, monkeypatch, changes, event_changes, kwargs, code
+):
+    monkeypatch.setenv("AIIA_SLACK_ACK_ENABLED", "1")
+    payload = mention()
+    payload.update(changes)
+    payload["event"].update(text="<@U123>", ts="1789260567.123456")
+    payload["event"].update(event_changes)
+    assert send_event(configured, payload, **kwargs).status_code == code
+    assert not slack_capture.inbox().path.exists()
 
 
 def test_challenge_requires_signature(configured):
@@ -220,9 +337,15 @@ def test_mention_storage_failure(configured, monkeypatch):
 def test_mention_queues_single_thread_receipt(configured, monkeypatch):
     monkeypatch.setenv("AIIA_SLACK_ACK_ENABLED", "1")
     payload = mention()
-    payload["event"].update(ts="1789260567.123456", thread_ts="1789260566.123456")
+    payload["event"].update(
+        text="<@U123> <@U456> Remember this Mindmoor idea.",
+        ts="1789260567.123456",
+        thread_ts="1789260566.123456",
+    )
     assert send_event(configured, payload).status_code == 200
-    assert send_event(configured, payload).status_code == 200
+    assert send_event(configured, payload, retry_num=1).status_code == 200
+    assert slack_capture.inbox().list()["total"] == 1
+    assert slack_capture.inbox().list()["ideas"][0]["text"] == payload["event"]["text"]
     assert slack_capture.inbox().receipt_status() == {"pending": 1}
     assert slack_capture.inbox().claim_receipt()["thread_ts"] == "1789260566.123456"
 

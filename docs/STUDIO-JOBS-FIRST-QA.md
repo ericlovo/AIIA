@@ -1,6 +1,6 @@
 # Jobs-first Studio: first release gate
 
-Implementation: Today, Jobs, Work and Projects are the everyday navigation.
+Implementation: Today, Inbox, Jobs, Work and Projects are the everyday navigation.
 Agents, Signals, Memory, Map, Handoffs, Overview and Activity history remain
 under Studio. Existing record URLs are preserved. This is the first functional
 slice of [the product reset](STUDIO-PRODUCT-RESET-2026-10-02.md), not completion
@@ -11,6 +11,12 @@ of the weekend roadmap.
 - Today lists unresolved work and approvals, work awaiting manual start, active
   assignments, enabled recurring jobs and recently accepted output. Counts keep
   the existing review/dismissal semantics. Failed reads are not an all-clear.
+- Inbox opens unreviewed Slack captures by default. Today and Inbox show separate
+  counts for Slack captures, proposals, and work review. The counts link to their
+  own queues; work review is not a count of Slack messages. Existing `#/memory`
+  links, review metrics, and public-signal links remain valid.
+  Pending proposals exclude findings already accepted as work even when their
+  storage status is still unreviewed. Reopening a queue count clears old filters.
 - Jobs lists existing agent intervals with last check, next eligible check,
   UTC daily cap, blocker and pause/resume. New repository change-review and
   delivery-brief jobs are created paused, tested explicitly and enabled only
@@ -49,6 +55,12 @@ still pending until both users complete this without developer coaching.
 | Task | Expected result |
 | --- | --- |
 | Open Today | Find a failed item and its failure evidence in one click |
+| Open Inbox | Slack captures open first; select Proposals to see only pending findings, excluding those already accepted as work |
+| Follow queue counts | Slack and Proposals show their own pending rows; Work review opens unresolved reports, failures and approvals |
+| Review a capture | Log to memory, dismiss, or queue work; counts refresh and nothing runs automatically |
+| Inspect an old mention-only capture | It is labelled incomplete; logging, queueing and retrying its save receipt are unavailable; dismissal remains explicit |
+| Reload a proposal link | `#/inbox?source=loops` stays on proposals; back returns to the previous queue |
+| Lose an inbox source | Its count reads Unavailable, not zero; other queues stay usable |
 | Open an approval | Land on the owning assignment with its pending Git decision visible |
 | Open Work | No creation form until New work; a queued assignment says Awaiting manual start |
 | Create a job | Choose recipe, repository, interval and daily cap; creation alone runs nothing |
@@ -58,7 +70,7 @@ still pending until both users complete this without developer coaching.
 | Review output | Accept/reject/dismiss remain distinct and survive refresh; original evidence remains |
 | Inspect Projects | Name the checkout commit and a workflow's different commit; open the source |
 | Lose GitHub access | See evidence unavailable, never a green inferred health result |
-| Use a phone | Navigate all four destinations, create a job and inspect output without horizontal scrolling |
+| Use a phone | Navigate all five destinations, review captures, create a job and inspect output without horizontal scrolling |
 | Close Voice mid-connect | No late microphone or hidden voice connection starts |
 
 ## Verification commands
@@ -95,3 +107,21 @@ before relying on review backpressure and no-change checks.
 
 Rollback restores the previous application revision and dashboard build while
 preserving runtime data. New jobs use the existing agent/assignment schema.
+
+## Inbox capture boundary
+
+Mention-only Slack events are acknowledged at the HTTP transport level but do
+not create captures or enqueue a misleading saved receipt. Empty or mention-only
+`/aiia-capture` commands return the existing ephemeral usage prompt. This is not
+chat: there is no new thread guidance message or surrounding-thread retrieval. Real text
+continues through the existing signed, allowlisted, idempotent capture path.
+Existing empty captures and already-sent receipts are retained, not rewritten.
+No new scopes, outbound integrations, or schema migration are required.
+
+The operational watch cleanup is separate from this code rollout. Pause a watch
+before clearing its review backlog, since clearing backpressure can make it
+eligible to run again. Preserve distinct unresolved claims as queued, manual
+work, and dismiss stale reports with a reason and expected review versions.
+Dismissal must not accept model output, delete history, or clear the independent
+Slack/proposal queues. Re-enable a watch only after a fresh, bounded test and
+human review of its evidence and settings.

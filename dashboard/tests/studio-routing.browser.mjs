@@ -104,7 +104,7 @@ try {
   for (const width of [320, 390, 653, 1440]) {
     const { context, page, pageErrors } = await open('#/today', { width })
     await heading(page, 'Today').waitFor()
-    assert.deepEqual(await nav(page).getByRole('link').allTextContents(), ['Today', 'Jobs', 'Work', 'Projects'])
+    assert.deepEqual(await nav(page).getByRole('link').allTextContents(), ['Today', 'Inbox', 'Jobs', 'Work', 'Projects'])
     const tools = nav(page).locator('summary[aria-label="Studio tools"]')
     await tools.click()
     await nav(page).getByRole('link', { name: 'Signals', exact: true }).waitFor()
@@ -132,11 +132,11 @@ try {
     const { context, page, pageErrors } = await open()
     await heading(page, 'Today').waitFor()
     assert.equal(await hash(page), '#/today', 'an empty address lands on Today')
-    assert.deepEqual(await nav(page).getByRole('link').allTextContents(), ['Today', 'Jobs', 'Work', 'Projects'])
+    assert.deepEqual(await nav(page).getByRole('link').allTextContents(), ['Today', 'Inbox', 'Jobs', 'Work', 'Projects'])
     await nav(page).locator('summary[aria-label="Studio tools"]').click()
     const links = await nav(page).getByRole('link').evaluateAll(items => items.map(item => [item.textContent, item.getAttribute('href'), item.getAttribute('aria-current')]))
     assert.deepEqual(links, [
-      ['Today', '#/today', 'page'], ['Jobs', '#/jobs', null], ['Work', '#/assignments', null], ['Projects', '#/projects', null],
+      ['Today', '#/today', 'page'], ['Inbox', '#/inbox', null], ['Jobs', '#/jobs', null], ['Work', '#/assignments', null], ['Projects', '#/projects', null],
       ['Activity history', '#/history', null], ['Overview', '#/overview', null], ['Agents', '#/agents', null],
       ['Signals', '#/signals', null],
       ['Handoffs', '#/handoffs', null], ['Memory', '#/memory', null], ['Map', '#/map', null],
@@ -220,8 +220,8 @@ try {
     const { context, page } = await open('#/today')
     await heading(page, 'Today').waitFor()
     await page.getByRole('link', { name: 'Open the review inbox' }).click()
-    await heading(page, 'Memory log').waitFor()
-    assert.equal(await hash(page), '#/memory?review=all')
+    await heading(page, 'Inbox').waitFor()
+    assert.equal(await hash(page), '#/inbox')
     assert.equal(await page.getByRole('button', { name: /^Open Nightly sync/ }).count(), 0)
     await page.getByRole('button', { name: 'System status', exact: true }).click()
     await page.getByRole('button', { name: /^Open Nightly sync/ }).click()

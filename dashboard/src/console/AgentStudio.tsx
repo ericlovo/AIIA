@@ -180,6 +180,7 @@ export function AgentStudio() {
       )
     }
 
+    if (view === 'inbox') return <MemoryLog key={key} agents={agents} inbox source={route.view === 'inbox' ? route.source ?? 'slack' : 'slack'} />
     if (view === 'memory') {
       const review = route.view === 'memory' ? route.review : undefined
       return <MemoryLog key={key} agents={agents} source={route.view === 'memory' ? route.source : undefined} intent={review ? { bucket: review === 'all' ? '' : review } : undefined} />

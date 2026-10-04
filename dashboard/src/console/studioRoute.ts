@@ -1,9 +1,11 @@
 import type { ReviewBucket } from '../lib/api'
 
-export type StudioView = 'switchboard' | 'jobs' | 'projects' | 'history' | 'activity' | 'agents' | 'assignments' | 'handoffs' | 'memory' | 'world' | 'signals'
+export type InboxSource = 'slack' | 'loops' | 'signals' | 'all'
+export type StudioView = 'switchboard' | 'inbox' | 'jobs' | 'projects' | 'history' | 'activity' | 'agents' | 'assignments' | 'handoffs' | 'memory' | 'world' | 'signals'
 
 export const VIEWS: { id: StudioView; label: string }[] = [
   { id: 'switchboard', label: 'Today' },
+  { id: 'inbox', label: 'Inbox' },
   { id: 'jobs', label: 'Jobs' },
   { id: 'assignments', label: 'Work' },
   { id: 'projects', label: 'Projects' },
@@ -24,6 +26,7 @@ export const VIEWS: { id: StudioView; label: string }[] = [
 export type StudioRoute =
   | { view: 'switchboard'; taskId?: string; attention?: boolean }
   | { view: 'history'; attention?: boolean }
+  | { view: 'inbox'; source?: InboxSource }
   | { view: 'jobs' }
   | { view: 'projects' }
   | { view: 'activity' }
@@ -39,7 +42,7 @@ export const DEFAULT_ROUTE: StudioRoute = { view: 'switchboard' }
 const PATHS: Record<StudioView, string> = {
   switchboard: 'today', activity: 'overview', agents: 'agents', assignments: 'assignments',
   handoffs: 'handoffs', memory: 'memory', world: 'map', signals: 'signals',
-  jobs: 'jobs', projects: 'projects', history: 'history',
+  jobs: 'jobs', projects: 'projects', history: 'history', inbox: 'inbox',
 }
 const VIEW_BY_PATH = Object.fromEntries(Object.entries(PATHS).map(([view, path]) => [path, view])) as Record<string, StudioView>
 const REVIEW_BUCKETS: readonly string[] = ['open', 'needs_work', 'already_fixed', 'declined', 'external_failure', 'unclassified', 'all']
@@ -62,6 +65,11 @@ export function parseRoute(hash: string): StudioRoute | null {
   switch (view) {
     case 'switchboard': return id ? null : { view, taskId: param('task'), ...(param('attention') === '1' ? { attention: true } : {}) }
     case 'history': return id ? null : { view, ...(param('attention') === '1' ? { attention: true } : {}) }
+    case 'inbox': {
+      const source = param('source')
+      if (id || (source && !['slack', 'loops', 'signals', 'all'].includes(source))) return null
+      return { view, source: source as InboxSource | undefined }
+    }
     case 'agents': return { view, agentId: id }
     case 'assignments': return { view, assignmentId: id, agentId: id ? undefined : param('agent') }
     case 'handoffs': return id ? null : { view, from: param('from'), to: param('to') }
@@ -80,6 +88,9 @@ export function formatRoute(route: StudioRoute): string {
   const query = new URLSearchParams()
   let id = ''
   switch (route.view) {
+    case 'inbox':
+      if (route.source) query.set('source', route.source)
+      break
     case 'switchboard':
       if (route.taskId) query.set('task', route.taskId)
       if (route.attention) query.set('attention', '1')

@@ -162,7 +162,7 @@ try {
     const failedSources = new Set(['/api/assignments', '/api/git-workspaces', '/api/git-writes'])
     const { context, page, pageErrors } = await open({ failedSources })
     await page.getByRole('alert').getByText('Some review sources are unavailable. These counts may be incomplete.').waitFor()
-    assert.equal(await page.getByText('Nothing needs a decision right now.').count(), 0)
+    assert.equal(await page.getByText('No work reports, failures, or approvals waiting.').count(), 0)
     failedSources.clear()
     await page.getByRole('button', { name: 'Refresh today', exact: true }).click()
     await page.getByRole('heading', { name: `Needs attention (${EXPECTED_ATTENTION})` }).waitFor()
