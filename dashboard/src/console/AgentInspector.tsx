@@ -126,7 +126,7 @@ export function AgentInspector({ agent, onClose, onManageAgent, onAssignAgent }:
         <button type="button" onClick={onClose} className="text-lg leading-none text-white/30 hover:text-white" aria-label="Close node controls">×</button>
       </div>
       <p className="mt-3 line-clamp-4 text-xs leading-relaxed text-white/45">{agent.one_liner || agent.mission}</p>
-      {hasSlackGap(view) && <p role="status" className="mt-2 border border-amber-300/30 bg-amber-950/30 px-2.5 py-1.5 text-[11px] text-amber-200">slack not configured</p>}
+      {hasSlackGap(view) && <p role="status" className="mt-2 border border-amber-300/30 bg-amber-950/30 px-2.5 py-1.5 text-[11px] text-amber-200">{view.output_channel_note}</p>}
       <p className="mt-2 text-[11px] text-white/45">{valueSummary(agent)}</p>
 
       <section aria-label="Agent settings" className="mt-4">

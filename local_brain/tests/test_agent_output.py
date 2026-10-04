@@ -12,8 +12,11 @@ import pytest
 
 from local_brain.command_center.agent_output import (
     DEFAULT_OUTPUT_CHANNEL,
+    RUN_FAILED_NOTE,
     SLACK_NOT_CONFIGURED,
+    SLACK_POSTING_PENDING,
     derive_one_liner,
+    inbox_title,
     present_agent,
     present_agents,
     resolve_delivery,
@@ -29,10 +32,13 @@ REAL_ASYNC_CLIENT = httpx.AsyncClient
 class Upstream:
     def __init__(self) -> None:
         self.requests: list[httpx.Request] = []
+        self.fail_chat = False
 
     def handler(self, request: httpx.Request) -> httpx.Response:
         self.requests.append(request)
         if request.url.path == "/v1/chat":
+            if self.fail_chat:
+                return httpx.Response(500, json={"detail": "boom"})
             return httpx.Response(
                 200, json={"content": "GREEN", "model": "qwen3:8b", "latency_ms": 5}
             )
@@ -228,23 +234,65 @@ def test_slack_not_configured_falls_back_to_studio_inbox(studio, monkeypatch):
     assert work[0]["trigger"] == "manual"
 
 
-def test_configured_slack_does_not_invent_a_post_or_inbox_item(studio, monkeypatch):
+def test_configured_slack_still_delivers_to_studio_inbox_until_posting_exists(studio, monkeypatch):
+    """Nothing posts agent output to Slack yet, so a configured Slack must not swallow a run."""
     server, registry, assignments, _events, upstream = studio
-    from local_brain.command_center import agent_output, slack_memory_posts, slack_receipts
+    from local_brain.command_center import agent_output, slack_memory_posts
 
     monkeypatch.setattr(slack_memory_posts, "configured", lambda: True)
-    monkeypatch.setattr(slack_receipts, "configured", lambda: False)
     monkeypatch.setattr(agent_output, "slack_outbound_configured", lambda: True)
     agent = _agent(registry, output_channel="slack")
     shown = _call(server, "GET", "/api/agents").json()["agents"][0]
-    assert shown["output_channel_note"] == ""
+    assert shown["output_channel"] == "slack"
+    assert shown["output_channel_note"] == SLACK_POSTING_PENDING
 
     result = asyncio.run(server._execute_agent(agent["id"], "Inspect current checks."))
     run = result["agent"]["runs"][0]
-    assert run["delivered_channel"] == "slack"
-    assert run["delivery_note"] == ""
-    assert assignments.list_assignments() == []
+    assert run["delivered_channel"] == "studio_inbox"
+    assert run["delivery_note"] == SLACK_POSTING_PENDING
+    work = assignments.list_assignments()
+    assert len(work) == 1
+    assert work[0]["id"] == run["assignment_id"]
+    assert work[0]["result"] == "GREEN"
     assert not any(request.url.host == "slack.com" for request in upstream.requests)
+
+
+def test_receipt_token_alone_does_not_count_as_slack_outbound(monkeypatch):
+    from local_brain.command_center import agent_output, slack_memory_posts, slack_receipts
+
+    monkeypatch.setattr(slack_memory_posts, "configured", lambda: False)
+    monkeypatch.setattr(slack_receipts, "configured", lambda: True)
+    assert agent_output.slack_outbound_configured() is False
+
+
+def test_failed_manual_run_opens_no_work_item_and_is_not_delivered(studio):
+    server, registry, assignments, _events, upstream = studio
+    agent = _agent(registry, output_channel="studio_inbox")
+    upstream.fail_chat = True
+
+    with pytest.raises(Exception) as excinfo:
+        asyncio.run(server._execute_agent(agent["id"], "Inspect current checks."))
+    assert getattr(excinfo.value, "status_code", None) == 503
+
+    saved = registry.get(agent["id"])
+    run = saved["runs"][0]
+    assert run["error"] == "local_model_error_500"
+    assert run["delivered_channel"] == ""
+    assert run["delivery_note"] == RUN_FAILED_NOTE
+    assert assignments.list_assignments() == []
+    assert registry.ledger.get(run["id"])["delivered_channel"] == ""
+
+
+def test_inbox_title_leads_with_the_task():
+    agent = {"name": "Signal Officer", "mission": "Report current CI state. More."}
+    assert (
+        inbox_title(agent, "Inspect current checks.") == "Inspect current checks. — Signal Officer"
+    )
+    assert inbox_title(agent, "") == "Signal Officer"
+    long_task = "x" * 300
+    title = inbox_title(agent, long_task)
+    assert len(title) <= 120
+    assert title.endswith("— Signal Officer")
 
 
 def test_manual_studio_inbox_run_surfaces_in_existing_review_queue(studio):
@@ -257,6 +305,9 @@ def test_manual_studio_inbox_run_surfaces_in_existing_review_queue(studio):
     assert work["id"] == run["assignment_id"]
     assert work["status"] == "completed"
     assert work["review_status"] == "unreviewed"
+    assert work["source_ref"] == run["id"]
+    # The ledger row links to the Work item too, not only the in-memory run.
+    assert registry.ledger.get(run["id"])["assignment_id"] == work["id"]
     assert (
         any(entity == "assignment" for entity, _event, _item in events) or work["result"] == "GREEN"
     )

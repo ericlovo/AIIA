@@ -34,6 +34,8 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict, Field
 
 from local_brain.command_center.agent_output import (
+    INBOX_UNAVAILABLE_NOTE,
+    RUN_FAILED_NOTE,
     inbox_title,
     present_agents,
     resolve_delivery,
@@ -1400,9 +1402,10 @@ def _agent_system_prompt(agent: dict[str, Any], memory_context: str = "") -> str
 
 
 def _agent_activity() -> dict[str, Any]:
+    """Per-agent run counts for the value glance: one grouped query, not the full activity report."""
     try:
         ledger = agent_registry.ledger or agent_registry.recover_runs()
-        return ledger.activity(days=14)
+        return ledger.agent_day_counts(days=14)
     except (RunHistoryUnavailable, sqlite3.Error, OSError):
         return {}
 
@@ -1421,47 +1424,67 @@ def _public_agent(agent: dict[str, Any] | None) -> dict[str, Any] | None:
     return _public_agents([agent])[0]
 
 
-def _surface_studio_inbox(agent: dict[str, Any], run: dict[str, Any]) -> dict[str, Any] | None:
-    """Put a manual/loop result without an assignment into the existing Work review queue."""
-    if run.get("assignment_id"):
-        return assignment_registry.get_assignment(str(run["assignment_id"]))
+def _open_inbox_item(agent: dict[str, Any], task: str, run_id: str) -> dict[str, Any] | None:
+    """Open a Work item for a manual run that has no assignment, before the run is saved.
+
+    Opening it first lets the run row carry the assignment id into the ledger;
+    the item is closed with the result once the run is persisted.
+    """
     try:
-        assignment = assignment_registry.create_assignment(
-            title=inbox_title(agent, str(run.get("task") or "")),
-            objective=str(run.get("task") or agent.get("mission") or "Review this run."),
+        return assignment_registry.create_assignment(
+            title=inbox_title(agent, task),
+            objective=str(task or agent.get("mission") or "Review this run."),
             agent_id=agent["id"],
             trigger="manual",
             source_kind="manual",
-            source_ref=str(run.get("id") or ""),
+            source_ref=run_id,
         )
-        return assignment_registry.finish_assignment(
-            assignment["id"],
-            result=str(run.get("result") or ""),
-            error=str(run.get("error") or ""),
-        )
-    except ValueError as exc:
+    except (ValueError, PersistenceError) as exc:
         logger.warning("Studio inbox delivery skipped for %s: %s", agent.get("id"), exc)
         return None
 
 
-def _deliver_run_output(agent: dict[str, Any] | None) -> dict[str, Any] | None:
-    if not agent or not agent.get("runs"):
-        return agent
-    run = agent["runs"][0]
-    if run.get("delivered_channel") != "studio_inbox":
-        return agent
-    item = _surface_studio_inbox(agent, run)
-    if item and not run.get("assignment_id"):
-        run["assignment_id"] = item["id"]
-    return agent
+def _close_inbox_item(item_id: str, result: str) -> None:
+    try:
+        assignment_registry.finish_assignment(item_id, result=result)
+    except (ValueError, PersistenceError) as exc:
+        logger.warning("Studio inbox item %s left open after run: %s", item_id, exc)
 
 
-def _finish_agent_run(agent: dict[str, Any], *args: Any, **kwargs: Any) -> dict[str, Any] | None:
-    delivery = resolve_delivery(agent)
-    kwargs.setdefault("delivered_channel", delivery["delivered_channel"])
-    kwargs.setdefault("delivery_note", delivery["note"])
-    updated = agent_registry.finish_run(agent["id"], *args, **kwargs)
-    return _deliver_run_output(updated)
+def _finish_agent_run(
+    agent: dict[str, Any],
+    task: str,
+    result: str = "",
+    error: str = "",
+    **kwargs: Any,
+) -> dict[str, Any] | None:
+    """Save the run and deliver its output to the agent's one channel.
+
+    A failed or empty run is not delivered anywhere: it stays on the agent and
+    in the ledger as a failure. A successful manual run without an assignment
+    gets a Work item, created first so the ledger row links to it.
+    """
+    failed = bool(error) or not str(result or "").strip()
+    run_id = str(kwargs.get("run_id") or "") or uuid.uuid4().hex
+    kwargs["run_id"] = run_id
+    item = None
+    if failed:
+        kwargs["delivered_channel"] = ""
+        kwargs["delivery_note"] = RUN_FAILED_NOTE
+    else:
+        delivery = resolve_delivery(agent)
+        kwargs.setdefault("delivered_channel", delivery["delivered_channel"])
+        kwargs.setdefault("delivery_note", delivery["note"])
+        if not kwargs.get("assignment_id"):
+            item = _open_inbox_item(agent, task, run_id)
+            if item:
+                kwargs["assignment_id"] = item["id"]
+            else:
+                kwargs["delivery_note"] = INBOX_UNAVAILABLE_NOTE
+    updated = agent_registry.finish_run(agent["id"], task, result=result, error=error, **kwargs)
+    if item:
+        _close_inbox_item(item["id"], result)
+    return updated
 
 
 @app.get("/api/agents")

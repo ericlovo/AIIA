@@ -152,6 +152,18 @@ class RunLedger:
                 except (KeyError, TypeError, ValueError, AttributeError):
                     logger.warning("Skipped invalid legacy run for agent %s", agent.get("id"))
 
+    def agent_day_counts(self, *, days: int = 14, now: datetime | None = None) -> dict:
+        """Runs per agent per UTC day in the window: the one query the value glance needs."""
+        now = now or datetime.now(timezone.utc)
+        start = (now - timedelta(days=days - 1)).date().isoformat()
+        with self.connect() as db:
+            rows = db.execute(
+                """SELECT agent_id, substr(at,1,10) AS day, count(*) AS total
+                FROM runs WHERE at >= ? GROUP BY agent_id, day""",
+                (start,),
+            ).fetchall()
+        return {"agent_days": [dict(row) for row in rows]}
+
     def activity(
         self,
         *,

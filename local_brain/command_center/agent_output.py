@@ -11,13 +11,16 @@ import re
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
-from local_brain.command_center import slack_memory_posts, slack_receipts
+from local_brain.command_center import slack_memory_posts
 
 ONE_LINER_MAX = 120
 OUTPUT_CHANNELS = ("studio_inbox", "slack")
 DEFAULT_OUTPUT_CHANNEL = "studio_inbox"
 VALUE_WINDOW_DAYS = 14
 SLACK_NOT_CONFIGURED = "slack not configured"
+SLACK_POSTING_PENDING = "slack declared; posting not implemented, delivered to Studio inbox"
+RUN_FAILED_NOTE = "not delivered: run failed"
+INBOX_UNAVAILABLE_NOTE = "studio inbox unavailable; result kept on the run only"
 
 _SENTENCE = re.compile(r"(?<=[.!?])\s+")
 
@@ -59,41 +62,35 @@ def declared_output_channel(agent: dict[str, Any]) -> str:
 
 
 def slack_outbound_configured() -> bool:
-    """True when an existing Slack outbound path can send.
+    """True when the Slack memory-post outbound path is configured.
 
-    Memory posts carry content to the allowlisted channel. Receipts share the
-    same bot token and post_message transport. Either gate means Slack egress
-    is already wired; neither adds a new scope or AIRGAP exception.
+    Only memory posts carry content to an allowlisted channel. The receipt
+    gate proves a bot token exists for acks, not that an agent-output
+    destination does, so it is not consulted here. No new scope or AIRGAP
+    exception is involved either way.
     """
-    return slack_memory_posts.configured() or slack_receipts.configured()
+    return slack_memory_posts.configured()
 
 
 def output_channel_note(agent: dict[str, Any], *, slack_ready: bool | None = None) -> str:
     if declared_output_channel(agent) != "slack":
         return ""
     ready = slack_outbound_configured() if slack_ready is None else slack_ready
-    return "" if ready else SLACK_NOT_CONFIGURED
+    return SLACK_POSTING_PENDING if ready else SLACK_NOT_CONFIGURED
 
 
 def resolve_delivery(agent: dict[str, Any], *, slack_ready: bool | None = None) -> dict[str, str]:
     """Pick the one channel this run is delivered to.
 
-    Slack stays a declared destination. If the existing outbound path is not
-    configured, the result falls back to the Studio inbox and the agent shows
-    a slack-not-configured note. No new Slack post is sent here; later digest
-    work reuses slack_memory_posts / slack_receipts.
+    Every run is delivered to the Studio inbox today. Slack is a declared
+    destination only: nothing posts agent output to Slack yet, so recording
+    ``delivered_channel="slack"`` would describe output that went nowhere.
+    The note says why the declared channel was not used. Later digest work
+    reuses slack_memory_posts and can flip this when a real post exists.
     """
     declared = declared_output_channel(agent)
-    ready = slack_outbound_configured() if slack_ready is None else slack_ready
-    if declared == "slack" and ready:
-        return {"declared": declared, "delivered_channel": "slack", "note": ""}
-    if declared == "slack":
-        return {
-            "declared": declared,
-            "delivered_channel": DEFAULT_OUTPUT_CHANNEL,
-            "note": SLACK_NOT_CONFIGURED,
-        }
-    return {"declared": declared, "delivered_channel": DEFAULT_OUTPUT_CHANNEL, "note": ""}
+    note = output_channel_note(agent, slack_ready=slack_ready)
+    return {"declared": declared, "delivered_channel": DEFAULT_OUTPUT_CHANNEL, "note": note}
 
 
 def present_agent(
@@ -205,7 +202,13 @@ def present_agents(
 
 
 def inbox_title(agent: dict[str, Any], task: str) -> str:
-    label = resolve_one_liner(agent) or str(agent.get("name") or "Agent").strip() or "Agent"
+    """Lead with the task so repeated manual runs of one agent stay distinguishable."""
+    label = str(agent.get("name") or "").strip() or resolve_one_liner(agent) or "Agent"
     task_line = " ".join(str(task or "").split())
-    title = f"{label}: {task_line}" if task_line else label
-    return title[:120]
+    if not task_line:
+        return label[:120]
+    room = 120 - len(label) - 3
+    if room < 24:
+        return task_line[:120]
+    task_part = task_line if len(task_line) <= room else task_line[: room - 1].rstrip() + "…"
+    return f"{task_part} — {label}"

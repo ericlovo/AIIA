@@ -253,7 +253,7 @@ export function AgentStudio() {
                     <div className="mt-3 flex flex-wrap gap-1.5">
                       <ChannelChip channel={agent.output_channel} note={agent.output_channel_note} />
                       <span className={`border px-2 py-1 text-[10px] ${noReviewedOutput(agent) ? 'border-amber-400/50 text-amber-200' : 'border-neutral-700 text-neutral-400'}`}>{valueGlance(agent)}</span>
-                      {hasSlackGap(agent) && <span className="border border-amber-400/50 px-2 py-1 text-[10px] text-amber-200">slack not configured</span>}
+                      {hasSlackGap(agent) && <span className="border border-amber-400/50 px-2 py-1 text-[10px] text-amber-200">{agent.output_channel_note}</span>}
                     </div>
                     <div className="mt-5 flex flex-wrap gap-1.5">
                       {agent.skills.slice(0, 4).map(skill => <span key={skill} className="border border-neutral-700 px-2 py-1 text-[10px] text-neutral-400">{skill}</span>)}
@@ -296,7 +296,7 @@ export function AgentStudio() {
                 {OUTPUT_CHANNELS.map(channel => <option key={channel.id} value={channel.id}>{channel.label}</option>)}
               </select>
             </Field>
-            {draft.output_channel === 'slack' && <p className="text-xs text-amber-200/90">Slack is a declared destination. If Slack outbound is not configured on the Mini, results fall back to the Studio inbox.</p>}
+            {draft.output_channel === 'slack' && <p className="text-xs text-amber-200/90">Slack is a declared destination only. Nothing posts agent output to Slack yet, so results are delivered to the Studio inbox and the agent shows why.</p>}
             <Field label="Mission"><textarea value={draft.mission} onChange={event => setDraft({ ...draft, mission: event.target.value })} placeholder="Watch a domain, find signal, and make a clear recommendation." rows={3} /></Field>
             <Field label="Persona"><textarea value={draft.persona} onChange={event => setDraft({ ...draft, persona: event.target.value })} rows={3} /></Field>
             <div>
