@@ -980,6 +980,8 @@ task_runner = TaskRunner(
     monitor_state=monitor,
     action_queue=action_queue,
 )
+task_runner.agent_registry = agent_registry
+task_runner.assignment_registry = assignment_registry
 
 # ─── Execution Engine ────────────────────────────────────
 from local_brain.config import LocalBrainConfig

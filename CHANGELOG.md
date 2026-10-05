@@ -78,6 +78,22 @@ All notable changes to AIIA are documented here. This project adheres to
 
 ### Added
 
+- **Daily digest of mounted-repo triage and drift.** A new built-in task
+  `daily_digest` (daily 12:00 UTC = 07:00 CDT / 06:00 CST) reads mounted
+  checkouts and GitHub Actions — open PRs, failing CI, merge conflicts,
+  behind-main, and Mindmoor `production` / `alumni` (or `release/alumni*`)
+  versus `main` — and emits one ≤200-character line. CLEAR / green days
+  record a quiet check and do not open a Work item, so they cannot trip
+  `awaiting_review` and block tomorrow. Material stuck lines go through the
+  #101 output-channel path (Studio inbox; Slack falls back to inbox when
+  not configured or posting is still pending). Incomplete git/gh reads
+  surface as a `loop_check` failure and also do not block the next run.
+  Daily Brief (`daily_brief`, 08:00 UTC, LLM) is unchanged. Enable the
+  standing agent on the Mini with
+  `python -m local_brain.scripts.ensure_daily_digest_agent --apply`; the
+  script never writes `agent_data.json`. See
+  [docs/HANDOFF-DAILY-DIGEST.md](docs/HANDOFF-DAILY-DIGEST.md).
+
 - **Opt-in local recipe evaluation.** Four synthetic cases cover runtime noise,
   uncommitted source changes, untrusted README instructions, failed Git reads,
   and unverified deployment claims. The runner uses the actual job definitions

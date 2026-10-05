@@ -442,6 +442,14 @@ TASK_DEFINITIONS = {
         "schedule_cron_minute": 0,
         "uses_llm": True,
     },
+    "daily_digest": {
+        "name": "Daily Digest",
+        "description": ("Triage mounted repos: what moved, what's stuck, CI and behind-main drift"),
+        # 07:00 America/Chicago during CDT (06:00 CST). Scheduler is UTC-only.
+        "schedule_cron_hour": 12,
+        "schedule_cron_minute": 0,
+        "uses_llm": False,
+    },
     "weekly_default_status": {
         "name": "DefaultApp Weekly Status",
         "description": "Generate client delivery report: features shipped, bugs fixed, metrics",
@@ -500,6 +508,10 @@ class TaskRunner:
         # them with the prioritizer. Both may be None (task then no-ops safely).
         self.roadmap_store: Any = None
         self.story_prioritizer: Any = None
+        # Wired post-construction in server.py so the digest can deliver through
+        # the Studio agent's output_channel without importing the FastAPI app.
+        self.agent_registry: Any = None
+        self.assignment_registry: Any = None
         self._running_task: str | None = None
 
         # Initialize task states
@@ -535,6 +547,7 @@ class TaskRunner:
             "test_runner": self._task_test_runner,
             "memory_digest": self._task_memory_digest,
             "daily_brief": self._task_daily_brief,
+            "daily_digest": self._task_daily_digest,
             "weekly_default_status": self._task_weekly_default_status,
             "cross_tenant_analytics": self._task_cross_tenant_analytics,
             "security_scan": self._task_security_scan,
@@ -1356,6 +1369,27 @@ class TaskRunner:
 
         await self._progress("memory_digest", 100, "Complete")
         return f"Reviewed {categories_reviewed} categories, {len(memories)} memories total"
+
+    async def _task_daily_digest(self) -> str:
+        """Triage mounted repos and deliver one digest line. No LLM."""
+        from local_brain.command_center.daily_digest import collect_and_deliver
+
+        await self._progress("daily_digest", 10, "Collecting mounted-repo evidence")
+        result, delivery = await asyncio.to_thread(
+            collect_and_deliver,
+            agents=self.agent_registry,
+            assignments=self.assignment_registry,
+        )
+        self._extra["daily_digest"] = {
+            "line": result.line,
+            "severity": result.severity,
+            "fingerprint": result.fingerprint,
+            "quiet": delivery.get("quiet"),
+            "reason": delivery.get("reason") or "",
+            "delivered_channel": delivery.get("delivered_channel") or "",
+        }
+        await self._progress("daily_digest", 100, "Complete")
+        return (result.line, json.dumps(delivery, default=str))
 
     async def _task_daily_brief(self) -> str:
         """Generate a daily summary: git activity, health trends, KB growth."""
