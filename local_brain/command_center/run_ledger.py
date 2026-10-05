@@ -43,6 +43,8 @@ class RunLedger:
             for column in ("input_tokens", "output_tokens"):
                 if column not in columns:
                     db.execute(f"ALTER TABLE runs ADD COLUMN {column} INTEGER")
+            if "delivered_channel" not in columns:
+                db.execute("ALTER TABLE runs ADD COLUMN delivered_channel TEXT NOT NULL DEFAULT ''")
             # Scheduled-loop checks that ran no model: kept apart from `runs` so run
             # counts, token usage and review metrics only ever describe inference.
             db.execute("""CREATE TABLE IF NOT EXISTS loop_checks (
@@ -86,8 +88,9 @@ class RunLedger:
             db.execute(
                 """INSERT OR IGNORE INTO runs
                 (id,agent_id,agent_name,repo_id,at,status,trigger,assignment_id,
-                 model,latency_ms,legacy,payload,input_tokens,output_tokens)
-                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                 model,latency_ms,legacy,payload,input_tokens,output_tokens,
+                 delivered_channel)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                 (
                     run_id,
                     agent["id"],
@@ -103,6 +106,7 @@ class RunLedger:
                     json.dumps(payload),
                     input_tokens,
                     output_tokens,
+                    str(run.get("delivered_channel") or ""),
                 ),
             )
         return run_id
@@ -147,6 +151,18 @@ class RunLedger:
                     self.record(agent, run, legacy=True)
                 except (KeyError, TypeError, ValueError, AttributeError):
                     logger.warning("Skipped invalid legacy run for agent %s", agent.get("id"))
+
+    def agent_day_counts(self, *, days: int = 14, now: datetime | None = None) -> dict:
+        """Runs per agent per UTC day in the window: the one query the value glance needs."""
+        now = now or datetime.now(timezone.utc)
+        start = (now - timedelta(days=days - 1)).date().isoformat()
+        with self.connect() as db:
+            rows = db.execute(
+                """SELECT agent_id, substr(at,1,10) AS day, count(*) AS total
+                FROM runs WHERE at >= ? GROUP BY agent_id, day""",
+                (start,),
+            ).fetchall()
+        return {"agent_days": [dict(row) for row in rows]}
 
     def activity(
         self,
@@ -214,7 +230,7 @@ class RunLedger:
                 for row in db.execute(
                     f"""SELECT id,agent_id,agent_name,repo_id,
                 at,status,trigger,assignment_id,model,latency_ms,legacy,
-                input_tokens,output_tokens FROM runs
+                input_tokens,output_tokens,delivered_channel FROM runs
                 WHERE {where} ORDER BY at DESC,id DESC LIMIT 200""",  # nosec B608
                     args,
                 )
@@ -252,7 +268,8 @@ class RunLedger:
                 dict(row)
                 for row in db.execute(
                     """SELECT id,agent_id,agent_name,repo_id,at,status,trigger,
-                assignment_id,model,latency_ms,legacy,input_tokens,output_tokens FROM runs
+                assignment_id,model,latency_ms,legacy,input_tokens,output_tokens,
+                delivered_channel FROM runs
                 WHERE assignment_id=? AND trigger='assignment'
                 ORDER BY at DESC,id DESC LIMIT ? OFFSET ?""",
                     (assignment_id, limit, offset),

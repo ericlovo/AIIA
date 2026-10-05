@@ -12,6 +12,9 @@ const browser = await chromium.launch({ headless: true, executablePath: process.
 const date = '2026-09-14'
 const agents = Array.from({ length: 24 }, (_, i) => ({
   id: `synthetic-${i}`, name: `CI specialist ${i + 1}`, mission: 'Review local repository evidence and identify the next verification task.',
+  one_liner: 'Review local repository evidence.', output_channel: i === 2 ? 'slack' : 'studio_inbox',
+  output_channel_note: i === 2 ? 'slack not configured' : '',
+  value: { window_days: 14, runs: i === 3 ? 0 : 2, last_run_at: i === 3 ? null : `${date}T12:00:00Z`, reviewed: i === 3 ? 0 : 1, unreviewed: i === 3 ? 0 : 1 },
   status: i === 0 ? 'running' : 'idle', skills: ['Analysis'], tools: ['Repository read'],
   repo_id: 'aiia', loop_enabled: i === 1, loop_max_runs_per_day: 4, runs: [],
   loop_interval_minutes: 60, loop_skip_reason: i === 1 ? 'awaiting_review' : '',
@@ -154,6 +157,14 @@ try {
 
     const waitingLane = page.locator('.sb-lane').filter({ hasText: 'CI specialist 2' }).first()
     await waitingLane.getByText('Waiting for review', { exact: true }).waitFor()
+    assert.ok((await waitingLane.innerText()).includes('Review local repository evidence.'))
+    assert.ok((await waitingLane.innerText()).includes('Inbox'))
+    const slackLane = page.locator('.sb-lane').filter({ hasText: 'CI specialist 3' }).first()
+    assert.ok((await slackLane.innerText()).includes('Slack'))
+    await page.getByRole('button', { name: 'No reviewed output in 14 days', exact: true }).click()
+    await page.locator('.sb-lane').filter({ hasText: 'CI specialist 4' }).first().waitFor()
+    assert.equal(await page.locator('.sb-lane').count(), 1)
+    await page.getByRole('button', { name: 'No reviewed output in 14 days', exact: true }).click()
     await waitingLane.click()
     assert.equal(await page.getByText('Waiting for review', { exact: true }).count(), 2)
     await waitingLane.scrollIntoViewIfNeeded()

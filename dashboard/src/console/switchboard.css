@@ -83,8 +83,9 @@
 .sb-mini-history i { height:13px; background:#243137; border-radius:2px; }
 .sb-mini-history .sb-mini-done { background:#43b87e; }
 .sb-mini-history .sb-mini-failed { background:#e17868; }
-.sb-lane-state { text-align:right; }
+.sb-value-quiet { color:#f0c686; }
 .sb-lane-state strong { display:block; font-size:11px; color:#cbd3d8; font-weight:400; }
+.sb-lane-state strong.sb-value-quiet { color:#f0c686; }
 .sb-lane-state small { font-size:10px; color:#8fa1ac; display:block; margin-top:5px; }
 .sb-fleet>.sb-coverage { margin:12px 30px 16px; }
 .sb-inspector { padding:26px 22px; position:sticky; top:0; max-height:calc(100vh - 112px); overflow:auto; }

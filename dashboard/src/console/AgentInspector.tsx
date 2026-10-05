@@ -3,6 +3,8 @@ import { useMutation, useMutationState, useQuery, useQueryClient } from '@tansta
 import { api, type Agent } from '../lib/api'
 import {
   NUMBER_LIMITS,
+  ONE_LINER_MAX,
+  OUTPUT_CHANNELS,
   RUN_TASK_MAX_LENGTH,
   SUITE_MAX_LENGTH,
   listSummary,
@@ -23,6 +25,8 @@ import {
   type AgentPatch,
   type PatchLedger,
 } from './agentConfig'
+import { ChannelChip } from './ChannelChip'
+import { hasSlackGap, valueSummary } from './agentValue'
 
 interface AgentInspectorProps {
   agent: Agent
@@ -117,10 +121,13 @@ export function AgentInspector({ agent, onClose, onManageAgent, onAssignAgent }:
         <div className="min-w-0">
           <div className="text-[9px] font-semibold tracking-[0.18em] uppercase text-cyan-300/70">agent controls</div>
           <div className="mt-1 break-words text-sm font-medium text-white">{agent.name}</div>
+          <div className="mt-1 flex flex-wrap gap-1.5"><ChannelChip channel={view.output_channel} note={view.output_channel_note} /></div>
         </div>
         <button type="button" onClick={onClose} className="text-lg leading-none text-white/30 hover:text-white" aria-label="Close node controls">×</button>
       </div>
-      <p className="mt-3 line-clamp-4 text-xs leading-relaxed text-white/45">{agent.mission}</p>
+      <p className="mt-3 line-clamp-4 text-xs leading-relaxed text-white/45">{agent.one_liner || agent.mission}</p>
+      {hasSlackGap(view) && <p role="status" className="mt-2 border border-amber-300/30 bg-amber-950/30 px-2.5 py-1.5 text-[11px] text-amber-200">{view.output_channel_note}</p>}
+      <p className="mt-2 text-[11px] text-white/45">{valueSummary(agent)}</p>
 
       <section aria-label="Agent settings" className="mt-4">
         {agent.status === 'running' && <p role="status" className="mb-3 border border-amber-300/30 bg-amber-950/30 px-2.5 py-1.5 text-[11px] text-amber-200">Running now. Changes apply to the next run.</p>}
@@ -138,6 +145,16 @@ export function AgentInspector({ agent, onClose, onManageAgent, onAssignAgent }:
           </Field>
           <Field label="Max tokens" failure={failure?.field === 'max_tokens' ? failure.text : ''}>
             {id => <NumberInput id={id} label="Max tokens" value={view.max_tokens} step={50} limits={NUMBER_LIMITS.max_tokens} onCommit={value => change({ max_tokens: value })} />}
+          </Field>
+          <Field label="One-liner" failure={failure?.field === 'one_liner' ? failure.text : ''}>
+            {id => <TextInput id={id} value={view.one_liner_derived ? '' : view.one_liner ?? ''} maxLength={ONE_LINER_MAX} placeholder="One sentence job" onCommit={value => change({ one_liner: value })} />}
+          </Field>
+          <Field label="Output channel" failure={failure?.field === 'output_channel' ? failure.text : ''}>
+            {id => (
+              <select id={id} value={view.output_channel ?? 'studio_inbox'} onChange={event => change({ output_channel: event.target.value as Agent['output_channel'] })} className={CONTROL}>
+                {OUTPUT_CHANNELS.map(choice => <option key={choice.id} value={choice.id}>{choice.label}</option>)}
+              </select>
+            )}
           </Field>
           <Field label="Suite" failure={failure?.field === 'suite' ? failure.text : ''}>
             {id => <TextInput id={id} value={view.suite ?? ''} maxLength={SUITE_MAX_LENGTH} placeholder="None" onCommit={value => change({ suite: value })} />}

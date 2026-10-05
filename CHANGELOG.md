@@ -95,6 +95,24 @@ All notable changes to AIIA are documented here. This project adheres to
   verdict: existing verdicts are kept and nothing becomes accepted. Capped at
   250 items per batch.
 
+- **Every Studio agent has a one-liner and one output channel.** `one_liner`
+  (max 120) is the job in a sentence; agents that omit it show the first
+  sentence of `mission` at read time and are not rewritten. `output_channel`
+  is exactly one of `studio_inbox` or `slack` (default inbox). Slack is only
+  a declared destination: nothing posts agent output to Slack yet, so every
+  successful run is delivered to the Studio inbox and a Slack-declared agent
+  shows why (`slack not configured`, or `slack declared; posting not
+  implemented`). No Slack scopes or AIRGAP exceptions are added. Completed
+  runs record `delivered_channel` and the Work item they opened on the
+  ledger; failed or empty runs are recorded as not delivered and open no
+  Work item. Inbox delivery reuses the Work review queue from #100 and the
+  run's Work item is created before the run is saved, so the ledger row
+  links to it. Agents, Switchboard, and the inspector show
+  the one-liner, a channel chip, and 14-day value (runs, last run, reviewed
+  vs waiting) so agents with zero reviewed output are obvious. A read-only
+  helper, `python -m local_brain.scripts.propose_agent_one_liners --file`,
+  prints a proposed one-liner diff and never writes live data.
+
 ## [0.7.0] — 2026-09-24
 
 Fifteen commits since 0.6.0, seven of them feature work and eight dependency

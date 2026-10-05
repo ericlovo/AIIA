@@ -12,6 +12,10 @@ from functools import wraps
 from pathlib import Path
 from typing import Any
 
+from local_brain.command_center.agent_output import (
+    normalize_output_channel,
+    stored_one_liner,
+)
 from local_brain.command_center.agent_suites import apply_suite_defaults
 from local_brain.command_center.persistence import PersistenceError, atomic_write_json
 from local_brain.command_center.run_ledger import RunLedger, token_counts
@@ -98,6 +102,8 @@ class AgentRegistry:
         suite: str = "",
         memory_namespace: str = "",
         model: str = "",
+        one_liner: str = "",
+        output_channel: str = "studio_inbox",
     ) -> dict[str, Any]:
         if len(self.agents) >= MAX_AGENTS:
             raise ValueError("agent_limit_reached")
@@ -121,6 +127,7 @@ class AgentRegistry:
             "loop_max_runs_per_day": self._daily_limit(loop_max_runs_per_day),
             "suite": suite,
             "memory_namespace": memory_namespace,
+            "output_channel": normalize_output_channel(output_channel),
             "loop_runs_today": 0,
             "loop_day": "",
             "loop_checked_at": None,
@@ -137,6 +144,9 @@ class AgentRegistry:
             "created_at": now,
             "updated_at": now,
         }
+        stored = stored_one_liner(one_liner)
+        if stored:
+            agent["one_liner"] = stored
         self._require_loop_task(agent)
         self.agents.append(agent)
         return agent
@@ -190,6 +200,7 @@ class AgentRegistry:
             "suite",
             "memory_namespace",
         }
+        # one_liner and output_channel are identity/routing, not loop inputs.
         for field in ("name", "mission", "persona"):
             if field in changes:
                 agent[field] = str(changes[field]).strip()
@@ -215,6 +226,10 @@ class AgentRegistry:
             agent["loop_task"] = str(changes["loop_task"]).strip()[:8_000]
         if "loop_max_runs_per_day" in changes:
             agent["loop_max_runs_per_day"] = self._daily_limit(changes["loop_max_runs_per_day"])
+        if "one_liner" in changes:
+            agent["one_liner"] = stored_one_liner(changes["one_liner"])
+        if "output_channel" in changes:
+            agent["output_channel"] = normalize_output_channel(changes["output_channel"])
         if "suite" in changes or "memory_namespace" in changes:
             suite, memory_namespace = apply_suite_defaults(
                 changes["suite"] if "suite" in changes else agent.get("suite", ""),
@@ -331,6 +346,8 @@ class AgentRegistry:
         run_id: str = "",
         usage: dict | None = None,
         done_reason: str = "",
+        delivered_channel: str = "",
+        delivery_note: str = "",
     ) -> dict[str, Any] | None:
         agent = self.get(agent_id)
         if not agent:
@@ -375,6 +392,8 @@ class AgentRegistry:
                     "input_tokens": input_tokens,
                     "output_tokens": output_tokens,
                     "done_reason": str(done_reason or ""),
+                    "delivered_channel": str(delivered_channel or ""),
+                    "delivery_note": str(delivery_note or "")[:120],
                 }
             ]
             + agent["runs"]

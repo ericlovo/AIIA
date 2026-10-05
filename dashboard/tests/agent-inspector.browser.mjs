@@ -30,6 +30,8 @@ function seedAgents() {
       loop_max_runs_per_day: 6, loop_runs_today: 2,
       last_result: `GO verdict. ${'Evidence line. '.repeat(60)}TAIL_MARKER`,
       last_error: 'local_model_unavailable',
+      one_liner: 'Gate release candidates.', output_channel: 'studio_inbox',
+      value: { window_days: 14, runs: 2, last_run_at: `${date}T09:00:00Z`, reviewed: 1, unreviewed: 0 },
     },
     { ...base, id: 'agent-2', name: 'Docs Scout', mission: 'Find stale docs.', model: 'llama3.1:8b' },
     { ...base, id: 'agent-3', name: 'Busy Builder', mission: 'Build in the background.', status: 'running' },
@@ -148,6 +150,10 @@ try {
     await page.waitForFunction(() => document.querySelector('[aria-label="Node controls"] select')?.selectedOptions[0]?.textContent === 'Task default: qwen3:8b')
     assert.equal(await settings.getByLabel('Temperature', { exact: true }).inputValue(), '0.2')
     assert.equal(await settings.getByLabel('Max tokens', { exact: true }).inputValue(), '1600')
+    assert.equal(await settings.getByLabel('One-liner', { exact: true }).inputValue(), 'Gate release candidates.')
+    assert.equal(await settings.getByLabel('Output channel', { exact: true }).inputValue(), 'studio_inbox')
+    assert.ok((await inspector.innerText()).includes('Inbox'))
+    assert.ok((await inspector.innerText()).includes('1 reviewed'))
     assert.equal(await settings.getByLabel('Suite', { exact: true }).inputValue(), 'release')
     assert.equal(await settings.getByLabel('Loop', { exact: true }).isChecked(), true)
     assert.equal(await settings.getByLabel('Loop interval (min)', { exact: true }).inputValue(), '120')
@@ -336,7 +342,7 @@ try {
     await inspector.getByRole('form', { name: 'Run agent' }).getByLabel('Task for this run', { exact: true }).fill('Check the docs.')
     await inspector.getByRole('button', { name: 'Close node controls' }).focus()
     const reached = []
-    for (let i = 0; i < 11; i++) {
+    for (let i = 0; i < 13; i++) {
       await page.keyboard.press('Tab')
       reached.push(await page.evaluate(() => {
         const el = document.activeElement
@@ -345,7 +351,8 @@ try {
       }))
     }
     assert.deepEqual(reached, [
-      'select:Model', 'input:Temperature', 'input:Max tokens', 'input:Suite', 'input:Loop',
+      'select:Model', 'input:Temperature', 'input:Max tokens', 'input:One-liner',
+      'select:Output channel', 'input:Suite', 'input:Loop',
       'input:Loop interval (min)', 'input:Loop runs per day', 'textarea:Task for this run',
       'button:Run now', 'button:Assign work', 'button:Edit agent',
     ])
