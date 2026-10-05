@@ -10,10 +10,12 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
+from urllib.parse import urlsplit
 
 from local_brain.command_center import repository_tools as repos
 from local_brain.command_center.agent_output import (
@@ -125,6 +127,35 @@ def watched_repo_ids(mounts: dict[str, Path] | None = None) -> list[str]:
 
 def _git_read(path: Path, *args: str) -> str | None:
     return repos._git_checked(path, *args)
+
+
+def github_slug_from_remote(remote: str) -> str:
+    """Owner/repo from a GitHub remote, including HTTPS URLs with userinfo.
+
+    ``repository_tools._origin_slug`` only accepts bare github.com hosts. Cloud
+    checkouts and some Mini remotes rewrite origin to
+    ``https://x-access-token:…@github.com/owner/repo.git``. Never return the
+    remote itself — only the slug — so tokens cannot leak into the digest line.
+    """
+    slug = str(remote or "").strip()
+    if slug in {"", "unavailable"}:
+        return ""
+    if slug.startswith("git@github.com:"):
+        slug = slug.split(":", 1)[1]
+    else:
+        parsed = urlsplit(slug)
+        host = (parsed.hostname or "").lower()
+        if host != "github.com" or not parsed.path:
+            return ""
+        slug = parsed.path.lstrip("/")
+    slug = slug.removesuffix(".git").strip("/")
+    return slug if repos._GITHUB_SLUG.fullmatch(slug) else ""
+
+
+def _github_slug(path: Path) -> str:
+    return repos._origin_slug(path) or github_slug_from_remote(
+        repos._git(path, "remote", "get-url", "origin")
+    )
 
 
 def _ref_exists(git_read: GitRead, path: Path, ref: str) -> bool:
@@ -278,7 +309,7 @@ def collect_repo_evidence(
     if recent_raw is None:
         failures.append("git_recent_commits_failed")
 
-    slug = repos._origin_slug(path)
+    slug = _github_slug(path)
     open_prs = failing_ci = merge_conflicts = None
     if slug:
         pulls = _open_pr_rows(github_api, slug, failures)

@@ -36,6 +36,7 @@ from local_brain.command_center.daily_digest import (
     digest_agent_payload,
     find_digest_agent,
     format_digest_line,
+    github_slug_from_remote,
 )
 from local_brain.scripts.ensure_daily_digest_agent import main as seed_main
 
@@ -98,6 +99,21 @@ def test_daily_brief_schedule_is_unchanged_and_digest_is_separate():
     assert by_id["daily_brief"]["schedule"] == "daily 08:00 UTC"
     assert by_id["daily_digest"]["schedule"] == "daily 12:00 UTC"
     assert by_id["daily_digest"]["enabled"] is True
+
+
+def test_github_slug_accepts_tokenized_https_without_leaking_secrets():
+    assert (
+        github_slug_from_remote("https://github.com/ericlovo/mindmoor.git") == "ericlovo/mindmoor"
+    )
+    assert (
+        github_slug_from_remote("https://x-access-token:ghs_secret@github.com/ericlovo/AIIA.git")
+        == "ericlovo/AIIA"
+    )
+    assert github_slug_from_remote("git@github.com:ericlovo/sanction.git") == "ericlovo/sanction"
+    assert github_slug_from_remote("https://gitlab.com/ericlovo/AIIA.git") == ""
+    assert "ghs_secret" not in github_slug_from_remote(
+        "https://x-access-token:ghs_secret@github.com/ericlovo/AIIA.git"
+    )
 
 
 def test_format_clear_vs_stuck_and_truncates():
