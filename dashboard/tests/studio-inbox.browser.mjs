@@ -110,7 +110,8 @@ async function open(path, width, { failed = [], held = [], clock = false } = {})
       if (action === 'dismiss') Object.assign(item, { status: 'dismissed', reviewed_at: `${date}T13:00:00Z` })
       if (action === 'promote') {
         assert.ok(cleanText(item.text) !== '(mention only, no text)')
-        assert.equal(sent.post_to_slack, false, 'this suite never requests Slack posts')
+        // Posting is configured in this suite's Slack status, so logging to memory posts by default.
+        assert.equal(sent.post_to_slack, true, 'logging to memory posts to Slack by default when configured')
         Object.assign(item, { status: 'promoted', memory_id: `memory-${id}`, memory_category: sent.category, priority: sent.priority, reviewed_at: `${date}T13:00:00Z` })
       }
       if (action === 'assign') {

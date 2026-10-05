@@ -201,8 +201,9 @@ class MemoryInbox:
 
     @staticmethod
     def _files(db, idea_id: str) -> list[dict]:
+        # B608 nosec: the only joined text is the literal FILE_PUBLIC_COLUMNS tuple.
         rows = db.execute(
-            "SELECT " + ",".join(FILE_PUBLIC_COLUMNS) + " FROM capture_files WHERE idea_id=? "
+            "SELECT " + ",".join(FILE_PUBLIC_COLUMNS) + " FROM capture_files WHERE idea_id=? "  # nosec B608
             "ORDER BY rowid",
             (idea_id,),
         ).fetchall()
