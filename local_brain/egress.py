@@ -43,6 +43,7 @@ EGRESS_POINTS = {
     "slack.post": "Slack notify",
     "slack.capture_ack": "fixed local-memory save receipt (opt-in)",
     "slack.memory_post": "human-approved memory post to one allowlisted channel (opt-in)",
+    "slack.file_fetch": "download of a file attached to a capture mention (opt-in)",
     "google.tts": "TTS synthesis",
     "anthropic.claude_code": "execution engine / story runner",
     "web.fetch": "research literature loop",
@@ -68,6 +69,9 @@ def airgap_allows_tool(tool: str) -> bool:
         tool in AIRGAP_ALLOWED_EGRESS
         or (tool == "slack.capture_ack" and os.getenv("AIIA_SLACK_ACK_ENABLED", "") == "1")
         or (tool == "slack.memory_post" and os.getenv("AIIA_SLACK_MEMORY_POST_ENABLED", "") == "1")
+        # Files a person attached to a capture mention. Inbound to the Mini only;
+        # nothing from the Mini is sent besides the bot token.
+        or (tool == "slack.file_fetch" and os.getenv("AIIA_SLACK_FILE_CAPTURE_ENABLED", "") == "1")
         # Advisory routing. Off unless switched on, and the call site still
         # requires per-request consent from a human before it dials out.
         or (

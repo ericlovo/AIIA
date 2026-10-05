@@ -163,14 +163,61 @@ def test_same_memory_from_two_captures_is_posted_once(app, env, monkeypatch):
     assert row["memory_post_status"] is None
 
 
-def test_promote_without_post_queues_nothing(app, env, monkeypatch):
+def test_promote_opting_out_queues_nothing(app, env, monkeypatch):
     idea = capture(env.inbox)
     brain(monkeypatch, lambda r: httpx.Response(200, json={"id": "project_1_1"}))
-    response = call(app, "POST", f"/api/memory-inbox/{idea['id']}/promote", {})
+    response = call(
+        app, "POST", f"/api/memory-inbox/{idea['id']}/promote", {"post_to_slack": False}
+    )
     assert response.status_code == 200
     assert response.json()["idea"]["post_requested"] == 0
     assert response.json()["idea"]["memory_post_status"] is None
     assert env.inbox.memory_post_status() == {}
+
+
+def test_promote_posts_by_default_when_the_mini_can(app, env, monkeypatch):
+    """Logging to memory sends the text back out unless the caller opts out."""
+    idea = capture(env.inbox)
+    brain(monkeypatch, lambda r: httpx.Response(200, json={"id": "project_2_2"}))
+    response = call(app, "POST", f"/api/memory-inbox/{idea['id']}/promote", {})
+    assert response.status_code == 200, response.text
+    assert response.json()["idea"]["post_requested"] == 1
+    assert env.inbox.memory_post_status() == {"pending": 1}
+    body = env.inbox.claim_memory_post()["body"]
+    assert "Captured in Slack by U_AUTHOR" in body or "Captured in Slack by" in body
+
+
+def test_promote_default_is_no_post_when_posting_is_not_configured(app, env, monkeypatch):
+    monkeypatch.setenv("AIIA_SLACK_MEMORY_POST_ENABLED", "0")
+    idea = capture(env.inbox)
+    brain(monkeypatch, lambda r: httpx.Response(200, json={"id": "project_3_3"}))
+    response = call(app, "POST", f"/api/memory-inbox/{idea['id']}/promote", {})
+    assert response.status_code == 200, response.text
+    assert response.json()["idea"]["post_requested"] == 0
+    assert env.inbox.memory_post_status() == {}
+
+
+def test_a_loop_proposal_can_be_posted_to_the_channel(app, env, monkeypatch):
+    """A local row has no workspace; it is this Mini's own text and may go out."""
+    idea, _created = env.inbox.ingest(
+        text="Next best action: finalize the approval contract release",
+        source_key="standup:action:x",
+        source="standup",
+        project="aiia",
+    )
+    brain(monkeypatch, lambda r: httpx.Response(200, json={"id": "decisions_8_8"}))
+    response = call(app, "POST", f"/api/memory-inbox/{idea['id']}/promote", {})
+    assert response.status_code == 200, response.text
+    sent = []
+
+    def slack(request):
+        sent.append(json.loads(request.content))
+        return httpx.Response(200, json={"ok": True, "ts": "1.2"})
+
+    deliver(env.inbox, slack)
+    assert len(sent) == 1 and sent[0]["channel"] == CHANNEL
+    assert "Proposed by the standup loop" in sent[0]["text"]
+    assert env.inbox.get(idea["id"])["memory_post_status"] == "sent"
 
 
 @pytest.mark.parametrize(
@@ -514,6 +561,7 @@ def test_body_layout_strips_bot_mention_and_carries_priority_and_category():
     assert post_text("<@U0BOT1>  ship the cron contract") == (
         "[URGENT] Memory logged to decisions\n\n"
         "ship the cron contract\n\n"
+        "Proposed by the local loop\n"
         "Capture 01234567 · Memory decisions_4_1789"
     )
     assert post_text("note", priority="low", category="lessons").startswith(
@@ -595,6 +643,7 @@ def test_delivered_post_is_escaped_plain_text(app, env, monkeypatch):
     assert seen[0]["text"] == (
         "[HIGH] Memory logged to project\n\n"
         "&lt;!channel&gt; deploy &lt;https://evil.example|now&gt;\n\n"
+        "Captured in Slack by U_AUTHOR\n"
         f"Capture {idea['id'][:8]} · Memory project_5_5"
     )
     assert "thread_ts" not in seen[0]

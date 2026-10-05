@@ -44,8 +44,9 @@ async def deliver_one(inbox, *, transport=None):
     post = inbox.claim_memory_post()
     if post is None:
         return
-    # The content goes back only to the workspace it came from.
-    if post["workspace_id"] != os.environ["AIIA_SLACK_TEAM_ID"]:
+    # Slack content goes back only to the workspace it came from. A local row (a
+    # loop proposal, the daily digest) has no workspace and is this Mini's own text.
+    if post["workspace_id"] and post["workspace_id"] != os.environ["AIIA_SLACK_TEAM_ID"]:
         inbox.finish_memory_post(post, status="failed", error="source_not_allowed")
         return
     if post["channel_id"] != channel_id():

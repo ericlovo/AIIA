@@ -6,6 +6,35 @@ All notable changes to AIIA are documented here. This project adheres to
 
 ## [Unreleased]
 
+### Added
+
+- **Slack captures keep their attached files.** People mention the bot with a
+  document and no words, so the event text was only the mention and, after
+  #100, the capture was dropped. A mention with files is now a capture: the
+  inbox row says what was attached, and a new file worker (opt-in with
+  `AIIA_SLACK_FILE_CAPTURE_ENABLED=1`, egress point `slack.file_fetch`)
+  downloads each file with the bot token, saves it under
+  `command_center/capture_files/<capture>/`, reads text and PDF content, and
+  appends an excerpt to the capture so it reads in the inbox and can be logged
+  to memory. Logging to memory also indexes the full file text in the knowledge
+  store. Failed fetches say why (`missing_scope`, `file_too_large`) and can be
+  retried; `POST /api/memory-inbox/{id}/files` attaches a file by id to an
+  older capture.
+- **Logging to memory posts to Slack by default.** The promote request's
+  `post_to_slack` now defaults to "when the Mini can": the approved text goes to
+  the allowlisted channel with a provenance line (who captured it, which loop
+  proposed it, which files) unless the caller opts out. Loop proposals, which
+  have no workspace, may be posted; another workspace's text still may not.
+- **Daily Digest built-in task.** One line per agent (runs, waiting review,
+  failures, the day's verdict), one per launchd loop (from the loops
+  registry), failing built-in tasks, and the inbox count by source. No model.
+  Filed once per day as an inbox row with source `digest` and, when memory
+  posts are configured, posted once to the channel through the same outbox.
+- **Built-in cron tasks keep a wall clock.** A task may declare `schedule_tz`;
+  Daily Brief and Daily Digest run at 07:00 and 07:40 America/Chicago instead
+  of UTC minutes. A cron task is due once its target time has passed and it has
+  not run since, so a busy minute no longer skips a day. Jobs shows the zone.
+
 ### Security
 
 - **Command Center listens on loopback by default.** It has no auth of its

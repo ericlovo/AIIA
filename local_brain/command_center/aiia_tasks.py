@@ -23,12 +23,15 @@ import re
 import sys
 import time
 from collections.abc import Callable, Coroutine
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import httpx
 
+from local_brain.command_center import daily_digest, slack_memory_posts
+from local_brain.command_center.memory_inbox import LOCAL_PROPOSAL_SOURCES
 from local_brain.scripts.daily_report import generate_report
 
 logger = logging.getLogger("aiia.tasks")
@@ -41,6 +44,36 @@ TEST_RUNNER_TIMEOUT = 300
 DAILY_BRIEF_TIMEOUT_SECONDS = 330.0
 
 _SUMMARY_COUNT = re.compile(r"(\d+) (passed|failed|error)")
+
+
+def cron_zone(defn: dict) -> ZoneInfo:
+    """A cron task's wall clock. UTC unless the definition names a zone."""
+    try:
+        return ZoneInfo(defn.get("schedule_tz") or "UTC")
+    except ZoneInfoNotFoundError:
+        return ZoneInfo("UTC")
+
+
+def cron_target(defn: dict, now: datetime) -> datetime:
+    """The most recent scheduled time at or before `now`, as an aware UTC datetime."""
+    zone = cron_zone(defn)
+    local = now.astimezone(zone)
+    target = local.replace(
+        hour=defn["schedule_cron_hour"],
+        minute=defn.get("schedule_cron_minute", 0),
+        second=0,
+        microsecond=0,
+    )
+    if target > local:
+        target -= timedelta(days=1)
+    return target.astimezone(timezone.utc)
+
+
+def cron_label(defn: dict) -> str:
+    return (
+        f"daily {defn['schedule_cron_hour']:02d}:{defn.get('schedule_cron_minute', 0):02d} "
+        f"{defn.get('schedule_tz') or 'UTC'}"
+    )
 
 
 def parse_pytest_summary(lines: list[str]) -> tuple[int, int, int]:
@@ -438,9 +471,18 @@ TASK_DEFINITIONS = {
     "daily_brief": {
         "name": "Daily Brief",
         "description": "Generate summary of git activity, health trends, KB growth",
-        "schedule_cron_hour": 8,
+        "schedule_cron_hour": 7,
         "schedule_cron_minute": 0,
+        "schedule_tz": "America/Chicago",
         "uses_llm": True,
+    },
+    "daily_digest": {
+        "name": "Daily Digest",
+        "description": "One line per agent and loop: what moved, what is waiting, what failed",
+        "schedule_cron_hour": 7,
+        "schedule_cron_minute": 40,
+        "schedule_tz": "America/Chicago",
+        "uses_llm": False,
     },
     "weekly_default_status": {
         "name": "DefaultApp Weekly Status",
@@ -495,6 +537,9 @@ class TaskRunner:
         self.repo_path = repo_path
         self.monitor_state = monitor_state
         self.action_queue = action_queue
+        # Wired by server.py: callables the digest reads (agents, assignments,
+        # today's run counts, the memory inbox). None until wired; the digest then fails loudly.
+        self.studio_sources: dict[str, Callable[[], Any]] | None = None
         # Wired post-construction in server.py (they're defined after the runner):
         # project_pulse ingests project backlogs into the roadmap store and ranks
         # them with the prioritizer. Both may be None (task then no-ops safely).
@@ -535,6 +580,7 @@ class TaskRunner:
             "test_runner": self._task_test_runner,
             "memory_digest": self._task_memory_digest,
             "daily_brief": self._task_daily_brief,
+            "daily_digest": self._task_daily_digest,
             "weekly_default_status": self._task_weekly_default_status,
             "cross_tenant_analytics": self._task_cross_tenant_analytics,
             "security_scan": self._task_security_scan,
@@ -584,18 +630,17 @@ class TaskRunner:
                 if elapsed >= defn["schedule_seconds"]:
                     return task_id
 
-            # Cron-based schedule
+            # Cron-based schedule: due once the most recent target time has passed
+            # and the task has not run since it. A busy minute no longer skips a day.
             if "schedule_cron_hour" in defn:
-                if now.hour == defn["schedule_cron_hour"] and now.minute == defn.get(
-                    "schedule_cron_minute", 0
-                ):
-                    # Only if we haven't run in the last 23 hours
-                    if last_run is None:
-                        return task_id
-                    last_dt = datetime.fromisoformat(last_run)
-                    elapsed_hours = (now - last_dt).total_seconds() / 3600
-                    if elapsed_hours >= 23:
-                        return task_id
+                target = cron_target(defn, now)
+                if last_run is None:
+                    return task_id
+                last_dt = datetime.fromisoformat(last_run)
+                if last_dt.tzinfo is None:
+                    last_dt = last_dt.replace(tzinfo=timezone.utc)
+                if last_dt < target:
+                    return task_id
 
         return None
 
@@ -621,12 +666,7 @@ class TaskRunner:
         elif "schedule_cron_hour" in defn:
             from datetime import timedelta
 
-            target_hour = defn["schedule_cron_hour"]
-            target_minute = defn.get("schedule_cron_minute", 0)
-            next_dt = now.replace(hour=target_hour, minute=target_minute, second=0, microsecond=0)
-            if next_dt <= now:
-                next_dt += timedelta(days=1)
-            task["next_run"] = next_dt.isoformat()
+            task["next_run"] = (cron_target(defn, now + timedelta(days=1))).isoformat()
 
     # ─── Execution Lifecycle ─────────────────────────────────
 
@@ -788,7 +828,7 @@ class TaskRunner:
             if "schedule_seconds" in defn:
                 schedule = f"every {defn['schedule_seconds'] // 60} min"
             else:
-                schedule = f"daily {defn['schedule_cron_hour']:02d}:{defn.get('schedule_cron_minute', 0):02d} UTC"
+                schedule = cron_label(defn)
             rows.append(
                 {
                     **task,
@@ -1937,6 +1977,54 @@ Be specific and reference actual file names. Keep each point to 1-2 sentences.""
         await self._progress("learning_loop", 100, "Complete")
         summary = f"Analyzed {len(commits)} commits, extracted learnings"
         return (summary, analysis)
+
+    async def _task_daily_digest(self) -> tuple[str, str]:
+        """One line per agent and loop, from records, delivered once per day."""
+        if not self.studio_sources:
+            raise RuntimeError("Digest sources are not wired; nothing to report from")
+        await self._progress("daily_digest", 10, "Reading agents and work")
+        zone = cron_zone(TASK_DEFINITIONS["daily_digest"])
+        date = datetime.now(timezone.utc).astimezone(zone).date().isoformat()
+        agents = list(self.studio_sources["agents"]())
+        assignments = list(self.studio_sources["assignments"]())
+        run_counts = dict(self.studio_sources["run_counts"]())
+        inbox = self.studio_sources["inbox"]()
+        await self._progress("daily_digest", 40, "Reading loops and inbox")
+        loops = daily_digest.load_loops()
+        inbox_counts: dict[str, int] = {}
+        for source in (*LOCAL_PROPOSAL_SOURCES, "slack"):
+            if source == "digest":
+                continue
+            total = inbox.list(status="unreviewed", source=source)["total"]
+            if total:
+                inbox_counts[source] = total
+        body = daily_digest.build_digest(
+            date=date,
+            agents=agents,
+            assignments=assignments,
+            run_counts=run_counts,
+            loops=loops,
+            tasks=[t for t in self.get_all_tasks() if t["task_id"] != "daily_digest"],
+            inbox_counts=inbox_counts,
+        )
+        await self._progress("daily_digest", 70, "Delivering")
+        key = daily_digest.digest_key(date)
+        idea, created = inbox.ingest(text=body, source_key=key, source="digest", project="aiia")
+        delivery = "slack not configured"
+        if slack_memory_posts.configured():
+            queued = inbox.queue_post(
+                memory_id=key,
+                idea_id=idea["id"],
+                channel_id=slack_memory_posts.channel_id(),
+                body=daily_digest.escape(body)[:3_000],
+            )
+            delivery = "slack post queued" if queued else "slack post already queued"
+        await self._progress("daily_digest", 100, "Complete")
+        summary = (
+            f"Digest {date}: {len(agents)} agents, {len(loops)} loops; "
+            f"inbox row {'new' if created else 'existing'}; {delivery}"
+        )
+        return (summary, body)
 
     async def _task_test_runner(self) -> str:
         """Run test suite and track pass/fail trends."""

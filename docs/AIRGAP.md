@@ -23,8 +23,8 @@ Effects, applied in `local_brain/config.py`:
   arbitrary URLs).
 - Every registered egress point (below) is denied by `local_brain/egress.py`,
   except `xai.realtime` (Voice Conductor ephemeral token mint) and, only when
-  their flags are set, `slack.capture_ack`, `slack.memory_post` and
-  `typesafe.routing`.
+  their flags are set, `slack.capture_ack`, `slack.memory_post`,
+  `slack.file_fetch`, `typesafe.routing`, `news.fetch` and `typesafe.signals`.
 
 Cloud API keys may remain set; they are inert except `XAI_API_KEY`, which
 Voice Conductor may use to mint a short-lived xAI token. `aiia doctor`
@@ -38,7 +38,9 @@ reports other keys as "configured but inert under AIIA_AIRGAP".
 | `groq.whisper` | journal transcription | `TranscriptionError` (local faster-whisper voice path unaffected) |
 | `slack.post` | none; the old `POST /v1/aiia/slack` route was removed because it imported a module that was never committed | always denied, even when either Slack exception below is enabled; stays registered so any future call site is denied |
 | `slack.capture_ack` | Slack receipt worker (fixed save and promotion receipts, no captured text) | **conditional airgap exception** — allowed only with `AIIA_SLACK_ACK_ENABLED=1`; otherwise denied and receipts stay queued |
-| `slack.memory_post` | Slack memory post worker (human-approved memory text to one allowlisted channel) | **conditional airgap exception** — allowed only with `AIIA_SLACK_MEMORY_POST_ENABLED=1`; otherwise denied and posts stay queued |
+| `slack.memory_post` | Slack memory post worker (human-approved memory text to one allowlisted channel, and the daily digest) | **conditional airgap exception** — allowed only with `AIIA_SLACK_MEMORY_POST_ENABLED=1`; otherwise denied and posts stay queued |
+| `slack.file_fetch` | Slack file worker (downloads a file a person attached to a capture mention; inbound bytes, nothing but the bot token sent) | **conditional airgap exception** — allowed only with `AIIA_SLACK_FILE_CAPTURE_ENABLED=1`; otherwise denied and files stay pending |
+| `news.fetch` / `typesafe.signals` | public signal jobs (see `PUBLIC-SIGNAL-JOBS.md`) | **conditional airgap exceptions** — `AIIA_NEWS_ENABLED=1` and `AIIA_SIGNALS_ENABLED=1` |
 | `google.tts` | speak endpoints | client never initialized; macOS `say` fallback |
 | `anthropic.claude_code` | execution engine / story runner | engine refuses to start; runner exits at arg-parse |
 | `web.fetch` | research literature loop | force-disabled + fetch guard |

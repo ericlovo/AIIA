@@ -370,6 +370,18 @@ export interface MemoryIdea {
   memory_post_status: string | null;
   memory_post_error: string | null;
   memory_post_ts: string | null;
+  files?: CaptureFile[];
+}
+
+/** A file attached to a Slack capture mention; the worker fetches it after the event. */
+export interface CaptureFile {
+  file_id: string;
+  name: string;
+  mimetype: string;
+  size: number;
+  status: 'pending' | 'fetching' | 'done' | 'failed';
+  error: string;
+  chars: number;
 }
 
 export interface MemoryInboxPage {
@@ -784,6 +796,8 @@ export const api = {
   },
   promoteIdea: (id: string, category: MemoryCategory, note = '', options: { priority?: MemoryPriority; postToSlack?: boolean } = {}) =>
     post<{ idea: MemoryIdea; memory_id: string }>(`/api/memory-inbox/${encodeURIComponent(id)}/promote`, { category, note, priority: options.priority ?? 'normal', post_to_slack: options.postToSlack ?? false }),
+  retryIdeaFile: (id: string, fileId: string) =>
+    post<{ status: string }>(`/api/memory-inbox/${encodeURIComponent(id)}/files/${encodeURIComponent(fileId)}/retry`),
   dismissIdea: (id: string, note = '') =>
     post<{ idea: MemoryIdea }>(`/api/memory-inbox/${encodeURIComponent(id)}/dismiss`, { note }),
   restoreIdea: (id: string) => post<{ idea: MemoryIdea }>(`/api/memory-inbox/${encodeURIComponent(id)}/restore`),

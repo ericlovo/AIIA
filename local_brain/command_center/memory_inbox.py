@@ -17,7 +17,7 @@ IDEA_SORTS = ("newest", "priority")
 # these are what an unattended loop proposed. The filter name is what the console
 # asks for when it wants every local source at once rather than one loop.
 LOCAL_PROPOSALS_FILTER = "local_proposals"
-LOCAL_PROPOSAL_SOURCES = ("backlog_steward", "code_review", "standup", "public_signals")
+LOCAL_PROPOSAL_SOURCES = ("backlog_steward", "code_review", "standup", "public_signals", "digest")
 PROPOSAL_SOURCE_SQL = "ideas.source IN (" + ",".join("?" for _ in LOCAL_PROPOSAL_SOURCES) + ")"
 REVIEW_OUTCOMES = ("needs_work", "already_fixed", "declined", "external_failure")
 # A row that was closed before outcomes existed, or promoted without a work
@@ -54,6 +54,20 @@ MEMORY_POST_COLUMNS = """(
     next_attempt REAL NOT NULL DEFAULT 0, lease TEXT NOT NULL DEFAULT '',
     error TEXT NOT NULL DEFAULT '', slack_ts TEXT NOT NULL DEFAULT ''
 )"""
+# Files attached to a capture mention. Slack sends only metadata in the event; the
+# bytes are fetched later by the file worker, saved under the capture, and an
+# excerpt is appended to the idea text so the capture reads in the inbox.
+CAPTURE_FILE_COLUMNS = """(
+    file_id TEXT PRIMARY KEY, idea_id TEXT NOT NULL,
+    name TEXT NOT NULL, mimetype TEXT NOT NULL, size INTEGER NOT NULL DEFAULT 0,
+    url TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'pending',
+    attempts INTEGER NOT NULL DEFAULT 0, next_attempt REAL NOT NULL DEFAULT 0,
+    lease TEXT NOT NULL DEFAULT '', error TEXT NOT NULL DEFAULT '',
+    path TEXT NOT NULL DEFAULT '', chars INTEGER NOT NULL DEFAULT 0
+)"""
+FILE_STATUSES = ("pending", "fetching", "done", "failed")
+FILE_PUBLIC_COLUMNS = ("file_id", "name", "mimetype", "size", "status", "error", "chars")
+IDEA_TEXT_LIMIT = 8_000
 IDEA_REVIEW_COLUMNS = (
     "memory_id",
     "memory_category",
@@ -106,6 +120,9 @@ class MemoryInbox:
                 for table in RECEIPT_TABLES.values():
                     connection.execute(f"CREATE TABLE IF NOT EXISTS {table} {RECEIPT_COLUMNS}")
                 connection.execute(f"CREATE TABLE IF NOT EXISTS memory_posts {MEMORY_POST_COLUMNS}")
+                connection.execute(
+                    f"CREATE TABLE IF NOT EXISTS capture_files {CAPTURE_FILE_COLUMNS}"
+                )
                 columns = {row["name"] for row in connection.execute("PRAGMA table_info(ideas)")}
                 for column in IDEA_REVIEW_COLUMNS:
                     if column not in columns:
@@ -130,8 +147,9 @@ class MemoryInbox:
         channel_id: str = "",
         author_id: str = "",
         receipt_thread_ts: str = "",
+        files: list[dict] | None = None,
     ) -> dict:
-        if not text.strip() or len(text) > 8_000:
+        if not text.strip() or len(text) > IDEA_TEXT_LIMIT:
             raise ValueError("idea_requires_1_to_8000_characters")
         with self.connect() as db:
             db.execute(
@@ -159,7 +177,156 @@ class MemoryInbox:
                     "ON CONFLICT(idea_id) DO NOTHING",
                     (idea["id"], receipt_thread_ts),
                 )
+            for file in files or []:
+                self._insert_file(db, idea["id"], file)
+            idea["files"] = self._files(db, idea["id"])
             return idea
+
+    # ─── Attached files ──────────────────────────────────────
+
+    @staticmethod
+    def _insert_file(db, idea_id: str, file: dict) -> None:
+        db.execute(
+            "INSERT INTO capture_files (file_id,idea_id,name,mimetype,size,url) "
+            "VALUES (?,?,?,?,?,?) ON CONFLICT(file_id) DO NOTHING",
+            (
+                file["id"],
+                idea_id,
+                str(file.get("name") or file["id"])[:200],
+                str(file.get("mimetype") or "")[:100],
+                int(file.get("size") or 0),
+                str(file.get("url") or ""),
+            ),
+        )
+
+    @staticmethod
+    def _files(db, idea_id: str) -> list[dict]:
+        rows = db.execute(
+            "SELECT " + ",".join(FILE_PUBLIC_COLUMNS) + " FROM capture_files WHERE idea_id=? "
+            "ORDER BY rowid",
+            (idea_id,),
+        ).fetchall()
+        return [dict(row) for row in rows]
+
+    def _with_files(self, db, ideas: list[dict]) -> list[dict]:
+        if not ideas:
+            return ideas
+        by_idea: dict[str, list[dict]] = {}
+        marks = ",".join("?" for _ in ideas)
+        rows = db.execute(
+            "SELECT idea_id," + ",".join(FILE_PUBLIC_COLUMNS) + " FROM capture_files "  # nosec B608
+            f"WHERE idea_id IN ({marks}) ORDER BY rowid",
+            [idea["id"] for idea in ideas],
+        ).fetchall()
+        for row in rows:
+            item = dict(row)
+            by_idea.setdefault(item.pop("idea_id"), []).append(item)
+        for idea in ideas:
+            idea["files"] = by_idea.get(idea["id"], [])
+        return ideas
+
+    def attach_file(self, idea_id: str, file: dict) -> dict:
+        """Add a file to an existing capture (backfill for mentions captured before files were read)."""
+        with self.connect() as db:
+            if db.execute("SELECT 1 FROM ideas WHERE id=?", (idea_id,)).fetchone() is None:
+                raise ValueError("idea_not_found")
+            self._insert_file(db, idea_id, file)
+            return dict(
+                db.execute("SELECT * FROM capture_files WHERE file_id=?", (file["id"],)).fetchone()
+            )
+
+    def claim_file(self):
+        """Lease the oldest due file fetch."""
+        with self.connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            row = db.execute(
+                "SELECT f.*,i.workspace_id,i.channel_id FROM capture_files f "
+                "JOIN ideas i ON i.id=f.idea_id "
+                "WHERE f.status IN ('pending','fetching') AND f.next_attempt<=? "
+                "ORDER BY f.next_attempt,f.rowid LIMIT 1",
+                (time.time(),),
+            ).fetchone()
+            if row is None:
+                return None
+            file = dict(row)
+            file["lease"] = uuid.uuid4().hex
+            file["attempts"] += 1
+            db.execute(
+                "UPDATE capture_files SET status='fetching',attempts=?,lease=?,next_attempt=? "
+                "WHERE file_id=?",
+                (file["attempts"], file["lease"], time.time() + 120, file["file_id"]),
+            )
+            return file
+
+    def finish_file(self, file, *, status, error="", path="", chars=0, delay=0, excerpt=""):
+        """Close a fetch attempt. A done fetch appends the excerpt to the idea text once.
+
+        The excerpt makes the capture readable in the inbox and promotable as a
+        fact; the full text stays in the saved file for indexing.
+        """
+        with self.connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            updated = db.execute(
+                "UPDATE capture_files SET status=?,error=?,path=?,chars=?,next_attempt=? "
+                "WHERE file_id=? AND lease=? AND status='fetching'",
+                (status, error, path, chars, time.time() + delay, file["file_id"], file["lease"]),
+            )
+            if updated.rowcount != 1 or status != "done" or not excerpt:
+                return
+            row = db.execute("SELECT text FROM ideas WHERE id=?", (file["idea_id"],)).fetchone()
+            if row is None:
+                return
+            marker = f"\n\n[file: {file['name']}]\n"
+            if marker in row["text"]:
+                return
+            room = IDEA_TEXT_LIMIT - len(row["text"]) - len(marker)
+            if room < 80:
+                return
+            body = excerpt if len(excerpt) <= room else excerpt[: room - 1].rstrip() + "…"
+            db.execute(
+                "UPDATE ideas SET text=? WHERE id=?",
+                (row["text"] + marker + body, file["idea_id"]),
+            )
+
+    def file_status(self):
+        with self.connect() as db:
+            return dict(
+                db.execute("SELECT status,count(*) FROM capture_files GROUP BY status").fetchall()
+            )
+
+    def retry_file(self, idea_id: str, file_id: str) -> bool:
+        with self.connect() as db:
+            result = db.execute(
+                "UPDATE capture_files SET status='pending',attempts=0,next_attempt=0,error='' "
+                "WHERE idea_id=? AND file_id=? AND status='failed'",
+                (idea_id, file_id),
+            )
+            return result.rowcount == 1
+
+    def file_record(self, file_id: str) -> dict | None:
+        with self.connect() as db:
+            row = db.execute("SELECT * FROM capture_files WHERE file_id=?", (file_id,)).fetchone()
+            return dict(row) if row else None
+
+    def queue_post(
+        self, *, memory_id: str, idea_id: str, channel_id: str, body: str, priority: str = "normal"
+    ) -> bool:
+        """Queue a Slack post for a local row that is not a promotion (the daily digest).
+
+        Keyed by memory_id like every other post, so one digest per day is posted
+        at most once however often the task reruns.
+        """
+        if priority not in PRIORITIES or not body or not channel_id:
+            raise ValueError("invalid_post")
+        with self.connect() as db:
+            cursor = db.execute(
+                "INSERT INTO memory_posts (memory_id,idea_id,channel_id,priority,body) "
+                "VALUES (?,?,?,?,?) ON CONFLICT(memory_id) DO NOTHING",
+                (memory_id, idea_id, channel_id, priority, body),
+            )
+            if cursor.rowcount == 1:
+                db.execute("UPDATE ideas SET post_requested=1 WHERE id=?", (idea_id,))
+            return cursor.rowcount == 1
 
     def ingest(self, *, text: str, source_key: str, source: str, project: str) -> tuple[dict, bool]:
         """Record a proposal from a local loop, and say whether it is new.
@@ -189,7 +356,7 @@ class MemoryInbox:
     def get(self, idea_id: str) -> dict | None:
         with self.connect() as db:
             row = db.execute(IDEA_SELECT + " WHERE ideas.id=?", (idea_id,)).fetchone()
-            return dict(row) if row else None
+            return self._with_files(db, [dict(row)])[0] if row else None
 
     def promote(
         self,
@@ -594,7 +761,7 @@ class MemoryInbox:
                 [*args, offset],
             )
             return {
-                "ideas": [dict(row) for row in rows],
+                "ideas": self._with_files(db, [dict(row) for row in rows]),
                 "total": total,
                 "offset": offset,
                 "counts": counts,
