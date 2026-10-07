@@ -247,6 +247,8 @@ def extract_file_text(data: bytes, kind: str) -> str | None:
 
 
 def build_captured_text(text: str, files: list[dict], contents: list[str | None]) -> str:
+    if not files:
+        return text
     parts: list[str] = []
     if text:
         parts.append(text)
@@ -604,18 +606,27 @@ async def capture_mention(request: Request):
     channel = event.get("channel")
     if not isinstance(channel, str) or channel not in channels:
         raise HTTPException(status_code=403, detail="slack_source_not_allowed")
-    values = [payload.get("event_id"), event.get("user"), event.get("text")]
-    if any(not isinstance(value, str) or not value.strip() for value in values):
+    event_id = payload.get("event_id")
+    author = event.get("user")
+    text = event.get("text")
+    if (
+        not isinstance(event_id, str)
+        or not event_id.strip()
+        or not isinstance(author, str)
+        or not author.strip()
+        or not isinstance(text, str)
+        or not text.strip()
+    ):
         raise HTTPException(status_code=400, detail="invalid_slack_payload")
-    event_id, author, text = values
     files = event_files(event)
     thread_ts = ""
     if slack_receipts.enabled():
-        thread_ts = event.get("thread_ts") or event.get("ts")
-        if not isinstance(thread_ts, str) or not re.fullmatch(
-            r"[0-9]{1,16}\.[0-9]{1,6}", thread_ts
+        candidate = event.get("thread_ts") or event.get("ts")
+        if not isinstance(candidate, str) or not re.fullmatch(
+            r"[0-9]{1,16}\.[0-9]{1,6}", candidate
         ):
             raise HTTPException(status_code=400, detail="invalid_slack_timestamp")
+        thread_ts = candidate
     # Match promotion's content check before creating an idea and its save receipt.
     # Acknowledge the event only; retries of mention-only messages have no side effects.
     # File-only mentions still save: the file header is the captured content.
