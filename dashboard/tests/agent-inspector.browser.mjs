@@ -152,7 +152,7 @@ try {
     assert.equal(await settings.getByLabel('Max tokens', { exact: true }).inputValue(), '1600')
     assert.equal(await settings.getByLabel('One-liner', { exact: true }).inputValue(), 'Gate release candidates.')
     assert.equal(await settings.getByLabel('Output channel', { exact: true }).inputValue(), 'studio_inbox')
-    assert.ok((await inspector.innerText()).includes('Inbox'))
+    assert.ok((await inspector.innerText()).includes('Studio work'))
     assert.ok((await inspector.innerText()).includes('1 reviewed'))
     assert.equal(await settings.getByLabel('Suite', { exact: true }).inputValue(), 'release')
     assert.equal(await settings.getByLabel('Loop', { exact: true }).isChecked(), true)

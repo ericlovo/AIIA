@@ -13,7 +13,8 @@ const agent = (id: string, overrides: Partial<Agent> = {}): Agent => ({
 })
 
 test('channel labels and slack-not-configured notes', () => {
-  assert.equal(channelLabel('studio_inbox'), 'Studio inbox')
+  assert.equal(channelLabel('studio_inbox'), 'Studio work')
+  assert.equal(channelLabel('memory_inbox'), 'Memory inbox')
   assert.equal(channelLabel('slack'), 'Slack')
   assert.equal(hasSlackGap(agent('a', { output_channel: 'slack', output_channel_note: 'slack not configured' })), true)
   assert.equal(hasSlackGap(agent('a', { output_channel: 'slack', output_channel_note: '' })), false)

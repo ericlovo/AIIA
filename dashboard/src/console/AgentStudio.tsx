@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { api, type Agent, type AgentDefinition, type OutputChannel } from '../lib/api'
+import { api, type Agent, type AgentDefinition, type AgentKind, type OutputChannel } from '../lib/api'
 import { ONE_LINER_MAX, OUTPUT_CHANNELS } from './agentConfig'
 import { ChannelChip } from './ChannelChip'
+import { gitStanceLabel, groupAgentsByKind, pausedReviewLabel, productRepoLabel, resolveUseWhen } from './agentRoster'
 import { filterAgents, hasSlackGap, noReviewedOutput, sortAgents, valueGlance, type ValueSort } from './agentValue'
 import { AgentWorldCanvas } from './AgentWorldCanvas'
 import { StudioNav } from './StudioNav'
@@ -38,6 +39,10 @@ const EMPTY_DRAFT: Draft = {
   loop_max_runs_per_day: 4,
   one_liner: '',
   output_channel: 'studio_inbox',
+  kind: '',
+  use_when: '',
+  retired: false,
+  handles: [],
 }
 
 const EMPTY_AGENTS: Agent[] = []
@@ -66,6 +71,7 @@ export function AgentStudio() {
   const [task, setTask] = useState('')
   const [agentQuery, setAgentQuery] = useState('')
   const [onlyQuiet, setOnlyQuiet] = useState(false)
+  const [showRetired, setShowRetired] = useState(false)
   const [agentSort, setAgentSort] = useState<ValueSort>('reviewed')
   const { route, key } = useStudioRoute()
   const view = route.view
@@ -102,6 +108,10 @@ export function AgentStudio() {
           model: agent.model ?? '', suite: agent.suite ?? '', memory_namespace: agent.memory_namespace ?? '',
           one_liner: agent.one_liner_derived ? '' : agent.one_liner ?? '',
           output_channel: agent.output_channel ?? 'studio_inbox',
+          kind: agent.kind_derived ? '' : agent.kind ?? '',
+          use_when: agent.use_when_derived ? '' : agent.use_when ?? '',
+          retired: agent.retired ?? false,
+          handles: agent.handles ?? [],
         }
       : EMPTY_DRAFT)
   }
@@ -158,8 +168,13 @@ export function AgentStudio() {
   })
 
   const activeCount = useMemo(() => agents.filter(agent => agent.status === 'running').length, [agents])
-  const shownAgents = useMemo(() => sortAgents(filterAgents(agents, agentQuery, onlyQuiet), agentSort), [agents, agentQuery, onlyQuiet, agentSort])
+  const shownAgents = useMemo(() => {
+    const filtered = sortAgents(filterAgents(agents, agentQuery, onlyQuiet), agentSort)
+    return showRetired ? filtered : filtered.filter(agent => !agent.retired)
+  }, [agents, agentQuery, onlyQuiet, agentSort, showRetired])
+  const agentGroups = useMemo(() => groupAgentsByKind(shownAgents), [shownAgents])
   const quietCount = useMemo(() => agents.filter(noReviewedOutput).length, [agents])
+  const retiredCount = useMemo(() => agents.filter(agent => agent.retired).length, [agents])
 
   const page = (() => {
     if (view === 'signals') return <SignalJobs />
@@ -232,48 +247,65 @@ export function AgentStudio() {
               </div>
 
               <div className="relative z-10 mb-4 flex w-full max-w-4xl flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
-                <label className="min-w-0 flex-1 text-[10px] font-semibold tracking-[0.16em] uppercase text-neutral-500">Find agent<input value={agentQuery} onChange={event => setAgentQuery(event.target.value)} placeholder="Name, one-liner, or repo" className="mt-2 w-full border border-neutral-800 bg-neutral-900 px-3 py-2 text-sm normal-case tracking-normal text-white outline-none focus:border-cyan-500/60" /></label>
+                <label className="min-w-0 flex-1 text-[10px] font-semibold tracking-[0.16em] uppercase text-neutral-500">Find agent<input value={agentQuery} onChange={event => setAgentQuery(event.target.value)} placeholder="Name, use-when, or repo" className="mt-2 w-full border border-neutral-800 bg-neutral-900 px-3 py-2 text-sm normal-case tracking-normal text-white outline-none focus:border-cyan-500/60" /></label>
                 <label className="text-[10px] font-semibold tracking-[0.16em] uppercase text-neutral-500">Sort<select aria-label="Sort agents" value={agentSort} onChange={event => setAgentSort(event.target.value as ValueSort)} className="mt-2 border border-neutral-800 bg-neutral-900 px-3 py-2 text-sm normal-case tracking-normal text-white outline-none focus:border-cyan-500/60"><option value="reviewed">Least reviewed first</option><option value="runs">Most runs</option><option value="last_run">Last run</option><option value="name">Name</option></select></label>
                 <button type="button" aria-pressed={onlyQuiet} onClick={() => setOnlyQuiet(!onlyQuiet)} className={`mt-6 border px-3 py-2 text-xs ${onlyQuiet ? 'border-amber-400/70 bg-amber-500/10 text-amber-100' : 'border-neutral-800 text-neutral-400'}`}>No reviewed output in 14 days ({quietCount})</button>
+                <button type="button" aria-pressed={showRetired} onClick={() => setShowRetired(!showRetired)} className={`mt-6 border px-3 py-2 text-xs ${showRetired ? 'border-cyan-400/70 bg-cyan-500/10 text-cyan-100' : 'border-neutral-800 text-neutral-400'}`}>Show retired ({retiredCount})</button>
               </div>
-              <div className="relative z-10 grid w-full grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
-                {shownAgents.map(agent => (
-                  <button
-                    key={agent.id}
-                    onClick={() => selectAgent(agent)}
-                    className={`group min-h-44 border p-5 text-left transition-colors ${selectedId === agent.id ? 'border-cyan-400/70 bg-cyan-500/10' : noReviewedOutput(agent) ? 'border-amber-500/40 bg-amber-950/20 hover:border-amber-400/60' : 'border-neutral-800 bg-neutral-900/60 hover:border-neutral-600'}`}
-                  >
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0">
-                        <div className="truncate text-base font-medium text-white">{agent.name}</div>
-                        <div className="mt-1 line-clamp-2 text-xs leading-relaxed text-neutral-400">{agent.one_liner || agent.mission}</div>
-                      </div>
-                      <Status status={agent.status} />
+              <div className="relative z-10 flex w-full flex-col gap-8">
+                {agentGroups.map(group => (
+                  <section key={group.id || 'unsorted'} aria-label={group.label} className="flex flex-col gap-3">
+                    <h2 className="text-[10px] font-semibold tracking-[0.22em] uppercase text-cyan-300/80">{group.label}</h2>
+                    <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+                      {group.agents.map(agent => {
+                        const paused = pausedReviewLabel(agent)
+                        return (
+                          <button
+                            key={agent.id}
+                            onClick={() => selectAgent(agent)}
+                            className={`group min-h-44 border p-5 text-left transition-colors ${selectedId === agent.id ? 'border-cyan-400/70 bg-cyan-500/10' : noReviewedOutput(agent) ? 'border-amber-500/40 bg-amber-950/20 hover:border-amber-400/60' : 'border-neutral-800 bg-neutral-900/60 hover:border-neutral-600'}`}
+                          >
+                            <div className="flex items-start justify-between gap-3">
+                              <div className="min-w-0">
+                                <div className="truncate text-base font-medium text-white">{agent.name}</div>
+                                <div className="mt-1 line-clamp-2 text-xs leading-relaxed text-neutral-400">{resolveUseWhen(agent) || agent.mission}</div>
+                              </div>
+                              <Status status={agent.status} />
+                            </div>
+                            <div className="mt-3 flex flex-wrap gap-1.5">
+                              <span className="border border-neutral-700 px-2 py-1 text-[10px] text-neutral-300">{productRepoLabel(agent)}</span>
+                              <span className={`border px-2 py-1 text-[10px] ${agent.tools.includes('Git workspace') ? 'border-cyan-500/50 text-cyan-200' : 'border-neutral-700 text-neutral-400'}`}>{gitStanceLabel(agent)}</span>
+                              {paused && <span className="border border-amber-400/50 px-2 py-1 text-[10px] text-amber-200">{paused}</span>}
+                              {agent.retired && <span className="border border-neutral-600 px-2 py-1 text-[10px] text-neutral-400">Retired</span>}
+                            </div>
+                            <div className="mt-3 flex flex-wrap gap-1.5">
+                              <ChannelChip channel={agent.output_channel} note={agent.output_channel_note} />
+                              <span className={`border px-2 py-1 text-[10px] ${noReviewedOutput(agent) ? 'border-amber-400/50 text-amber-200' : 'border-neutral-700 text-neutral-400'}`}>{valueGlance(agent)}</span>
+                              {hasSlackGap(agent) && <span className="border border-amber-400/50 px-2 py-1 text-[10px] text-amber-200">{agent.output_channel_note}</span>}
+                              {(agent.handles ?? []).slice(0, 4).map(tag => <span key={tag} className="border border-neutral-700 px-2 py-1 text-[10px] text-neutral-400">{tag}</span>)}
+                            </div>
+                            <div className="mt-5 flex items-center justify-between text-[10px] uppercase tracking-[0.16em] text-neutral-600"><span>{agent.last_run_at ? 'ran locally' : 'ready to run'}</span><span>{agent.loop_enabled ? `${agent.loop_interval_minutes}m loop` : 'manual'}</span></div>
+                          </button>
+                        )
+                      })}
                     </div>
-                    <div className="mt-3 flex flex-wrap gap-1.5">
-                      <ChannelChip channel={agent.output_channel} note={agent.output_channel_note} />
-                      <span className={`border px-2 py-1 text-[10px] ${noReviewedOutput(agent) ? 'border-amber-400/50 text-amber-200' : 'border-neutral-700 text-neutral-400'}`}>{valueGlance(agent)}</span>
-                      {hasSlackGap(agent) && <span className="border border-amber-400/50 px-2 py-1 text-[10px] text-amber-200">{agent.output_channel_note}</span>}
-                    </div>
-                    <div className="mt-5 flex flex-wrap gap-1.5">
-                      {agent.skills.slice(0, 4).map(skill => <span key={skill} className="border border-neutral-700 px-2 py-1 text-[10px] text-neutral-400">{skill}</span>)}
-                    </div>
-                    <div className="mt-5 flex items-center justify-between text-[10px] uppercase tracking-[0.16em] text-neutral-600"><span>{agent.last_run_at ? 'ran locally' : 'ready to run'}</span><span>{agent.loop_enabled ? `${agent.loop_interval_minutes}m loop` : 'manual'}</span></div>
-                  </button>
+                  </section>
                 ))}
                 {shownAgents.length === 0 && agents.length > 0 && (
-                  <p className="col-span-full text-sm text-neutral-500">No agents match this filter.</p>
+                  <p className="text-sm text-neutral-500">No agents match this filter.</p>
                 )}
-                {!isLoading && agents.length === 0 && (
-                  <button onClick={() => selectAgent(null)} className="min-h-44 border border-dashed border-cyan-500/40 bg-cyan-500/[0.03] p-5 text-left hover:bg-cyan-500/[0.07]">
-                    <div className="text-sm font-medium text-cyan-300">Create the first agent</div>
-                    <p className="mt-2 text-xs leading-relaxed text-neutral-500">Start with a researcher, operator, strategist, or domain expert.</p>
+                <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+                  {!isLoading && agents.length === 0 && (
+                    <button onClick={() => selectAgent(null)} className="min-h-44 border border-dashed border-cyan-500/40 bg-cyan-500/[0.03] p-5 text-left hover:bg-cyan-500/[0.07]">
+                      <div className="text-sm font-medium text-cyan-300">Create the first agent</div>
+                      <p className="mt-2 text-xs leading-relaxed text-neutral-500">Start with a researcher, operator, strategist, or domain expert.</p>
+                    </button>
+                  )}
+                  <button onClick={() => selectAgent(null)} className="min-h-44 border border-dashed border-neutral-700 p-5 text-left text-neutral-500 hover:border-cyan-500/50 hover:text-cyan-300">
+                    <div className="text-2xl font-light">+</div>
+                    <div className="mt-4 text-sm">New local agent</div>
                   </button>
-                )}
-                <button onClick={() => selectAgent(null)} className="min-h-44 border border-dashed border-neutral-700 p-5 text-left text-neutral-500 hover:border-cyan-500/50 hover:text-cyan-300">
-                  <div className="text-2xl font-light">+</div>
-                  <div className="mt-4 text-sm">New local agent</div>
-                </button>
+                </div>
               </div>
             </div>
           </div>
@@ -291,6 +323,17 @@ export function AgentStudio() {
           <div className="space-y-5 px-6 py-6">
             <Field label="Name"><input value={draft.name} onChange={event => setDraft({ ...draft, name: event.target.value })} placeholder="Signal Scout" /></Field>
             <Field label="One-liner"><input value={draft.one_liner ?? ''} maxLength={ONE_LINER_MAX} onChange={event => setDraft({ ...draft, one_liner: event.target.value })} placeholder="One sentence: what this agent is for." /></Field>
+            <Field label="Use when"><input value={draft.use_when ?? ''} maxLength={ONE_LINER_MAX} onChange={event => setDraft({ ...draft, use_when: event.target.value })} placeholder="When should someone pick this agent?" /></Field>
+            <Field label="Kind">
+              <select aria-label="Kind" className="w-full border border-neutral-800 bg-neutral-900 px-3 py-2 text-sm text-white outline-none focus:border-cyan-500/60" value={draft.kind ?? ''} onChange={event => setDraft({ ...draft, kind: event.target.value as AgentKind | '' })}>
+                <option value="">Derive from repo/tools</option>
+                <option value="coding">Coding</option>
+                <option value="product">Product</option>
+                <option value="ops">Ops</option>
+              </select>
+            </Field>
+            <label className="flex items-center gap-2 text-sm text-neutral-300"><input type="checkbox" checked={Boolean(draft.retired)} onChange={event => setDraft({ ...draft, retired: event.target.checked })} className="accent-cyan-400" />Retired</label>
+            <Field label="Handles"><input value={(draft.handles ?? []).join(', ')} onChange={event => setDraft({ ...draft, handles: event.target.value.split(',').map(tag => tag.trim()).filter(Boolean).slice(0, 12) })} placeholder="ci, review, brief" /></Field>
             <Field label="Output channel">
               <select aria-label="Output channel" className="w-full border border-neutral-800 bg-neutral-900 px-3 py-2 text-sm text-white outline-none focus:border-cyan-500/60" value={draft.output_channel ?? 'studio_inbox'} onChange={event => setDraft({ ...draft, output_channel: event.target.value as OutputChannel })}>
                 {OUTPUT_CHANNELS.map(channel => <option key={channel.id} value={channel.id}>{channel.label}</option>)}

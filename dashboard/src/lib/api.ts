@@ -220,6 +220,7 @@ export interface ExecutionStatus {
 }
 
 export type OutputChannel = 'studio_inbox' | 'slack'
+export type AgentKind = 'coding' | 'product' | 'ops'
 
 export interface AgentValue {
   window_days: number;
@@ -256,6 +257,12 @@ export interface Agent {
   memory_namespace?: string;
   one_liner?: string;
   one_liner_derived?: boolean;
+  use_when?: string;
+  use_when_derived?: boolean;
+  kind?: AgentKind | '';
+  kind_derived?: boolean;
+  retired?: boolean;
+  handles?: string[];
   output_channel?: OutputChannel;
   output_channel_note?: string;
   value?: AgentValue;
@@ -498,6 +505,10 @@ export type AgentDefinition = Pick<Agent,
   memory_namespace?: string;
   one_liner?: string;
   output_channel?: OutputChannel;
+  kind?: AgentKind | '';
+  use_when?: string;
+  retired?: boolean;
+  handles?: string[];
 };
 
 export type AssignmentStatus = 'queued' | 'running' | 'completed' | 'failed';

@@ -1197,6 +1197,10 @@ class AgentCreateRequest(BaseModel):
     memory_namespace: str = Field(default="", max_length=64)
     one_liner: str = Field(default="", max_length=120)
     output_channel: Literal["studio_inbox", "slack"] = "studio_inbox"
+    kind: Literal["coding", "product", "ops", ""] = ""
+    use_when: str = Field(default="", max_length=120)
+    retired: bool = False
+    handles: list[str] = Field(default_factory=list, max_length=12)
 
 
 class SuiteAgentsPatchRequest(BaseModel):
@@ -1231,6 +1235,10 @@ class AgentPatchRequest(SuiteAgentsPatchRequest):
     mission: str = Field(default=None, min_length=1, max_length=2_000)
     suite: str = Field(default=None, max_length=64)
     one_liner: str = Field(default=None, max_length=120)
+    kind: Literal["coding", "product", "ops", ""] = Field(default=None)
+    use_when: str = Field(default=None, max_length=120)
+    retired: bool = Field(default=None)
+    handles: list[str] = Field(default=None, max_length=12)
 
 
 class AgentRunRequest(BaseModel):

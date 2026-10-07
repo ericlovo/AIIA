@@ -6,6 +6,8 @@ import { LeadQualification } from './LeadQualification'
 import { InboxQueues } from './InboxQueues'
 import type { InboxSource } from './studioRoute'
 import { navigate } from './useStudioRoute'
+import { AgentPicker } from './AgentPicker'
+import { activeAgents } from './agentRoster'
 import { captureText, MEMORY_POST_CHANNEL, memoryPostLabel, priorityLabel, receiptLabel, type PriorityTone, type ReceiptTone } from './memoryText'
 
 type Filter = MemoryIdeaStatus | ''
@@ -264,13 +266,10 @@ function IdeaRow({ idea, busy, canPost, agents, onPromote, onDismiss, onRestore,
             <button type="button" disabled={busy || !reviewNote.trim()} onClick={() => onTriage('external_failure', reviewNote)} className="h-8 border border-neutral-800 px-3 text-xs text-neutral-300 hover:text-white disabled:opacity-40">External / tooling</button>
             <button type="button" disabled={busy || !reviewNote.trim()} onClick={() => onTriage('declined', reviewNote)} className="h-8 border border-neutral-800 px-3 text-xs text-neutral-300 hover:text-white disabled:opacity-40">Decline</button>
           </>}
-          {idea.status !== 'dismissed' && !idea.assignment_id && agents.length > 0 && <>
+          {idea.status !== 'dismissed' && !idea.assignment_id && activeAgents(agents).length > 0 && <>
             {!!content &&
             <label className="text-[11px] text-neutral-500">Agent
-              <select value={owner} onChange={event => setOwner(event.target.value)} className="ml-1 h-8 max-w-56 border border-neutral-800 bg-neutral-900 px-1 text-xs text-neutral-200" aria-label={`Agent for capture ${idea.id.slice(0, 8)}`}>
-                <option value="">Choose agent</option>
-                {agents.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
-              </select>
+              <AgentPicker agents={agents} value={owner} onChange={setOwner} placeholder="Choose agent" className="ml-1 h-8 max-w-56 border border-neutral-800 bg-neutral-900 px-1 text-xs text-neutral-200" aria-label={`Agent for capture ${idea.id.slice(0, 8)}`} />
             </label>}
             <button type="button" disabled={busy || !owner || !content} onClick={() => onAssign(owner, reviewNote)} className="h-8 border border-neutral-800 px-3 text-xs text-neutral-300 hover:text-white disabled:opacity-40">{localProposal ? 'Accept as work' : 'Queue as work'}</button>
           </>}
