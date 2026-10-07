@@ -35,8 +35,9 @@ print('       permitted:', ', '.join(a['permitted']))"
 
 echo "== Slack egress state (expect slack.post disabled)"
 # General slack.post stays registered and denied. It no longer has a Brain route to
-# provoke, so the probe reads the decision from /health. slack.capture_ack and
-# slack.memory_post read "airgap-allowlisted" only when their opt-in flags are set.
+# provoke, so the probe reads the decision from /health. slack.capture_ack,
+# slack.memory_post and slack.file_fetch read "airgap-allowlisted" only when
+# their opt-in flags are set.
 slack_state=$(echo "$health" | python3 -c "import json,sys; print(json.load(sys.stdin)['airgap']['egress'].get('slack.post', 'unregistered'))")
 check "slack.post egress state" "disabled" "$slack_state"
 

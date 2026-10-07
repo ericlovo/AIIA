@@ -86,8 +86,11 @@ human before it counts. The Map shows the fleet as a graph you can act on: inspe
 and tune an agent, run it, wire a handoff, or tune a whole suite at once.
 
 **The Memory log** closes a loop with the team's Slack. Mentions and a slash
-command in allowlisted channels land in a local inbox; a human reviews each one in
-Studio and either dismisses it or logs it as a Brain memory with its provenance. A
+command in allowlisted channels land in a local inbox, including files attached
+to `@AIIA` mentions (name, type, size, permalink; optional body fetch is off
+until `AIIA_SLACK_FILE_FETCH_ENABLED=1` and Slack `files:read` are set). A
+human reviews each one in Studio and either dismisses it or logs it as a Brain
+memory with its provenance. A
 logged memory can be given a priority and, on explicit approval, posted back to
 one private channel. One more exception is off by default: an advisory routing
 suggestion for picking an agent, which sends a brief you write and nothing else.

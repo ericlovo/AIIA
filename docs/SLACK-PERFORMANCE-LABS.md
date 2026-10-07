@@ -21,13 +21,19 @@ boundary. Where an older paragraph below reads differently, this one wins.
 | Direction | What | Egress point | Default |
 |---|---|---|---|
 | Inbound | `/aiia-capture` and `@AIIA` mentions from allowlisted channels, stored locally | none | on when capture is configured |
+| Inbound | File metadata on `@AIIA` mentions (name, mimetype, size, permalink), including file-only and `file_share` mentions | none | on when capture is configured |
+| Inbound | Optional file body fetch (`files.info` + `url_private_download`) into the captured idea | `slack.file_fetch` | off (`AIIA_SLACK_FILE_FETCH_ENABLED=1`) |
 | Outbound | Fixed save and promotion receipts in the capture thread; never captured text | `slack.capture_ack` | off (`AIIA_SLACK_ACK_ENABLED=1`) |
 | Outbound | Human-approved memory posts: the approved capture text, its priority and category, to one allowlisted channel | `slack.memory_post` | off (`AIIA_SLACK_MEMORY_POST_ENABLED=1`) |
 | Outbound | Anything else, including general `slack.post` | `slack.post` | no call site; denied in air-gap mode, Sanction-governed otherwise |
 
-Scopes: `commands` and `app_mentions:read` for capture; `chat:write` for either
-outbound path, as in `config/slack-performance-labs-manifest.json`. No
-`chat:write.public`, history, or impersonation scope is used.
+Scopes: `commands` and `app_mentions:read` for capture; `files:read` to fetch
+attached file bodies; `chat:write` for either outbound path, as in
+`config/slack-performance-labs-manifest.json`. No `chat:write.public`, history,
+or impersonation scope is used. File metadata is taken from the signed
+`app_mention` payload and does not need `files:read`. Content fetch does, and
+stays off until `AIIA_SLACK_FILE_FETCH_ENABLED=1` is set in the Mini
+environment after a pull and restart.
 
 **Policy change (2026-09-17).** Until this change, the rule was "captured text
 is never transmitted". It is narrowly reversed by owner decision: a capture's
@@ -207,6 +213,19 @@ ignored. Mentions are acknowledged to Slack after storage; they get a threaded
 reply only when save receipts are enabled. Signed URL-verification challenges do
 not create ideas.
 
+File attachments on `@AIIA` mentions are part of capture. Each file is recorded
+as a header with name, mimetype, size and permalink, including `file_share`
+mentions that have no extra text. Mention-only messages without files are still
+ignored. Optional content fetch is a separate, default-off path: with
+`AIIA_SLACK_FILE_FETCH_ENABLED=1`, `AIIA_SLACK_BOT_TOKEN`, and `files:read`,
+capture calls Slack `files.info` and `url_private_download` after
+`authorize_egress('slack.file_fetch', server='files.slack.com')`. Markdown,
+plain text, CSV, JSON, Slack snippets and PDFs (via `research.fetcher.pdf_to_text`)
+are inlined, each file and the whole idea capped so the inbox 8,000-character
+limit still holds, with `[truncated]` when something was cut. Air-gap denial,
+HTTP failure or an unsupported type leaves the header only. The bot token is
+never logged. `slack.file_fetch` is not on `AIRGAP_ALLOWED_EGRESS`.
+
 Promotion to Brain memory through `/v1/aiia/remember` with provenance is done by
 a person in the Studio Memory log (above). There is no curator agent; nothing is
 promoted automatically.
@@ -216,13 +235,16 @@ promoted automatically.
 1. Confirm the Performance Labs workspace and the channel IDs allowed to capture.
 2. Inspect the Performance Labs AIIA app and merge the required configuration from
    `config/slack-performance-labs-manifest.json`. Capture needs `commands` and
-   `app_mentions:read`; receipts and memory posts also need `chat:write`. No
-   channel-history, `chat:write.public` or impersonation scope is used. Reinstall
-   when Slack requires updated scope consent, then invite AIIA to the chosen channel.
+   `app_mentions:read`; file-body fetch also needs `files:read`; receipts and
+   memory posts also need `chat:write`. No channel-history, `chat:write.public`
+   or impersonation scope is used. Reinstall when Slack requires updated scope
+   consent, then invite AIIA to the chosen channel.
 3. Put `AIIA_SLACK_SIGNING_SECRET`, `AIIA_SLACK_TEAM_ID`, and comma-separated
    `AIIA_SLACK_CHANNEL_IDS` in the Mini's private service environment. Enter secrets
-   locally. No bot token is required for capture alone; receipts and memory posts
-   need `AIIA_SLACK_BOT_TOKEN`.
+   locally. No bot token is required for capture alone; receipts, memory posts
+   and file-body fetch need `AIIA_SLACK_BOT_TOKEN`. File metadata is stored
+   without a token. To inline file bodies, set `AIIA_SLACK_FILE_FETCH_ENABLED=1`
+   after installing `files:read`, then pull and restart the Mini.
 4. Deploy the integration and restart the service. Verify
    `/api/integrations/slack/status` shows configured with the expected IDs.
 5. Slack must reach the exact `/api/integrations/slack/commands` and

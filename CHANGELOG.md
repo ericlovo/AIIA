@@ -17,6 +17,12 @@ All notable changes to AIIA are documented here. This project adheres to
 
 ### Fixed
 
+- **Slack `@AIIA` mentions keep attached files.** File-only and `file_share`
+  mentions in allowlisted channels are saved with each file's name, mimetype,
+  size and permalink. Optional body fetch (`AIIA_SLACK_FILE_FETCH_ENABLED=1`,
+  bot `files:read`) inlines markdown, text, CSV, JSON, snippets and PDFs after
+  the `slack.file_fetch` air-gap check; denial, failure or an unsupported type
+  leaves the header only. The Mini needs a pull and restart after merge.
 - **Scheduled loops classify on evidence, not on what the model wrote.** A
   failed or incomplete read can produce reassuring output, so model prose never
   clears anything:

@@ -2,7 +2,7 @@
 
 One flag turns the Brain into a local-only runtime: inference, embeddings,
 retrieval, and memory all stay on the box, every cloud egress point is denied
-except the explicit Voice Conductor allowlist (`xai.realtime`) and three
+except the explicit Voice Conductor allowlist (`xai.realtime`) and
 conditional exceptions that are off unless their own flag is set, and each
 denied attempt is reported to Sanction as audit evidence. This is the
 enforcement core of **Sanction Local** — the deny-list plus the audit export
@@ -23,8 +23,8 @@ Effects, applied in `local_brain/config.py`:
   arbitrary URLs).
 - Every registered egress point (below) is denied by `local_brain/egress.py`,
   except `xai.realtime` (Voice Conductor ephemeral token mint) and, only when
-  their flags are set, `slack.capture_ack`, `slack.memory_post` and
-  `typesafe.routing`.
+  their flags are set, `slack.capture_ack`, `slack.memory_post`,
+  `slack.file_fetch` and `typesafe.routing`.
 
 Cloud API keys may remain set; they are inert except `XAI_API_KEY`, which
 Voice Conductor may use to mint a short-lived xAI token. `aiia doctor`
@@ -39,6 +39,7 @@ reports other keys as "configured but inert under AIIA_AIRGAP".
 | `slack.post` | none; the old `POST /v1/aiia/slack` route was removed because it imported a module that was never committed | always denied, even when either Slack exception below is enabled; stays registered so any future call site is denied |
 | `slack.capture_ack` | Slack receipt worker (fixed save and promotion receipts, no captured text) | **conditional airgap exception** — allowed only with `AIIA_SLACK_ACK_ENABLED=1`; otherwise denied and receipts stay queued |
 | `slack.memory_post` | Slack memory post worker (human-approved memory text to one allowlisted channel) | **conditional airgap exception** — allowed only with `AIIA_SLACK_MEMORY_POST_ENABLED=1`; otherwise denied and posts stay queued |
+| `slack.file_fetch` | Slack mention capture: optional `files.info` + `url_private_download` of attached file bodies | **conditional airgap exception** — allowed only with `AIIA_SLACK_FILE_FETCH_ENABLED=1`; otherwise denied and the capture stores the file header only |
 | `google.tts` | speak endpoints | client never initialized; macOS `say` fallback |
 | `anthropic.claude_code` | execution engine / story runner | engine refuses to start; runner exits at arg-parse |
 | `web.fetch` | research literature loop | force-disabled + fetch guard |
@@ -55,16 +56,19 @@ The routing advisor sends a human-written brief plus candidate agent names and
 skills. Agent IDs never leave: candidates are aliased locally. It is advisory —
 it creates no assignment, runs nothing, and no scheduled loop calls it.
 
-The two Slack exceptions and the routing advisor are conditional, not static. `airgap_allows_tool()`
-allows `slack.capture_ack` only while `AIIA_SLACK_ACK_ENABLED=1` and
-`slack.memory_post` only while `AIIA_SLACK_MEMORY_POST_ENABLED=1`, each read at
-decision time. Do not add either to the `AIRGAP_ALLOWED_EGRESS` frozenset:
-that would allow them with the flag off. Enabling one never enables the other
+The Slack exceptions and the routing advisor are conditional, not static. `airgap_allows_tool()`
+allows `slack.capture_ack` only while `AIIA_SLACK_ACK_ENABLED=1`,
+`slack.memory_post` only while `AIIA_SLACK_MEMORY_POST_ENABLED=1`, and
+`slack.file_fetch` only while `AIIA_SLACK_FILE_FETCH_ENABLED=1`, each read at
+decision time. Do not add them to the `AIRGAP_ALLOWED_EGRESS` frozenset:
+that would allow them with the flag off. Enabling one never enables the others
 or `slack.post`. `slack.capture_ack` sends only fixed receipt text. The
 `slack.memory_post` exception does transmit captured text, but only text a
 person explicitly marked for Slack when logging it, only to the single channel
 in `AIIA_SLACK_MEMORY_POST_CHANNEL_ID`, and only back to the workspace it was
-captured from (see `docs/SLACK-PERFORMANCE-LABS.md`). An install that must keep
+captured from (see `docs/SLACK-PERFORMANCE-LABS.md`). `slack.file_fetch` pulls
+attached file bodies into the local inbox; leave it unset unless the Mini
+should download those files. An install that must keep
 all captured text on the box leaves `AIIA_SLACK_MEMORY_POST_ENABLED` unset. For a fully offline install that must also
 block voice, remove `xai.realtime` from that allowlist (or unset the xAI
 key). Point `SANCTION_API_URL` at a local Sanction instance; the client is
@@ -76,7 +80,7 @@ config-driven, so this is an env swap, not a code change.
 
 - **Air-gap on** → deny, decided locally, unless the tool is in
   `AIRGAP_ALLOWED_EGRESS` (`xai.realtime` only) or is a Slack exception whose
-  flag is set (`slack.capture_ack`, `slack.memory_post`). Denied attempts are still
+  flag is set (`slack.capture_ack`, `slack.memory_post`, `slack.file_fetch`). Denied attempts are still
   POSTed to Sanction `/authorize/tool` so the denial persists in the audit
   trail. A failed audit post never converts a deny into an allow. The
   Voice Conductor and Slack exceptions are local allows; they do not unset
@@ -111,7 +115,8 @@ while sleep 10; do
 done
 # Expect ONLY the Sanction control-plane host — plus api.x.ai if Voice
 # Conductor minted an ephemeral token (xai.realtime airgap exception), and
-# slack.com only if AIIA_SLACK_ACK_ENABLED or AIIA_SLACK_MEMORY_POST_ENABLED is set.
+# slack.com / files.slack.com only if AIIA_SLACK_ACK_ENABLED,
+# AIIA_SLACK_MEMORY_POST_ENABLED, or AIIA_SLACK_FILE_FETCH_ENABLED is set.
 
 sudo tcpdump -i any -n 'host api.anthropic.com or host api.groq.com or host api.openai.com or host generativelanguage.googleapis.com'
 # Expect silence.

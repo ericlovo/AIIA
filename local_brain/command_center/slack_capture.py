@@ -4,13 +4,14 @@ import asyncio
 import hashlib
 import hmac
 import json
+import logging
 import os
 import re
 import sqlite3
 import time
 from contextlib import asynccontextmanager
 from pathlib import Path
-from urllib.parse import parse_qs
+from urllib.parse import parse_qs, urlparse
 
 import httpx
 from fastapi import APIRouter, HTTPException, Request
@@ -26,12 +27,33 @@ from local_brain.command_center.memory_inbox import (
     UNCLASSIFIED,
     MemoryInbox,
 )
+from local_brain.egress import authorize_egress
+from local_brain.research.fetcher import pdf_to_text
 
 BRAIN_URL = "http://localhost:8100"
 BRAIN_TRANSPORT = None  # tests inject an httpx transport; production dials the local Brain
+SLACK_FILE_TRANSPORT = None  # tests inject an httpx transport; production dials Slack
 MEMORY_CATEGORIES = ("decisions", "patterns", "lessons", "project", "meta", "team", "agents")
 MENTION = re.compile(r"<@[A-Z0-9]+>")
 MEMORY_POST_TEXT_LIMIT = 3_000
+IDEA_CHAR_LIMIT = 8_000
+FILE_CONTENT_CHAR_LIMIT = 3_000
+FILE_DOWNLOAD_BYTE_LIMIT = 256_000
+TRUNCATION_NOTE = "[truncated]"
+TEXT_LIKE_MIMES = frozenset(
+    {
+        "text/plain",
+        "text/markdown",
+        "text/x-markdown",
+        "text/csv",
+        "application/json",
+        "application/x-json",
+    }
+)
+TEXT_LIKE_EXTS = frozenset({".md", ".txt", ".csv", ".json"})
+TEXT_LIKE_FILETYPES = frozenset({"markdown", "text", "csv", "json"})
+PDF_MIMES = frozenset({"application/pdf"})
+logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
@@ -159,6 +181,159 @@ class MemoryUnavailable(Exception):
 def capture_text(text: str) -> str:
     """The idea without the leading bot mention; the original text stays stored."""
     return MENTION.sub("", text).strip()
+
+
+def file_fetch_enabled() -> bool:
+    return os.getenv("AIIA_SLACK_FILE_FETCH_ENABLED", "") == "1"
+
+
+def event_files(event: dict) -> list[dict]:
+    files = event.get("files")
+    if not isinstance(files, list):
+        return []
+    return [item for item in files if isinstance(item, dict)]
+
+
+def file_header(file: dict) -> str:
+    name = file.get("name") if isinstance(file.get("name"), str) and file["name"] else "unnamed"
+    mimetype = (
+        file.get("mimetype")
+        if isinstance(file.get("mimetype"), str) and file["mimetype"]
+        else "application/octet-stream"
+    )
+    size = file.get("size") if isinstance(file.get("size"), int) else 0
+    permalink = file.get("permalink") if isinstance(file.get("permalink"), str) else ""
+    return f"[file] {name} | {mimetype} | {size} bytes | {permalink}".rstrip()
+
+
+def file_kind(file: dict) -> str:
+    """Return 'pdf', 'text', or '' if the file should not be fetched."""
+    name = str(file.get("name") or "").lower()
+    mime = str(file.get("mimetype") or "").lower()
+    filetype = str(file.get("filetype") or "").lower()
+    mode = str(file.get("mode") or "").lower()
+    ext = f".{name.rsplit('.', 1)[-1]}" if "." in name else ""
+    if mime in PDF_MIMES or ext == ".pdf" or filetype == "pdf":
+        return "pdf"
+    if (
+        mime in TEXT_LIKE_MIMES
+        or ext in TEXT_LIKE_EXTS
+        or filetype in TEXT_LIKE_FILETYPES
+        or mode == "snippet"
+    ):
+        return "text"
+    return ""
+
+
+def slack_download_allowed(url: str) -> bool:
+    try:
+        parsed = urlparse(url)
+    except ValueError:
+        return False
+    return parsed.scheme == "https" and parsed.hostname == "files.slack.com"
+
+
+def extract_file_text(data: bytes, kind: str) -> str | None:
+    if kind == "pdf":
+        try:
+            text = pdf_to_text(data)
+        except Exception:
+            return None
+        return text or None
+    try:
+        return data.decode("utf-8")
+    except UnicodeDecodeError:
+        return data.decode("utf-8", "replace")
+
+
+def build_captured_text(text: str, files: list[dict], contents: list[str | None]) -> str:
+    parts: list[str] = []
+    if text:
+        parts.append(text)
+    for file, content in zip(files, contents, strict=True):
+        header = file_header(file)
+        if content is None:
+            parts.append(header)
+            continue
+        body = content
+        truncated = False
+        if len(body) > FILE_CONTENT_CHAR_LIMIT:
+            body = body[:FILE_CONTENT_CHAR_LIMIT]
+            truncated = True
+        block = f"{header}\n{body}"
+        if truncated:
+            block += f"\n{TRUNCATION_NOTE}"
+        parts.append(block)
+    assembled = "\n\n".join(parts)
+    if len(assembled) <= IDEA_CHAR_LIMIT:
+        return assembled
+    note = f"\n{TRUNCATION_NOTE}"
+    return assembled[: IDEA_CHAR_LIMIT - len(note)] + note
+
+
+async def fetch_one_file(client: httpx.AsyncClient, file: dict, headers: dict) -> str | None:
+    kind = file_kind(file)
+    if not kind:
+        return None
+    file_id = file.get("id")
+    if not isinstance(file_id, str) or not file_id:
+        return None
+    try:
+        info = await client.get(
+            "https://slack.com/api/files.info",
+            params={"file": file_id},
+            headers=headers,
+        )
+        payload = info.json()
+        if not isinstance(payload, dict) or payload.get("ok") is not True:
+            return None
+        meta = payload.get("file")
+        if not isinstance(meta, dict):
+            return None
+        url = meta.get("url_private_download")
+        if not isinstance(url, str) or not slack_download_allowed(url):
+            return None
+        downloaded = await client.get(url, headers=headers)
+        if downloaded.status_code != 200:
+            return None
+        data = downloaded.content[:FILE_DOWNLOAD_BYTE_LIMIT]
+        if not data:
+            return None
+        return extract_file_text(data, kind)
+    except (httpx.HTTPError, ValueError, OSError):
+        logger.warning("slack file fetch failed")
+        return None
+
+
+async def fetch_file_contents(files: list[dict]) -> list[str | None]:
+    contents: list[str | None] = [None] * len(files)
+    if not files or not file_fetch_enabled() or not any(file_kind(file) for file in files):
+        return contents
+    token = os.getenv("AIIA_SLACK_BOT_TOKEN", "")
+    if not token:
+        return contents
+    decision = await authorize_egress("slack.file_fetch", server="files.slack.com")
+    if not decision.allowed:
+        return contents
+    headers = {"Authorization": "Bearer " + token}
+    try:
+        async with httpx.AsyncClient(
+            timeout=1.5,
+            follow_redirects=False,
+            transport=SLACK_FILE_TRANSPORT,
+        ) as client:
+            fetched = await asyncio.gather(
+                *(fetch_one_file(client, file, headers) for file in files),
+                return_exceptions=True,
+            )
+        for index, result in enumerate(fetched):
+            if isinstance(result, str):
+                contents[index] = result
+            elif isinstance(result, BaseException):
+                logger.warning("slack file fetch failed")
+    except (httpx.HTTPError, ValueError, OSError):
+        logger.warning("slack file fetch failed")
+    return contents
 
 
 def slack_escape(text: str) -> str:
@@ -422,7 +597,9 @@ async def capture_mention(request: Request):
     event = payload.get("event")
     if not isinstance(event, dict):
         raise HTTPException(status_code=400, detail="invalid_slack_payload")
-    if event.get("type") != "app_mention" or event.get("bot_id") or event.get("subtype"):
+    if event.get("type") != "app_mention" or event.get("bot_id"):
+        return {"ok": True}
+    if event.get("subtype") not in (None, "", "file_share"):
         return {"ok": True}
     channel = event.get("channel")
     if not isinstance(channel, str) or channel not in channels:
@@ -431,6 +608,7 @@ async def capture_mention(request: Request):
     if any(not isinstance(value, str) or not value.strip() for value in values):
         raise HTTPException(status_code=400, detail="invalid_slack_payload")
     event_id, author, text = values
+    files = event_files(event)
     thread_ts = ""
     if slack_receipts.enabled():
         thread_ts = event.get("thread_ts") or event.get("ts")
@@ -440,12 +618,15 @@ async def capture_mention(request: Request):
             raise HTTPException(status_code=400, detail="invalid_slack_timestamp")
     # Match promotion's content check before creating an idea and its save receipt.
     # Acknowledge the event only; retries of mention-only messages have no side effects.
-    if not capture_text(text):
+    # File-only mentions still save: the file header is the captured content.
+    if not capture_text(text) and not files:
         return {"ok": True}
+    contents = await fetch_file_contents(files)
+    stored = build_captured_text(text, files, contents)
     key = "slack:event:" + hashlib.sha256(f"{team}:{event_id}".encode()).hexdigest()
     try:
         inbox().capture(
-            text=text,
+            text=stored,
             source_key=key,
             source="slack",
             project="mindmoor",
