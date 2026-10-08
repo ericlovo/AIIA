@@ -18,6 +18,7 @@ import {
   type GitWorkspace,
   type RepositoryResource,
 } from '../lib/api'
+import { AgentPicker } from './AgentPicker'
 import { assignmentLabel, assignmentOrigin, reviewLabel } from './assignmentReview'
 import { formatRoute, type StudioView } from './studioRoute'
 import { PageHeader } from './PageHeader'
@@ -432,10 +433,7 @@ function AssignmentForm({ agents, draft, pending, error, onChange, onSubmit, onC
     <Panel title="New assignment" eyebrow="New work" actions={<button type="button" onClick={onClose} disabled={pending} aria-label="Close new work" title="Close new work" className="inline-flex items-center justify-center text-neutral-400 hover:text-white disabled:opacity-40"><X size={18} aria-hidden="true" /></button>}>
       <Field label="Title"><input value={draft.title} onChange={event => onChange({ ...draft, title: event.target.value })} placeholder="Map the authorization surface" /></Field>
       <Field label="Assigned agent">
-        <select value={draft.agent_id} onChange={event => onChange({ ...draft, agent_id: event.target.value })}>
-          <option value="">Choose an agent</option>
-          {agents.map(agent => <option key={agent.id} value={agent.id}>{agent.name}</option>)}
-        </select>
+        <AgentPicker agents={agents} value={draft.agent_id} onChange={agent_id => onChange({ ...draft, agent_id })} placeholder="Choose an agent" />
       </Field>
       <Field label="Objective"><textarea value={draft.objective} onChange={event => onChange({ ...draft, objective: event.target.value })} rows={5} placeholder="Return the five highest-leverage integration points." /></Field>
       <Disclosure title="Context, success criteria and priority">
@@ -705,7 +703,6 @@ function WorkspaceStatus({ status }: { status: GitWorkspace['status'] }) {
 
 function HandoffForm({ agents, assignments, draft, pending, error, onChange, onSubmit }: { agents: Agent[]; assignments: Assignment[]; draft: HandoffDefinition; pending: boolean; error: Error | null; onChange: (draft: HandoffDefinition) => void; onSubmit: () => void }) {
   const source = assignments.find(item => item.id === draft.source_assignment_id)
-  const targets = agents.filter(agent => agent.id !== source?.agent_id)
   return (
     <Panel title="New handoff" eyebrow="Handoff controls">
       <Field label="Completed assignment">
@@ -715,10 +712,7 @@ function HandoffForm({ agents, assignments, draft, pending, error, onChange, onS
         </select>
       </Field>
       <Field label="Target agent">
-        <select value={draft.to_agent_id} onChange={event => onChange({ ...draft, to_agent_id: event.target.value })}>
-          <option value="">Choose the next specialist</option>
-          {targets.map(agent => <option key={agent.id} value={agent.id}>{agent.name}</option>)}
-        </select>
+        <AgentPicker agents={agents} value={draft.to_agent_id} onChange={to_agent_id => onChange({ ...draft, to_agent_id })} placeholder="Choose the next specialist" excludeIds={source?.agent_id ? [source.agent_id] : []} />
       </Field>
       <Field label="Artifact type">
         <select value={draft.artifact_type} onChange={event => onChange({ ...draft, artifact_type: event.target.value as HandoffArtifactType })}>

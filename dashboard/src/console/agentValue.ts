@@ -11,7 +11,9 @@ export function agentValue(agent: Agent): AgentValue {
 }
 
 export function channelLabel(channel: OutputChannel | string | undefined): string {
-  return channel === 'slack' ? 'Slack' : 'Studio inbox'
+  if (channel === 'slack') return 'Slack'
+  if (channel === 'memory_inbox') return 'Memory inbox'
+  return 'Studio work'
 }
 
 export function hasSlackGap(agent: Pick<Agent, 'output_channel' | 'output_channel_note'>): boolean {
@@ -54,6 +56,6 @@ export function filterAgents(agents: Agent[], query: string, onlyQuiet: boolean)
   return agents.filter(agent => {
     if (onlyQuiet && !noReviewedOutput(agent)) return false
     if (!needle) return true
-    return `${agent.name} ${agent.one_liner || ''} ${agent.mission} ${agent.repo_id}`.toLowerCase().includes(needle)
+    return `${agent.name} ${agent.one_liner || ''} ${agent.use_when || ''} ${agent.mission} ${agent.repo_id} ${agent.kind || ''} ${(agent.handles ?? []).join(' ')} ${agent.suite || ''}`.toLowerCase().includes(needle)
   })
 }

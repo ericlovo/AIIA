@@ -14,8 +14,13 @@ from typing import Any
 from local_brain.command_center import slack_memory_posts
 
 ONE_LINER_MAX = 120
+USE_WHEN_MAX = ONE_LINER_MAX
 OUTPUT_CHANNELS = ("studio_inbox", "slack")
 DEFAULT_OUTPUT_CHANNEL = "studio_inbox"
+AGENT_KINDS = ("coding", "product", "ops")
+CODING_TOOLS = frozenset({"Repository read", "GitHub read", "Git workspace"})
+MAX_HANDLES = 12
+HANDLE_MAX = 40
 VALUE_WINDOW_DAYS = 14
 SLACK_NOT_CONFIGURED = "slack not configured"
 SLACK_POSTING_PENDING = "slack declared; posting not implemented, delivered to Studio inbox"
@@ -40,9 +45,67 @@ def stored_one_liner(value: Any) -> str:
     return str(value or "").strip()[:ONE_LINER_MAX]
 
 
+def stored_use_when(value: Any) -> str:
+    return str(value or "").strip()[:USE_WHEN_MAX]
+
+
 def resolve_one_liner(agent: dict[str, Any]) -> str:
     stored = stored_one_liner(agent.get("one_liner"))
     return stored or derive_one_liner(str(agent.get("mission") or ""))
+
+
+def normalize_kind(value: Any) -> str:
+    """Validate a write. Empty means unset; unknown values are refused."""
+    if value is None or value == "":
+        return ""
+    kind = str(value).strip().lower()
+    if kind not in AGENT_KINDS:
+        raise ValueError("unknown_agent_kind")
+    return kind
+
+
+def stored_kind(agent: dict[str, Any]) -> str:
+    raw = str(agent.get("kind") or "").strip().lower()
+    return raw if raw in AGENT_KINDS else ""
+
+
+def derive_kind(agent: dict[str, Any]) -> str:
+    """Best-effort kind when none is stored. Repo or coding tools → coding."""
+    tools = {str(tool) for tool in (agent.get("tools") or [])}
+    if tools & CODING_TOOLS or str(agent.get("repo_id") or "").strip():
+        return "coding"
+    return ""
+
+
+def resolve_kind(agent: dict[str, Any]) -> str:
+    return stored_kind(agent) or derive_kind(agent)
+
+
+def resolve_use_when(agent: dict[str, Any]) -> str:
+    stored = stored_use_when(agent.get("use_when"))
+    return stored or resolve_one_liner(agent)
+
+
+def normalize_handles(value: Any) -> list[str]:
+    if value is None:
+        return []
+    if not isinstance(value, list):
+        raise ValueError("invalid_handles")
+    return [str(tag).strip()[:HANDLE_MAX] for tag in value if str(tag).strip()][:MAX_HANDLES]
+
+
+def present_handles(agent: dict[str, Any]) -> list[str]:
+    raw = agent.get("handles")
+    if not isinstance(raw, list):
+        return []
+    try:
+        return normalize_handles(raw)
+    except ValueError:
+        return []
+
+
+def stored_retired(agent: dict[str, Any]) -> bool:
+    return bool(agent.get("retired"))
 
 
 def normalize_output_channel(value: Any) -> str:
@@ -104,6 +167,14 @@ def present_agent(
     stored = stored_one_liner(agent.get("one_liner"))
     shown["one_liner"] = stored or derive_one_liner(str(agent.get("mission") or ""))
     shown["one_liner_derived"] = not bool(stored)
+    stored_when = stored_use_when(agent.get("use_when"))
+    shown["use_when"] = stored_when or shown["one_liner"]
+    shown["use_when_derived"] = not bool(stored_when)
+    stored_k = stored_kind(agent)
+    shown["kind"] = stored_k or derive_kind(agent)
+    shown["kind_derived"] = not bool(stored_k)
+    shown["retired"] = stored_retired(agent)
+    shown["handles"] = present_handles(agent)
     shown["output_channel"] = declared_output_channel(agent)
     shown["output_channel_note"] = output_channel_note(agent, slack_ready=slack_ready)
     if value is not None:
