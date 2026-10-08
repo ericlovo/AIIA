@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { api, MEMORY_CATEGORIES, MEMORY_PRIORITIES, type Agent, type MemoryCategory, type MemoryIdea, type MemoryIdeaStatus, type MemoryInboxSort, type MemoryPriority, type ReviewOutcome, type ReviewBucket } from '../lib/api'
+import { api, MEMORY_CATEGORIES, MEMORY_PRIORITIES, type Agent, type CaptureFile, type MemoryCategory, type MemoryIdea, type MemoryIdeaStatus, type MemoryInboxSort, type MemoryPriority, type ReviewOutcome, type ReviewBucket } from '../lib/api'
 import { PageHeader } from './PageHeader'
 import { LeadQualification } from './LeadQualification'
 import { InboxQueues } from './InboxQueues'
@@ -91,6 +91,7 @@ export function MemoryLog({ agents, intent, source, inbox = false }: { agents: A
     onError: fail,
   })
   const retry = useMutation({ mutationFn: ({ id, kind }: { id: string; kind: 'capture' | 'promotion' | 'memory_post' }) => api.retryIdeaReceipt(id, kind), onSuccess: (_, { kind }) => done(kind === 'memory_post' ? `Post to ${MEMORY_POST_CHANNEL} queued again.` : 'Receipt queued again.'), onError: fail })
+  const retryFile = useMutation({ mutationFn: ({ id, fileId }: { id: string; fileId: string }) => api.retryIdeaFile(id, fileId), onSuccess: () => done('File fetch queued again.'), onError: fail })
   const assign = useMutation({
     mutationFn: ({ id, agentId, note }: { id: string; agentId: string; note: string }) => api.assignCapture(id, agentId, { reviewNote: note }),
     onSuccess: result => {
@@ -164,7 +165,8 @@ export function MemoryLog({ agents, intent, source, inbox = false }: { agents: A
             onRestore={() => restore.mutate(idea.id)}
             onTriage={(outcome, note) => triage.mutate({ id: idea.id, outcome, note })}
             onAssign={(agentId, note) => assign.mutate({ id: idea.id, agentId, note })}
-            onRetry={kind => retry.mutate({ id: idea.id, kind })} />)}
+            onRetry={kind => retry.mutate({ id: idea.id, kind })}
+            onRetryFile={fileId => retryFile.mutate({ id: idea.id, fileId })} />)}
         </ul>
 
         {data && data.total > 50 && <div className="flex items-center justify-between px-5 py-4 text-xs text-neutral-500 sm:px-7">
@@ -198,10 +200,17 @@ function originHelp(origin: Origin): string {
   return `${shared} Slack captures retain channel provenance and may queue a receipt; local proposals are idempotent and send nothing outbound.`
 }
 
-function IdeaRow({ idea, busy, canPost, agents, onPromote, onDismiss, onRestore, onTriage, onAssign, onRetry }: { idea: MemoryIdea; busy: boolean; canPost: boolean; agents: Agent[]; onPromote: (category: MemoryCategory, priority: MemoryPriority, postToSlack: boolean) => void; onDismiss: () => void; onRestore: () => void; onTriage: (outcome: Exclude<ReviewOutcome, 'needs_work'>, note: string) => void; onAssign: (agentId: string, note: string) => void; onRetry: (kind: 'capture' | 'promotion' | 'memory_post') => void }) {
+function fileStatusLabel(file: CaptureFile): string {
+  if (file.status === 'done') return file.chars ? `${Math.max(1, Math.round(file.chars / 1000))}k chars read` : 'saved, no text read'
+  if (file.status === 'failed') return `fetch failed${file.error ? `: ${file.error}` : ''}`
+  return 'fetching'
+}
+
+function IdeaRow({ idea, busy, canPost, agents, onPromote, onDismiss, onRestore, onTriage, onAssign, onRetry, onRetryFile }: { idea: MemoryIdea; busy: boolean; canPost: boolean; agents: Agent[]; onPromote: (category: MemoryCategory, priority: MemoryPriority, postToSlack: boolean) => void; onDismiss: () => void; onRestore: () => void; onTriage: (outcome: Exclude<ReviewOutcome, 'needs_work'>, note: string) => void; onAssign: (agentId: string, note: string) => void; onRetry: (kind: 'capture' | 'promotion' | 'memory_post') => void; onRetryFile: (fileId: string) => void }) {
   const [category, setCategory] = useState<MemoryCategory>('project')
   const [priority, setPriority] = useState<MemoryPriority>('normal')
-  const [postToSlack, setPostToSlack] = useState(false)
+  // Logging to memory sends the approved text back to Slack unless unticked.
+  const [postToSlack, setPostToSlack] = useState(true)
   const [owner, setOwner] = useState('')
   const [reviewNote, setReviewNote] = useState('')
   const localProposal = idea.source !== 'slack'
@@ -217,6 +226,13 @@ function IdeaRow({ idea, busy, canPost, agents, onPromote, onDismiss, onRestore,
         <div className="min-w-0 flex-1">
           <p className="whitespace-pre-wrap break-words text-sm text-neutral-100">{text}</p>
           {!content && <p className="mt-2 text-sm text-amber-200">Incomplete capture: no idea text. The original message contained only a mention.</p>}
+          {!!idea.files?.length && <ul className="mt-2 flex flex-wrap gap-2 text-[11px]" aria-label={`Files attached to capture ${idea.id.slice(0, 8)}`}>
+            {idea.files.map(file => <li key={file.file_id} className={`inline-flex items-center gap-2 border px-2 py-1 ${file.status === 'failed' ? 'border-rose-500/50 text-rose-200' : file.status === 'done' ? 'border-neutral-700 text-neutral-300' : 'border-amber-500/40 text-amber-200'}`}>
+              <span className="break-all">{file.name}</span>
+              <span className="text-neutral-500">{fileStatusLabel(file)}</span>
+              {file.status === 'failed' && <button type="button" disabled={busy} onClick={() => onRetryFile(file.file_id)} className="underline">Retry</button>}
+            </li>)}
+          </ul>}
           <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-neutral-500">
             <span className={`uppercase tracking-wider ${idea.status === 'promoted' ? 'text-emerald-300' : idea.status === 'dismissed' ? 'text-neutral-500' : 'text-amber-300'}`}>{idea.status === 'promoted' ? 'Logged to memory' : idea.status === 'dismissed' ? 'Dismissed' : 'Unreviewed'}</span>
             {idea.status === 'promoted' && <span className={`border px-1.5 uppercase tracking-wider ${PRIORITY_TONE[badge.tone]}`} aria-label={`Priority ${badge.text}`}>{badge.text}</span>}
@@ -255,7 +271,7 @@ function IdeaRow({ idea, busy, canPost, agents, onPromote, onDismiss, onRestore,
               Post to {MEMORY_POST_CHANNEL}
             </label>}
             </>}
-            <button type="button" disabled={busy || !content} onClick={() => onPromote(category, priority, postToSlack)} className="h-8 border border-cyan-500/60 bg-cyan-500/10 px-3 text-xs text-cyan-100 hover:bg-cyan-500/20 disabled:opacity-40">Log to memory</button>
+            <button type="button" disabled={busy || !content} onClick={() => onPromote(category, priority, canPost && postToSlack)} className="h-8 border border-cyan-500/60 bg-cyan-500/10 px-3 text-xs text-cyan-100 hover:bg-cyan-500/20 disabled:opacity-40">Log to memory</button>
             {!localProposal && <button type="button" disabled={busy} onClick={onDismiss} className="h-8 border border-neutral-800 px-3 text-xs text-neutral-300 hover:text-white disabled:opacity-40">Dismiss</button>}
           </>}
           {localProposal && idea.status === 'unreviewed' && !idea.assignment_id && <>
