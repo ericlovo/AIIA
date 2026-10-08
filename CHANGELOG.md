@@ -27,10 +27,11 @@ All notable changes to AIIA are documented here. This project adheres to
   have no workspace, may be posted; another workspace's text still may not.
 - **Daily Digest built-in task.** One status line per product (`shipped` /
   `blocked` / `waiting on you`) from the checked-in product map
-  (`config/digest_products.json`, override `AIIA_DIGEST_PRODUCTS`), then at
-  most five **Needs a decision** inbox items (Slack or product-tagged;
-  the rest collapse by source), then a compressed agent/loop/built-in
-  footer. Collectors still read mounted repos for merged PRs, failing CI
+  (`config/digest_products.json`, override `AIIA_DIGEST_PRODUCTS`), then a
+  **Customers** block in the same form (TRS / Alumni Nations / Smart
+  Medical; unmapped customers say `not mapped yet`), then at most five
+  **Needs a decision** inbox items (Slack or product-tagged; the rest
+  collapse by source), then a compressed agent/loop/built-in footer. Collectors still read mounted repos for merged PRs, failing CI
   on `main`, conflicts, ready drafts, and Mindmoor `production`/`alumni`
   behind `main` via `git rev-list --count`. Unmounted products say so on
   that line. Studio agents map via suite, memory namespace, repo, or

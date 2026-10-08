@@ -2043,6 +2043,7 @@ Be specific and reference actual file names. Keep each point to 1-2 sentences.""
             inbox_counts=inbox_counts,
             repo_evidence=repo_result.evidence,
             inbox_items=inbox_items,
+            customer_evidence=repo_result.customer_evidence,
         )
         await self._progress("daily_digest", 70, "Delivering")
         key = daily_digest.digest_key(date)

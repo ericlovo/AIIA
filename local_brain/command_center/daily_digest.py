@@ -1,4 +1,4 @@
-"""The daily digest: one status line per product, then decisions, then a footer.
+"""The daily digest: product lines, then customers, then decisions, then a footer.
 
 Spec item 2 of the Studio build-out: "surface one line per day: what moved,
 what's stuck." The digest is the only thing the loops should put in front of a
@@ -61,6 +61,29 @@ FALLBACK_PRODUCTS: tuple[dict[str, Any], ...] = (
     {"id": "morrow", "name": "Morrow", "github": "", "mount": "morrow"},
 )
 
+FALLBACK_CUSTOMERS: tuple[dict[str, Any], ...] = (
+    {
+        "id": "trs",
+        "code": "TRS",
+        "name": "That's Right Sweetie",
+        "label": "That's Right Sweetie (TRS)",
+        "products": ["mindmoor"],
+        "tenant": "trs",
+        "branch": "trs",
+        "excluded_from_releases": True,
+    },
+    {
+        "id": "alumni-nations",
+        "code": "AN",
+        "name": "Alumni Nations",
+        "products": ["mindmoor"],
+        "agents": ["Alumni Nations Research Scout"],
+        "drift": ["alumni"],
+        "phase": {"name": "Phase 1", "start": "2026-10-15", "end": "2027-01-12"},
+    },
+    {"id": "smart-medical", "code": "SM", "name": "Smart Medical"},
+)
+
 GitRead = Callable[..., str | None]
 GitHubApi = Callable[[str], Any]
 
@@ -79,6 +102,57 @@ class DigestProduct:
         if self.github and "/" in self.github:
             values.append(self.github.rsplit("/", 1)[-1])
         return {value.strip().lower() for value in values if str(value).strip()}
+
+
+@dataclass(frozen=True)
+class DigestPhase:
+    name: str = "Phase 1"
+    start: str = ""
+    end: str = ""
+
+
+@dataclass(frozen=True)
+class DigestCustomer:
+    id: str
+    name: str
+    code: str = ""
+    products: tuple[str, ...] = ()
+    agents: tuple[str, ...] = ()
+    suites: tuple[str, ...] = ()
+    namespaces: tuple[str, ...] = ()
+    drift: tuple[str, ...] = ()
+    branch: str = ""
+    tenant: str = ""
+    vercel_project: str = ""
+    deploy: str = ""
+    excluded_from_releases: bool = False
+    phase: DigestPhase | None = None
+    label_override: str = ""
+
+    def tokens(self) -> set[str]:
+        values = [self.id, self.name, self.code, *self.agents]
+        return {value.strip().lower() for value in values if str(value).strip()}
+
+    def mapped(self) -> bool:
+        return bool(
+            self.products
+            or self.agents
+            or self.suites
+            or self.namespaces
+            or self.branch
+            or self.tenant
+            or self.drift
+        )
+
+    def label(self) -> str:
+        return self.label_override.strip() or self.name
+
+
+@dataclass
+class CustomerEvidence:
+    customer_id: str
+    behind_main: int | None = None
+    ref_found: bool = False
 
 
 @dataclass
@@ -125,6 +199,7 @@ class DigestResult:
     fingerprint: str
     evidence: list[RepoEvidence]
     failures: tuple[str, ...] = ()
+    customer_evidence: list[CustomerEvidence] = field(default_factory=list)
 
 
 def loops_registry_path() -> Path:
@@ -200,6 +275,80 @@ def load_products(path: Path | None = None) -> list[DigestProduct]:
     ]
 
 
+def _phase_from_row(raw: Any) -> DigestPhase | None:
+    if not isinstance(raw, dict):
+        return None
+    start = str(raw.get("start") or "").strip()
+    if not start:
+        return None
+    return DigestPhase(
+        name=str(raw.get("name") or "Phase 1").strip() or "Phase 1",
+        start=start,
+        end=str(raw.get("end") or "").strip(),
+    )
+
+
+def _strings(raw: Any) -> tuple[str, ...]:
+    if not isinstance(raw, list):
+        return ()
+    return tuple(str(item).strip() for item in raw if str(item).strip())
+
+
+def _customer_from_row(row: dict[str, Any]) -> DigestCustomer | None:
+    customer_id = str(row.get("id") or "").strip().lower()
+    name = str(row.get("name") or "").strip()
+    if not customer_id or not name:
+        return None
+    return DigestCustomer(
+        id=customer_id,
+        name=name,
+        code=str(row.get("code") or "").strip(),
+        products=_strings(row.get("products")),
+        agents=_strings(row.get("agents")),
+        suites=_strings(row.get("suites")),
+        namespaces=_strings(row.get("namespaces")),
+        drift=_strings(row.get("drift")),
+        branch=str(row.get("branch") or "").strip(),
+        tenant=str(row.get("tenant") or "").strip(),
+        vercel_project=str(row.get("vercel_project") or row.get("vercel") or "").strip(),
+        deploy=str(row.get("deploy") or "").strip(),
+        excluded_from_releases=bool(row.get("excluded_from_releases")),
+        phase=_phase_from_row(row.get("phase")),
+        label_override=str(row.get("label") or "").strip(),
+    )
+
+
+def _config_payload(path: Path | None = None) -> dict[str, Any] | None:
+    target = path or products_config_path()
+    try:
+        data = json.loads(target.read_text())
+    except (OSError, ValueError):
+        return None
+    return data if isinstance(data, dict) else None
+
+
+def load_customers(path: Path | None = None) -> list[DigestCustomer]:
+    data = _config_payload(path)
+    rows: list[Any]
+    if data is None or "customers" not in data:
+        rows = list(FALLBACK_CUSTOMERS)
+    elif isinstance(data.get("customers"), list):
+        rows = data["customers"]
+    else:
+        rows = []
+    customers: list[DigestCustomer] = []
+    seen: set[str] = set()
+    for raw in rows:
+        if not isinstance(raw, dict):
+            continue
+        customer = _customer_from_row(raw)
+        if not customer or customer.id in seen:
+            continue
+        seen.add(customer.id)
+        customers.append(customer)
+    return customers
+
+
 def match_product(value: Any, products: Iterable[DigestProduct]) -> DigestProduct | None:
     needle = str(value or "").strip().lower()
     if not needle:
@@ -241,6 +390,41 @@ def map_agent_to_product(
     except ImportError:
         return None
     return match_product(infer_suite(agent), catalog)
+
+
+def _normalize_name(value: Any) -> str:
+    return " ".join(str(value or "").lower().split())
+
+
+def map_agent_to_customers(
+    agent: dict[str, Any], customers: Iterable[DigestCustomer]
+) -> list[DigestCustomer]:
+    """Map a Studio agent to customers. Name, handles, namespace; no guessing."""
+    catalog = list(customers)
+    hits: list[DigestCustomer] = []
+    name = _normalize_name(agent.get("name"))
+    handles = agent.get("handles")
+    handle_tokens = (
+        {_normalize_name(item) for item in handles if str(item).strip()}
+        if isinstance(handles, list)
+        else set()
+    )
+    namespace = _normalize_name(agent.get("memory_namespace"))
+    for customer in catalog:
+        named = {_normalize_name(item) for item in customer.agents}
+        if name and (
+            name in named
+            or any(token and (token == name or token in name or name in token) for token in named)
+            or customer.name.lower() in name
+        ):
+            hits.append(customer)
+            continue
+        if handle_tokens & customer.tokens():
+            hits.append(customer)
+            continue
+        if namespace and namespace in {_normalize_name(item) for item in customer.namespaces}:
+            hits.append(customer)
+    return hits
 
 
 def digest_key(date: str) -> str:
@@ -764,16 +948,71 @@ def _fingerprint(evidence: list[RepoEvidence]) -> str:
     return hashlib.sha256(encoded).hexdigest()
 
 
+def _customer_ref_candidates(customer: DigestCustomer) -> tuple[str, ...]:
+    names: list[str] = []
+    if customer.branch:
+        names.append(customer.branch)
+    if customer.tenant and customer.tenant not in names:
+        names.extend((customer.tenant, f"tenant/{customer.tenant}", f"release/{customer.tenant}"))
+    candidates: list[str] = []
+    for name in names:
+        candidates.append(f"origin/{name}")
+        candidates.append(name)
+    return tuple(dict.fromkeys(candidates))
+
+
+def collect_customer_evidence(
+    customers: Iterable[DigestCustomer],
+    *,
+    products: Iterable[DigestProduct],
+    git_read: GitRead | None = None,
+    mounts: dict[str, Path] | None = None,
+) -> list[CustomerEvidence]:
+    """Main-not-on-customer-branch counts. Missing refs stay unset — never invented."""
+    git_read = git_read or _git_read
+    mounts = mounts if mounts is not None else repos.REPO_MOUNTS
+    catalog = {product.id: product for product in products}
+    rows: list[CustomerEvidence] = []
+    for customer in customers:
+        if not customer.mapped() or not (customer.branch or customer.tenant):
+            rows.append(CustomerEvidence(customer_id=customer.id))
+            continue
+        behind = None
+        ref_found = False
+        for product_id in customer.products:
+            product = catalog.get(product_id)
+            if not product or not product.mount:
+                continue
+            path = mounts.get(product.mount)
+            if not path or not (path / ".git").exists():
+                continue
+            main_ref = _first_ref(git_read, path, MAIN_REF_CANDIDATES)
+            customer_ref = _first_ref(git_read, path, _customer_ref_candidates(customer))
+            if not main_ref or not customer_ref:
+                continue
+            ref_found = True
+            count = _behind_count(git_read, path, customer_ref, main_ref)
+            if count is None:
+                continue
+            behind = count if behind is None else max(behind, count)
+        rows.append(
+            CustomerEvidence(customer_id=customer.id, behind_main=behind, ref_found=ref_found)
+        )
+    return rows
+
+
 def collect_digest(
     *,
     git_read: GitRead | None = None,
     github_api: GitHubApi | None = None,
     mounts: dict[str, Path] | None = None,
     products: Iterable[DigestProduct] | None = None,
+    customers: Iterable[DigestCustomer] | None = None,
     now: datetime | None = None,
 ) -> DigestResult:
     mounts = mounts if mounts is not None else repos.REPO_MOUNTS
     catalog = list(products) if products is not None else load_products()
+    roster = list(customers) if customers is not None else load_customers()
     drift_by_mount = {product.mount: product.drift for product in catalog if product.mount}
     evidence = [
         collect_repo_evidence(
@@ -793,6 +1032,9 @@ def collect_digest(
         fingerprint=_fingerprint(evidence),
         evidence=evidence,
         failures=tuple(item for row in evidence for item in row.failures),
+        customer_evidence=collect_customer_evidence(
+            roster, products=catalog, git_read=git_read, mounts=mounts
+        ),
     )
 
 
@@ -875,6 +1117,74 @@ def _waiting_segment(
     if review:
         parts.append(f"{review} review")
     return _join_segments(parts)
+
+
+def phase_note(phase: DigestPhase | None, date: str) -> str:
+    if not phase or not phase.start:
+        return ""
+    try:
+        today = datetime.strptime(date[:10], "%Y-%m-%d").date()
+        start = datetime.strptime(phase.start, "%Y-%m-%d").date()
+    except ValueError:
+        return ""
+    if today < start:
+        days = (start - today).days
+        return f"{days} day{'s' if days != 1 else ''} to kickoff"
+    end = None
+    if phase.end:
+        try:
+            end = datetime.strptime(phase.end, "%Y-%m-%d").date()
+        except ValueError:
+            end = None
+    if end and today > end:
+        return f"{phase.name} ended"
+    elapsed = (today - start).days
+    if elapsed == 0:
+        return "kickoff today"
+    return f"{elapsed} day{'s' if elapsed != 1 else ''} into {phase.name}"
+
+
+def format_customer_line(
+    customer: DigestCustomer,
+    *,
+    product_evidence: list[RepoEvidence] | None = None,
+    customer_evidence: CustomerEvidence | None = None,
+    review: int = 0,
+    paused: list[str] | None = None,
+    failed_agents: int = 0,
+    date: str = "",
+    limit: int = PRODUCT_LINE_MAX,
+) -> str:
+    if not customer.mapped():
+        return f"{customer.label()}: not mapped yet"
+    paused = paused or []
+    blocked_parts: list[str] = []
+    if customer_evidence and customer_evidence.behind_main and customer_evidence.behind_main > 0:
+        blocked_parts.append(
+            f"main −{customer_evidence.behind_main} not on {customer.code or customer.id}"
+        )
+    wanted = set(customer.drift)
+    for row in product_evidence or []:
+        for signal in row.drift:
+            if wanted and signal.ref in wanted:
+                blocked_parts.append(f"{signal.ref} −{signal.behind_main}")
+    if paused:
+        if len(paused) == 1:
+            blocked_parts.append(f"{paused[0]} paused")
+        else:
+            blocked_parts.append(f"{len(paused)} paused loops")
+    if failed_agents:
+        blocked_parts.append(f"{failed_agents} failed")
+    line = (
+        f"{customer.label()}: shipped none | blocked {_join_segments(blocked_parts)} | "
+        f"waiting on you {_waiting_segment(None, review=review)}"
+    )
+    note = phase_note(customer.phase, date)
+    if note:
+        line += f" · {note}"
+    if len(line) <= limit:
+        return line
+    return line[: limit - 1].rstrip() + "…"
 
 
 def format_product_line(
@@ -1069,6 +1379,29 @@ def _signals_for_product(
     return paused, review, failed
 
 
+def _signals_for_customer(
+    customer: DigestCustomer,
+    *,
+    agents: list[dict],
+    assignments: list[dict],
+    date: str,
+    customers: list[DigestCustomer],
+) -> tuple[list[str], int, int]:
+    mapped = [agent for agent in agents if customer in map_agent_to_customers(agent, customers)]
+    ids = {agent.get("id") for agent in mapped}
+    paused = [
+        str(agent.get("name") or agent.get("id")) for agent in mapped if _agent_loop_paused(agent)
+    ]
+    review = sum(1 for item in assignments if item.get("agent_id") in ids and _agent_waiting(item))
+    review += sum(
+        1 for agent in mapped if str(agent.get("loop_skip_reason") or "") == "awaiting_review"
+    )
+    failed = sum(
+        1 for item in assignments if item.get("agent_id") in ids and _agent_failed_today(item, date)
+    )
+    return paused, review, failed
+
+
 def build_digest(
     *,
     date: str,
@@ -1081,9 +1414,13 @@ def build_digest(
     repo_evidence: list[RepoEvidence] | None = None,
     inbox_items: list[dict] | None = None,
     products: Iterable[DigestProduct] | None = None,
+    customers: Iterable[DigestCustomer] | None = None,
+    customer_evidence: list[CustomerEvidence] | None = None,
 ) -> str:
     catalog = list(products) if products is not None else load_products()
+    roster = list(customers) if customers is not None else load_customers()
     evidence_by_mount = {row.repo_id: row for row in (repo_evidence or [])}
+    customer_rows = {row.customer_id: row for row in (customer_evidence or [])}
     lines = [f"AIIA digest {date}", ""]
     for product in catalog:
         paused, review, failed = _signals_for_product(
@@ -1102,6 +1439,37 @@ def build_digest(
                 failed_agents=failed,
             )
         )
+    if roster:
+        lines += ["", "Customers"]
+        for customer in roster:
+            paused, review, failed = _signals_for_customer(
+                customer,
+                agents=agents,
+                assignments=assignments,
+                date=date,
+                customers=roster,
+            )
+            mounts_for_customer = {
+                product.mount
+                for product in catalog
+                if product.id in customer.products and product.mount
+            }
+            touched = [
+                evidence_by_mount[mount]
+                for mount in mounts_for_customer
+                if mount in evidence_by_mount
+            ]
+            lines.append(
+                format_customer_line(
+                    customer,
+                    product_evidence=touched,
+                    customer_evidence=customer_rows.get(customer.id),
+                    review=review,
+                    paused=paused,
+                    failed_agents=failed,
+                    date=date,
+                )
+            )
     lines += [
         "",
         "Needs a decision",

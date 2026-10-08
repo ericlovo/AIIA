@@ -1,11 +1,12 @@
 # Daily Digest — Mini enablement
 
 Studio build-out item 2. One scheduled digest: **product status** at the top
-(shipped / blocked / waiting on you), a short **Needs a decision** list, and a
-compressed agent/loop footer. Repo, CI, and Mindmoor drift collectors from
-#104 still feed those product lines. There is no second `daily_digest` task,
-no 12:00 UTC cron, and no dedicated digest agent. Draft PRs **#52**, **#47**,
-and **#106** were not touched.
+(shipped / blocked / waiting on you), then a **Customers** block in the same
+form, then a short **Needs a decision** list, then a compressed agent/loop
+footer. Repo, CI, and Mindmoor drift collectors from #104 still feed those
+lines. There is no second `daily_digest` task, no 12:00 UTC cron, and no
+dedicated digest agent. Draft PRs **#52**, **#47**, and **#106** were not
+touched.
 
 ## Schedule
 
@@ -15,9 +16,12 @@ once per local day. Jobs shows `daily 07:40 America/Chicago`.
 
 ## What it reads
 
-Products and GitHub slugs come from checked-in `config/digest_products.json`
-(override with `AIIA_DIGEST_PRODUCTS`). Defaults: AIIA, Mindmoor (production /
-alumni drift), Sanction, MIA, Morrow. Morrow has no repo configured yet.
+Products, customers, and GitHub slugs come from checked-in
+`config/digest_products.json` (override with `AIIA_DIGEST_PRODUCTS`).
+Default products: AIIA, Mindmoor (production / alumni drift), Sanction, MIA,
+Morrow. Morrow has no repo configured yet. Default customers: That's Right
+Sweetie (TRS), Alumni Nations, Smart Medical. Missing mappings stay blank;
+Smart Medical prints `not mapped yet`. Never invent a repo, agent, or branch.
 
 For each configured mount the digest reuses the #104 collectors: open / merged
 PRs, failing CI on `main`, merge conflicts, check state, and Mindmoor
@@ -41,8 +45,14 @@ through the memory-post outbox. Body sections:
 
 - **Products** — one line each:
   `<Product>: shipped <PR or none> | blocked <CI / conflicts / drift / paused loops> | waiting on you <merge / undraft / review>`
-- **Needs a decision** — at most 5 inbox items, preferring Slack captures
-  and rows with a product tag. Remaining counts collapse to one line by source.
+- **Customers** — one line each in the same form. TRS shows Mindmoor `main`
+  commits not yet on its tenant/branch when that ref exists. Alumni Nations
+  shows alumni drift, review waiting on Alumni Nations Research Scout, and
+  days to Phase 1 kickoff (2026-10-15) or days into the phase (through
+  2027-01-12). Smart Medical is `not mapped yet`.
+- **Needs a decision** — immediately after Customers. At most 5 inbox items,
+  preferring Slack captures and rows with a product tag. Remaining counts
+  collapse to one line by source.
 - **Footer** — at most 3 lines: agent counts, launchd loop status, failing
   built-in tasks.
 

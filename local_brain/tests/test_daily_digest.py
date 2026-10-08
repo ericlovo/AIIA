@@ -97,6 +97,29 @@ PRODUCTS = [
     daily_digest.DigestProduct(id="morrow", name="Morrow", mount="morrow"),
 ]
 
+CUSTOMERS = [
+    daily_digest.DigestCustomer(
+        id="trs",
+        code="TRS",
+        name="That's Right Sweetie",
+        label_override="That's Right Sweetie (TRS)",
+        products=("mindmoor",),
+        tenant="trs",
+        branch="trs",
+        excluded_from_releases=True,
+    ),
+    daily_digest.DigestCustomer(
+        id="alumni-nations",
+        code="AN",
+        name="Alumni Nations",
+        products=("mindmoor",),
+        agents=("Alumni Nations Research Scout",),
+        drift=("alumni",),
+        phase=daily_digest.DigestPhase(name="Phase 1", start="2026-10-15", end="2027-01-12"),
+    ),
+    daily_digest.DigestCustomer(id="smart-medical", code="SM", name="Smart Medical"),
+]
+
 
 def test_build_digest_leads_with_products_then_decisions_then_footer():
     body = daily_digest.build_digest(
@@ -125,6 +148,7 @@ def test_build_digest_leads_with_products_then_decisions_then_footer():
         ],
         repo_evidence=[],
         products=PRODUCTS,
+        customers=[],
     )
     lines = body.splitlines()
     assert lines[0] == f"AIIA digest {DATE}"
@@ -153,6 +177,7 @@ def test_build_digest_with_nothing_still_reads():
         tasks=[],
         inbox_counts={},
         products=PRODUCTS,
+        customers=[],
     )
     assert "AIIA: no repo mounted" in body
     assert "Morrow: no repo mounted" in body
@@ -399,6 +424,7 @@ def test_build_digest_includes_product_lines_from_repo_evidence():
         inbox_counts={},
         repo_evidence=evidence,
         products=PRODUCTS,
+        customers=[],
     )
     assert "AIIA: shipped none | blocked CI on main | waiting on you none" in body
     assert "Mindmoor: shipped none | blocked production −12 | waiting on you none" in body
@@ -706,6 +732,12 @@ def test_checked_in_product_config_has_the_five_defaults():
     assert products[3].github.endswith("/moral-intention-analyst")
     assert products[4].github == ""
     assert products[1].drift == ("production", "alumni")
+    customers = daily_digest.load_customers()
+    assert [customer.id for customer in customers] == ["trs", "alumni-nations", "smart-medical"]
+    assert customers[0].code == "TRS" and customers[0].branch == "trs"
+    assert customers[1].agents == ("Alumni Nations Research Scout",)
+    assert customers[1].phase and customers[1].phase.start == "2026-10-15"
+    assert customers[2].mapped() is False
 
 
 def test_product_config_env_override(tmp_path, monkeypatch):
@@ -716,6 +748,11 @@ def test_product_config_env_override(tmp_path, monkeypatch):
     monkeypatch.setenv(daily_digest.PRODUCTS_ENV, str(path))
     products = daily_digest.load_products()
     assert [product.id for product in products] == ["solo"]
+    assert [customer.id for customer in daily_digest.load_customers()] == [
+        "trs",
+        "alumni-nations",
+        "smart-medical",
+    ]
 
 
 def test_decisions_prefer_slack_and_product_tags_and_collapse_the_rest():
@@ -776,6 +813,7 @@ def test_build_digest_size_cap():
         ],
         repo_evidence=evidence,
         products=products,
+        customers=[],
     )
     assert len(body) <= daily_digest.MAX_BODY
     assert body.endswith("…")
@@ -815,6 +853,13 @@ def test_sample_rendered_digest_matches_the_product_status_shape():
                 "suite": "mindmoor",
                 "loop_enabled": False,
                 "loop_task": "watch delivery",
+                "loop_skip_reason": "awaiting_review",
+            },
+            {
+                "id": "a4",
+                "name": "Alumni Nations Research Scout",
+                "loop_enabled": True,
+                "loop_task": "alumni research",
                 "loop_skip_reason": "awaiting_review",
             },
             {"id": "a3", "name": "Scribe Scout", "status": "idle"},
@@ -878,6 +923,10 @@ def test_sample_rendered_digest_matches_the_product_status_shape():
             ),
         ],
         products=PRODUCTS,
+        customers=CUSTOMERS,
+        customer_evidence=[
+            daily_digest.CustomerEvidence(customer_id="trs", behind_main=8, ref_found=True)
+        ],
     )
     assert body.splitlines() == [
         "AIIA digest 2026-10-08",
@@ -888,13 +937,104 @@ def test_sample_rendered_digest_matches_the_product_status_shape():
         "MIA: shipped none | blocked none | waiting on you #7 undraft",
         "Morrow: no repo mounted",
         "",
+        "Customers",
+        "That's Right Sweetie (TRS): shipped none | blocked main −8 not on TRS | waiting on you none",
+        "Alumni Nations: shipped none | blocked alumni −4 | waiting on you 1 review · 7 days to kickoff",
+        "Smart Medical: not mapped yet",
+        "",
         "Needs a decision",
         "- aiia · Ship the digest rewrite today?",
         "- mindmoor · Alumni is 12 commits behind main",
         "- morrow · Morrow repo still unmounted",
         "- plus 4 more (2 code_review, 2 slack)",
         "",
-        "Agents: 3 (1 active, 2 waiting review) · Loops: 2 ok · Built-ins failing: Daily Brief (HTTP 500)",
+        "Agents: 4 (1 active, 3 waiting review) · Loops: 2 ok · Built-ins failing: Daily Brief (HTTP 500)",
     ]
     assert len(body) <= daily_digest.MAX_BODY
     assert "ghs_" not in body and "x-access-token" not in body
+    assert body.index("Customers") < body.index("Needs a decision")
+
+
+def test_format_customer_line_unmapped_and_empty_segments():
+    assert daily_digest.format_customer_line(CUSTOMERS[2]) == "Smart Medical: not mapped yet"
+    line = daily_digest.format_customer_line(CUSTOMERS[0], date=DATE)
+    assert line == ("That's Right Sweetie (TRS): shipped none | blocked none | waiting on you none")
+
+
+def test_format_customer_line_missing_branch_does_not_invent_drift():
+    line = daily_digest.format_customer_line(
+        CUSTOMERS[0],
+        customer_evidence=daily_digest.CustomerEvidence(customer_id="trs", ref_found=False),
+        date=DATE,
+    )
+    assert "not on TRS" not in line
+    assert "blocked none" in line
+
+
+def test_phase_note_days_to_kickoff_and_days_into():
+    phase = CUSTOMERS[1].phase
+    assert daily_digest.phase_note(phase, "2026-10-08") == "7 days to kickoff"
+    assert daily_digest.phase_note(phase, "2026-10-14") == "1 day to kickoff"
+    assert daily_digest.phase_note(phase, "2026-10-15") == "kickoff today"
+    assert daily_digest.phase_note(phase, "2026-10-16") == "1 day into Phase 1"
+    assert daily_digest.phase_note(phase, "2026-10-22") == "7 days into Phase 1"
+    assert daily_digest.phase_note(phase, "2027-01-13") == "Phase 1 ended"
+    assert daily_digest.phase_note(None, "2026-10-08") == ""
+
+
+def test_map_agent_to_customers_uses_name_handles_namespace_not_suite():
+    assert [
+        customer.id
+        for customer in daily_digest.map_agent_to_customers(
+            {"name": "Alumni Nations Research Scout"}, CUSTOMERS
+        )
+    ] == ["alumni-nations"]
+    assert [
+        customer.id
+        for customer in daily_digest.map_agent_to_customers({"handles": ["trs"]}, CUSTOMERS)
+    ] == ["trs"]
+    assert [
+        customer.id
+        for customer in daily_digest.map_agent_to_customers(
+            {"memory_namespace": "alumni-nations", "name": "Other"},
+            [
+                daily_digest.DigestCustomer(
+                    id="alumni-nations",
+                    name="Alumni Nations",
+                    namespaces=("alumni-nations",),
+                )
+            ],
+        )
+    ] == ["alumni-nations"]
+    assert (
+        daily_digest.map_agent_to_customers(
+            {"name": "Mindmoor Scout", "suite": "mindmoor"}, CUSTOMERS
+        )
+        == []
+    )
+    assert daily_digest.map_agent_to_customers({"name": "Scribe Scout"}, CUSTOMERS) == []
+
+
+def test_trs_behind_main_is_collected_only_when_the_branch_exists(tmp_path):
+    repo = _repo_with_drift(tmp_path)
+    mounts = {"mindmoor": repo}
+
+    def github(endpoint: str) -> object:
+        if "/pulls?" in endpoint:
+            return []
+        if "/actions/runs" in endpoint:
+            return {"workflow_runs": []}
+        return {}
+
+    missing = daily_digest.collect_customer_evidence(CUSTOMERS, products=PRODUCTS, mounts=mounts)
+    trs_missing = next(row for row in missing if row.customer_id == "trs")
+    assert trs_missing.ref_found is False
+    assert trs_missing.behind_main is None
+
+    _git(repo, "branch", "trs", "HEAD~1")
+    found = daily_digest.collect_customer_evidence(CUSTOMERS, products=PRODUCTS, mounts=mounts)
+    trs = next(row for row in found if row.customer_id == "trs")
+    assert trs.ref_found is True
+    assert trs.behind_main == 1
+    line = daily_digest.format_customer_line(CUSTOMERS[0], customer_evidence=trs, date=DATE)
+    assert "main −1 not on TRS" in line
