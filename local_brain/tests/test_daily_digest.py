@@ -81,7 +81,24 @@ LOOPS = {
 }
 
 
-def test_build_digest_is_one_line_per_agent_and_loop():
+PRODUCTS = [
+    daily_digest.DigestProduct(id="aiia", name="AIIA", github="ericlovo/AIIA", mount="aiia"),
+    daily_digest.DigestProduct(
+        id="mindmoor",
+        name="Mindmoor",
+        github="tonybangert/mindmoor",
+        mount="mindmoor",
+        drift=("production", "alumni"),
+    ),
+    daily_digest.DigestProduct(
+        id="sanction", name="Sanction", github="example/sanction", mount="sanction"
+    ),
+    daily_digest.DigestProduct(id="mia", name="MIA", github="example/mia", mount="mia"),
+    daily_digest.DigestProduct(id="morrow", name="Morrow", mount="morrow"),
+]
+
+
+def test_build_digest_leads_with_products_then_decisions_then_footer():
     body = daily_digest.build_digest(
         date=DATE,
         agents=agents(),
@@ -96,24 +113,54 @@ def test_build_digest_is_one_line_per_agent_and_loop():
                 "last_result": "FAILED: Test suite did not run: ERROR x",
             }
         ],
-        inbox_counts={"code_review": 31, "standup": 38},
+        inbox_counts={"code_review": 31, "standup": 38, "slack": 2},
+        inbox_items=[
+            {
+                "text": "Ship the digest rewrite?",
+                "source": "slack",
+                "project": "aiia",
+                "priority": "high",
+            },
+            {"text": "Alumni is behind", "source": "slack", "project": "mindmoor"},
+        ],
+        repo_evidence=[],
+        products=PRODUCTS,
     )
     lines = body.splitlines()
     assert lines[0] == f"AIIA digest {DATE}"
-    assert "- CI Signal Officer: 3 runs, 1 waiting review, 1 failed — GREEN" in lines
-    assert "- Scribe Scout: 0 runs, no schedule" in lines
-    assert "- standup: ok 2026-10-05 07:30 — 17 commits, 5 active stories" in lines
-    assert "- Test Runner: Test suite did not run: ERROR x" in lines
-    assert lines[-1] == "Inbox waiting review: 69 (31 code_review, 38 standup)"
+    assert lines[2] == "AIIA: no repo mounted"
+    assert lines[6] == "Morrow: no repo mounted"
+    assert "Needs a decision" in lines
+    assert "- aiia · Ship the digest rewrite?" in lines
+    assert "- mindmoor · Alumni is behind" in lines
+    assert any(line.startswith("- plus ") and "31 code_review" in line for line in lines)
+    footer = lines[-1]
+    assert footer.startswith("Agents: 2 (0 active, 1 waiting review)")
+    assert "Loops: 2 ok" in footer
+    assert "Built-ins failing: Test Runner" in footer
+    assert "Repos" not in lines
+    assert "Inbox waiting review" not in body
     assert len(body) <= daily_digest.MAX_BODY
 
 
 def test_build_digest_with_nothing_still_reads():
     body = daily_digest.build_digest(
-        date=DATE, agents=[], assignments=[], run_counts={}, loops={}, tasks=[], inbox_counts={}
+        date=DATE,
+        agents=[],
+        assignments=[],
+        run_counts={},
+        loops={},
+        tasks=[],
+        inbox_counts={},
+        products=PRODUCTS,
     )
-    assert "- no agents" in body and "- no loop registry found" in body
-    assert body.endswith("Inbox waiting review: 0")
+    assert "AIIA: no repo mounted" in body
+    assert "Morrow: no repo mounted" in body
+    assert "Needs a decision" in body
+    assert "- none" in body
+    assert "Agents: 0 (0 active, 0 waiting review)" in body
+    assert "Loops: none" in body
+    assert "Built-ins failing: none" in body
 
 
 def test_load_loops_tolerates_missing_or_broken_registry(tmp_path):
@@ -279,10 +326,11 @@ def test_digest_task_files_one_row_and_one_post_per_day(tmp_path, monkeypatch):
         and "slack post queued" in summary
         and "inbox row new" in summary
     )
-    assert "Inbox waiting review: 1 (1 code_review)" in body
-    assert "Repos" in body
-    assert "- Moved: AIIA 2 PRs" in body
-    assert "- Stuck: AIIA CI" in body
+    assert "Needs a decision" in body
+    assert "a finding" in body
+    assert any(line.startswith("AIIA:") for line in body.splitlines())
+    assert "CI on main" in body
+    assert "Agents:" in body
     rows = inbox.list(source="digest")
     assert rows["total"] == 1 and rows["ideas"][0]["post_requested"] == 1
     posts = inbox.memory_post_status()
@@ -323,7 +371,7 @@ def test_digest_is_a_registered_always_on_task():
     assert Path(daily_digest.loops_registry_path()).name == "loops-registry.json"
 
 
-def test_build_digest_includes_a_repos_section():
+def test_build_digest_includes_product_lines_from_repo_evidence():
     evidence = [
         daily_digest.RepoEvidence(
             repo_id="aiia",
@@ -350,11 +398,12 @@ def test_build_digest_includes_a_repos_section():
         tasks=[],
         inbox_counts={},
         repo_evidence=evidence,
+        products=PRODUCTS,
     )
-    assert "Repos" in body.splitlines()
-    assert "- Moved: AIIA 2 PRs" in body
-    assert "- Stuck: AIIA CI" in body
-    assert "- Drift: mindmoor production −12 behind main" in body
+    assert "AIIA: shipped none | blocked CI on main | waiting on you none" in body
+    assert "Mindmoor: shipped none | blocked production −12 | waiting on you none" in body
+    assert "Morrow: no repo mounted" in body
+    assert "Repos" not in body.splitlines()
 
 
 def test_github_slug_accepts_tokenized_https_without_leaking_secrets():
@@ -571,7 +620,281 @@ def test_tokenized_origin_collects_ci_without_leaking_the_token(tmp_path):
 def test_unmounted_repos_are_skipped_not_incomplete(tmp_path):
     missing = tmp_path / "missing"
     mounts = {"aiia": missing, "mindmoor": missing}
-    result = daily_digest.collect_digest(mounts=mounts, github_api=lambda endpoint: [])
+    result = daily_digest.collect_digest(
+        mounts=mounts, github_api=lambda endpoint: [], products=PRODUCTS
+    )
     assert result.severity == "incomplete"
     assert result.line == "INCOMPLETE: no mounted repos"
     assert all(not row.mounted for row in result.evidence)
+
+
+def test_format_product_line_empty_segments_use_none():
+    product = PRODUCTS[0]
+    evidence = daily_digest.RepoEvidence(repo_id="aiia", mounted=True, complete=True)
+    line = daily_digest.format_product_line(product, evidence)
+    assert line == "AIIA: shipped none | blocked none | waiting on you none"
+
+
+def test_format_product_line_unmounted_and_unreadable():
+    assert daily_digest.format_product_line(PRODUCTS[-1], None) == "Morrow: no repo mounted"
+    assert (
+        daily_digest.format_product_line(
+            PRODUCTS[2], daily_digest.RepoEvidence(repo_id="sanction", mounted=False, complete=True)
+        )
+        == "Sanction: no repo mounted"
+    )
+    unread = daily_digest.RepoEvidence(
+        repo_id="aiia", mounted=True, complete=False, failures=("git_head_failed",)
+    )
+    assert daily_digest.format_product_line(PRODUCTS[0], unread) == "AIIA: repo unreadable"
+    waiting = daily_digest.format_product_line(PRODUCTS[-1], None, review=2)
+    assert waiting == "Morrow: no repo mounted | waiting on you 2 review"
+
+
+def test_format_product_line_uses_pr_numbers_and_counts():
+    evidence = daily_digest.RepoEvidence(
+        repo_id="aiia",
+        mounted=True,
+        complete=True,
+        failing_ci=1,
+        merged_prs=[
+            daily_digest.PullSignal(104, "feed repo CI into the daily digest", merged=True)
+        ],
+        open_pulls=[
+            daily_digest.PullSignal(12, "conflicted", mergeable=False, mergeable_state="dirty"),
+            daily_digest.PullSignal(18, "ready", mergeable=True, mergeable_state="clean"),
+            daily_digest.PullSignal(
+                21, "ready draft", draft=True, mergeable=True, mergeable_state="clean"
+            ),
+        ],
+        drift=[daily_digest.DriftSignal("mindmoor", "production", 12)],
+    )
+    line = daily_digest.format_product_line(
+        PRODUCTS[0], evidence, paused=["Delivery Watch"], review=2
+    )
+    assert line.startswith("AIIA: shipped #104 feed repo CI into the daily")
+    assert "blocked CI on main, #12 conflict, production −12, Delivery Watch paused" in line
+    assert "waiting on you #18 merge, #21 undraft, 2 review" in line
+
+
+def test_map_agent_to_product_uses_suite_namespace_repo_handles_kind():
+    assert daily_digest.map_agent_to_product({"suite": "mindmoor"}, PRODUCTS).id == "mindmoor"
+    assert (
+        daily_digest.map_agent_to_product({"memory_namespace": "sanction"}, PRODUCTS).id
+        == "sanction"
+    )
+    assert daily_digest.map_agent_to_product({"repo_id": "aiia"}, PRODUCTS).id == "aiia"
+    assert daily_digest.map_agent_to_product({"repo": "mia"}, PRODUCTS).id == "mia"
+    assert daily_digest.map_agent_to_product({"handles": ["morrow", "inbox"]}, PRODUCTS).id == (
+        "morrow"
+    )
+    assert daily_digest.map_agent_to_product({"kind": "morrow"}, PRODUCTS).id == "morrow"
+    assert daily_digest.map_agent_to_product({"kind": "product", "handles": ["ci"]}, PRODUCTS) is (
+        None
+    )
+    assert daily_digest.map_agent_to_product({"name": "Mindmoor Scout"}, PRODUCTS).id == "mindmoor"
+    assert daily_digest.map_agent_to_product({"name": "Scribe Scout"}, PRODUCTS) is None
+    assert daily_digest.map_agent_to_product({"id": "legacy"}, PRODUCTS) is None
+
+
+def test_checked_in_product_config_has_the_five_defaults():
+    products = daily_digest.load_products()
+    assert [product.id for product in products] == ["aiia", "mindmoor", "sanction", "mia", "morrow"]
+    assert products[0].github.endswith("/AIIA")
+    assert products[1].github.endswith("/mindmoor")
+    assert products[2].github.endswith("/sanction")
+    assert products[3].github.endswith("/moral-intention-analyst")
+    assert products[4].github == ""
+    assert products[1].drift == ("production", "alumni")
+
+
+def test_product_config_env_override(tmp_path, monkeypatch):
+    path = tmp_path / "products.json"
+    path.write_text(
+        json.dumps({"products": [{"id": "solo", "name": "Solo", "github": "", "mount": "solo"}]})
+    )
+    monkeypatch.setenv(daily_digest.PRODUCTS_ENV, str(path))
+    products = daily_digest.load_products()
+    assert [product.id for product in products] == ["solo"]
+
+
+def test_decisions_prefer_slack_and_product_tags_and_collapse_the_rest():
+    items = [
+        {"text": "Ship it?", "source": "slack", "project": "aiia", "priority": "high"},
+        {"text": "Alumni drift", "source": "code_review", "project": "mindmoor"},
+        {"text": "Noise", "source": "standup", "project": ""},
+        {"text": "More slack", "source": "slack", "project": ""},
+        {"text": "digest row", "source": "digest", "project": "aiia"},
+    ]
+    lines = daily_digest.format_decision_lines(
+        items,
+        products=PRODUCTS,
+        inbox_counts={"slack": 4, "code_review": 3, "standup": 8},
+    )
+    assert lines[0] == "- aiia · Ship it?"
+    assert lines[1] == "- mindmoor · Alumni drift"
+    assert lines[2] == "- slack · More slack"
+    assert lines[-1] == "- plus 12 more (2 code_review, 2 slack, 8 standup)"
+    assert all("digest row" not in line for line in lines)
+    assert daily_digest.format_decision_lines([], products=PRODUCTS) == ["- none"]
+
+
+def test_build_digest_size_cap():
+    products = [
+        daily_digest.DigestProduct(id=f"p{i}", name=f"Product-{i}", mount=f"p{i}")
+        for i in range(80)
+    ]
+    evidence = [
+        daily_digest.RepoEvidence(
+            repo_id=f"p{i}",
+            mounted=True,
+            complete=True,
+            failing_ci=1,
+            merged_prs=[daily_digest.PullSignal(i + 1, "shipped title " + ("y" * 40), merged=True)],
+            open_pulls=[
+                daily_digest.PullSignal(
+                    i + 100,
+                    "blocked title " + ("z" * 40),
+                    mergeable=False,
+                    mergeable_state="dirty",
+                )
+            ],
+        )
+        for i in range(80)
+    ]
+    body = daily_digest.build_digest(
+        date=DATE,
+        agents=[],
+        assignments=[],
+        run_counts={},
+        loops={},
+        tasks=[],
+        inbox_counts={"slack": 40},
+        inbox_items=[
+            {"text": f"Decision {index} " + ("x" * 80), "source": "slack", "project": "aiia"}
+            for index in range(40)
+        ],
+        repo_evidence=evidence,
+        products=products,
+    )
+    assert len(body) <= daily_digest.MAX_BODY
+    assert body.endswith("…")
+    assert len(body) == daily_digest.MAX_BODY
+    long_line = daily_digest.format_product_line(
+        PRODUCTS[0],
+        daily_digest.RepoEvidence(
+            repo_id="aiia",
+            mounted=True,
+            complete=True,
+            stuck=["X" * 400],
+            open_pulls=[
+                daily_digest.PullSignal(n, "x" * 80, mergeable=False, mergeable_state="dirty")
+                for n in range(1, 20)
+            ],
+        ),
+    )
+    assert len(long_line) == daily_digest.PRODUCT_LINE_MAX
+    assert long_line.endswith("…")
+
+
+def test_sample_rendered_digest_matches_the_product_status_shape():
+    body = daily_digest.build_digest(
+        date="2026-10-08",
+        agents=[
+            {
+                "id": "a1",
+                "name": "CI Signal Officer",
+                "repo_id": "aiia",
+                "status": "running",
+                "loop_enabled": True,
+                "loop_task": "watch CI",
+            },
+            {
+                "id": "a2",
+                "name": "Delivery Watch",
+                "suite": "mindmoor",
+                "loop_enabled": False,
+                "loop_task": "watch delivery",
+                "loop_skip_reason": "awaiting_review",
+            },
+            {"id": "a3", "name": "Scribe Scout", "status": "idle"},
+        ],
+        assignments=[
+            {
+                "agent_id": "a1",
+                "status": "completed",
+                "review_status": "unreviewed",
+                "result": "GREEN",
+            }
+        ],
+        run_counts={"a1": 3},
+        loops=LOOPS,
+        tasks=[{"name": "Daily Brief", "last_status": "failed", "last_result": "FAILED: HTTP 500"}],
+        inbox_counts={"slack": 5, "code_review": 2},
+        inbox_items=[
+            {"text": "Ship the digest rewrite today?", "source": "slack", "project": "aiia"},
+            {"text": "Alumni is 12 commits behind main", "source": "slack", "project": "mindmoor"},
+            {"text": "Morrow repo still unmounted", "source": "slack", "project": "morrow"},
+        ],
+        repo_evidence=[
+            daily_digest.RepoEvidence(
+                repo_id="aiia",
+                mounted=True,
+                complete=True,
+                failing_ci=1,
+                merged_prs=[daily_digest.PullSignal(104, "feed repo CI", merged=True)],
+                open_pulls=[
+                    daily_digest.PullSignal(18, "ready", mergeable=True, mergeable_state="clean")
+                ],
+            ),
+            daily_digest.RepoEvidence(
+                repo_id="mindmoor",
+                mounted=True,
+                complete=True,
+                drift=[
+                    daily_digest.DriftSignal("mindmoor", "production", 12),
+                    daily_digest.DriftSignal("mindmoor", "alumni", 4),
+                ],
+            ),
+            daily_digest.RepoEvidence(
+                repo_id="sanction",
+                mounted=True,
+                complete=True,
+                open_pulls=[
+                    daily_digest.PullSignal(
+                        12, "conflicted", mergeable=False, mergeable_state="dirty"
+                    )
+                ],
+            ),
+            daily_digest.RepoEvidence(
+                repo_id="mia",
+                mounted=True,
+                complete=True,
+                open_pulls=[
+                    daily_digest.PullSignal(
+                        7, "ready draft", draft=True, mergeable=True, mergeable_state="clean"
+                    )
+                ],
+            ),
+        ],
+        products=PRODUCTS,
+    )
+    assert body.splitlines() == [
+        "AIIA digest 2026-10-08",
+        "",
+        "AIIA: shipped #104 feed repo CI | blocked CI on main | waiting on you #18 merge, 1 review",
+        "Mindmoor: shipped none | blocked production −12, alumni −4 | waiting on you 1 review",
+        "Sanction: shipped none | blocked #12 conflict | waiting on you none",
+        "MIA: shipped none | blocked none | waiting on you #7 undraft",
+        "Morrow: no repo mounted",
+        "",
+        "Needs a decision",
+        "- aiia · Ship the digest rewrite today?",
+        "- mindmoor · Alumni is 12 commits behind main",
+        "- morrow · Morrow repo still unmounted",
+        "- plus 4 more (2 code_review, 2 slack)",
+        "",
+        "Agents: 3 (1 active, 2 waiting review) · Loops: 2 ok · Built-ins failing: Daily Brief (HTTP 500)",
+    ]
+    assert len(body) <= daily_digest.MAX_BODY
+    assert "ghs_" not in body and "x-access-token" not in body

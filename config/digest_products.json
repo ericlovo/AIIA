@@ -1,0 +1,37 @@
+{
+  "products": [
+    {
+      "id": "aiia",
+      "name": "AIIA",
+      "github": "ericlovo/AIIA",
+      "mount": "aiia",
+      "aliases": ["aiia-brain", "aiia-console"]
+    },
+    {
+      "id": "mindmoor",
+      "name": "Mindmoor",
+      "github": "tonybangert/mindmoor",
+      "mount": "mindmoor",
+      "drift": ["production", "alumni"]
+    },
+    {
+      "id": "sanction",
+      "name": "Sanction",
+      "github": "ericlovold/sanction",
+      "mount": "sanction"
+    },
+    {
+      "id": "mia",
+      "name": "MIA",
+      "github": "ericlovold/moral-intention-analyst",
+      "mount": "mia",
+      "aliases": ["moral-intention-analyst"]
+    },
+    {
+      "id": "morrow",
+      "name": "Morrow",
+      "github": "",
+      "mount": "morrow"
+    }
+  ]
+}
