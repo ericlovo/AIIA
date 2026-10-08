@@ -980,8 +980,6 @@ task_runner = TaskRunner(
     monitor_state=monitor,
     action_queue=action_queue,
 )
-task_runner.agent_registry = agent_registry
-task_runner.assignment_registry = assignment_registry
 
 # ─── Execution Engine ────────────────────────────────────
 from local_brain.config import LocalBrainConfig
@@ -1410,6 +1408,17 @@ def _agent_activity() -> dict[str, Any]:
         return ledger.agent_day_counts(days=14)
     except (RunHistoryUnavailable, sqlite3.Error, OSError):
         return {}
+
+
+def _runs_today_by_agent() -> dict[str, int]:
+    """Runs per agent on today's UTC date, for the digest."""
+    today = datetime.now(timezone.utc).date().isoformat()
+    rows = _agent_activity().get("agent_days") or []
+    return {
+        str(row.get("agent_id")): int(row.get("total") or 0)
+        for row in rows
+        if str(row.get("day") or "") == today and row.get("agent_id")
+    }
 
 
 def _public_agents(agents: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -4507,6 +4516,13 @@ async def startup():
     # project backlogs and rank them into RightNow cards.
     task_runner.roadmap_store = _roadmap
     task_runner.story_prioritizer = _story_prioritizer
+    # The daily digest reads records, never the model; these are the records.
+    task_runner.studio_sources = {
+        "agents": agent_registry.list,
+        "assignments": assignment_registry.list_assignments,
+        "run_counts": _runs_today_by_agent,
+        "inbox": memory_capture_inbox,
+    }
 
     # Expire stale actions on startup
     expired = action_queue.expire_old(hours=72)

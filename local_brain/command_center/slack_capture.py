@@ -16,7 +16,7 @@ import httpx
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
 
-from local_brain.command_center import slack_memory_posts, slack_receipts
+from local_brain.command_center import slack_files, slack_memory_posts, slack_receipts
 from local_brain.command_center.memory_inbox import (
     IDEA_SORTS,
     IDEA_STATUSES,
@@ -32,6 +32,19 @@ BRAIN_TRANSPORT = None  # tests inject an httpx transport; production dials the 
 MEMORY_CATEGORIES = ("decisions", "patterns", "lessons", "project", "meta", "team", "agents")
 MENTION = re.compile(r"<@[A-Z0-9]+>")
 MEMORY_POST_TEXT_LIMIT = 3_000
+# One Brain write per capture: concurrent "Log to memory" clicks share a lock so
+# a retry never creates a second fact after the first reservation succeeds.
+_promote_guards: dict[str, asyncio.Lock] = {}
+_promote_guards_lock = asyncio.Lock()
+
+
+async def _promote_guard(idea_id: str) -> asyncio.Lock:
+    async with _promote_guards_lock:
+        lock = _promote_guards.get(idea_id)
+        if lock is None:
+            lock = asyncio.Lock()
+            _promote_guards[idea_id] = lock
+        return lock
 
 
 @asynccontextmanager
@@ -39,6 +52,7 @@ async def lifespan(app):
     tasks = [
         asyncio.create_task(slack_receipts.run_worker(inbox)),
         asyncio.create_task(slack_memory_posts.run_worker(inbox)),
+        asyncio.create_task(slack_files.run_worker(inbox)),
     ]
     try:
         yield
@@ -95,6 +109,9 @@ def slack_status():
         "memory_posts_configured": slack_memory_posts.configured(),
         "memory_post_channel_id": slack_memory_posts.channel_id(),
         "memory_posts": inbox().memory_post_status() if inbox().path.exists() else {},
+        "file_capture_enabled": slack_files.enabled(),
+        "file_capture_configured": slack_files.configured(),
+        "files": inbox().file_status() if inbox().path.exists() else {},
     }
 
 
@@ -136,7 +153,13 @@ class PromoteRequest(BaseModel):
     category: str = "project"
     note: str = Field(default="", max_length=2_000)
     priority: str = "normal"
-    post_to_slack: bool = False
+    # None means "post when the Mini can": logging to memory sends the approved
+    # text back to the allowlisted channel unless the caller opts out.
+    post_to_slack: bool | None = None
+
+
+class AttachFileRequest(BaseModel):
+    file_id: str = Field(min_length=9, max_length=32)
 
 
 class DismissRequest(BaseModel):
@@ -186,10 +209,69 @@ def memory_post_text(idea: dict, *, memory_id: str, category: str, priority: str
     truncated = len(text) > MEMORY_POST_TEXT_LIMIT
     if truncated:
         text = text[: MEMORY_POST_TEXT_LIMIT - 1] + "…"
-    footer = f"Capture {idea['id'][:8]} · Memory {memory_id}"
+    footer = f"{provenance_line(idea)}\nCapture {idea['id'][:8]} · Memory {memory_id}"
     if truncated:
         footer += " · Truncated"
     return slack_escape(f"[{priority.upper()}] Memory logged to {category}\n\n{text}\n\n{footer}")
+
+
+def provenance_line(idea: dict) -> str:
+    """Where the text came from, so a post in the channel reads on its own."""
+    files = [f["name"] for f in idea.get("files") or []]
+    if idea.get("source") == "slack":
+        line = f"Captured in Slack by {idea.get('author_id') or 'unknown'}"
+    else:
+        loop = str(idea.get("source") or "local").replace("_", " ")
+        line = f"Proposed by the {loop} loop"
+    if files:
+        line += f" · {len(files)} file{'s' if len(files) != 1 else ''}: " + ", ".join(files[:3])
+    return line
+
+
+async def index_in_brain(text: str, *, source: str, metadata: dict) -> bool:
+    """Index a fetched file's full text in the knowledge store. Best effort; never raises."""
+    key = os.getenv("LOCAL_BRAIN_API_KEY", "")
+    try:
+        async with httpx.AsyncClient(timeout=30, transport=BRAIN_TRANSPORT) as client:
+            response = await client.post(
+                f"{BRAIN_URL}/v1/aiia/ingest",
+                json={
+                    "text": text,
+                    "source": source,
+                    "doc_type": "capture_file",
+                    "metadata": metadata,
+                },
+                headers={"x-api-key": key} if key else {},
+            )
+    except httpx.HTTPError:
+        return False
+    return response.status_code == 200
+
+
+async def index_capture_files(idea: dict, *, memory_id: str) -> int:
+    """At promote time, put each fetched file's whole text where search can find it."""
+    indexed = 0
+    for file in idea.get("files") or []:
+        if file.get("status") != "done" or not file.get("chars"):
+            continue
+        record = inbox().file_record(file["file_id"])
+        text = slack_files.saved_text(record) if record else ""
+        if not text:
+            continue
+        if await index_in_brain(
+            text,
+            source=f"slack:{idea['id']}:{file['name']}",
+            metadata={
+                "capture_id": idea["id"],
+                "memory_id": memory_id,
+                "file_id": file["file_id"],
+                "file_name": file["name"],
+                "mimetype": file.get("mimetype") or "",
+                "project": idea.get("project") or "",
+            },
+        ):
+            indexed += 1
+    return indexed
 
 
 async def remember_in_brain(fact: str, category: str, metadata: dict) -> dict:
@@ -239,57 +321,112 @@ async def promote_idea(idea_id: str, body: PromoteRequest):
     if body.priority not in PRIORITIES:
         raise HTTPException(status_code=422, detail="invalid_priority")
     # Refuse before the Brain call so a disabled post never leaves a half-promoted capture.
-    if body.post_to_slack and not slack_memory_posts.configured():
+    post_to_slack = (
+        body.post_to_slack if body.post_to_slack is not None else slack_memory_posts.configured()
+    )
+    if post_to_slack and not slack_memory_posts.configured():
         raise HTTPException(status_code=409, detail="memory_posting_disabled")
     # Read the destination now: a config change during the Brain call must not turn
     # a saved fact into a refused promotion. Delivery re-checks the channel anyway.
-    post_channel_id = slack_memory_posts.channel_id() if body.post_to_slack else ""
+    post_channel_id = slack_memory_posts.channel_id() if post_to_slack else ""
+    async with await _promote_guard(idea_id):
+        idea = _load_idea(idea_id)
+        if idea["status"] == "promoted" and idea["memory_id"]:
+            # Retry after a unique-key collision or a double-click: the fact exists.
+            return {
+                "idea": idea,
+                "memory_id": idea["memory_id"],
+                "files_indexed": 0,
+            }
+        if idea["status"] == "promoted":
+            raise HTTPException(status_code=409, detail="idea_already_promoted")
+        fact = capture_text(idea["text"])
+        if not fact:
+            raise HTTPException(status_code=422, detail="idea_has_no_content")
+        metadata = {
+            "capture_id": idea["id"],
+            "project": idea["project"],
+            "source": idea["source"],
+            "workspace_id": idea["workspace_id"],
+            "channel_id": idea["channel_id"],
+            "author_id": idea["author_id"],
+            "captured_at": idea["created_at"],
+        }
+        if body.note.strip():
+            metadata["review_note"] = body.note.strip()
+        try:
+            memory = await remember_in_brain(fact, body.category, metadata)
+        except MemoryRejected as exc:
+            raise HTTPException(status_code=422, detail="memory_quality_rejected") from exc
+        except MemoryUnavailable as exc:
+            raise HTTPException(status_code=503, detail="brain_unavailable") from exc
+        post_body = (
+            memory_post_text(
+                idea, memory_id=memory["id"], category=body.category, priority=body.priority
+            )
+            if post_to_slack
+            else ""
+        )
+        try:
+            updated = inbox().promote(
+                idea_id,
+                memory_id=memory["id"],
+                category=body.category,
+                note=body.note,
+                priority=body.priority,
+                post_channel_id=post_channel_id,
+                post_body=post_body,
+            )
+        except ValueError as exc:
+            if str(exc) == "idea_already_promoted":
+                existing = _load_idea(idea_id)
+                if existing["memory_id"]:
+                    return {
+                        "idea": existing,
+                        "memory_id": existing["memory_id"],
+                        "files_indexed": 0,
+                    }
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        except (OSError, sqlite3.Error) as exc:
+            # The Brain fact exists; the inbox row did not update. Say so instead of hiding it.
+            raise HTTPException(status_code=503, detail="memory_saved_inbox_update_failed") from exc
+        files_indexed = await index_capture_files(idea, memory_id=memory["id"])
+        return {"idea": updated, "memory_id": memory["id"], "files_indexed": files_indexed}
+
+
+@router.post("/api/memory-inbox/{idea_id}/files")
+async def attach_capture_file(idea_id: str, body: AttachFileRequest):
+    """Backfill: attach a file by id to a capture whose event arrived before files were read."""
+    if not slack_files.configured():
+        raise HTTPException(status_code=409, detail="file_capture_disabled")
+    if not slack_files.FILE_ID.fullmatch(body.file_id):
+        raise HTTPException(status_code=422, detail="invalid_file_id")
     idea = _load_idea(idea_id)
-    if idea["status"] == "promoted":
-        raise HTTPException(status_code=409, detail="idea_already_promoted")
-    fact = capture_text(idea["text"])
-    if not fact:
-        raise HTTPException(status_code=422, detail="idea_has_no_content")
-    metadata = {
-        "capture_id": idea["id"],
-        "project": idea["project"],
-        "source": idea["source"],
-        "workspace_id": idea["workspace_id"],
-        "channel_id": idea["channel_id"],
-        "author_id": idea["author_id"],
-        "captured_at": idea["created_at"],
-    }
-    if body.note.strip():
-        metadata["review_note"] = body.note.strip()
+    if idea["source"] != "slack":
+        raise HTTPException(status_code=409, detail="not_a_slack_capture")
     try:
-        memory = await remember_in_brain(fact, body.category, metadata)
-    except MemoryRejected as exc:
-        raise HTTPException(status_code=422, detail="memory_quality_rejected") from exc
-    except MemoryUnavailable as exc:
-        raise HTTPException(status_code=503, detail="brain_unavailable") from exc
-    post_body = (
-        memory_post_text(
-            idea, memory_id=memory["id"], category=body.category, priority=body.priority
-        )
-        if body.post_to_slack
-        else ""
-    )
+        file = await slack_files.lookup(body.file_id)
+    except slack_files.LookupDenied as exc:
+        raise HTTPException(status_code=503, detail="egress_denied") from exc
+    if file is None:
+        raise HTTPException(status_code=404, detail="file_not_found")
     try:
-        updated = inbox().promote(
-            idea_id,
-            memory_id=memory["id"],
-            category=body.category,
-            note=body.note,
-            priority=body.priority,
-            post_channel_id=post_channel_id,
-            post_body=post_body,
-        )
+        inbox().attach_file(idea_id, file)
     except ValueError as exc:
-        raise HTTPException(status_code=409, detail=str(exc)) from exc
+        raise HTTPException(status_code=404, detail="idea_not_found") from exc
     except (OSError, sqlite3.Error) as exc:
-        # The Brain fact exists; the inbox row did not update. Say so instead of hiding it.
-        raise HTTPException(status_code=503, detail="memory_saved_inbox_update_failed") from exc
-    return {"idea": updated, "memory_id": memory["id"]}
+        raise HTTPException(status_code=503, detail="memory_inbox_unavailable") from exc
+    return {"idea": inbox().get(idea_id)}
+
+
+@router.post("/api/memory-inbox/{idea_id}/files/{file_id}/retry")
+def retry_capture_file(idea_id: str, file_id: str):
+    try:
+        if not inbox().retry_file(idea_id, file_id):
+            raise HTTPException(status_code=409, detail="no_failed_file")
+    except (OSError, sqlite3.Error) as exc:
+        raise HTTPException(status_code=503, detail="memory_inbox_unavailable") from exc
+    return {"status": "pending"}
 
 
 @router.post("/api/memory-inbox/{idea_id}/dismiss")
@@ -438,14 +575,21 @@ async def capture_mention(request: Request):
             r"[0-9]{1,16}\.[0-9]{1,6}", thread_ts
         ):
             raise HTTPException(status_code=400, detail="invalid_slack_timestamp")
-    # Match promotion's content check before creating an idea and its save receipt.
-    # Acknowledge the event only; retries of mention-only messages have no side effects.
-    if not capture_text(text):
+    # A mention with neither words nor files has nothing to keep. Acknowledge the
+    # event only; retries of such messages have no side effects. A mention whose
+    # content is an attached file is a capture: the file worker fetches the bytes.
+    files = slack_files.file_records(event.get("files"))
+    if not capture_text(text) and not files:
         return {"ok": True}
+    # The original wording is stored as written; an attachment line is added only
+    # when there are files, so a mention-only message with a file still reads.
+    stored = text
+    if files:
+        stored = (text.strip() + "\n" + "\n".join(slack_files.summary_lines(files)))[:8_000]
     key = "slack:event:" + hashlib.sha256(f"{team}:{event_id}".encode()).hexdigest()
     try:
         inbox().capture(
-            text=text,
+            text=stored,
             source_key=key,
             source="slack",
             project="mindmoor",
@@ -453,6 +597,7 @@ async def capture_mention(request: Request):
             channel_id=channel,
             author_id=author,
             receipt_thread_ts=thread_ts,
+            files=files,
         )
     except ValueError as exc:
         raise HTTPException(status_code=422, detail="invalid_idea_length") from exc

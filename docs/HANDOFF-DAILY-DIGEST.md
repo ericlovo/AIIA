@@ -1,72 +1,58 @@
 # Daily Digest — Mini enablement
 
-Studio build-out item 2. Deterministic daily triage of mounted repos (moved /
-stuck / CI / behind-main drift). Separate from Daily Brief (`daily_brief`,
-08:00 UTC, LLM memory write). Draft PRs **#52** and **#47** were not touched.
+Studio build-out item 2. One scheduled digest: agent/loop lines from #103,
+plus a **Repos** section with mounted-repo triage (moved / stuck / CI /
+behind-main drift). There is no second `daily_digest` task, no 12:00 UTC
+cron, and no dedicated digest agent. Draft PRs **#52**, **#47**, **#105**,
+and **#106** were not touched.
 
 ## Schedule
 
-Built-in task `daily_digest` fires **daily at 12:00 UTC**.
-
-That is **07:00 America/Chicago during CDT** and **06:00 during CST**. The
-task scheduler is UTC-only (hour + minute), so the cron does not shift with
-DST. Jobs shows `daily 12:00 UTC`.
+Built-in task `daily_digest` fires **daily at 07:40 America/Chicago**.
+Daily Brief stays at 07:00 Chicago. Catch-up after a restart is at most
+once per local day. Jobs shows `daily 07:40 America/Chicago`.
 
 ## What it reads
 
-Mounted checkouts from `REPO_MOUNTS` (`aiia`, `mindmoor`, `sanction`,
-`proxy-ai`, plus `morrow` / `mia` if those ids are added later). No `git
-fetch`. GitHub reads reuse the existing `gh api` GET adapter.
+Agents, launchd loops (`~/.aiia/loops-registry.json`), failing built-in
+tasks, and inbox counts by source. The Repos section then reads mounted
+checkouts from `REPO_MOUNTS` (`aiia`, `mindmoor`, `sanction`, `proxy-ai`,
+plus `morrow` / `mia` if those ids are added later). No `git fetch`.
+GitHub reads reuse the existing `gh api` GET adapter. No new egress,
+no AIRGAP change.
 
-Mindmoor drift: if `production` or `origin/production` exists, count commits
-on `main` that are not on that ref. Same for `alumni` / `origin/alumni`, or
-the first `release/alumni*` / `origin/release/alumni*` ref when the exact
-name is missing.
+Mindmoor drift: if `production` or `origin/production` exists, count
+commits on `main` that are not on that ref (`git rev-list --count
+<branch>..main`). Same for `alumni` / `origin/alumni`, or the first
+`release/alumni*` / `origin/release/alumni*` ref when the exact name is
+missing.
+
+GitHub remotes with HTTPS userinfo (`x-access-token@github.com`) still
+resolve to `owner/repo` only. The token never enters a digest line.
 
 ## Output
 
-Exactly one line (≤ 200 chars), for example:
+One inbox row per Chicago date (`digest:<date>`), optionally posted
+through the memory-post outbox. Body sections:
 
-- `CLEAR: no material drift/CI`
-- `Moved: AIIA 2 PRs | Stuck: AIIA CI | Drift: mindmoor production −12 behind main`
+- Agents (runs today, waiting review, failed, the day's verdict)
+- Loops
+- Built-in tasks failing (if any)
+- **Repos** — moved PRs/commits, failing CI, merge conflicts, drift
+- Inbox waiting review
 
-Delivered through the #101 output-channel path. Default channel is
-`studio_inbox`. Slack is a declared destination only: if the agent is set to
-`slack` and outbound is missing or posting is still pending, the line goes to
-the Studio inbox with the existing note.
-
-## Quiet vs review
-
-- **CLEAR / green:** record a `quiet_clear` loop check and the agent's last
-  result. No Work item. `pending_loop_reviews` stays 0, so the next day is
-  not blocked.
-- **Stuck** (failing CI, merge conflicts, behind-main / production-alumni
-  drift): one interval Work item. Same fingerprint while that item is still
-  unreviewed is history only (`verified_unchanged`), not a second inbox row.
-  At the existing review cap the task still runs and records
-  `awaiting_review` without opening another item.
-- **Incomplete** (a mounted repo's git/gh read failed): `loop_check` failure.
-  Those do not count toward the review cap, so the next day still runs.
+Quiet/green repo days are just `CLEAR: no material drift/CI` in Repos.
+They do not open a Work item and do not record a `quiet_clear` loop
+check. Incomplete git/gh reads show as `Incomplete: <repo>` in that
+section.
 
 ## Mini after merge
 
-1. `git pull` on the Brain checkout (this repo). Do not rebase or merge draft
-   PRs #52 / #47.
-2. Restart Command Center (`com.aiia.command-center` / the :8200 process) so
-   the new built-in task is registered. Daily Brief is unchanged.
-3. Enable the standing agent (does **not** write a committed runtime file):
+1. `git pull` on the Brain checkout (this repo). Do not rebase or merge
+   draft PRs #52 / #47 / #105 / #106.
+2. Restart Command Center so the built-in task is registered.
+3. Optional smoke: `POST /api/tasks/daily_digest/run` and confirm Jobs
+   plus the inbox show today's body, including Repos.
 
-   ```bash
-   python -m local_brain.scripts.ensure_daily_digest_agent
-   python -m local_brain.scripts.ensure_daily_digest_agent --apply
-   # optional: --channel slack   # still falls back to inbox until posting exists
-   ```
-
-   Loop stays **off**. The built-in task owns the cadence. Leave `agent_data.json`
-   uncommitted.
-
-4. Optional smoke: `POST /api/tasks/daily_digest/run` and confirm Jobs shows
-   today's line. A CLEAR result should not appear as Work awaiting review.
-
-No new dependencies, no secrets, no AIRGAP / Sanction policy changes.
-GitHub read uses the Mini's existing allowlisted `gh` path.
+No seed script. Leave `agent_data.json` uncommitted. No new
+dependencies, no secrets, no AIRGAP / Sanction policy changes.

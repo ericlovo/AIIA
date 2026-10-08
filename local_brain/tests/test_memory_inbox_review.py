@@ -91,6 +91,38 @@ def test_priority_migration_is_additive_and_repeatable(tmp_path):
         db.execute("UPDATE ideas SET priority=NULL")
 
 
+def test_promote_after_digest_post_keeps_the_existing_unique_key(inbox):
+    idea, created = inbox.ingest(
+        text="AIIA digest 2026-10-05\n- CI Signal Officer: 1 run",
+        source_key="digest:2026-10-05",
+        source="digest",
+        project="aiia",
+    )
+    assert created
+    assert inbox.queue_post(
+        memory_id="digest:2026-10-05",
+        idea_id=idea["id"],
+        channel_id="C0MEMORY01",
+        body="AIIA digest 2026-10-05",
+    )
+    updated = inbox.promote(
+        idea["id"],
+        memory_id="project_digest_1",
+        category="project",
+        post_channel_id="C0MEMORY01",
+        post_body="Logged digest to memory",
+    )
+    assert updated["status"] == "promoted"
+    assert updated["memory_id"] == "project_digest_1"
+    with inbox.connect() as db:
+        posts = [dict(row) for row in db.execute("SELECT memory_id,idea_id FROM memory_posts")]
+    assert len(posts) == 1
+    assert posts[0]["memory_id"] == "digest:2026-10-05"
+    assert posts[0]["idea_id"] == idea["id"]
+    with pytest.raises(ValueError, match="idea_already_promoted"):
+        inbox.promote(idea["id"], memory_id="project_digest_2", category="project")
+
+
 def test_promote_records_memory_and_queues_one_receipt(inbox):
     idea = capture(inbox)
     updated = inbox.promote(idea["id"], memory_id="project_1_1", category="project", note=" why ")
@@ -318,7 +350,9 @@ def test_promote_route_stores_fact_with_provenance_and_queues_receipt(app, monke
     assert body["idea"]["status"] == "promoted"
     assert body["idea"]["promotion_status"] == "pending"
     assert len(calls) == 1
-    assert call(app, "POST", f"/api/memory-inbox/{idea['id']}/promote", {}).status_code == 409
+    again = call(app, "POST", f"/api/memory-inbox/{idea['id']}/promote", {})
+    assert again.status_code == 200
+    assert again.json()["memory_id"] == "decisions_3_1789"
     assert len(calls) == 1
     assert call(app, "GET", "/api/memory-inbox?status=promoted").json()["total"] == 1
     status = call(app, "GET", "/api/integrations/slack/status").json()

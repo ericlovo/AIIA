@@ -36,7 +36,7 @@ def test_every_builtin_task_is_listed_as_always_on_with_a_schedule():
         assert row["pausable"] is False
         assert row["schedule"].startswith(("every ", "daily "))
     brief = next(row for row in rows if row["task_id"] == "daily_brief")
-    assert brief["schedule"] == "daily 08:00 UTC"
+    assert brief["schedule"] == "daily 07:00 America/Chicago"
 
 
 class _Proc:

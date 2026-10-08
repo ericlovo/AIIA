@@ -1,49 +1,32 @@
-"""Deterministic daily digest: triage mounted repos, CI, and behind-main drift.
+"""The daily digest: one line per agent and per loop, plus a Repos section.
 
-One line per day. Quiet/green results record without opening a review item;
-only material stuck or incomplete evidence goes to the agent's output channel
-(Studio inbox, with Slack falling back to inbox until posting exists).
+Spec item 2 of the Studio build-out: "surface one line per day: what moved,
+what's stuck." The digest is the only thing the loops should put in front of a
+person every day; everything else they file is a proposal that waits for a
+decision. Delivery reuses the memory-post outbox, so it reaches the allowlisted
+Slack channel when that is configured and is otherwise one inbox row.
+
+Repo, CI, and Mindmoor drift lines are extra evidence in the same body — not a
+second scheduled task. Reads reuse repository_tools (no git fetch, no new egress).
 """
 
 from __future__ import annotations
 
 import hashlib
 import json
-import logging
+import os
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
 
 from local_brain.command_center import repository_tools as repos
-from local_brain.command_center.agent_output import (
-    DEFAULT_OUTPUT_CHANNEL,
-    INBOX_UNAVAILABLE_NOTE,
-    inbox_title,
-    resolve_delivery,
-)
-from local_brain.command_center.agent_registry import RunHistoryUnavailable
-from local_brain.command_center.assignment_registry import MAX_PENDING_LOOP_REVIEWS
 
-logger = logging.getLogger("aiia.daily_digest")
-
+MAX_BODY = 2_800
+VERDICT_CHARS = 80
+NOTE_CHARS = 90
 DIGEST_LINE_MAX = 200
-# 07:00 America/Chicago during CDT; 06:00 during CST. The built-in scheduler
-# is UTC-only (hour + minute), so the cron is fixed at 12:00 UTC.
-DIGEST_CRON_HOUR_UTC = 12
-DIGEST_CRON_MINUTE_UTC = 0
-DIGEST_TIMEZONE = "America/Chicago"
-DIGEST_AGENT_NAME = "Daily Digest"
-DIGEST_ONE_LINER = "Triage mounted repos: what moved, what's stuck, CI and drift."
-DIGEST_MISSION = (
-    "Once a day, read mounted checkouts and GitHub Actions for AIIA, Mindmoor, "
-    "and any other mounted repos (Sanction, Morrow, MIA, Proxy AI). Report what "
-    "moved, what is stuck (failing CI, merge conflicts), and Mindmoor "
-    "production/alumni drift versus main. One line, evidence only."
-)
-DIGEST_PERSONA = "Evidence first. One line. No speculation."
 PREFERRED_REPOS = ("aiia", "mindmoor", "sanction", "proxy-ai", "morrow", "mia")
 PR_LIST_LIMIT = 20
 PR_DETAIL_CAP = 8
@@ -52,8 +35,6 @@ MAIN_REF_CANDIDATES = ("origin/main", "main", "origin/master", "master")
 PRODUCTION_REF_CANDIDATES = ("origin/production", "production")
 ALUMNI_EXACT_CANDIDATES = ("origin/alumni", "alumni")
 ALUMNI_PREFIXES = ("origin/release/alumni", "release/alumni")
-AGENT_MISSING_NOTE = "daily digest agent not enabled; result kept on the task only"
-QUIET_CLEAR_NOTE = "quiet clear; recorded without review"
 
 GitRead = Callable[..., str | None]
 GitHubApi = Callable[[str], Any]
@@ -90,32 +71,66 @@ class DigestResult:
     evidence: list[RepoEvidence]
     failures: tuple[str, ...] = ()
 
-    @property
-    def material(self) -> bool:
-        return self.severity in {"stuck", "incomplete"}
+
+def loops_registry_path() -> Path:
+    override = os.getenv("AIIA_LOOPS_REGISTRY", "")
+    return Path(override) if override else Path.home() / ".aiia" / "loops-registry.json"
 
 
-def digest_agent_payload(*, output_channel: str = DEFAULT_OUTPUT_CHANNEL) -> dict[str, Any]:
-    """Body for creating the standing Daily Digest agent. Never writes runtime JSON."""
-    return {
-        "name": DIGEST_AGENT_NAME,
-        "mission": DIGEST_MISSION,
-        "persona": DIGEST_PERSONA,
-        "skills": ["Analysis"],
-        "tools": ["Repository read", "GitHub read"],
-        "one_liner": DIGEST_ONE_LINER,
-        "output_channel": output_channel,
-        "loop_enabled": False,
-        "loop_task": "",
-    }
+def load_loops(path: Path | None = None) -> dict:
+    target = path or loops_registry_path()
+    try:
+        data = json.loads(target.read_text())
+    except (OSError, ValueError):
+        return {}
+    return data if isinstance(data, dict) else {}
 
 
-def find_digest_agent(agents: list[dict[str, Any]] | Any) -> dict[str, Any] | None:
-    rows = agents.list() if hasattr(agents, "list") else list(agents or [])
-    for agent in rows:
-        if str(agent.get("name") or "").strip().lower() == DIGEST_AGENT_NAME.lower():
-            return agent
-    return None
+def digest_key(date: str) -> str:
+    return f"digest:{date}"
+
+
+def escape(text: str) -> str:
+    return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+
+def _first_line(text) -> str:
+    for line in str(text or "").splitlines():
+        line = line.strip().lstrip("#*- ").strip()
+        if line:
+            return line[:VERDICT_CHARS]
+    return ""
+
+
+def _agent_line(agent: dict, assignments: list[dict], runs: int, date: str) -> str:
+    agent_id = agent.get("id")
+    waiting = failed = 0
+    for item in assignments:
+        if item.get("agent_id") != agent_id:
+            continue
+        stamp = str(item.get("completed_at") or item.get("updated_at") or "")
+        if item.get("status") == "failed" and stamp[:10] == date:
+            failed += 1
+        elif (
+            item.get("status") == "completed"
+            and item.get("review_status", "unreviewed") == "unreviewed"
+            and not item.get("dismissed_at")
+            and str(item.get("result") or "").strip()
+        ):
+            waiting += 1
+    parts = [f"{runs} run{'s' if runs != 1 else ''}"]
+    if waiting:
+        parts.append(f"{waiting} waiting review")
+    if failed:
+        parts.append(f"{failed} failed")
+    if not agent.get("loop_enabled"):
+        parts.append("no schedule")
+    line = f"- {agent.get('name') or agent_id}: " + ", ".join(parts)
+    if str(agent.get("last_run_at") or "")[:10] == date:
+        verdict = _first_line(agent.get("last_error") or agent.get("last_result"))
+        if verdict:
+            line += f" — {verdict}"
+    return line
 
 
 def watched_repo_ids(mounts: dict[str, Path] | None = None) -> list[str]:
@@ -437,189 +452,65 @@ def collect_digest(
         for repo_id in watched_repo_ids(mounts)
     ]
     line = format_digest_line(evidence)
-    severity = classify_digest(evidence)
-    failures = tuple(item for row in evidence for item in row.failures)
     return DigestResult(
         line=line,
-        severity=severity,
+        severity=classify_digest(evidence),
         fingerprint=_fingerprint(evidence),
         evidence=evidence,
-        failures=failures,
+        failures=tuple(item for row in evidence for item in row.failures),
     )
 
 
-def _record_check(
-    agents: Any,
-    agent: dict[str, Any],
-    outcome: str,
-    fingerprint: str,
-    failures: tuple[str, ...] = (),
-) -> None:
-    try:
-        agents.recover_runs().record_check(
-            agent, outcome=outcome, fingerprint=fingerprint, failures=failures
-        )
-    except (RunHistoryUnavailable, OSError, AttributeError) as exc:
-        logger.warning("Daily digest check not recorded for %s: %s", agent.get("id"), exc)
+def repo_section_lines(evidence: list[RepoEvidence]) -> list[str]:
+    """Bullets for the digest's Repos section. Tokens never enter these lines."""
+    summary = format_digest_line(evidence)
+    parts = [part.strip() for part in summary.split(" | ") if part.strip()]
+    return ["", "Repos", *[f"- {part}" for part in parts]]
 
 
-def deliver_digest(
-    result: DigestResult,
+def build_digest(
     *,
-    agent: dict[str, Any] | None,
-    agents: Any = None,
-    assignments: Any = None,
-    now: datetime | None = None,
-    slack_ready: bool | None = None,
-) -> dict[str, Any]:
-    """Post today's one-liner through the #101 channel path.
-
-    CLEAR days finish a run and record a quiet check. They open no Work item, so
-    they cannot trip awaiting_review and the next day's collection still runs.
-    Stuck days open one interval review item. Incomplete days surface as a
-    loop_check failure, which does not count toward the review cap.
-    """
-    now = now or datetime.now(timezone.utc)
-    day = now.date().isoformat()
-    delivery = (
-        resolve_delivery(agent, slack_ready=slack_ready)
-        if agent
-        else {
-            "declared": DEFAULT_OUTPUT_CHANNEL,
-            "delivered_channel": "",
-            "note": AGENT_MISSING_NOTE,
-        }
-    )
-    report: dict[str, Any] = {
-        "line": result.line,
-        "severity": result.severity,
-        "fingerprint": result.fingerprint,
-        "quiet": result.severity == "clear",
-        "declared": delivery.get("declared", DEFAULT_OUTPUT_CHANNEL),
-        "delivered_channel": delivery.get("delivered_channel", ""),
-        "delivery_note": delivery.get("note", ""),
-        "assignment_id": "",
-        "reason": "",
-    }
-    if not agent or agents is None:
-        report["delivery_note"] = AGENT_MISSING_NOTE
-        report["delivered_channel"] = ""
-        return report
-
-    if result.severity == "clear":
-        _record_check(agents, agent, "quiet_clear", result.fingerprint)
-        agents.record_loop_skip(agent["id"], result.fingerprint, reason="quiet_clear")
-        note = delivery["note"] or QUIET_CLEAR_NOTE
-        agents.finish_run(
-            agent["id"],
-            result.line,
-            result=result.line,
-            trigger="interval",
-            delivered_channel=delivery["delivered_channel"],
-            delivery_note=note,
-        )
-        report["delivery_note"] = note
-        return report
-
-    if result.severity == "incomplete" and assignments is not None:
-        item, _created = assignments.record_check_failure(
-            agent_id=agent["id"],
-            agent_name=agent.get("name") or DIGEST_AGENT_NAME,
-            objective=result.line,
-            failures=result.failures or ("digest_incomplete",),
-        )
-        _record_check(agents, agent, "check_incomplete", result.fingerprint, result.failures)
-        agents.record_loop_skip(agent["id"], None, reason="check_incomplete")
-        agents.finish_run(
-            agent["id"],
-            result.line,
-            result=result.line,
-            trigger="interval",
-            assignment_id=item["id"] if item else "",
-            delivered_channel=delivery["delivered_channel"],
-            delivery_note=delivery["note"],
-        )
-        report["quiet"] = False
-        report["reason"] = "check_incomplete"
-        report["assignment_id"] = item["id"] if item else ""
-        return report
-
-    if assignments is None:
-        agents.finish_run(
-            agent["id"],
-            result.line,
-            result=result.line,
-            trigger="interval",
-            delivered_channel=delivery["delivered_channel"],
-            delivery_note=delivery["note"] or INBOX_UNAVAILABLE_NOTE,
-        )
-        report["delivery_note"] = delivery["note"] or INBOX_UNAVAILABLE_NOTE
-        return report
-
-    pending = assignments.pending_loop_reviews(agent["id"])
-    if result.fingerprint == agent.get("loop_input_hash") and pending:
-        _record_check(agents, agent, "verified_unchanged", result.fingerprint)
-        agents.record_loop_skip(
-            agent["id"], result.fingerprint, reason="unchanged_repository_input"
-        )
-        report["quiet"] = True
-        report["reason"] = "unchanged_repository_input"
-        return report
-
-    if pending >= MAX_PENDING_LOOP_REVIEWS:
-        agents.record_loop_skip(agent["id"], None, reason="awaiting_review")
-        report["quiet"] = True
-        report["reason"] = "awaiting_review"
-        report["delivered_channel"] = ""
-        return report
-
-    schedule_key = f"daily-digest:{day}"
-    item, created = assignments.create_scheduled_assignment(
-        agent_id=agent["id"],
-        agent_name=agent.get("name") or DIGEST_AGENT_NAME,
-        objective=result.line,
-        schedule_key=schedule_key,
-        interval_minutes=1_440,
-        observed_fingerprint=f"{day}:{result.fingerprint}",
-    )
-    if created and item.get("status") == "queued":
-        item["title"] = inbox_title(agent, result.line)
-        assignments.set_running(item["id"])
-        item = assignments.finish_assignment(item["id"], result=result.line) or item
-    agents.record_loop_input(agent["id"], result.fingerprint)
-    agents.finish_run(
-        agent["id"],
-        result.line,
-        result=result.line,
-        trigger="interval",
-        assignment_id=item["id"],
-        delivered_channel=delivery["delivered_channel"],
-        delivery_note=delivery["note"],
-    )
-    report["quiet"] = False
-    report["reason"] = "stuck"
-    report["assignment_id"] = item["id"]
-    return report
-
-
-def collect_and_deliver(
-    *,
-    agents: Any = None,
-    assignments: Any = None,
-    git_read: GitRead | None = None,
-    github_api: GitHubApi | None = None,
-    mounts: dict[str, Path] | None = None,
-    slack_ready: bool | None = None,
-    now: datetime | None = None,
-) -> tuple[DigestResult, dict[str, Any]]:
-    result = collect_digest(git_read=git_read, github_api=github_api, mounts=mounts)
-    agent = find_digest_agent(agents) if agents is not None else None
-    delivery = deliver_digest(
-        result,
-        agent=agent,
-        agents=agents,
-        assignments=assignments,
-        now=now,
-        slack_ready=slack_ready,
-    )
-    return result, delivery
+    date: str,
+    agents: list[dict],
+    assignments: list[dict],
+    run_counts: dict[str, int],
+    loops: dict,
+    tasks: list[dict],
+    inbox_counts: dict[str, int],
+    repo_evidence: list[RepoEvidence] | None = None,
+) -> str:
+    lines = [f"AIIA digest {date}", "", "Agents"]
+    for agent in sorted(agents, key=lambda a: str(a.get("name") or "")):
+        lines.append(_agent_line(agent, assignments, int(run_counts.get(agent.get("id"), 0)), date))
+    if not agents:
+        lines.append("- no agents")
+    lines += ["", "Loops"]
+    for name, entry in sorted(loops.items()):
+        if not isinstance(entry, dict):
+            continue
+        last = str(entry.get("last_run") or "")[:16].replace("T", " ")
+        status = entry.get("last_status") or "never run"
+        note = str(entry.get("last_note") or "").strip()[:NOTE_CHARS]
+        lines.append(f"- {name}: {status} {last}".rstrip() + (f" — {note}" if note else ""))
+    if not loops:
+        lines.append("- no loop registry found")
+    failing = [t for t in tasks if t.get("last_status") == "failed"]
+    if failing:
+        lines += ["", "Built-in tasks failing"]
+        for task in failing:
+            reason = _first_line(str(task.get("last_result") or "").replace("FAILED: ", ""))
+            lines.append(
+                f"- {task.get('name') or task.get('task_id')}" + (f": {reason}" if reason else "")
+            )
+    if repo_evidence is not None:
+        lines += repo_section_lines(repo_evidence)
+    waiting = sum(inbox_counts.values())
+    if waiting:
+        detail = ", ".join(f"{count} {source}" for source, count in sorted(inbox_counts.items()))
+        lines += ["", f"Inbox waiting review: {waiting} ({detail})"]
+    else:
+        lines += ["", "Inbox waiting review: 0"]
+    body = "\n".join(lines)
+    if len(body) > MAX_BODY:
+        body = body[: MAX_BODY - 1].rstrip() + "…"
+    return body

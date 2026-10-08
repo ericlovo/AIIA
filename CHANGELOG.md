@@ -6,6 +6,41 @@ All notable changes to AIIA are documented here. This project adheres to
 
 ## [Unreleased]
 
+### Added
+
+- **Slack captures keep their attached files.** People mention the bot with a
+  document and no words, so the event text was only the mention and, after
+  #100, the capture was dropped. A mention with files is now a capture: the
+  inbox row says what was attached, and a new file worker (opt-in with
+  `AIIA_SLACK_FILE_CAPTURE_ENABLED=1`, egress point `slack.file_fetch`)
+  downloads each file with the bot token, saves it under
+  `command_center/capture_files/<capture>/`, reads text and PDF content, and
+  appends an excerpt to the capture so it reads in the inbox and can be logged
+  to memory. Logging to memory also indexes the full file text in the knowledge
+  store. Failed fetches say why (`missing_scope`, `file_too_large`) and can be
+  retried; `POST /api/memory-inbox/{id}/files` attaches a file by id to an
+  older capture.
+- **Logging to memory posts to Slack by default.** The promote request's
+  `post_to_slack` now defaults to "when the Mini can": the approved text goes to
+  the allowlisted channel with a provenance line (who captured it, which loop
+  proposed it, which files) unless the caller opts out. Loop proposals, which
+  have no workspace, may be posted; another workspace's text still may not.
+- **Daily Digest built-in task.** One line per agent (runs, waiting review,
+  failures, the day's verdict), one per launchd loop (from the loops
+  registry), failing built-in tasks, inbox count by source, and a Repos
+  section (what moved, failing CI, merge conflicts, Mindmoor
+  `production`/`alumni` behind `main` via `git rev-list --count`). No
+  model, no `git fetch`, no new egress. Filed once per day as an inbox row
+  with source `digest` and, when memory posts are configured, posted once
+  to the channel through the same outbox. GitHub remotes with HTTPS
+  userinfo still resolve to `owner/repo` only; tokens never enter the
+  lines. See [docs/HANDOFF-DAILY-DIGEST.md](docs/HANDOFF-DAILY-DIGEST.md).
+- **Built-in cron tasks keep a wall clock.** A task may declare `schedule_tz`;
+  Daily Brief and Daily Digest run at 07:00 and 07:40 America/Chicago instead
+  of UTC minutes. A cron task is due once today's local slot has opened and it
+  has not already run on that local date, so a busy minute no longer skips a
+  day and a morning restart cannot run the same job twice. Jobs shows the zone.
+
 ### Security
 
 - **Command Center listens on loopback by default.** It has no auth of its
@@ -16,6 +51,23 @@ All notable changes to AIIA are documented here. This project adheres to
   loopback only.
 
 ### Fixed
+
+- **Cron catch-up is once per local day.** A restart before 07:40 Chicago used
+  to run Daily Digest and Daily Brief immediately (`last_run` empty) and again
+  at the wall-clock time. Catch-up now waits for today's slot in `schedule_tz`
+  and will not fire a second time on the same local date, including the morning
+  Daily Brief moved from 08:00 UTC to 07:00 Chicago.
+- **Captures with several attachments keep every excerpt.** Finishing a file
+  fetch used to mark it `done` even when the idea was already near the 8k cap,
+  so the later files of a 2–3 attachment mention never appeared in the inbox
+  row. Every file now gets a fair share of the remaining budget (with an
+  explicit `[truncated]` note) and is marked done only after that text is
+  stored.
+- **Log to memory on a digest row is idempotent.** The digest already queues a
+  Slack post keyed by idea, so promoting it hit the unique constraint, returned
+  503 after the Brain fact existed, and retries created orphan facts. Promote
+  now skips an existing post, reserves the idea before the Brain write, and a
+  retry returns the existing `memory_id` without a second fact.
 
 - **Scheduled loops classify on evidence, not on what the model wrote.** A
   failed or incomplete read can produce reassuring output, so model prose never
@@ -77,22 +129,6 @@ All notable changes to AIIA are documented here. This project adheres to
 - Unreachable Studio components `Direct`, `Mind` and `Files` (no importers).
 
 ### Added
-
-- **Daily digest of mounted-repo triage and drift.** A new built-in task
-  `daily_digest` (daily 12:00 UTC = 07:00 CDT / 06:00 CST) reads mounted
-  checkouts and GitHub Actions — open PRs, failing CI, merge conflicts,
-  behind-main, and Mindmoor `production` / `alumni` (or `release/alumni*`)
-  versus `main` — and emits one ≤200-character line. CLEAR / green days
-  record a quiet check and do not open a Work item, so they cannot trip
-  `awaiting_review` and block tomorrow. Material stuck lines go through the
-  #101 output-channel path (Studio inbox; Slack falls back to inbox when
-  not configured or posting is still pending). Incomplete git/gh reads
-  surface as a `loop_check` failure and also do not block the next run.
-  Daily Brief (`daily_brief`, 08:00 UTC, LLM) is unchanged. Enable the
-  standing agent on the Mini with
-  `python -m local_brain.scripts.ensure_daily_digest_agent --apply`; the
-  script never writes `agent_data.json`. See
-  [docs/HANDOFF-DAILY-DIGEST.md](docs/HANDOFF-DAILY-DIGEST.md).
 
 - **Opt-in local recipe evaluation.** Four synthetic cases cover runtime noise,
   uncommitted source changes, untrusted README instructions, failed Git reads,
