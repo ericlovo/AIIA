@@ -12,7 +12,9 @@ from local_brain.command_center import daily_digest
 from local_brain.command_center.aiia_tasks import (
     TASK_DEFINITIONS,
     TaskRunner,
+    cron_is_due,
     cron_label,
+    cron_next,
     cron_target,
 )
 from local_brain.command_center.memory_inbox import MemoryInbox
@@ -140,20 +142,90 @@ def test_cron_target_follows_the_task_timezone():
     assert cron_target({"schedule_cron_hour": 6, "schedule_tz": "Not/AZone"}, now).hour == 6
 
 
-def test_cron_task_is_due_after_the_target_even_if_the_minute_was_missed(monkeypatch):
+def _idle_cron_runner(now: datetime) -> TaskRunner:
+    """A runner whose interval and cron tasks all look freshly run at `now`."""
     runner = TaskRunner(AsyncMock(), "/unused", None)
+    stamp = now.isoformat()
     for task_id in TASK_DEFINITIONS:
-        runner.tasks[task_id]["last_run"] = datetime.now(timezone.utc).isoformat()
+        runner.tasks[task_id]["last_run"] = stamp
+    return runner
+
+
+def test_cron_task_is_due_after_the_target_even_if_the_minute_was_missed(monkeypatch):
+    # 07:45 CDT on 2026-10-05: five minutes after 07:40, the busy minute is over.
+    now = datetime(2026, 10, 5, 12, 45, tzinfo=timezone.utc)
+    monkeypatch.setattr("local_brain.command_center.aiia_tasks._utc_now", lambda: now)
+    runner = _idle_cron_runner(now)
     defn = TASK_DEFINITIONS["daily_digest"]
-    target = cron_target(defn, datetime.now(timezone.utc))
-    runner.tasks["daily_digest"]["last_run"] = (target - timedelta(hours=2)).isoformat()
+    yesterday = datetime(2026, 10, 4, 12, 40, tzinfo=timezone.utc)
+    runner.tasks["daily_digest"]["last_run"] = yesterday.isoformat()
     assert runner._find_due_task() == "daily_digest"
-    runner.tasks["daily_digest"]["last_run"] = (target + timedelta(minutes=1)).isoformat()
+    runner.tasks["daily_digest"]["last_run"] = now.isoformat()
     assert runner._find_due_task() is None
     runner._update_next_run("daily_digest")
     next_run = datetime.fromisoformat(runner.tasks["daily_digest"]["next_run"])
-    assert next_run > datetime.now(timezone.utc)
-    assert next_run - target == timedelta(days=1)
+    assert next_run == cron_next(defn, now)
+    assert next_run == datetime(2026, 10, 6, 12, 40, tzinfo=timezone.utc)
+
+
+def test_cron_restart_catch_up_runs_at_most_once_per_local_day(monkeypatch):
+    defn = TASK_DEFINITIONS["daily_digest"]
+    before = datetime(2026, 10, 5, 12, 0, tzinfo=timezone.utc)  # 07:00 CDT, before 07:40
+    after = datetime(2026, 10, 5, 15, 0, tzinfo=timezone.utc)  # 10:00 CDT
+    assert cron_is_due(defn, before, None) is False
+    assert cron_is_due(defn, after, None) is True
+    monkeypatch.setattr("local_brain.command_center.aiia_tasks._utc_now", lambda: after)
+    runner = _idle_cron_runner(after)
+    runner.tasks["daily_digest"]["last_run"] = None
+    runner.tasks["daily_brief"]["last_run"] = after.isoformat()
+    for task_id, spec in TASK_DEFINITIONS.items():
+        if task_id in {"daily_digest", "daily_brief"} or "schedule_cron_hour" not in spec:
+            continue
+        runner.tasks[task_id]["last_run"] = after.isoformat()
+    assert runner._find_due_task() == "daily_digest"
+    runner.tasks["daily_digest"]["last_run"] = after.isoformat()
+    assert runner._find_due_task() is None
+    later = datetime(2026, 10, 5, 15, 1, tzinfo=timezone.utc)
+    assert cron_is_due(defn, later, after.isoformat()) is False
+    next_slot = datetime(2026, 10, 6, 12, 50, tzinfo=timezone.utc)
+    assert cron_is_due(defn, next_slot, after.isoformat()) is True
+
+
+def test_cron_schedule_move_does_not_double_run_daily_brief(monkeypatch):
+    """Yesterday's 08:00 UTC brief still fills yesterday; the Chicago move is one run."""
+    defn = TASK_DEFINITIONS["daily_brief"]
+    last = datetime(2026, 10, 4, 8, 0, tzinfo=timezone.utc).isoformat()
+    before = datetime(2026, 10, 5, 11, 30, tzinfo=timezone.utc)  # 06:30 CDT
+    at_slot = datetime(2026, 10, 5, 12, 0, tzinfo=timezone.utc)  # 07:00 CDT
+    assert cron_is_due(defn, before, last) is False
+    assert cron_is_due(defn, at_slot, last) is True
+    monkeypatch.setattr("local_brain.command_center.aiia_tasks._utc_now", lambda: at_slot)
+    runner = _idle_cron_runner(at_slot)
+    runner.tasks["daily_brief"]["last_run"] = last
+    for task_id in TASK_DEFINITIONS:
+        if task_id != "daily_brief":
+            runner.tasks[task_id]["last_run"] = at_slot.isoformat()
+    assert runner._find_due_task() == "daily_brief"
+    runner.tasks["daily_brief"]["last_run"] = at_slot.isoformat()
+    assert runner._find_due_task() is None
+    assert cron_is_due(defn, at_slot + timedelta(hours=1), at_slot.isoformat()) is False
+
+
+def test_cron_busy_scheduler_still_fires_once_after_the_minute(monkeypatch):
+    defn = TASK_DEFINITIONS["daily_digest"]
+    yesterday = datetime(2026, 10, 4, 12, 40, tzinfo=timezone.utc).isoformat()
+    missed = datetime(2026, 10, 5, 12, 45, tzinfo=timezone.utc)  # 07:45 CDT
+    assert cron_is_due(defn, missed, yesterday) is True
+    monkeypatch.setattr("local_brain.command_center.aiia_tasks._utc_now", lambda: missed)
+    runner = _idle_cron_runner(missed)
+    runner.tasks["daily_digest"]["last_run"] = yesterday
+    for task_id in TASK_DEFINITIONS:
+        if task_id != "daily_digest":
+            runner.tasks[task_id]["last_run"] = missed.isoformat()
+    assert runner._find_due_task() == "daily_digest"
+    runner.tasks["daily_digest"]["last_run"] = missed.isoformat()
+    assert runner._find_due_task() is None
+    assert cron_is_due(defn, missed + timedelta(minutes=5), missed.isoformat()) is False
 
 
 def _runner(tmp_path, monkeypatch) -> tuple[TaskRunner, MemoryInbox]:

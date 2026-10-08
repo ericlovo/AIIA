@@ -54,19 +54,60 @@ def cron_zone(defn: dict) -> ZoneInfo:
         return ZoneInfo("UTC")
 
 
-def cron_target(defn: dict, now: datetime) -> datetime:
-    """The most recent scheduled time at or before `now`, as an aware UTC datetime."""
-    zone = cron_zone(defn)
-    local = now.astimezone(zone)
-    target = local.replace(
+def _utc_now() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+def _cron_local_slot(defn: dict, now: datetime) -> datetime:
+    """Today's scheduled wall-clock instant in the task's zone (may be in the future)."""
+    local = now.astimezone(cron_zone(defn))
+    return local.replace(
         hour=defn["schedule_cron_hour"],
         minute=defn.get("schedule_cron_minute", 0),
         second=0,
         microsecond=0,
     )
+
+
+def cron_target(defn: dict, now: datetime) -> datetime:
+    """The most recent scheduled time at or before `now`, as an aware UTC datetime."""
+    local = now.astimezone(cron_zone(defn))
+    target = _cron_local_slot(defn, now)
     if target > local:
         target -= timedelta(days=1)
     return target.astimezone(timezone.utc)
+
+
+def cron_next(defn: dict, now: datetime) -> datetime:
+    """The next scheduled instant at or after `now`, as an aware UTC datetime."""
+    local = now.astimezone(cron_zone(defn))
+    today = _cron_local_slot(defn, now)
+    if local < today:
+        return today.astimezone(timezone.utc)
+    return (today + timedelta(days=1)).astimezone(timezone.utc)
+
+
+def _aware(stamp: datetime) -> datetime:
+    return stamp.replace(tzinfo=timezone.utc) if stamp.tzinfo is None else stamp
+
+
+def cron_is_due(defn: dict, now: datetime, last_run: str | None) -> bool:
+    """True when today's local slot has opened and this task has not run on that local date.
+
+    Catch-up after a restart is at most once per task per local day, keyed by the
+    target date in `schedule_tz`. A run before today's slot does not happen, so an
+    early restart cannot steal the day's slot and fire again at the wall-clock time.
+    Yesterday's last_run still counts for yesterday even if the hour moved (the
+    Daily Brief 08:00 UTC → 07:00 Chicago change), so that morning is one brief.
+    """
+    zone = cron_zone(defn)
+    local = now.astimezone(zone)
+    if local < _cron_local_slot(defn, now):
+        return False
+    if last_run is None:
+        return True
+    last_dt = _aware(datetime.fromisoformat(last_run)).astimezone(zone)
+    return last_dt.date() < local.date()
 
 
 def cron_label(defn: dict) -> str:
@@ -612,7 +653,7 @@ class TaskRunner:
 
     def _find_due_task(self) -> str | None:
         """Find the next task that is due to run."""
-        now = datetime.now(timezone.utc)
+        now = _utc_now()
 
         for task_id, defn in TASK_DEFINITIONS.items():
             task = self.tasks[task_id]
@@ -630,17 +671,11 @@ class TaskRunner:
                 if elapsed >= defn["schedule_seconds"]:
                     return task_id
 
-            # Cron-based schedule: due once the most recent target time has passed
-            # and the task has not run since it. A busy minute no longer skips a day.
-            if "schedule_cron_hour" in defn:
-                target = cron_target(defn, now)
-                if last_run is None:
-                    return task_id
-                last_dt = datetime.fromisoformat(last_run)
-                if last_dt.tzinfo is None:
-                    last_dt = last_dt.replace(tzinfo=timezone.utc)
-                if last_dt < target:
-                    return task_id
+            # Cron-based schedule: due once today's local slot has opened and
+            # this task has not already run on that local date. A busy minute
+            # still runs later the same day; a restart does not double-fire.
+            if "schedule_cron_hour" in defn and cron_is_due(defn, now, last_run):
+                return task_id
 
         return None
 
@@ -648,25 +683,18 @@ class TaskRunner:
         """Calculate and store next_run for a task."""
         defn = TASK_DEFINITIONS[task_id]
         task = self.tasks[task_id]
-        now = datetime.now(timezone.utc)
+        now = _utc_now()
 
         if "schedule_seconds" in defn:
             if task["last_run"]:
                 last_dt = datetime.fromisoformat(task["last_run"])
-                next_dt = (
-                    last_dt.replace(tzinfo=timezone.utc) if last_dt.tzinfo is None else last_dt
-                )
-                from datetime import timedelta
-
-                next_dt = next_dt + timedelta(seconds=defn["schedule_seconds"])
+                next_dt = _aware(last_dt) + timedelta(seconds=defn["schedule_seconds"])
             else:
                 next_dt = now  # run immediately on first startup
             task["next_run"] = next_dt.isoformat()
 
         elif "schedule_cron_hour" in defn:
-            from datetime import timedelta
-
-            task["next_run"] = (cron_target(defn, now + timedelta(days=1))).isoformat()
+            task["next_run"] = cron_next(defn, now).isoformat()
 
     # ─── Execution Lifecycle ─────────────────────────────────
 

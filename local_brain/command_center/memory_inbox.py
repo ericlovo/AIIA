@@ -68,6 +68,10 @@ CAPTURE_FILE_COLUMNS = """(
 FILE_STATUSES = ("pending", "fetching", "done", "failed")
 FILE_PUBLIC_COLUMNS = ("file_id", "name", "mimetype", "size", "status", "error", "chars")
 IDEA_TEXT_LIMIT = 8_000
+# Appended when a file's excerpt is cut to fit the idea budget. A capture with
+# several attachments must still store something for every file.
+FILE_EXCERPT_TRUNCATED = "\n[truncated]"
+FILE_EXCERPT_OMITTED = "excerpt omitted; over budget"
 IDEA_REVIEW_COLUMNS = (
     "memory_id",
     "memory_category",
@@ -263,31 +267,96 @@ class MemoryInbox:
         """Close a fetch attempt. A done fetch appends the excerpt to the idea text once.
 
         The excerpt makes the capture readable in the inbox and promotable as a
-        fact; the full text stays in the saved file for indexing.
+        fact; the full text stays in the saved file for indexing. The file is
+        marked done only after that excerpt (or an explicit truncation note) is
+        stored, so a later attachment is never reported as read while omitted.
         """
         with self.connect() as db:
             db.execute("BEGIN IMMEDIATE")
-            updated = db.execute(
-                "UPDATE capture_files SET status=?,error=?,path=?,chars=?,next_attempt=? "
-                "WHERE file_id=? AND lease=? AND status='fetching'",
-                (status, error, path, chars, time.time() + delay, file["file_id"], file["lease"]),
-            )
-            if updated.rowcount != 1 or status != "done" or not excerpt:
+            current = db.execute(
+                "SELECT 1 FROM capture_files WHERE file_id=? AND lease=? AND status='fetching'",
+                (file["file_id"], file["lease"]),
+            ).fetchone()
+            if current is None:
+                return
+            stamp = time.time() + delay
+            if status != "done" or not excerpt:
+                db.execute(
+                    "UPDATE capture_files SET status=?,error=?,path=?,chars=?,next_attempt=? "
+                    "WHERE file_id=? AND lease=? AND status='fetching'",
+                    (status, error, path, chars, stamp, file["file_id"], file["lease"]),
+                )
                 return
             row = db.execute("SELECT text FROM ideas WHERE id=?", (file["idea_id"],)).fetchone()
-            if row is None:
+            if row is None or not self._append_file_excerpt(db, file, row["text"], excerpt):
+                db.execute(
+                    "UPDATE capture_files SET status='failed',error=?,path=?,chars=?,next_attempt=? "
+                    "WHERE file_id=? AND lease=? AND status='fetching'",
+                    (
+                        "idea_not_found" if row is None else "excerpt_does_not_fit",
+                        path,
+                        chars,
+                        stamp,
+                        file["file_id"],
+                        file["lease"],
+                    ),
+                )
                 return
-            marker = f"\n\n[file: {file['name']}]\n"
-            if marker in row["text"]:
-                return
-            room = IDEA_TEXT_LIMIT - len(row["text"]) - len(marker)
-            if room < 80:
-                return
-            body = excerpt if len(excerpt) <= room else excerpt[: room - 1].rstrip() + "…"
+            db.execute(
+                "UPDATE capture_files SET status='done',error='',path=?,chars=?,next_attempt=? "
+                "WHERE file_id=? AND lease=? AND status='fetching'",
+                (path, chars, stamp, file["file_id"], file["lease"]),
+            )
+
+    def _append_file_excerpt(self, db, file, text: str, excerpt: str) -> bool:
+        """Append this file's excerpt under a fair per-file share of the idea budget.
+
+        Remaining unused files (including this one) split whatever room is left
+        so the first attachment cannot spend the whole 8k cap. Returns whether
+        any excerpt or truncation note was stored.
+        """
+        marker = f"\n\n[file: {file['name']}]\n"
+        if self._file_excerpt_present(text, file["name"]):
+            return True
+        names = [
+            row["name"]
+            for row in db.execute(
+                "SELECT name FROM capture_files WHERE idea_id=? ORDER BY rowid",
+                (file["idea_id"],),
+            )
+        ]
+        remaining = sum(1 for name in names if not self._file_excerpt_present(text, name))
+        remaining = max(remaining, 1)
+        room = IDEA_TEXT_LIMIT - len(text) - len(marker)
+
+        def store(addition: str) -> bool:
+            if len(text) + len(addition) > IDEA_TEXT_LIMIT:
+                return False
             db.execute(
                 "UPDATE ideas SET text=? WHERE id=?",
-                (row["text"] + marker + body, file["idea_id"]),
+                (text + addition, file["idea_id"]),
             )
+            return True
+
+        omitted = f"\n\n[file: {file['name']} — {FILE_EXCERPT_OMITTED}]"
+        if room <= 0:
+            return store(omitted)
+        cap = room // remaining
+        if cap <= 0:
+            return store(omitted)
+        note = ""
+        body = excerpt
+        if len(body) > cap:
+            note = FILE_EXCERPT_TRUNCATED
+            cut = cap - len(note)
+            if cut < 1:
+                return store(omitted)
+            body = body[:cut].rstrip()
+        return store(marker + body + note)
+
+    @staticmethod
+    def _file_excerpt_present(text: str, name: str) -> bool:
+        return f"\n\n[file: {name}]\n" in text or f"\n\n[file: {name} — " in text
 
     def file_status(self):
         with self.connect() as db:
@@ -406,11 +475,18 @@ class MemoryInbox:
                 ),
             )
             if post_body:
-                db.execute(
-                    "INSERT INTO memory_posts (memory_id,idea_id,channel_id,priority,body) "
-                    "VALUES (?,?,?,?,?) ON CONFLICT(memory_id) DO NOTHING",
-                    (memory_id, idea_id, post_channel_id, priority, post_body),
-                )
+                # idea_id is unique: a digest row may already have a queued post.
+                # Skip rather than raise so the Brain fact and the promotion commit.
+                already = db.execute(
+                    "SELECT 1 FROM memory_posts WHERE idea_id=? OR memory_id=?",
+                    (idea_id, memory_id),
+                ).fetchone()
+                if already is None:
+                    db.execute(
+                        "INSERT INTO memory_posts (memory_id,idea_id,channel_id,priority,body) "
+                        "VALUES (?,?,?,?,?)",
+                        (memory_id, idea_id, post_channel_id, priority, post_body),
+                    )
             if row["thread_ts"]:
                 db.execute(
                     "INSERT INTO promotion_receipts (idea_id,thread_ts) VALUES (?,?) "

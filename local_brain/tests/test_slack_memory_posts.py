@@ -131,7 +131,9 @@ def test_promote_with_post_enqueues_exactly_one_post(app, env, monkeypatch):
         f"/api/memory-inbox/{idea['id']}/promote",
         {"category": "decisions", "post_to_slack": True},
     )
-    assert again.status_code == 409 and len(calls) == 1
+    assert again.status_code == 200
+    assert again.json()["memory_id"] == "decisions_4_1789"
+    assert len(calls) == 1
     retry = call(
         app, "POST", f"/api/memory-inbox/{idea['id']}/acknowledgement/retry?kind=memory_post"
     )
@@ -651,15 +653,12 @@ def test_delivered_post_is_escaped_plain_text(app, env, monkeypatch):
 
 def test_concurrent_promotes_of_one_capture_queue_one_post(app, env, monkeypatch):
     idea = capture(env.inbox)
-    both_in_brain = asyncio.Event()
     arrived = []
 
     async def handler(request):
         arrived.append(request)
-        if len(arrived) == 2:
-            both_in_brain.set()
-        await asyncio.wait_for(both_in_brain.wait(), 5)
-        return httpx.Response(200, json={"id": f"project_race_{len(arrived)}"})
+        await asyncio.sleep(0.05)
+        return httpx.Response(200, json={"id": "project_race_1"})
 
     brain(monkeypatch, handler)
 
@@ -672,14 +671,46 @@ def test_concurrent_promotes_of_one_capture_queue_one_post(app, env, monkeypatch
             return await asyncio.gather(client.post(path, json=body), client.post(path, json=body))
 
     responses = asyncio.run(exercise())
-    assert sorted(r.status_code for r in responses) == [200, 409]
-    assert [r.json()["detail"] for r in responses if r.status_code == 409] == [
-        "idea_already_promoted"
-    ]
+    assert [r.status_code for r in responses] == [200, 200]
+    assert {r.json()["memory_id"] for r in responses} == {"project_race_1"}
+    assert len(arrived) == 1
     with env.inbox.connect() as db:
         posts = [dict(r) for r in db.execute("SELECT * FROM memory_posts")]
     assert len(posts) == 1 and posts[0]["idea_id"] == idea["id"]
     assert posts[0]["memory_id"] == env.inbox.get(idea["id"])["memory_id"]
+
+
+def test_log_to_memory_on_a_digest_row_does_not_create_a_second_fact(app, env, monkeypatch):
+    idea, _created = env.inbox.ingest(
+        text="AIIA digest 2026-10-05\n- CI Signal Officer: 1 run",
+        source_key="digest:2026-10-05",
+        source="digest",
+        project="aiia",
+    )
+    assert env.inbox.queue_post(
+        memory_id="digest:2026-10-05",
+        idea_id=idea["id"],
+        channel_id=CHANNEL,
+        body="AIIA digest 2026-10-05",
+    )
+    calls = []
+
+    def handler(request):
+        calls.append(json.loads(request.content))
+        return httpx.Response(200, json={"id": f"project_digest_{len(calls)}"})
+
+    brain(monkeypatch, handler)
+    first = call(app, "POST", f"/api/memory-inbox/{idea['id']}/promote", {})
+    assert first.status_code == 200, first.text
+    assert first.json()["memory_id"] == "project_digest_1"
+    assert env.inbox.get(idea["id"])["status"] == "promoted"
+    with env.inbox.connect() as db:
+        posts = [dict(row) for row in db.execute("SELECT memory_id,idea_id FROM memory_posts")]
+    assert len(posts) == 1 and posts[0]["memory_id"] == "digest:2026-10-05"
+    second = call(app, "POST", f"/api/memory-inbox/{idea['id']}/promote", {})
+    assert second.status_code == 200
+    assert second.json()["memory_id"] == "project_digest_1"
+    assert len(calls) == 1
 
 
 def test_worst_case_escaped_body_fits_one_slack_message():

@@ -32,6 +32,19 @@ BRAIN_TRANSPORT = None  # tests inject an httpx transport; production dials the 
 MEMORY_CATEGORIES = ("decisions", "patterns", "lessons", "project", "meta", "team", "agents")
 MENTION = re.compile(r"<@[A-Z0-9]+>")
 MEMORY_POST_TEXT_LIMIT = 3_000
+# One Brain write per capture: concurrent "Log to memory" clicks share a lock so
+# a retry never creates a second fact after the first reservation succeeds.
+_promote_guards: dict[str, asyncio.Lock] = {}
+_promote_guards_lock = asyncio.Lock()
+
+
+async def _promote_guard(idea_id: str) -> asyncio.Lock:
+    async with _promote_guards_lock:
+        lock = _promote_guards.get(idea_id)
+        if lock is None:
+            lock = asyncio.Lock()
+            _promote_guards[idea_id] = lock
+        return lock
 
 
 @asynccontextmanager
@@ -316,53 +329,69 @@ async def promote_idea(idea_id: str, body: PromoteRequest):
     # Read the destination now: a config change during the Brain call must not turn
     # a saved fact into a refused promotion. Delivery re-checks the channel anyway.
     post_channel_id = slack_memory_posts.channel_id() if post_to_slack else ""
-    idea = _load_idea(idea_id)
-    if idea["status"] == "promoted":
-        raise HTTPException(status_code=409, detail="idea_already_promoted")
-    fact = capture_text(idea["text"])
-    if not fact:
-        raise HTTPException(status_code=422, detail="idea_has_no_content")
-    metadata = {
-        "capture_id": idea["id"],
-        "project": idea["project"],
-        "source": idea["source"],
-        "workspace_id": idea["workspace_id"],
-        "channel_id": idea["channel_id"],
-        "author_id": idea["author_id"],
-        "captured_at": idea["created_at"],
-    }
-    if body.note.strip():
-        metadata["review_note"] = body.note.strip()
-    try:
-        memory = await remember_in_brain(fact, body.category, metadata)
-    except MemoryRejected as exc:
-        raise HTTPException(status_code=422, detail="memory_quality_rejected") from exc
-    except MemoryUnavailable as exc:
-        raise HTTPException(status_code=503, detail="brain_unavailable") from exc
-    post_body = (
-        memory_post_text(
-            idea, memory_id=memory["id"], category=body.category, priority=body.priority
+    async with await _promote_guard(idea_id):
+        idea = _load_idea(idea_id)
+        if idea["status"] == "promoted" and idea["memory_id"]:
+            # Retry after a unique-key collision or a double-click: the fact exists.
+            return {
+                "idea": idea,
+                "memory_id": idea["memory_id"],
+                "files_indexed": 0,
+            }
+        if idea["status"] == "promoted":
+            raise HTTPException(status_code=409, detail="idea_already_promoted")
+        fact = capture_text(idea["text"])
+        if not fact:
+            raise HTTPException(status_code=422, detail="idea_has_no_content")
+        metadata = {
+            "capture_id": idea["id"],
+            "project": idea["project"],
+            "source": idea["source"],
+            "workspace_id": idea["workspace_id"],
+            "channel_id": idea["channel_id"],
+            "author_id": idea["author_id"],
+            "captured_at": idea["created_at"],
+        }
+        if body.note.strip():
+            metadata["review_note"] = body.note.strip()
+        try:
+            memory = await remember_in_brain(fact, body.category, metadata)
+        except MemoryRejected as exc:
+            raise HTTPException(status_code=422, detail="memory_quality_rejected") from exc
+        except MemoryUnavailable as exc:
+            raise HTTPException(status_code=503, detail="brain_unavailable") from exc
+        post_body = (
+            memory_post_text(
+                idea, memory_id=memory["id"], category=body.category, priority=body.priority
+            )
+            if post_to_slack
+            else ""
         )
-        if post_to_slack
-        else ""
-    )
-    try:
-        updated = inbox().promote(
-            idea_id,
-            memory_id=memory["id"],
-            category=body.category,
-            note=body.note,
-            priority=body.priority,
-            post_channel_id=post_channel_id,
-            post_body=post_body,
-        )
-    except ValueError as exc:
-        raise HTTPException(status_code=409, detail=str(exc)) from exc
-    except (OSError, sqlite3.Error) as exc:
-        # The Brain fact exists; the inbox row did not update. Say so instead of hiding it.
-        raise HTTPException(status_code=503, detail="memory_saved_inbox_update_failed") from exc
-    files_indexed = await index_capture_files(idea, memory_id=memory["id"])
-    return {"idea": updated, "memory_id": memory["id"], "files_indexed": files_indexed}
+        try:
+            updated = inbox().promote(
+                idea_id,
+                memory_id=memory["id"],
+                category=body.category,
+                note=body.note,
+                priority=body.priority,
+                post_channel_id=post_channel_id,
+                post_body=post_body,
+            )
+        except ValueError as exc:
+            if str(exc) == "idea_already_promoted":
+                existing = _load_idea(idea_id)
+                if existing["memory_id"]:
+                    return {
+                        "idea": existing,
+                        "memory_id": existing["memory_id"],
+                        "files_indexed": 0,
+                    }
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        except (OSError, sqlite3.Error) as exc:
+            # The Brain fact exists; the inbox row did not update. Say so instead of hiding it.
+            raise HTTPException(status_code=503, detail="memory_saved_inbox_update_failed") from exc
+        files_indexed = await index_capture_files(idea, memory_id=memory["id"])
+        return {"idea": updated, "memory_id": memory["id"], "files_indexed": files_indexed}
 
 
 @router.post("/api/memory-inbox/{idea_id}/files")

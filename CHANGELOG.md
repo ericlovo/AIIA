@@ -32,8 +32,9 @@ All notable changes to AIIA are documented here. This project adheres to
   posts are configured, posted once to the channel through the same outbox.
 - **Built-in cron tasks keep a wall clock.** A task may declare `schedule_tz`;
   Daily Brief and Daily Digest run at 07:00 and 07:40 America/Chicago instead
-  of UTC minutes. A cron task is due once its target time has passed and it has
-  not run since, so a busy minute no longer skips a day. Jobs shows the zone.
+  of UTC minutes. A cron task is due once today's local slot has opened and it
+  has not already run on that local date, so a busy minute no longer skips a
+  day and a morning restart cannot run the same job twice. Jobs shows the zone.
 
 ### Security
 
@@ -45,6 +46,23 @@ All notable changes to AIIA are documented here. This project adheres to
   loopback only.
 
 ### Fixed
+
+- **Cron catch-up is once per local day.** A restart before 07:40 Chicago used
+  to run Daily Digest and Daily Brief immediately (`last_run` empty) and again
+  at the wall-clock time. Catch-up now waits for today's slot in `schedule_tz`
+  and will not fire a second time on the same local date, including the morning
+  Daily Brief moved from 08:00 UTC to 07:00 Chicago.
+- **Captures with several attachments keep every excerpt.** Finishing a file
+  fetch used to mark it `done` even when the idea was already near the 8k cap,
+  so the later files of a 2–3 attachment mention never appeared in the inbox
+  row. Every file now gets a fair share of the remaining budget (with an
+  explicit `[truncated]` note) and is marked done only after that text is
+  stored.
+- **Log to memory on a digest row is idempotent.** The digest already queues a
+  Slack post keyed by idea, so promoting it hit the unique constraint, returned
+  503 after the Brain fact existed, and retries created orphan facts. Promote
+  now skips an existing post, reserves the idea before the Brain write, and a
+  retry returns the existing `memory_id` without a second fact.
 
 - **Scheduled loops classify on evidence, not on what the model wrote.** A
   failed or incomplete read can produce reassuring output, so model prose never

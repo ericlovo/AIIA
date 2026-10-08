@@ -13,6 +13,12 @@ import pytest
 from fastapi import FastAPI
 
 from local_brain.command_center import slack_capture, slack_files
+from local_brain.command_center.memory_inbox import (
+    FILE_EXCERPT_OMITTED,
+    FILE_EXCERPT_TRUNCATED,
+    IDEA_TEXT_LIMIT,
+    MemoryInbox,
+)
 from local_brain.egress import EgressDecision, airgap_allows_tool
 
 FILE = {
@@ -304,6 +310,113 @@ def test_backfill_attaches_a_file_by_id(env, monkeypatch):
         env.app, "POST", f"/api/memory-inbox/{idea['id']}/files", {"file_id": "not-a-file-id"}
     )
     assert bad.status_code == 422
+
+
+def _attachment(n: int, name: str) -> dict:
+    return {
+        "id": f"F0C6HNU79J{n}",
+        "name": name,
+        "mimetype": "text/plain",
+        "size": 8800,
+        "url_private_download": f"https://files.slack.com/files-pri/T_TEST-F0C6HNU79J{n}/{name}",
+    }
+
+
+def test_every_attachment_excerpt_is_stored_within_the_idea_budget(env):
+    files = [
+        _attachment(1, "one.md"),
+        _attachment(2, "two.md"),
+        _attachment(3, "three.md"),
+    ]
+    signed(env.app, mention(files=files))
+
+    def handler(request):
+        url = str(request.url)
+        for spec in files:
+            if spec["id"] in url:
+                body = (spec["name"] + " " + "body " * 2000).encode()
+                return httpx.Response(200, content=body, headers={"content-type": "text/plain"})
+        return httpx.Response(404)
+
+    for _ in files:
+        deliver(env.inbox, handler)
+    idea = env.inbox.list()["ideas"][0]
+    text = idea["text"]
+    assert len(text) <= IDEA_TEXT_LIMIT
+    for name in ("one.md", "two.md", "three.md"):
+        assert f"[file: {name}]" in text
+        assert name.split(".")[0] in text or FILE_EXCERPT_TRUNCATED in text
+    assert FILE_EXCERPT_TRUNCATED in text
+    assert all(row["status"] == "done" for row in idea["files"])
+    assert text.count("[file:") == 3
+
+
+def test_finish_file_shares_the_budget_across_three_attachments(tmp_path):
+    inbox = MemoryInbox(tmp_path / "inbox.sqlite3")
+    files = [
+        {
+            "id": f"F0C6HNU79J{n}",
+            "name": name,
+            "mimetype": "text/plain",
+            "size": 100,
+            "url": f"https://files.slack.com/{name}",
+        }
+        for n, name in enumerate(("one.md", "two.md", "three.md"), start=1)
+    ]
+    idea = inbox.capture(
+        text="<@U0BOT1>\n[attached: one.md]\n[attached: two.md]\n[attached: three.md]",
+        source_key="event:triple",
+        source="slack",
+        project="mindmoor",
+        workspace_id="T_TEST",
+        channel_id="C_TEST",
+        author_id="U_AUTHOR",
+        files=files,
+    )
+    long = "word " * 3000
+    for _ in files:
+        claimed = inbox.claim_file()
+        assert claimed is not None
+        inbox.finish_file(claimed, status="done", excerpt=long, path="/tmp/x", chars=len(long))
+    stored = inbox.get(idea["id"])
+    text = stored["text"]
+    assert len(text) <= IDEA_TEXT_LIMIT
+    for name in ("one.md", "two.md", "three.md"):
+        assert f"[file: {name}]" in text
+    assert FILE_EXCERPT_TRUNCATED in text
+    assert all(row["status"] == "done" for row in stored["files"])
+
+
+def test_a_file_is_not_marked_done_until_its_excerpt_is_stored(tmp_path):
+    inbox = MemoryInbox(tmp_path / "inbox.sqlite3")
+    idea = inbox.capture(
+        text="x" * (IDEA_TEXT_LIMIT - 5),
+        source_key="event:full",
+        source="slack",
+        project="mindmoor",
+        workspace_id="T_TEST",
+        channel_id="C_TEST",
+        author_id="U_AUTHOR",
+        files=[
+            {
+                "id": "F0C6HNU79J8",
+                "name": "late.md",
+                "mimetype": "text/plain",
+                "size": 100,
+                "url": "https://files.slack.com/late.md",
+            }
+        ],
+    )
+    claimed = inbox.claim_file()
+    assert claimed is not None
+    inbox.finish_file(
+        claimed, status="done", excerpt="this excerpt should not fit", path="/tmp/late.md", chars=10
+    )
+    row = inbox.file_record("F0C6HNU79J8")
+    stored = inbox.get(idea["id"])["text"]
+    assert row["status"] == "failed" and row["error"] == "excerpt_does_not_fit"
+    assert "[file: late.md]" not in stored
+    assert FILE_EXCERPT_OMITTED not in stored
 
 
 def test_promote_indexes_fetched_file_text_in_the_brain(env, monkeypatch):
