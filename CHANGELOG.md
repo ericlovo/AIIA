@@ -37,8 +37,9 @@ All notable changes to AIIA are documented here. This project adheres to
   optional handles/kind. No model, no `git fetch`, no new egress. Filed
   once per day as an inbox row with source `digest` and, when memory posts
   are configured, posted once to the channel through the same outbox.
-  GitHub remotes with HTTPS userinfo still resolve to `owner/repo` only;
-  tokens never enter the lines. See
+  GitHub remotes with HTTPS userinfo still resolve to `owner/repo` only
+  (the shared `_origin_slug` helper now parses those remotes the same
+  way); tokens never enter the lines. See
   [docs/HANDOFF-DAILY-DIGEST.md](docs/HANDOFF-DAILY-DIGEST.md).
 - **Built-in cron tasks keep a wall clock.** A task may declare `schedule_tz`;
   Daily Brief and Daily Digest run at 07:00 and 07:40 America/Chicago instead
