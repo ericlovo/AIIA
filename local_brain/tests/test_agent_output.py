@@ -15,11 +15,16 @@ from local_brain.command_center.agent_output import (
     RUN_FAILED_NOTE,
     SLACK_NOT_CONFIGURED,
     SLACK_POSTING_PENDING,
+    derive_kind,
     derive_one_liner,
     inbox_title,
+    normalize_handles,
+    normalize_kind,
     present_agent,
     present_agents,
     resolve_delivery,
+    resolve_kind,
+    resolve_use_when,
 )
 from local_brain.command_center.agent_registry import AgentRegistry
 from local_brain.command_center.assignment_registry import AssignmentRegistry
@@ -132,6 +137,12 @@ def test_legacy_agent_json_derives_one_liner_without_rewriting(tmp_path):
     shown = present_agent(raw, slack_ready=False)
     assert shown["one_liner"] == "Keep the build green."
     assert shown["one_liner_derived"] is True
+    assert shown["use_when"] == "Keep the build green."
+    assert shown["use_when_derived"] is True
+    assert shown["kind"] == ""
+    assert shown["kind_derived"] is True
+    assert shown["retired"] is False
+    assert shown["handles"] == []
     assert shown["output_channel"] == DEFAULT_OUTPUT_CHANNEL
     assert shown["output_channel_note"] == ""
     assert data_file.read_text() == before
@@ -139,6 +150,10 @@ def test_legacy_agent_json_derives_one_liner_without_rewriting(tmp_path):
     stored = json.loads(data_file.read_text())["agents"][0]
     assert "one_liner" not in stored
     assert "output_channel" not in stored
+    assert "kind" not in stored
+    assert "use_when" not in stored
+    assert "retired" not in stored
+    assert "handles" not in stored
 
 
 def test_create_and_patch_persist_one_liner_and_channel(studio):
@@ -174,6 +189,162 @@ def test_create_and_patch_persist_one_liner_and_channel(studio):
     assert patched.json()["agent"]["one_liner"] == "Shorter job."
     assert patched.json()["agent"]["output_channel"] == "studio_inbox"
     assert patched.json()["agent"]["output_channel_note"] == ""
+
+
+def test_legacy_repo_agent_derives_coding_kind_without_rewriting(tmp_path):
+    data_file = tmp_path / "agents.json"
+    data_file.write_text(
+        json.dumps(
+            {
+                "agents": [
+                    {
+                        "id": "ci1",
+                        "name": "CI Fixer",
+                        "mission": "Unblock red checks. Ignore flakes.",
+                        "persona": "Terse.",
+                        "skills": ["Analysis"],
+                        "tools": ["Repository read", "GitHub read"],
+                        "repo_id": "aiia",
+                        "updated_at": "2026-09-01T00:00:00+00:00",
+                        "created_at": "2026-09-01T00:00:00+00:00",
+                        "runs": [],
+                    }
+                ],
+                "pending_runs": [],
+            }
+        )
+    )
+    before = data_file.read_text()
+    registry = AgentRegistry(data_file)
+    raw = registry.get("ci1")
+    assert "kind" not in raw
+    assert "use_when" not in raw
+    shown = present_agent(raw, slack_ready=False)
+    assert shown["kind"] == "coding"
+    assert shown["kind_derived"] is True
+    assert shown["use_when"] == "Unblock red checks."
+    assert shown["use_when_derived"] is True
+    assert data_file.read_text() == before
+
+
+def test_create_and_patch_persist_roster_fields(studio):
+    server, registry, _assignments, _events, _upstream = studio
+    created = _call(
+        server,
+        "POST",
+        "/api/agents",
+        json={
+            "name": "Product Lead",
+            "mission": "Sequence the next ship.",
+            "kind": "product",
+            "use_when": "Pick this to decide what ships next.",
+            "handles": ["roadmap", "clients"],
+        },
+    )
+    assert created.status_code == 200
+    agent = created.json()["agent"]
+    assert agent["kind"] == "product"
+    assert agent["kind_derived"] is False
+    assert agent["use_when"] == "Pick this to decide what ships next."
+    assert agent["use_when_derived"] is False
+    assert agent["retired"] is False
+    assert agent["handles"] == ["roadmap", "clients"]
+    restored = AgentRegistry(registry.data_file).get(agent["id"])
+    assert restored["kind"] == "product"
+    assert restored["use_when"] == "Pick this to decide what ships next."
+    assert "retired" not in restored
+    assert restored["handles"] == ["roadmap", "clients"]
+
+    listed = _call(server, "GET", "/api/agents").json()["agents"][0]
+    assert listed["kind"] == "product"
+    assert listed["use_when"] == "Pick this to decide what ships next."
+    assert listed["handles"] == ["roadmap", "clients"]
+    assert listed["retired"] is False
+
+    patched = _call(
+        server,
+        "PATCH",
+        f"/api/agents/{agent['id']}",
+        json={
+            "retired": True,
+            "kind": "ops",
+            "handles": ["inbox"],
+            "use_when": "Triage the inbox.",
+        },
+    )
+    assert patched.status_code == 200
+    body = patched.json()["agent"]
+    assert body["retired"] is True
+    assert body["kind"] == "ops"
+    assert body["handles"] == ["inbox"]
+    assert body["use_when"] == "Triage the inbox."
+    saved = json.loads(registry.data_file.read_text())["agents"][0]
+    assert saved["retired"] is True
+    assert saved["kind"] == "ops"
+
+    cleared = _call(
+        server,
+        "PATCH",
+        f"/api/agents/{agent['id']}",
+        json={"kind": "", "retired": False, "handles": [], "use_when": ""},
+    )
+    assert cleared.status_code == 200
+    shown = cleared.json()["agent"]
+    assert shown["kind"] == ""
+    assert shown["kind_derived"] is True
+    assert shown["retired"] is False
+    assert shown["handles"] == []
+    assert shown["use_when"] == shown["one_liner"]
+    leftover = json.loads(registry.data_file.read_text())["agents"][0]
+    assert "kind" not in leftover
+    assert "retired" not in leftover
+    assert "handles" not in leftover
+    assert "use_when" not in leftover
+
+
+@pytest.mark.parametrize("kind", ["research", "CODE", ["coding"], 1])
+def test_unknown_kind_is_422(studio, kind):
+    server, registry, _assignments, events, _upstream = studio
+    agent = _agent(registry)
+    disk = registry.data_file.read_bytes()
+    for method, path, body in (
+        ("POST", "/api/agents", {"name": "N", "mission": "M", "kind": kind}),
+        ("PUT", f"/api/agents/{agent['id']}", {"name": "N", "mission": "M", "kind": kind}),
+        ("PATCH", f"/api/agents/{agent['id']}", {"kind": kind}),
+    ):
+        response = _call(server, method, path, json=body)
+        assert response.status_code == 422, (method, path, response.text)
+    assert registry.data_file.read_bytes() == disk
+    assert events == []
+
+
+def test_registry_rejects_unknown_kind_and_handles_without_api(tmp_path):
+    registry = AgentRegistry(tmp_path / "agents.json")
+    with pytest.raises(ValueError, match="unknown_agent_kind"):
+        registry.create("N", "M", "P", [], kind="research")
+    with pytest.raises(ValueError, match="invalid_handles"):
+        registry.create("N", "M", "P", [], handles="ci")
+    agent = registry.create("N", "M", "P", [])
+    with pytest.raises(ValueError, match="unknown_agent_kind"):
+        registry.update(agent["id"], kind="spy")
+    with pytest.raises(ValueError, match="invalid_handles"):
+        registry.update(agent["id"], handles="inbox")
+    assert "kind" not in registry.get(agent["id"])
+
+
+def test_derive_kind_from_repo_and_tools():
+    assert derive_kind({"tools": ["Git workspace"]}) == "coding"
+    assert derive_kind({"tools": ["Local memory"], "repo_id": "aiia"}) == "coding"
+    assert derive_kind({"tools": ["Local memory"], "repo_id": ""}) == ""
+    assert resolve_kind({"kind": "product", "repo_id": "aiia"}) == "product"
+    assert resolve_use_when({"use_when": "  Ship the brief.  ", "one_liner": "Other."}) == (
+        "Ship the brief."
+    )
+    assert resolve_use_when({"mission": "Watch CI. Then wait.", "one_liner": ""}) == "Watch CI."
+    with pytest.raises(ValueError, match="unknown_agent_kind"):
+        normalize_kind("research")
+    assert normalize_kind("") == ""
+    assert normalize_handles(["  ci  ", "", "review"]) == ["ci", "review"]
 
 
 @pytest.mark.parametrize("channel", ["email", "both", ["studio_inbox", "slack"], ""])

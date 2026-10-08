@@ -13,8 +13,11 @@ from pathlib import Path
 from typing import Any
 
 from local_brain.command_center.agent_output import (
+    normalize_handles,
+    normalize_kind,
     normalize_output_channel,
     stored_one_liner,
+    stored_use_when,
 )
 from local_brain.command_center.agent_suites import apply_suite_defaults
 from local_brain.command_center.persistence import PersistenceError, atomic_write_json
@@ -104,6 +107,10 @@ class AgentRegistry:
         model: str = "",
         one_liner: str = "",
         output_channel: str = "studio_inbox",
+        kind: str = "",
+        use_when: str = "",
+        retired: bool = False,
+        handles: list[str] | None = None,
     ) -> dict[str, Any]:
         if len(self.agents) >= MAX_AGENTS:
             raise ValueError("agent_limit_reached")
@@ -147,6 +154,15 @@ class AgentRegistry:
         stored = stored_one_liner(one_liner)
         if stored:
             agent["one_liner"] = stored
+        self._apply_roster(
+            agent,
+            {
+                "kind": kind,
+                "use_when": use_when,
+                "retired": retired,
+                "handles": handles if handles is not None else [],
+            },
+        )
         self._require_loop_task(agent)
         self.agents.append(agent)
         return agent
@@ -230,6 +246,7 @@ class AgentRegistry:
             agent["one_liner"] = stored_one_liner(changes["one_liner"])
         if "output_channel" in changes:
             agent["output_channel"] = normalize_output_channel(changes["output_channel"])
+        self._apply_roster(agent, changes)
         if "suite" in changes or "memory_namespace" in changes:
             suite, memory_namespace = apply_suite_defaults(
                 changes["suite"] if "suite" in changes else agent.get("suite", ""),
@@ -432,6 +449,33 @@ class AgentRegistry:
                 agent["last_error"] = "interrupted_agent_run; review before resuming"
                 agent["loop_enabled"] = False
                 agent["updated_at"] = datetime.now(timezone.utc).isoformat()
+
+    @staticmethod
+    def _apply_roster(agent: dict[str, Any], changes: dict[str, Any]) -> None:
+        """Identity fields. Absent on disk means unset; empty writes clear the key."""
+        if "kind" in changes:
+            kind = normalize_kind(changes["kind"])
+            if kind:
+                agent["kind"] = kind
+            else:
+                agent.pop("kind", None)
+        if "use_when" in changes:
+            stored = stored_use_when(changes["use_when"])
+            if stored:
+                agent["use_when"] = stored
+            else:
+                agent.pop("use_when", None)
+        if "retired" in changes:
+            if bool(changes["retired"]):
+                agent["retired"] = True
+            else:
+                agent.pop("retired", None)
+        if "handles" in changes:
+            handles = normalize_handles(changes["handles"])
+            if handles:
+                agent["handles"] = handles
+            else:
+                agent.pop("handles", None)
 
     @staticmethod
     def _require_loop_task(agent: dict[str, Any]) -> None:

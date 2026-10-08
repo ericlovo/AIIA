@@ -3,6 +3,8 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { ArrowLeft, ArrowRight, RefreshCw } from 'lucide-react'
 import { api, type Agent, type LeadDecision, type LeadSignal } from '../lib/api'
 import { LeadQualification } from './LeadQualification'
+import { AgentPicker } from './AgentPicker'
+import { activeAgents } from './agentRoster'
 import { formatRoute } from './studioRoute'
 
 const LABELS: Record<LeadDecision, string> = { unreviewed: 'Not reviewed', research: 'Needs research', watch: 'Watch', qualified: 'Qualified for follow-up', rejected: 'Not a fit' }
@@ -30,7 +32,7 @@ export function LeadQueue() {
       </div>
       {queue.isPending && <p role="status">Loading leads...</p>}
       {agents.isError && <p role="alert" className="text-red-300">Research agents unavailable. <button className="underline" onClick={() => void agents.refetch()}>Retry agents</button></p>}
-      {agents.data?.agents.length === 0 && <p className="text-sm text-neutral-400">No research agents available.</p>}
+      {agents.data && activeAgents(agents.data.agents).length === 0 && <p className="text-sm text-neutral-400">No research agents available.</p>}
       {queue.isError && <p role="alert" className="text-red-300">Lead queue unavailable. Refresh to retry.</p>}
       {queue.data && !queue.isError && <p className="text-xs text-neutral-400">{queue.data.total} matching signals · {queue.data.leads.length ? offset + 1 : 0}-{offset + queue.data.leads.length} shown · grouped by company name on this page</p>}
     </div>
@@ -56,7 +58,7 @@ function LeadRow({ lead, agents }: { lead: LeadSignal; agents: Agent[] }) {
     <p className="mt-3 max-w-3xl whitespace-pre-wrap break-words text-neutral-300">{lead.text}</p>
     {lead.review && <dl className="mt-3 max-w-3xl space-y-2 break-words text-neutral-400"><div><dt className="text-xs">Account fit</dt><dd>{lead.review.account_fit || 'Not recorded'}</dd></div><div><dt className="text-xs">Observed change</dt><dd>{lead.review.observed_change || 'Not recorded'}</dd></div><div><dt className="text-xs">Evidence URL</dt><dd>{/^https:\/\//i.test(lead.review.evidence_url) ? <a href={lead.review.evidence_url} target="_blank" rel="noopener noreferrer" className="text-cyan-200 underline">{lead.review.evidence_url}</a> : 'Not recorded'}</dd></div></dl>}
     <LeadQualification ideaId={lead.id} />
-    {assignmentId ? <a href={formatRoute({ view: 'assignments', assignmentId })} className="inline-flex min-h-11 items-center text-cyan-200 underline">Open research assignment</a> : lead.inbox_status !== 'dismissed' && <div className="mt-3 flex flex-wrap items-end gap-3"><label>Research agent<select aria-label={`Research agent for ${lead.id}`} value={agentId} onChange={event => setAgentId(event.target.value)} className="mt-1 block min-h-11 max-w-full border border-neutral-700 bg-neutral-900 px-3"><option value="">Choose agent</option>{agents.map(agent => <option key={agent.id} value={agent.id}>{agent.name}</option>)}</select></label><button disabled={!agentId || assign.isPending} onClick={() => assign.mutate()} className="min-h-11 border border-cyan-600 px-3 text-cyan-200 disabled:opacity-40">{assign.isPending ? 'Queuing...' : 'Queue research'}</button></div>}
+    {assignmentId ? <a href={formatRoute({ view: 'assignments', assignmentId })} className="inline-flex min-h-11 items-center text-cyan-200 underline">Open research assignment</a> : lead.inbox_status !== 'dismissed' && <div className="mt-3 flex flex-wrap items-end gap-3"><label>Research agent<AgentPicker agents={agents} value={agentId} onChange={setAgentId} placeholder="Choose agent" className="mt-1 block min-h-11 max-w-full border border-neutral-700 bg-neutral-900 px-3" aria-label={`Research agent for ${lead.id}`} /></label><button disabled={!agentId || assign.isPending} onClick={() => assign.mutate()} className="min-h-11 border border-cyan-600 px-3 text-cyan-200 disabled:opacity-40">{assign.isPending ? 'Queuing...' : 'Queue research'}</button></div>}
     {assign.isError && <p role="alert" className="mt-3 text-red-300">Research was not confirmed queued. Refresh the queue before retrying.</p>}
     {assign.isSuccess && <p role="status" className="mt-2 text-emerald-300">Research queued, not started.</p>}
   </li>

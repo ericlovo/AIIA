@@ -44,7 +44,7 @@ export const FIELD_LABELS: Record<EditableField, string> = {
 
 export const ONE_LINER_MAX = 120
 export const OUTPUT_CHANNELS = [
-  { id: 'studio_inbox' as const, label: 'Studio inbox' },
+  { id: 'studio_inbox' as const, label: 'Studio work' },
   { id: 'slack' as const, label: 'Slack' },
 ]
 

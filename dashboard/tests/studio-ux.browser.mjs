@@ -158,7 +158,7 @@ try {
     const waitingLane = page.locator('.sb-lane').filter({ hasText: 'CI specialist 2' }).first()
     await waitingLane.getByText('Waiting for review', { exact: true }).waitFor()
     assert.ok((await waitingLane.innerText()).includes('Review local repository evidence.'))
-    assert.ok((await waitingLane.innerText()).includes('Inbox'))
+    assert.ok((await waitingLane.innerText()).includes('Studio work'))
     const slackLane = page.locator('.sb-lane').filter({ hasText: 'CI specialist 3' }).first()
     assert.ok((await slackLane.innerText()).includes('Slack'))
     await page.getByRole('button', { name: 'No reviewed output in 14 days', exact: true }).click()
@@ -314,8 +314,19 @@ try {
     await page.getByRole('button', { name: 'Reset layout' }).click()
     await page.getByText('Layout synced', { exact: true }).waitFor()
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false)
+
+    await openStudioView(page, 'Agents')
+    const coding = page.getByRole('region', { name: 'Coding', exact: true })
+    await coding.waitFor()
+    assert.equal(await page.getByRole('region', { name: 'Product', exact: true }).count(), 0)
+    assert.equal(await page.getByRole('button', { name: 'Show retired (0)' }).getAttribute('aria-pressed'), 'false')
+    assert.ok((await coding.innerText()).includes('Read-only'))
+    assert.ok((await coding.innerText()).includes('Paused: 1 awaiting review'))
+    await coding.scrollIntoViewIfNeeded()
+    await page.screenshot({ path: join(output, `agents-grouped-${width}.png`) })
+
     assert.deepEqual(errors, [])
-    console.log(`${width}px: platform/agent/run usage, attribution filtering, memory log/promote/restore, refresh failure/recovery, 96 nodes, zoom, inspector, keyboard save, save failure/recovery passed`)
+    console.log(`${width}px: platform/agent/run usage, attribution filtering, memory log/promote/restore, refresh failure/recovery, 96 nodes, zoom, inspector, keyboard save, save failure/recovery, grouped agents passed`)
     await context.close()
   }
 } finally {

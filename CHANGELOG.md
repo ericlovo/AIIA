@@ -125,6 +125,20 @@ All notable changes to AIIA are documented here. This project adheres to
 
 ### Added
 
+- **Agent Studio roster: kind, use-when, and retired.** Agents can carry optional
+  `kind` (`coding` | `product` | `ops`), `use_when`, `retired`, and `handles`
+  through the existing create/update endpoints. Absent fields stay absent on
+  disk: GET derives `kind` from repo/coding tools when unset, falls `use_when`
+  back to the one-liner, and treats missing `retired` as false. The Agents view
+  groups by kind, shows use-when, product/repo, a Read-only vs Proposes git
+  (approval) badge, and `Paused: N awaiting review` when the loop is waiting
+  on review. Retired agents are hidden behind Show retired. Assignment,
+  handoff, memory-capture, and research pickers use kind optgroups, put
+  use-when on the option, and omit retired agents. Channel chips read
+  **Studio work** / **Memory inbox** / Slack so work review is not confused
+  with the memory inbox. After this lands, set `kind` / `use_when` / `handles`
+  on the live Mini agents; this change does not rewrite runtime JSON.
+
 - **Opt-in local recipe evaluation.** Four synthetic cases cover runtime noise,
   uncommitted source changes, untrusted README instructions, failed Git reads,
   and unverified deployment claims. The runner uses the actual job definitions
