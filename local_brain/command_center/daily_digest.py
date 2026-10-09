@@ -1693,6 +1693,136 @@ def slack_failure_line(
     return ""
 
 
+def collect_morning_lines(
+    *,
+    date: str,
+    agents: list[dict],
+    assignments: list[dict],
+    repo_evidence: list[RepoEvidence] | None = None,
+    products: Iterable[DigestProduct] | None = None,
+    customers: Iterable[DigestCustomer] | None = None,
+    customer_evidence: list[CustomerEvidence] | None = None,
+) -> tuple[list[MorningLine], list[MorningLine]]:
+    catalog = list(products) if products is not None else load_products()
+    roster = list(customers) if customers is not None else load_customers()
+    evidence_by_mount = {row.repo_id: row for row in (repo_evidence or [])}
+    customer_rows = {row.customer_id: row for row in (customer_evidence or [])}
+    product_lines = []
+    for product in catalog:
+        paused, review, failed = _signals_for_product(
+            product,
+            agents=agents,
+            assignments=assignments,
+            date=date,
+            products=catalog,
+        )
+        product_lines.append(
+            morning_product_line(
+                product,
+                evidence_by_mount.get(product.mount),
+                paused=paused,
+                review=review,
+                failed_agents=failed,
+            )
+        )
+    customer_lines = []
+    for customer in roster:
+        paused, review, failed = _signals_for_customer(
+            customer,
+            agents=agents,
+            assignments=assignments,
+            date=date,
+            customers=roster,
+        )
+        mounts_for_customer = {
+            product.mount
+            for product in catalog
+            if product.id in customer.products and product.mount
+        }
+        touched = [
+            evidence_by_mount[mount] for mount in mounts_for_customer if mount in evidence_by_mount
+        ]
+        customer_lines.append(
+            morning_customer_line(
+                customer,
+                product_evidence=touched,
+                customer_evidence=customer_rows.get(customer.id),
+                review=review,
+                paused=paused,
+                failed_agents=failed,
+                date=date,
+            )
+        )
+    return product_lines, customer_lines
+
+
+def morning_line_payload(line: MorningLine) -> dict[str, Any]:
+    return {
+        "id": line.id,
+        "name": line.name,
+        "kind": line.kind,
+        "state": line.state,
+        "note": line.note,
+        "waiting": line.waiting,
+        "extra": line.extra,
+        "target": line.target,
+    }
+
+
+def morning_decision_cards(
+    items: list[dict[str, Any]],
+    *,
+    assignments: list[dict] | None = None,
+    agents: list[dict] | None = None,
+    products: Iterable[DigestProduct] | None = None,
+    inbox_counts: dict[str, int] | None = None,
+    limit: int = DECISION_LIMIT,
+) -> tuple[list[dict[str, Any]], int]:
+    catalog = list(products) if products is not None else load_products()
+    chosen, leftover = choose_decisions(
+        items, products=catalog, inbox_counts=inbox_counts, limit=limit
+    )
+    cards: list[dict[str, Any]] = []
+    for item in chosen:
+        product = match_product(item.get("project"), catalog)
+        title = _first_line(item.get("text"), DECISION_CHARS)
+        cards.append(
+            {
+                "id": str(item.get("id") or ""),
+                "kind": "inbox",
+                "product": product.name if product else "",
+                "title": title,
+                "why": _first_line(item.get("review_note") or item.get("text"), NOTE_CHARS),
+                "more": str(item.get("text") or ""),
+                "expected_version": "",
+            }
+        )
+    reviews = [
+        item
+        for item in (assignments or [])
+        if _agent_waiting(item) and str(item.get("title") or item.get("result") or "").strip()
+    ]
+    roster = {agent.get("id"): agent for agent in (agents or []) if isinstance(agent, dict)}
+    for item in reviews:
+        if len(cards) >= limit:
+            break
+        agent = roster.get(item.get("agent_id")) or {}
+        product = map_agent_to_product(agent, catalog) if agent else None
+        cards.append(
+            {
+                "id": str(item.get("id") or ""),
+                "kind": "review",
+                "product": product.name if product else "",
+                "title": str(item.get("title") or "Review this work"),
+                "why": _first_line(item.get("result") or item.get("objective"), NOTE_CHARS),
+                "more": str(item.get("result") or item.get("objective") or ""),
+                "expected_version": str(item.get("review_version") or ""),
+            }
+        )
+    total = len(chosen) + sum(leftover.values()) + len(reviews)
+    return cards[:limit], total
+
+
 def format_slack_digest(
     *,
     date: str,
@@ -1710,64 +1840,18 @@ def format_slack_digest(
 ) -> str:
     """Morning-note Slack mrkdwn. Empty segments are omitted; no activity counts."""
     catalog = list(products) if products is not None else load_products()
-    roster = list(customers) if customers is not None else load_customers()
-    evidence_by_mount = {row.repo_id: row for row in (repo_evidence or [])}
-    customer_rows = {row.customer_id: row for row in (customer_evidence or [])}
-    lines = [f"*AIIA · {slack_header_date(date)}*"]
-    for product in catalog:
-        paused, review, failed = _signals_for_product(
-            product,
-            agents=agents,
-            assignments=assignments,
-            date=date,
-            products=catalog,
-        )
-        lines.append(
-            _slack_line(
-                morning_product_line(
-                    product,
-                    evidence_by_mount.get(product.mount),
-                    paused=paused,
-                    review=review,
-                    failed_agents=failed,
-                )
-            )
-        )
-    if roster:
-        customer_lines = []
-        for customer in roster:
-            paused, review, failed = _signals_for_customer(
-                customer,
-                agents=agents,
-                assignments=assignments,
-                date=date,
-                customers=roster,
-            )
-            mounts_for_customer = {
-                product.mount
-                for product in catalog
-                if product.id in customer.products and product.mount
-            }
-            touched = [
-                evidence_by_mount[mount]
-                for mount in mounts_for_customer
-                if mount in evidence_by_mount
-            ]
-            customer_lines.append(
-                _slack_line(
-                    morning_customer_line(
-                        customer,
-                        product_evidence=touched,
-                        customer_evidence=customer_rows.get(customer.id),
-                        review=review,
-                        paused=paused,
-                        failed_agents=failed,
-                        date=date,
-                    )
-                )
-            )
-        if customer_lines:
-            lines += ["*Customers*", *customer_lines]
+    product_lines, customer_lines = collect_morning_lines(
+        date=date,
+        agents=agents,
+        assignments=assignments,
+        repo_evidence=repo_evidence,
+        products=catalog,
+        customers=customers,
+        customer_evidence=customer_evidence,
+    )
+    lines = [f"*AIIA · {slack_header_date(date)}*", *[_slack_line(line) for line in product_lines]]
+    if customer_lines:
+        lines += ["*Customers*", *[_slack_line(line) for line in customer_lines]]
     chosen, leftover = choose_decisions(
         inbox_items or [], products=catalog, inbox_counts=inbox_counts
     )
@@ -1783,13 +1867,51 @@ def format_slack_digest(
     if failed:
         lines.append(failed)
     lines.append("_Details in Studio_")
-    # loops / run_counts stay on the signature so the inbox builder and Slack
-    # share a call site. They are not printed unless slack_failure_line fires.
     _ = (loops, run_counts)
     body = "\n".join(lines)
     if len(body) > SLACK_BODY_MAX:
         body = body[: SLACK_BODY_MAX - 1].rstrip() + "…"
     return body
+
+
+def build_morning_note(
+    *,
+    date: str,
+    agents: list[dict],
+    assignments: list[dict],
+    tasks: list[dict],
+    inbox_counts: dict[str, int],
+    repo_evidence: list[RepoEvidence] | None = None,
+    inbox_items: list[dict] | None = None,
+    products: Iterable[DigestProduct] | None = None,
+    customers: Iterable[DigestCustomer] | None = None,
+    customer_evidence: list[CustomerEvidence] | None = None,
+) -> dict[str, Any]:
+    catalog = list(products) if products is not None else load_products()
+    product_lines, customer_lines = collect_morning_lines(
+        date=date,
+        agents=agents,
+        assignments=assignments,
+        repo_evidence=repo_evidence,
+        products=catalog,
+        customers=customers,
+        customer_evidence=customer_evidence,
+    )
+    cards, total = morning_decision_cards(
+        inbox_items or [],
+        assignments=assignments,
+        agents=agents,
+        products=catalog,
+        inbox_counts=inbox_counts,
+    )
+    return {
+        "date": date,
+        "products": [morning_line_payload(line) for line in product_lines],
+        "customers": [morning_line_payload(line) for line in customer_lines],
+        "decisions": cards,
+        "needs_you_total": total,
+        "failure": slack_failure_line(tasks=tasks, assignments=assignments, date=date) or None,
+    }
 
 
 def build_digest(

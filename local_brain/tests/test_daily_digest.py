@@ -1036,6 +1036,32 @@ def test_slack_digest_omits_empty_needs_you_and_quiet_footer():
     ]
 
 
+def test_morning_note_payload_uses_the_same_status_lines():
+    payload = daily_digest.build_morning_note(
+        **{
+            key: value
+            for key, value in _status_digest_kwargs().items()
+            if key not in {"run_counts", "loops"}
+        }
+    )
+    assert payload["date"] == "2026-10-08"
+    assert [row["name"] for row in payload["products"]] == [
+        "AIIA",
+        "Mindmoor",
+        "Sanction",
+        "MIA",
+        "Morrow",
+    ]
+    assert payload["products"][0]["state"] == "blocked"
+    assert payload["customers"][-1]["state"] == "unmapped"
+    assert payload["customers"][1]["target"] == "2026-10-15T09:00:00"
+    assert payload["needs_you_total"] >= 3
+    assert payload["decisions"][0]["title"] == "Ship the digest rewrite today?"
+    assert payload["decisions"][0]["kind"] == "inbox"
+    assert payload["failure"] == "Daily Brief failed"
+    assert all("none" not in row["note"] for row in payload["products"])
+
+
 def test_slack_header_date_drops_leading_zero():
     assert daily_digest.slack_header_date("2026-10-08") == "Thu Oct 8"
     assert daily_digest.slack_header_date("2026-10-15") == "Thu Oct 15"
