@@ -28,7 +28,7 @@ const EMPTY_NOTE: MorningNotePayload = {
 export function MorningNote({ agents, onDetails }: { agents: Agent[]; onDetails: () => void }) {
   const qc = useQueryClient()
   const note = useQuery({ queryKey: ['morning-note'], queryFn: api.morningNote, refetchInterval: 60_000 })
-  const data = note.data ?? EMPTY_NOTE
+  const data = { ...EMPTY_NOTE, ...(note.data ?? {}) }
   const [now, setNow] = useState(() => new Date())
   const [openId, setOpenId] = useState<string | null>(null)
   const [ask, setAsk] = useState('')
