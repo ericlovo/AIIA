@@ -11,13 +11,13 @@ export function Console() {
   const { route } = useStudioRoute()
   const home = route.view === 'home'
   return (
-    <div className={`h-dvh flex flex-col overflow-hidden ${home ? 'bg-[#fbf9f5] text-[#1f1d1a]' : 'bg-neutral-950 text-neutral-300'}`}>
+    <div className={home ? 'min-h-dvh bg-[#fbf9f5] text-[#1f1d1a]' : 'flex h-dvh flex-col overflow-hidden bg-neutral-950 text-neutral-300'}>
       {!home && <PanelBoundary name="top bar">
         <TopBar />
       </PanelBoundary>}
 
-      <div className="min-h-0 min-w-0 flex-1 overflow-hidden">
-        <div className="h-full min-h-0 overflow-hidden">
+      <div className={home ? '' : 'min-h-0 min-w-0 flex-1 overflow-hidden'}>
+        <div className={home ? '' : 'h-full min-h-0 overflow-hidden'}>
           <PanelBoundary name="agent studio"><AgentStudio /></PanelBoundary>
         </div>
       </div>
