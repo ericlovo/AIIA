@@ -2033,18 +2033,20 @@ Be specific and reference actual file names. Keep each point to 1-2 sentences.""
             if total:
                 inbox_counts[source] = total
         repo_result = await asyncio.to_thread(daily_digest.collect_digest)
-        body = daily_digest.build_digest(
-            date=date,
-            agents=agents,
-            assignments=assignments,
-            run_counts=run_counts,
-            loops=loops,
-            tasks=[t for t in self.get_all_tasks() if t["task_id"] != "daily_digest"],
-            inbox_counts=inbox_counts,
-            repo_evidence=repo_result.evidence,
-            inbox_items=inbox_items,
-            customer_evidence=repo_result.customer_evidence,
-        )
+        tasks = [t for t in self.get_all_tasks() if t["task_id"] != "daily_digest"]
+        shared = {
+            "date": date,
+            "agents": agents,
+            "assignments": assignments,
+            "loops": loops,
+            "tasks": tasks,
+            "inbox_counts": inbox_counts,
+            "repo_evidence": repo_result.evidence,
+            "inbox_items": inbox_items,
+            "customer_evidence": repo_result.customer_evidence,
+        }
+        body = daily_digest.build_digest(run_counts=run_counts, **shared)
+        slack_body = daily_digest.format_slack_digest(run_counts=run_counts, **shared)
         await self._progress("daily_digest", 70, "Delivering")
         key = daily_digest.digest_key(date)
         idea, created = inbox.ingest(text=body, source_key=key, source="digest", project="aiia")
@@ -2054,7 +2056,7 @@ Be specific and reference actual file names. Keep each point to 1-2 sentences.""
                 memory_id=key,
                 idea_id=idea["id"],
                 channel_id=slack_memory_posts.channel_id(),
-                body=daily_digest.escape(body)[:3_000],
+                body=daily_digest.escape(slack_body)[:3_000],
             )
             delivery = "slack post queued" if queued else "slack post already queued"
         await self._progress("daily_digest", 100, "Complete")

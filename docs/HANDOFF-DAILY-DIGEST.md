@@ -41,23 +41,32 @@ resolve to `owner/repo` only. The token never enters a digest line.
 ## Output
 
 One inbox row per Chicago date (`digest:<date>`), optionally posted
-through the memory-post outbox. Body sections:
+through the memory-post outbox. The inbox row keeps the fuller
+`shipped | blocked | waiting on you` layout (empty segments print `none`).
+The Slack post is a separate morning-note body: text only, no buttons,
+Slack mrkdwn enabled for `digest:` posts.
 
-- **Products** — one line each:
-  `<Product>: shipped <PR or none> | blocked <CI / conflicts / drift / paused loops> | waiting on you <merge / undraft / review>`
-- **Customers** — one line each in the same form. TRS shows Mindmoor `main`
-  commits not yet on its tenant/branch when that ref exists. Alumni Nations
-  shows alumni drift, review waiting on Alumni Nations Research Scout, and
+Slack sections:
+
+- Header `*AIIA · Thu Oct 8*`
+- One product line each, one status emoji (red = blocked, yellow =
+  waiting on Eric, green = shipped or clean, white = not mapped / no
+  repo). Empty segments are omitted. Bold only the name and
+  `waiting on you`.
+- `*Customers*` in the same form. TRS shows Mindmoor `main` commits not
+  yet on its tenant/branch when that ref exists. Alumni Nations shows
+  alumni drift, review waiting on Alumni Nations Research Scout, and
   days to Phase 1 kickoff (2026-10-15) or days into the phase (through
   2027-01-12). Smart Medical is `not mapped yet`.
-- **Needs a decision** — immediately after Customers. At most 5 inbox items,
-  preferring Slack captures and rows with a product tag. Remaining counts
-  collapse to one line by source.
-- **Footer** — at most 3 lines: agent counts, launchd loop status, failing
-  built-in tasks.
+- `*Needs you (N)*: title · title` when there is something to decide.
+  Omitted when empty — never `none`.
+- One short failure line only when a built-in or agent failed. No
+  agent, loop, run, or inbox counts.
+- `_Details in Studio_`
 
-Quiet/green product days still print the three segments with `none`. They
-do not open a Work item and do not record a `quiet_clear` loop check.
+Quiet/green product days still print the three inbox segments with
+`none`. They do not open a Work item and do not record a `quiet_clear`
+loop check.
 
 ## Mini after merge
 

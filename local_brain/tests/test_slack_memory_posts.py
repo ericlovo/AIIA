@@ -299,6 +299,31 @@ def test_post_needs_both_channel_and_body(env):
     assert env.inbox.get(idea["id"])["status"] == "unreviewed"
 
 
+def test_digest_memory_post_enables_mrkdwn(env):
+    idea, _ = env.inbox.ingest(
+        text="AIIA digest 2026-10-08\nAIIA: shipped none | blocked none | waiting on you none",
+        source_key="digest:2026-10-08",
+        source="digest",
+        project="aiia",
+    )
+    assert env.inbox.queue_post(
+        memory_id="digest:2026-10-08",
+        idea_id=idea["id"],
+        channel_id=CHANNEL,
+        body="*AIIA · Thu Oct 8*\n🟢 *AIIA*: shipped #131 · nothing blocked\n_Details in Studio_",
+    )
+    seen = []
+
+    def handler(request):
+        seen.append(json.loads(request.content))
+        return ok(request)
+
+    deliver(env.inbox, handler)
+    assert seen[0]["mrkdwn"] is True
+    assert seen[0]["text"].startswith("*AIIA · Thu Oct 8*")
+    assert "blocks" not in seen[0]
+
+
 def test_delivery_posts_body_to_configured_channel_once(env):
     queue(env.inbox, key="event:1", memory_id="project_9_9")
     seen = []

@@ -363,6 +363,14 @@ def test_digest_task_files_one_row_and_one_post_per_day(tmp_path, monkeypatch):
     post = inbox.claim_memory_post()
     assert post["memory_id"].startswith("digest:") and post["channel_id"] == "C0MEMORY01"
     assert post["workspace_id"] == ""
+    assert post["body"].startswith("*AIIA · ")
+    assert "*waiting on you:*" in post["body"] or "no repo" in post["body"]
+    assert "_Details in Studio_" in post["body"]
+    assert "Agents:" not in post["body"]
+    assert "Loops:" not in post["body"]
+    assert "Needs a decision" not in post["body"]
+    assert "Needs a decision" in body
+    assert "Agents:" in body
     assert "&lt;" not in post["body"] or "<" not in body
 
     summary2, _ = asyncio.run(runner._task_daily_digest())
@@ -835,10 +843,10 @@ def test_build_digest_size_cap():
     assert long_line.endswith("…")
 
 
-def test_sample_rendered_digest_matches_the_product_status_shape():
-    body = daily_digest.build_digest(
-        date="2026-10-08",
-        agents=[
+def _status_digest_kwargs(**overrides):
+    payload = {
+        "date": "2026-10-08",
+        "agents": [
             {
                 "id": "a1",
                 "name": "CI Signal Officer",
@@ -864,7 +872,7 @@ def test_sample_rendered_digest_matches_the_product_status_shape():
             },
             {"id": "a3", "name": "Scribe Scout", "status": "idle"},
         ],
-        assignments=[
+        "assignments": [
             {
                 "agent_id": "a1",
                 "status": "completed",
@@ -872,16 +880,18 @@ def test_sample_rendered_digest_matches_the_product_status_shape():
                 "result": "GREEN",
             }
         ],
-        run_counts={"a1": 3},
-        loops=LOOPS,
-        tasks=[{"name": "Daily Brief", "last_status": "failed", "last_result": "FAILED: HTTP 500"}],
-        inbox_counts={"slack": 5, "code_review": 2},
-        inbox_items=[
+        "run_counts": {"a1": 3},
+        "loops": LOOPS,
+        "tasks": [
+            {"name": "Daily Brief", "last_status": "failed", "last_result": "FAILED: HTTP 500"}
+        ],
+        "inbox_counts": {"slack": 5, "code_review": 2},
+        "inbox_items": [
             {"text": "Ship the digest rewrite today?", "source": "slack", "project": "aiia"},
             {"text": "Alumni is 12 commits behind main", "source": "slack", "project": "mindmoor"},
             {"text": "Morrow repo still unmounted", "source": "slack", "project": "morrow"},
         ],
-        repo_evidence=[
+        "repo_evidence": [
             daily_digest.RepoEvidence(
                 repo_id="aiia",
                 mounted=True,
@@ -922,12 +932,18 @@ def test_sample_rendered_digest_matches_the_product_status_shape():
                 ],
             ),
         ],
-        products=PRODUCTS,
-        customers=CUSTOMERS,
-        customer_evidence=[
+        "products": PRODUCTS,
+        "customers": CUSTOMERS,
+        "customer_evidence": [
             daily_digest.CustomerEvidence(customer_id="trs", behind_main=8, ref_found=True)
         ],
-    )
+    }
+    payload.update(overrides)
+    return payload
+
+
+def test_sample_rendered_digest_matches_the_product_status_shape():
+    body = daily_digest.build_digest(**_status_digest_kwargs())
     assert body.splitlines() == [
         "AIIA digest 2026-10-08",
         "",
@@ -953,6 +969,76 @@ def test_sample_rendered_digest_matches_the_product_status_shape():
     assert len(body) <= daily_digest.MAX_BODY
     assert "ghs_" not in body and "x-access-token" not in body
     assert body.index("Customers") < body.index("Needs a decision")
+
+
+def test_slack_digest_matches_the_morning_note_shape():
+    slack = daily_digest.format_slack_digest(**_status_digest_kwargs())
+    assert slack.splitlines() == [
+        "*AIIA · Thu Oct 8*",
+        "🔴 *AIIA*: shipped #104 · CI red on main · *waiting on you:* merge, 1 review",
+        "🟡 *Mindmoor*: production 12 behind main · alumni 4 behind main · *waiting on you:* 1 review",
+        "🔴 *Sanction*: #12 conflict",
+        "🟡 *MIA*: *waiting on you:* undraft",
+        "⚪ *Morrow*: no repo",
+        "*Customers*",
+        "🟡 *That's Right Sweetie*: main 8 behind TRS",
+        "🟡 *Alumni Nations*: alumni 4 behind main · *waiting on you:* 1 review · 7 days to kickoff",
+        "⚪ *Smart Medical*: not mapped yet",
+        "*Needs you (7)*: Ship the digest rewrite today? · Alumni is 12 commits behind main · Morrow repo still unmounted",
+        "Daily Brief failed",
+        "_Details in Studio_",
+    ]
+    assert "none" not in slack
+    assert "Agents:" not in slack
+    assert "Loops:" not in slack
+    assert "Inbox" not in slack
+    assert slack.count("🔴") + slack.count("🟡") + slack.count("🟢") + slack.count("⚪") == 8
+    assert slack.count("*waiting on you:*") == 4
+    assert len(slack) <= daily_digest.SLACK_BODY_MAX
+
+
+def test_slack_digest_omits_empty_needs_you_and_quiet_footer():
+    slack = daily_digest.format_slack_digest(
+        **_status_digest_kwargs(
+            tasks=[],
+            assignments=[],
+            inbox_counts={},
+            inbox_items=[],
+            agents=[{"id": "a3", "name": "Scribe Scout", "status": "idle"}],
+        )
+    )
+    assert "*Needs you" not in slack
+    assert "failed" not in slack
+    assert "Agents:" not in slack
+    assert slack.endswith("_Details in Studio_")
+    clean = daily_digest.format_slack_digest(
+        date="2026-10-08",
+        agents=[],
+        assignments=[],
+        loops={},
+        tasks=[],
+        inbox_counts={},
+        repo_evidence=[
+            daily_digest.RepoEvidence(
+                repo_id="aiia",
+                mounted=True,
+                complete=True,
+                merged_prs=[daily_digest.PullSignal(131, "shipped", merged=True)],
+            )
+        ],
+        products=[PRODUCTS[0]],
+        customers=[],
+    )
+    assert clean.splitlines() == [
+        "*AIIA · Thu Oct 8*",
+        "🟢 *AIIA*: shipped #131 · nothing blocked",
+        "_Details in Studio_",
+    ]
+
+
+def test_slack_header_date_drops_leading_zero():
+    assert daily_digest.slack_header_date("2026-10-08") == "Thu Oct 8"
+    assert daily_digest.slack_header_date("2026-10-15") == "Thu Oct 15"
 
 
 def test_format_customer_line_unmapped_and_empty_segments():

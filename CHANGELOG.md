@@ -31,7 +31,11 @@ All notable changes to AIIA are documented here. This project adheres to
   **Customers** block in the same form (TRS / Alumni Nations / Smart
   Medical; unmapped customers say `not mapped yet`), then at most five
   **Needs a decision** inbox items (Slack or product-tagged; the rest
-  collapse by source), then a compressed agent/loop/built-in footer. Collectors still read mounted repos for merged PRs, failing CI
+  collapse by source), then a compressed agent/loop/built-in footer on
+  the inbox row. The Slack post is a separate morning-note: one status
+  emoji per line, empty segments omitted, bold only names and
+  `waiting on you`, no activity counts unless something failed, and
+  `_Details in Studio_`. Collectors still read mounted repos for merged PRs, failing CI
   on `main`, conflicts, ready drafts, and Mindmoor `production`/`alumni`
   behind `main` via `git rev-list --count`. Unmounted products say so on
   that line. Studio agents map via suite, memory namespace, repo, or

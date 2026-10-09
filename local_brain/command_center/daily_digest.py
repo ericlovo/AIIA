@@ -1251,13 +1251,14 @@ def _decision_sort_key(item: dict[str, Any]) -> tuple[int, str]:
     )
 
 
-def format_decision_lines(
+def choose_decisions(
     items: list[dict[str, Any]],
     *,
     products: Iterable[DigestProduct] | None = None,
     inbox_counts: dict[str, int] | None = None,
     limit: int = DECISION_LIMIT,
-) -> list[str]:
+) -> tuple[list[dict[str, Any]], dict[str, int]]:
+    """Preferred inbox rows (Slack / product-tagged), plus leftover counts by source."""
     catalog = list(products) if products is not None else load_products()
     usable = [
         item
@@ -1267,11 +1268,6 @@ def format_decision_lines(
     preferred = [item for item in usable if _decision_preferred(item, catalog)]
     preferred.sort(key=_decision_sort_key)
     chosen = preferred[:limit]
-    lines: list[str] = []
-    for item in chosen:
-        product = match_product(item.get("project"), catalog)
-        tag = product.id if product else str(item.get("source") or "inbox")
-        lines.append(f"- {tag} · {_first_line(item.get('text'), DECISION_CHARS)}")
     shown_by_source: dict[str, int] = {}
     for item in chosen:
         source = str(item.get("source") or "inbox")
@@ -1291,6 +1287,25 @@ def format_decision_lines(
                 continue
             source = str(item.get("source") or "inbox")
             leftover[source] = leftover.get(source, 0) + 1
+    return chosen, leftover
+
+
+def format_decision_lines(
+    items: list[dict[str, Any]],
+    *,
+    products: Iterable[DigestProduct] | None = None,
+    inbox_counts: dict[str, int] | None = None,
+    limit: int = DECISION_LIMIT,
+) -> list[str]:
+    catalog = list(products) if products is not None else load_products()
+    chosen, leftover = choose_decisions(
+        items, products=catalog, inbox_counts=inbox_counts, limit=limit
+    )
+    lines: list[str] = []
+    for item in chosen:
+        product = match_product(item.get("project"), catalog)
+        tag = product.id if product else str(item.get("source") or "inbox")
+        lines.append(f"- {tag} · {_first_line(item.get('text'), DECISION_CHARS)}")
     leftover_total = sum(leftover.values())
     if leftover_total:
         detail = ", ".join(
@@ -1400,6 +1415,381 @@ def _signals_for_customer(
         1 for item in assignments if item.get("agent_id") in ids and _agent_failed_today(item, date)
     )
     return paused, review, failed
+
+
+SLACK_EMOJI = {
+    "blocked": "🔴",
+    "waiting": "🟡",
+    "shipped": "🟢",
+    "clean": "🟢",
+    "unmapped": "⚪",
+    "unmounted": "⚪",
+}
+
+
+@dataclass
+class MorningLine:
+    """One product or customer row for Slack and the morning-note home."""
+
+    id: str
+    name: str
+    kind: str
+    state: str
+    parts: tuple[str, ...] = ()
+    waiting: str = ""
+    extra: str = ""
+    target: str = ""
+    note: str = ""
+
+
+def slack_header_date(date: str) -> str:
+    try:
+        when = datetime.strptime(date[:10], "%Y-%m-%d")
+    except ValueError:
+        return date
+    return f"{when.strftime('%a')} {when.strftime('%b')} {when.day}"
+
+
+def _behind_phrase(label: str, count: int, *, suffix: str = "main") -> str:
+    return f"{label} {count} behind {suffix}"
+
+
+def _hard_block_parts(
+    evidence: RepoEvidence | None,
+    *,
+    paused: list[str],
+    failed_agents: int,
+    failing_tasks: list[str] | None = None,
+) -> list[str]:
+    parts: list[str] = []
+    if evidence and evidence.mounted:
+        if evidence.failing_ci:
+            parts.append("CI red on main")
+        for pull in evidence.open_pulls:
+            if _pull_conflicted(pull):
+                parts.append(f"#{pull.number} conflict")
+            elif _pull_checks_failing(pull):
+                parts.append(f"#{pull.number} checks")
+    if paused:
+        if len(paused) == 1:
+            parts.append(f"{paused[0]} paused")
+        else:
+            parts.append(f"{len(paused)} paused")
+    if failed_agents:
+        parts.append(f"{failed_agents} failed")
+    parts.extend(f"{name} failed" for name in (failing_tasks or []))
+    return parts
+
+
+def _waiting_parts(
+    evidence: RepoEvidence | None,
+    *,
+    review: int,
+    drift: Iterable[DriftSignal] | None = None,
+    customer_behind: tuple[str, int] | None = None,
+) -> tuple[list[str], str]:
+    """Lead fragments (ready PRs / drift) and the waiting-on-you clause."""
+    lead: list[str] = []
+    waiting: list[str] = []
+    if evidence and evidence.mounted:
+        ready_merge = [pull for pull in evidence.open_pulls if not pull.draft and _pull_ready(pull)]
+        ready_undraft = [pull for pull in evidence.open_pulls if pull.draft and _pull_ready(pull)]
+        if len(ready_merge) == 1:
+            lead.append(f"#{ready_merge[0].number} ready")
+            waiting.append("merge")
+        elif ready_merge:
+            lead.append(f"{len(ready_merge)} PRs ready")
+            waiting.append("merge")
+        if len(ready_undraft) == 1:
+            waiting.append("undraft")
+        elif ready_undraft:
+            waiting.append(f"{len(ready_undraft)} undraft")
+    if review == 1:
+        waiting.append("1 review")
+    elif review:
+        waiting.append(f"{review} reviews")
+    for signal in drift or ():
+        lead.append(_behind_phrase(signal.ref, signal.behind_main))
+    if customer_behind:
+        label, count = customer_behind
+        lead.append(_behind_phrase("main", count, suffix=label))
+    return lead, ", ".join(waiting)
+
+
+def _shipped_part(evidence: RepoEvidence | None) -> str:
+    if not evidence or not evidence.merged_prs:
+        return ""
+    pulls = evidence.merged_prs
+    if len(pulls) == 1:
+        return f"shipped #{pulls[0].number}"
+    return f"shipped {len(pulls)} PRs"
+
+
+def _morning_state(
+    *,
+    mapped: bool = True,
+    mounted: bool = True,
+    hard: list[str],
+    waiting: str,
+    shipped: str,
+    pending: bool = False,
+) -> str:
+    if not mapped:
+        return "unmapped"
+    if not mounted:
+        return "unmounted"
+    if hard:
+        return "blocked"
+    if waiting or pending:
+        return "waiting"
+    if shipped:
+        return "shipped"
+    return "clean"
+
+
+def _compose_morning_note(line: MorningLine) -> str:
+    if line.state == "unmapped":
+        return "not mapped yet"
+    if line.state == "unmounted":
+        return "no repo"
+    bits = [part for part in line.parts if part]
+    if line.waiting:
+        bits.append(f"waiting on you: {line.waiting}")
+    if line.extra:
+        bits.append(line.extra)
+    if not bits or (line.state in {"shipped", "clean"} and "nothing blocked" not in bits):
+        bits.append("nothing blocked")
+    return " · ".join(bits)
+
+
+def morning_product_line(
+    product: DigestProduct,
+    evidence: RepoEvidence | None = None,
+    *,
+    paused: list[str] | None = None,
+    review: int = 0,
+    failed_agents: int = 0,
+    failing_tasks: list[str] | None = None,
+) -> MorningLine:
+    paused = paused or []
+    hard = _hard_block_parts(
+        evidence, paused=paused, failed_agents=failed_agents, failing_tasks=failing_tasks
+    )
+    drift = evidence.drift if evidence and evidence.mounted else ()
+    lead, waiting = _waiting_parts(evidence, review=review, drift=drift)
+    shipped = _shipped_part(evidence)
+    mounted = bool(evidence and evidence.mounted)
+    state = _morning_state(
+        mounted=mounted,
+        hard=hard,
+        waiting=waiting,
+        shipped=shipped,
+        pending=bool(lead),
+    )
+    parts: list[str] = []
+    if shipped and state != "waiting":
+        parts.append(shipped)
+    parts.extend(hard)
+    if state != "blocked":
+        parts.extend(lead)
+    elif lead:
+        # Ready PRs stay in the waiting clause; drift stays visible when blocked.
+        parts.extend(bit for bit in lead if "behind" in bit)
+    line = MorningLine(
+        id=product.id,
+        name=product.name,
+        kind="product",
+        state=state,
+        parts=tuple(parts),
+        waiting=waiting,
+    )
+    line.note = _compose_morning_note(line)
+    return line
+
+
+def morning_customer_line(
+    customer: DigestCustomer,
+    *,
+    product_evidence: list[RepoEvidence] | None = None,
+    customer_evidence: CustomerEvidence | None = None,
+    review: int = 0,
+    paused: list[str] | None = None,
+    failed_agents: int = 0,
+    date: str = "",
+) -> MorningLine:
+    if not customer.mapped():
+        line = MorningLine(id=customer.id, name=customer.name, kind="customer", state="unmapped")
+        line.note = _compose_morning_note(line)
+        return line
+    paused = paused or []
+    hard = _hard_block_parts(None, paused=paused, failed_agents=failed_agents)
+    drift: list[DriftSignal] = []
+    wanted = set(customer.drift)
+    for row in product_evidence or []:
+        for signal in row.drift:
+            if wanted and signal.ref in wanted:
+                drift.append(signal)
+    behind = None
+    if customer_evidence and customer_evidence.behind_main and customer_evidence.behind_main > 0:
+        behind = (customer.code or customer.id, customer_evidence.behind_main)
+    lead, waiting = _waiting_parts(None, review=review, drift=drift, customer_behind=behind)
+    extra = phase_note(customer.phase, date)
+    target = ""
+    if customer.phase and customer.phase.start:
+        target = f"{customer.phase.start}T09:00:00"
+    state = _morning_state(
+        hard=hard,
+        waiting=waiting,
+        shipped="",
+        pending=bool(lead or extra),
+    )
+    line = MorningLine(
+        id=customer.id,
+        name=customer.name,
+        kind="customer",
+        state=state,
+        parts=tuple([*hard, *lead]),
+        waiting=waiting,
+        extra=extra,
+        target=target,
+    )
+    line.note = _compose_morning_note(line)
+    return line
+
+
+def _slack_line(line: MorningLine) -> str:
+    emoji = SLACK_EMOJI[line.state]
+    name = escape(line.name)
+    if line.state == "unmapped":
+        return f"{emoji} *{name}*: not mapped yet"
+    if line.state == "unmounted":
+        return f"{emoji} *{name}*: no repo"
+    bits = [escape(part) for part in line.parts if part]
+    if line.waiting:
+        bits.append(f"*waiting on you:* {escape(line.waiting)}")
+    if line.extra:
+        bits.append(escape(line.extra))
+    if not bits or (line.state in {"shipped", "clean"} and "nothing blocked" not in bits):
+        bits.append("nothing blocked")
+    return f"{emoji} *{name}*: " + " · ".join(bits)
+
+
+def slack_failure_line(
+    *,
+    tasks: list[dict],
+    assignments: list[dict],
+    date: str,
+) -> str:
+    failing = [task for task in tasks if task.get("last_status") == "failed"]
+    if failing:
+        name = str(failing[0].get("name") or failing[0].get("task_id") or "task")
+        extra = f" +{len(failing) - 1}" if len(failing) > 1 else ""
+        return f"{escape(name)} failed{extra}"
+    failed = sum(1 for item in assignments if _agent_failed_today(item, date))
+    if failed == 1:
+        return "An agent failed today"
+    if failed:
+        return f"{failed} agents failed today"
+    return ""
+
+
+def format_slack_digest(
+    *,
+    date: str,
+    agents: list[dict],
+    assignments: list[dict],
+    loops: dict,
+    tasks: list[dict],
+    inbox_counts: dict[str, int],
+    repo_evidence: list[RepoEvidence] | None = None,
+    inbox_items: list[dict] | None = None,
+    products: Iterable[DigestProduct] | None = None,
+    customers: Iterable[DigestCustomer] | None = None,
+    customer_evidence: list[CustomerEvidence] | None = None,
+    run_counts: dict[str, int] | None = None,
+) -> str:
+    """Morning-note Slack mrkdwn. Empty segments are omitted; no activity counts."""
+    catalog = list(products) if products is not None else load_products()
+    roster = list(customers) if customers is not None else load_customers()
+    evidence_by_mount = {row.repo_id: row for row in (repo_evidence or [])}
+    customer_rows = {row.customer_id: row for row in (customer_evidence or [])}
+    lines = [f"*AIIA · {slack_header_date(date)}*"]
+    for product in catalog:
+        paused, review, failed = _signals_for_product(
+            product,
+            agents=agents,
+            assignments=assignments,
+            date=date,
+            products=catalog,
+        )
+        lines.append(
+            _slack_line(
+                morning_product_line(
+                    product,
+                    evidence_by_mount.get(product.mount),
+                    paused=paused,
+                    review=review,
+                    failed_agents=failed,
+                )
+            )
+        )
+    if roster:
+        customer_lines = []
+        for customer in roster:
+            paused, review, failed = _signals_for_customer(
+                customer,
+                agents=agents,
+                assignments=assignments,
+                date=date,
+                customers=roster,
+            )
+            mounts_for_customer = {
+                product.mount
+                for product in catalog
+                if product.id in customer.products and product.mount
+            }
+            touched = [
+                evidence_by_mount[mount]
+                for mount in mounts_for_customer
+                if mount in evidence_by_mount
+            ]
+            customer_lines.append(
+                _slack_line(
+                    morning_customer_line(
+                        customer,
+                        product_evidence=touched,
+                        customer_evidence=customer_rows.get(customer.id),
+                        review=review,
+                        paused=paused,
+                        failed_agents=failed,
+                        date=date,
+                    )
+                )
+            )
+        if customer_lines:
+            lines += ["*Customers*", *customer_lines]
+    chosen, leftover = choose_decisions(
+        inbox_items or [], products=catalog, inbox_counts=inbox_counts
+    )
+    total = len(chosen) + sum(leftover.values())
+    if total:
+        titles = [
+            escape(_first_line(item.get("text"), DECISION_CHARS))
+            for item in chosen
+            if _first_line(item.get("text"), DECISION_CHARS)
+        ]
+        lines.append(f"*Needs you ({total})*: " + " · ".join(titles))
+    failed = slack_failure_line(tasks=tasks, assignments=assignments, date=date)
+    if failed:
+        lines.append(failed)
+    lines.append("_Details in Studio_")
+    # loops / run_counts stay on the signature so the inbox builder and Slack
+    # share a call site. They are not printed unless slack_failure_line fires.
+    _ = (loops, run_counts)
+    body = "\n".join(lines)
+    if len(body) > SLACK_BODY_MAX:
+        body = body[: SLACK_BODY_MAX - 1].rstrip() + "…"
+    return body
 
 
 def build_digest(
