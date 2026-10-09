@@ -34,7 +34,7 @@ const note = {
   ],
   customers: [
     { id: 'trs', name: "That's Right Sweetie", kind: 'customer', state: 'shipped', note: 'Daily client prep is arriving each morning.' },
-    { id: 'alumni-nations', name: 'Alumni Nations', kind: 'customer', state: 'waiting', note: 'Phase 1 kicks off Thursday, Oct 15.', target: '2026-10-15T09:00:00' },
+    { id: 'alumni-nations', name: 'Alumni Nations', kind: 'customer', state: 'countdown', note: 'Phase 1 kicks off Thursday, Oct 15.', target: '2026-10-15T09:00:00' },
     { id: 'smart-medical', name: 'Smart Medical', kind: 'customer', state: 'unmapped', note: 'Not mapped yet. Nothing set up.' },
   ],
   decisions,
@@ -110,7 +110,7 @@ try {
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth > innerWidth + 1)
     assert.equal(overflow, false, `${label} overflowed horizontally`)
 
-    await page.screenshot({ path: join(output, `morning-note-${label}.png`), animations: 'disabled' })
+    await page.screenshot({ path: join(output, `morning-note-${label}.png`), fullPage: true, animations: 'disabled' })
 
     await page.getByRole('button', { name: 'Approve', exact: true }).first().click()
     await page.waitForFunction(() => document.querySelectorAll('.card').length === 5)

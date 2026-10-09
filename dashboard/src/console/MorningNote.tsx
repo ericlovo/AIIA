@@ -50,9 +50,10 @@ export function MorningNote({ agents, onDetails }: { agents: Agent[]; onDetails:
   const needCount = Math.max(data.needs_you_total - gone.size, remaining.length)
 
   const approve = useMutation({
-    mutationFn: (item: MorningDecision) => item.kind === 'review'
-      ? api.reviewAssignment(item.id, 'accepted', item.expected_version || '', '')
-      : api.promoteIdea(item.id, 'decisions', '', { postToSlack: false }),
+    mutationFn: async (item: MorningDecision) => {
+      if (item.kind === 'review') await api.reviewAssignment(item.id, 'accepted', item.expected_version || '', '')
+      else await api.promoteIdea(item.id, 'decisions', '', { postToSlack: false })
+    },
     onSuccess: (_result, item) => {
       setGone(prev => new Set(prev).add(`${item.kind}:${item.id}`))
       void qc.invalidateQueries({ queryKey: ['morning-note'] })
@@ -61,9 +62,10 @@ export function MorningNote({ agents, onDetails }: { agents: Agent[]; onDetails:
     },
   })
   const later = useMutation({
-    mutationFn: (item: MorningDecision) => item.kind === 'review'
-      ? api.dismissAssignment(item.id, true, item.expected_version || '', 'Not now')
-      : api.dismissIdea(item.id, 'Not now'),
+    mutationFn: async (item: MorningDecision) => {
+      if (item.kind === 'review') await api.dismissAssignment(item.id, true, item.expected_version || '', 'Not now')
+      else await api.dismissIdea(item.id, 'Not now')
+    },
     onSuccess: (_result, item) => {
       setGone(prev => new Set(prev).add(`${item.kind}:${item.id}`))
       void qc.invalidateQueries({ queryKey: ['morning-note'] })

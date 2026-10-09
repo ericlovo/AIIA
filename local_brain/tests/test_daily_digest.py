@@ -1062,6 +1062,29 @@ def test_morning_note_payload_uses_the_same_status_lines():
     assert all("none" not in row["note"] for row in payload["products"])
 
 
+def test_alumni_nations_is_a_countdown_when_nothing_is_waiting():
+    line = daily_digest.morning_customer_line(CUSTOMERS[1], date="2026-10-08")
+    assert line.state == "countdown"
+    assert line.target == "2026-10-15T09:00:00"
+    assert line.note == "7 days to kickoff"
+    assert daily_digest._slack_line(line) == "🟢 *Alumni Nations*: 7 days to kickoff"
+    waiting = daily_digest.morning_customer_line(
+        CUSTOMERS[1],
+        product_evidence=[
+            daily_digest.RepoEvidence(
+                repo_id="mindmoor",
+                mounted=True,
+                complete=True,
+                drift=[daily_digest.DriftSignal("mindmoor", "alumni", 4)],
+            )
+        ],
+        date="2026-10-08",
+    )
+    assert waiting.state == "waiting"
+    assert waiting.target == "2026-10-15T09:00:00"
+    assert "alumni 4 behind main" in waiting.note
+
+
 def test_slack_header_date_drops_leading_zero():
     assert daily_digest.slack_header_date("2026-10-08") == "Thu Oct 8"
     assert daily_digest.slack_header_date("2026-10-15") == "Thu Oct 15"

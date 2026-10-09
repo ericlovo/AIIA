@@ -28,11 +28,13 @@
 .morning-note .dot-shipped, .morning-note .dot-clean { background: var(--green); }
 .morning-note .dot-blocked { background: var(--red); }
 .morning-note .dot-waiting { background: var(--amber); }
+.morning-note .dot-countdown { background: var(--blue); }
 .morning-note .dot-unmapped, .morning-note .dot-unmounted { background: transparent; border: 1.5px solid var(--grey); }
 .morning-note .dot-working { background: var(--blue); }
 .morning-note .w-shipped, .morning-note .w-clean { color: var(--green); }
 .morning-note .w-blocked { color: var(--red); }
 .morning-note .w-waiting { color: var(--amber); }
+.morning-note .w-countdown { color: var(--blue); }
 .morning-note .w-unmapped, .morning-note .w-unmounted { color: var(--muted); }
 .morning-note .btn { min-height: 44px; padding: 0 16px; border-radius: 999px; border: 1px solid var(--rule); background: #fff; cursor: pointer; font-size: 15px; font-weight: 500; }
 .morning-note .btn-primary { background: var(--ink); border-color: var(--ink); color: #fff; }

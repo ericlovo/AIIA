@@ -49,7 +49,7 @@ test('lede names good shape, stuck lines, decisions, and the Alumni Nations kick
     { id: 'sanction', name: 'Sanction', kind: 'product', state: 'blocked', note: 'Checks are red.' },
   ]
   const customers: MorningLine[] = [
-    { id: 'alumni-nations', name: 'Alumni Nations', kind: 'customer', state: 'waiting', note: '7 days', target: '2026-10-15T09:00:00' },
+    { id: 'alumni-nations', name: 'Alumni Nations', kind: 'customer', state: 'countdown', note: '7 days', target: '2026-10-15T09:00:00' },
   ]
   const lede = morningLede(products, customers, 7, new Date('2026-10-08T21:00:00'))
   assert.match(lede, /MIA and Morrow are in good shape/)

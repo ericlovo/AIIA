@@ -33,6 +33,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, Response, StreamingRes
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict, Field
 
+from local_brain.command_center import daily_digest
 from local_brain.command_center.agent_output import (
     INBOX_UNAVAILABLE_NOTE,
     RUN_FAILED_NOTE,
@@ -882,7 +883,6 @@ class RoutingHistoryState:
 routing_history = RoutingHistoryState()
 
 # ─── Action Queue + Task Runner ───────────────────────────
-from local_brain.command_center import daily_digest
 from local_brain.command_center.action_queue import ActionQueue
 from local_brain.command_center.agent_registry import (
     AgentRegistry,

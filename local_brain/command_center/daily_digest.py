@@ -1422,6 +1422,7 @@ SLACK_EMOJI = {
     "waiting": "🟡",
     "shipped": "🟢",
     "clean": "🟢",
+    "countdown": "🟢",
     "unmapped": "⚪",
     "unmounted": "⚪",
 }
@@ -1641,8 +1642,10 @@ def morning_customer_line(
         hard=hard,
         waiting=waiting,
         shipped="",
-        pending=bool(lead or extra),
+        pending=bool(lead),
     )
+    if target and state in {"clean", "shipped"}:
+        state = "countdown"
     line = MorningLine(
         id=customer.id,
         name=customer.name,
