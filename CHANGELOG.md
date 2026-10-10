@@ -25,11 +25,27 @@ All notable changes to AIIA are documented here. This project adheres to
   the allowlisted channel with a provenance line (who captured it, which loop
   proposed it, which files) unless the caller opts out. Loop proposals, which
   have no workspace, may be posted; another workspace's text still may not.
-- **Daily Digest built-in task.** One line per agent (runs, waiting review,
-  failures, the day's verdict), one per launchd loop (from the loops
-  registry), failing built-in tasks, and the inbox count by source. No model.
-  Filed once per day as an inbox row with source `digest` and, when memory
-  posts are configured, posted once to the channel through the same outbox.
+- **Daily Digest built-in task.** One status line per product (`shipped` /
+  `blocked` / `waiting on you`) from the checked-in product map
+  (`config/digest_products.json`, override `AIIA_DIGEST_PRODUCTS`), then a
+  **Customers** block in the same form (TRS / Alumni Nations / Smart
+  Medical; unmapped customers say `not mapped yet`), then at most five
+  **Needs a decision** inbox items (Slack or product-tagged; the rest
+  collapse by source), then a compressed agent/loop/built-in footer on
+  the inbox row. The Slack post is a separate morning-note: one status
+  emoji per line, empty segments omitted, bold only names and
+  `waiting on you`, no activity counts unless something failed, and
+  `_Details in Studio_`. Collectors still read mounted repos for merged PRs, failing CI
+  on `main`, conflicts, ready drafts, and Mindmoor `production`/`alumni`
+  behind `main` via `git rev-list --count`. Unmounted products say so on
+  that line. Studio agents map via suite, memory namespace, repo, or
+  optional handles/kind. No model, no `git fetch`, no new egress. Filed
+  once per day as an inbox row with source `digest` and, when memory posts
+  are configured, posted once to the channel through the same outbox.
+  GitHub remotes with HTTPS userinfo still resolve to `owner/repo` only
+  (the shared `_origin_slug` helper now parses those remotes the same
+  way); tokens never enter the lines. See
+  [docs/HANDOFF-DAILY-DIGEST.md](docs/HANDOFF-DAILY-DIGEST.md).
 - **Built-in cron tasks keep a wall clock.** A task may declare `schedule_tz`;
   Daily Brief and Daily Digest run at 07:00 and 07:40 America/Chicago instead
   of UTC minutes. A cron task is due once today's local slot has opened and it

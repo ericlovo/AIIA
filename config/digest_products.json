@@ -1,0 +1,67 @@
+{
+  "products": [
+    {
+      "id": "aiia",
+      "name": "AIIA",
+      "github": "ericlovo/AIIA",
+      "mount": "aiia",
+      "aliases": ["aiia-brain", "aiia-console"]
+    },
+    {
+      "id": "mindmoor",
+      "name": "Mindmoor",
+      "github": "tonybangert/mindmoor",
+      "mount": "mindmoor",
+      "drift": ["production", "alumni"]
+    },
+    {
+      "id": "sanction",
+      "name": "Sanction",
+      "github": "ericlovold/sanction",
+      "mount": "sanction"
+    },
+    {
+      "id": "mia",
+      "name": "MIA",
+      "github": "ericlovold/moral-intention-analyst",
+      "mount": "mia",
+      "aliases": ["moral-intention-analyst"]
+    },
+    {
+      "id": "morrow",
+      "name": "Morrow",
+      "github": "",
+      "mount": "morrow"
+    }
+  ],
+  "customers": [
+    {
+      "id": "trs",
+      "code": "TRS",
+      "name": "That's Right Sweetie",
+      "label": "That's Right Sweetie (TRS)",
+      "products": ["mindmoor"],
+      "tenant": "trs",
+      "branch": "trs",
+      "excluded_from_releases": true
+    },
+    {
+      "id": "alumni-nations",
+      "code": "AN",
+      "name": "Alumni Nations",
+      "products": ["mindmoor"],
+      "agents": ["Alumni Nations Research Scout"],
+      "drift": ["alumni"],
+      "phase": {
+        "name": "Phase 1",
+        "start": "2026-10-15",
+        "end": "2027-01-12"
+      }
+    },
+    {
+      "id": "smart-medical",
+      "code": "SM",
+      "name": "Smart Medical"
+    }
+  ]
+}

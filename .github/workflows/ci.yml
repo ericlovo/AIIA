@@ -121,6 +121,7 @@ jobs:
           #   - CHANGELOG.md             : documents what was removed
           #   - PULL_REQUEST_TEMPLATE.md : shows the banned list in the checklist
           #   - ci.yml                   : this file defines the banned list
+          #   - digest_products.json     : checked-in daily-digest product → repo slugs
           if grep -rniE "$BANNED" \
                --exclude-dir=.git \
                --exclude-dir=node_modules \
@@ -129,6 +130,7 @@ jobs:
                --exclude=CHANGELOG.md \
                --exclude=PULL_REQUEST_TEMPLATE.md \
                --exclude=ci.yml \
+               --exclude=digest_products.json \
                --exclude=package-lock.json \
                .; then
              echo ""

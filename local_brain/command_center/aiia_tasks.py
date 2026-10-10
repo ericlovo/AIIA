@@ -519,7 +519,10 @@ TASK_DEFINITIONS = {
     },
     "daily_digest": {
         "name": "Daily Digest",
-        "description": "One line per agent and loop: what moved, what is waiting, what failed",
+        "description": (
+            "One status line per product (shipped / blocked / waiting), "
+            "then decisions and a compressed agent footer"
+        ),
         "schedule_cron_hour": 7,
         "schedule_cron_minute": 40,
         "schedule_tz": "America/Chicago",
@@ -2007,7 +2010,7 @@ Be specific and reference actual file names. Keep each point to 1-2 sentences.""
         return (summary, analysis)
 
     async def _task_daily_digest(self) -> tuple[str, str]:
-        """One line per agent and loop, from records, delivered once per day."""
+        """One product-status digest from records, delivered once per day."""
         if not self.studio_sources:
             raise RuntimeError("Digest sources are not wired; nothing to report from")
         await self._progress("daily_digest", 10, "Reading agents and work")
@@ -2017,24 +2020,33 @@ Be specific and reference actual file names. Keep each point to 1-2 sentences.""
         assignments = list(self.studio_sources["assignments"]())
         run_counts = dict(self.studio_sources["run_counts"]())
         inbox = self.studio_sources["inbox"]()
-        await self._progress("daily_digest", 40, "Reading loops and inbox")
+        await self._progress("daily_digest", 40, "Reading loops, inbox, and repos")
         loops = daily_digest.load_loops()
         inbox_counts: dict[str, int] = {}
+        inbox_items: list[dict] = []
         for source in (*LOCAL_PROPOSAL_SOURCES, "slack"):
             if source == "digest":
                 continue
-            total = inbox.list(status="unreviewed", source=source)["total"]
+            page = inbox.list(status="unreviewed", source=source)
+            inbox_items.extend(page.get("ideas") or [])
+            total = page.get("total") or 0
             if total:
                 inbox_counts[source] = total
-        body = daily_digest.build_digest(
-            date=date,
-            agents=agents,
-            assignments=assignments,
-            run_counts=run_counts,
-            loops=loops,
-            tasks=[t for t in self.get_all_tasks() if t["task_id"] != "daily_digest"],
-            inbox_counts=inbox_counts,
-        )
+        repo_result = await asyncio.to_thread(daily_digest.collect_digest)
+        tasks = [t for t in self.get_all_tasks() if t["task_id"] != "daily_digest"]
+        shared = {
+            "date": date,
+            "agents": agents,
+            "assignments": assignments,
+            "loops": loops,
+            "tasks": tasks,
+            "inbox_counts": inbox_counts,
+            "repo_evidence": repo_result.evidence,
+            "inbox_items": inbox_items,
+            "customer_evidence": repo_result.customer_evidence,
+        }
+        body = daily_digest.build_digest(run_counts=run_counts, **shared)
+        slack_body = daily_digest.format_slack_digest(run_counts=run_counts, **shared)
         await self._progress("daily_digest", 70, "Delivering")
         key = daily_digest.digest_key(date)
         idea, created = inbox.ingest(text=body, source_key=key, source="digest", project="aiia")
@@ -2044,7 +2056,7 @@ Be specific and reference actual file names. Keep each point to 1-2 sentences.""
                 memory_id=key,
                 idea_id=idea["id"],
                 channel_id=slack_memory_posts.channel_id(),
-                body=daily_digest.escape(body)[:3_000],
+                body=daily_digest.escape(slack_body)[:3_000],
             )
             delivery = "slack post queued" if queued else "slack post already queued"
         await self._progress("daily_digest", 100, "Complete")

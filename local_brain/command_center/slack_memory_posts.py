@@ -62,7 +62,7 @@ async def deliver_one(inbox, *, transport=None):
         "reply_broadcast": False,
         "unfurl_links": False,
         "unfurl_media": False,
-        "mrkdwn": False,
+        "mrkdwn": str(post.get("memory_id") or "").startswith("digest:"),
         "client_msg_id": str(uuid.uuid5(uuid.NAMESPACE_URL, post["memory_id"] + ":memory_post")),
     }
     inbox.finish_memory_post(

@@ -10,6 +10,7 @@ import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit
 
 REPO_MOUNTS = {
     "aiia": Path.home() / "aiia-brain" / "AIIA-public",
@@ -73,7 +74,11 @@ def _origin_slug(path: Path) -> str:
             slug = slug[len(prefix) :]
             break
     else:
-        return ""
+        parsed = urlsplit(slug)
+        host = (parsed.hostname or "").lower()
+        if host != "github.com" or not parsed.path:
+            return ""
+        slug = parsed.path.lstrip("/")
 
     slug = slug.removesuffix(".git").strip("/")
     return slug if _GITHUB_SLUG.fullmatch(slug) else ""
