@@ -1,7 +1,7 @@
 import type { ReviewBucket } from '../lib/api'
 
 export type InboxSource = 'slack' | 'loops' | 'signals' | 'all'
-export type StudioView = 'switchboard' | 'inbox' | 'jobs' | 'projects' | 'history' | 'activity' | 'agents' | 'assignments' | 'handoffs' | 'memory' | 'world' | 'signals'
+export type StudioView = 'home' | 'switchboard' | 'inbox' | 'jobs' | 'projects' | 'history' | 'activity' | 'agents' | 'assignments' | 'handoffs' | 'memory' | 'world' | 'signals'
 
 export const VIEWS: { id: StudioView; label: string }[] = [
   { id: 'switchboard', label: 'Today' },
@@ -24,6 +24,7 @@ export const VIEWS: { id: StudioView; label: string }[] = [
  * can be linked to, reloaded, and reached with the back button.
  */
 export type StudioRoute =
+  | { view: 'home' }
   | { view: 'switchboard'; taskId?: string; attention?: boolean }
   | { view: 'history'; attention?: boolean }
   | { view: 'inbox'; source?: InboxSource }
@@ -37,9 +38,10 @@ export type StudioRoute =
   | { view: 'world' }
   | { view: 'signals' }
 
-export const DEFAULT_ROUTE: StudioRoute = { view: 'switchboard' }
+export const DEFAULT_ROUTE: StudioRoute = { view: 'home' }
 
 const PATHS: Record<StudioView, string> = {
+  home: 'note',
   switchboard: 'today', activity: 'overview', agents: 'agents', assignments: 'assignments',
   handoffs: 'handoffs', memory: 'memory', world: 'map', signals: 'signals',
   jobs: 'jobs', projects: 'projects', history: 'history', inbox: 'inbox',

@@ -80,7 +80,7 @@ try {
       await route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) })
     })
 
-    await page.goto(process.env.STUDIO_URL || 'http://127.0.0.1:5188/')
+    await page.goto(`${process.env.STUDIO_URL || 'http://127.0.0.1:5188/'}#/today`)
     await page.getByRole('heading', { name: /Needs attention \(12\)/ }).waitFor()
     assert.equal(await page.getByRole('button', { name: 'Select to dismiss' }).count(), 0)
     await page.getByRole('region', { name: 'Needs attention', exact: true }).getByRole('link', { name: 'Review all', exact: true }).click()

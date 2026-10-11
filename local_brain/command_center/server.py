@@ -33,6 +33,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, Response, StreamingRes
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict, Field
 
+from local_brain.command_center import daily_digest
 from local_brain.command_center.agent_output import (
     INBOX_UNAVAILABLE_NOTE,
     RUN_FAILED_NOTE,
@@ -889,7 +890,7 @@ from local_brain.command_center.agent_registry import (
     RunHistoryUnavailable,
 )
 from local_brain.command_center.agent_suites import describe_suites
-from local_brain.command_center.aiia_tasks import TaskRunner
+from local_brain.command_center.aiia_tasks import TASK_DEFINITIONS, TaskRunner, cron_zone
 from local_brain.command_center.assignment_registry import (
     MAX_BULK_DISMISS,
     MAX_PENDING_LOOP_REVIEWS,
@@ -1559,6 +1560,38 @@ async def patch_suite_agents(suite: str, body: SuiteAgentsPatchRequest | None = 
     for agent in shown:
         await broadcast_studio_event("agent", "updated", agent)
     return {"suite": suite, "count": len(shown), "agents": shown}
+
+
+@app.get("/api/studio/morning-note")
+async def studio_morning_note():
+    """Structured morning-note for the Studio home. Same collectors as the digest."""
+    zone = cron_zone(TASK_DEFINITIONS["daily_digest"])
+    date = datetime.now(timezone.utc).astimezone(zone).date().isoformat()
+    inbox = memory_capture_inbox()
+    inbox_counts: dict[str, int] = {}
+    inbox_items: list[dict] = []
+    try:
+        for source in (*LOCAL_PROPOSAL_SOURCES, "slack"):
+            if source == "digest":
+                continue
+            page = inbox.list(status="unreviewed", source=source)
+            inbox_items.extend(page.get("ideas") or [])
+            total = page.get("total") or 0
+            if total:
+                inbox_counts[source] = total
+    except (OSError, sqlite3.Error) as exc:
+        raise HTTPException(status_code=503, detail="memory_inbox_unavailable") from exc
+    repo_result = await asyncio.to_thread(daily_digest.collect_digest)
+    return daily_digest.build_morning_note(
+        date=date,
+        agents=agent_registry.list(),
+        assignments=assignment_registry.list_assignments(),
+        tasks=[task for task in task_runner.get_all_tasks() if task["task_id"] != "daily_digest"],
+        inbox_counts=inbox_counts,
+        repo_evidence=repo_result.evidence,
+        inbox_items=inbox_items,
+        customer_evidence=repo_result.customer_evidence,
+    )
 
 
 @app.get("/api/studio/activity")
