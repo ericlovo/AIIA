@@ -89,7 +89,7 @@ try {
       await route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) })
     })
 
-    await page.goto(process.env.STUDIO_URL || 'http://127.0.0.1:5187/')
+    await page.goto(`${process.env.STUDIO_URL || 'http://127.0.0.1:5187/'}#/today`)
     await page.getByRole('heading', { name: /Needs attention \(2\)/ }).waitFor()
 
     // A failed run has no work product, so it gets tracking but no review panel.

@@ -43,7 +43,7 @@ export function replaceRoute(route: StudioRoute) {
 export function useStudioRoute(): { route: StudioRoute; key: string } {
   const key = useSyncExternalStore(subscribe, snapshot)
   const parsed = parseRoute(window.location.hash)
-  // An empty or unknown address lands on Today, without a back-button trap.
+  // An empty or unknown address lands on the morning note, without a back-button trap.
   const invalid = !parsed
   useEffect(() => { if (invalid) replaceRoute(DEFAULT_ROUTE) }, [invalid, key])
   return { route: parsed ?? DEFAULT_ROUTE, key }

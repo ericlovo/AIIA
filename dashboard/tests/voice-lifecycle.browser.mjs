@@ -151,7 +151,7 @@ async function open(width) {
     }
     await route.fulfill({ json: bodies[path] ?? {} })
   })
-  await page.goto(base)
+  await page.goto(`${base}#/today`)
   await page.getByRole('heading', { name: 'Today', exact: true }).waitFor()
   assert.equal(await page.getByTitle('Hold to talk', { exact: true }).count(), 0)
   assert.equal(mints.length, 0)
