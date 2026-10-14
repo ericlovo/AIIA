@@ -90,6 +90,7 @@ try {
     })
 
     await page.goto(process.env.STUDIO_URL || 'http://127.0.0.1:5187/')
+    await openStudioView(page, 'Today')
     await page.getByRole('heading', { name: /Needs attention \(2\)/ }).waitFor()
 
     // A failed run has no work product, so it gets tracking but no review panel.

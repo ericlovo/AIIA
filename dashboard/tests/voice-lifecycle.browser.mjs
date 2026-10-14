@@ -152,7 +152,7 @@ async function open(width) {
     await route.fulfill({ json: bodies[path] ?? {} })
   })
   await page.goto(base)
-  await page.getByRole('heading', { name: 'Today', exact: true }).waitFor()
+  await page.getByRole('heading', { name: 'Bots', exact: true }).waitFor()
   assert.equal(await page.getByTitle('Hold to talk', { exact: true }).count(), 0)
   assert.equal(mints.length, 0)
   await page.getByRole('button', { name: 'Voice', exact: true }).click()

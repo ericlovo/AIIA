@@ -1,3 +1,4 @@
+import { openStudioView } from './studio-navigation.mjs'
 // Exercise the built Studio. Every API and WebSocket is mocked; no live records.
 import assert from 'node:assert/strict'
 import { mkdir, readFile } from 'node:fs/promises'
@@ -166,7 +167,7 @@ try {
     assert.equal(agents.at(-1).loop_enabled, false)
     await page.getByRole('button', { name: 'Open saved test' }).click()
     assert.match(page.url(), /#\/(?:assignments|work)\/qa-test-1/)
-    await page.getByRole('navigation', { name: 'Studio' }).getByRole('link', { name: 'Jobs', exact: true }).click()
+    await openStudioView(page, 'Jobs')
     await page.getByRole('button', { name: 'Open public signals' }).click()
     assert.match(page.url(), /#\/signals/)
 
@@ -221,7 +222,7 @@ try {
     await page.getByText('Voice Conductor', { exact: true }).waitFor()
     assert.equal(await voice.getAttribute('aria-expanded'), 'true')
     await voice.click()
-    await page.getByRole('navigation', { name: 'Studio' }).getByRole('link', { name: 'Jobs', exact: true }).click()
+    await openStudioView(page, 'Jobs')
     await page.getByRole('heading', { name: 'Jobs', exact: true }).waitFor()
     await page.getByRole('button', { name: 'Open public signals' }).scrollIntoViewIfNeeded()
     assert.equal(await page.getByRole('main').evaluate(element => element.scrollTop > 0), true)
@@ -231,7 +232,7 @@ try {
     // A production-sized queue must not consume the selected item's mobile row.
     assignments.find(item => item.id === 'QA source evidence needs review').review_version = 'qa-review-v1'
     assignments.push(...Array.from({ length: 132 }, (_, index) => workFixture(`QA archived work ${index}`, { review_status: 'accepted' })))
-    await page.getByRole('navigation', { name: 'Studio' }).getByRole('link', { name: 'Today', exact: true }).click()
+    await openStudioView(page, 'Today')
     await page.getByText('QA source evidence needs review', { exact: true }).click()
     const inspector = page.getByRole('complementary', { name: 'Selected work', exact: true })
     await inspector.getByText('QA evidence only', { exact: true }).waitFor()
