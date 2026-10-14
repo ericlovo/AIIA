@@ -44,6 +44,7 @@ from local_brain.command_center.agent_prompts import agent_system_prompt
 from local_brain.command_center.agent_prompts import assignment_prompt as _assignment_prompt
 from local_brain.command_center.lead_reviews import review_snapshot
 from local_brain.command_center.lead_reviews import router as lead_review_router
+from local_brain.command_center.project_delivery import create_router as delivery_router
 from local_brain.command_center.project_status import router as project_status_router
 from local_brain.command_center.signal_routes import router as signal_router
 
@@ -3660,6 +3661,8 @@ from local_brain.scripts.roadmap_store import RoadmapStore
 from local_brain.scripts.syntax_checker import check_syntax
 
 _roadmap = RoadmapStore()
+
+app.include_router(delivery_router(_roadmap, assignment_registry, agent_registry))
 _pipeline = PipelineStore()
 _story_prioritizer: StoryPrioritizer | None = None
 
