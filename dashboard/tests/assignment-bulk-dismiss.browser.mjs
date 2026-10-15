@@ -1,3 +1,4 @@
+import { openStudioView } from './studio-navigation.mjs'
 // Bulk dismissal in Activity history: a person ticks items, gives a reason, and dismisses them
 // together or not at all. Dismissal never records a verdict, a changed item stops
 // the whole batch, and the error names it. Every response is synthetic.
@@ -81,6 +82,7 @@ try {
     })
 
     await page.goto(process.env.STUDIO_URL || 'http://127.0.0.1:5188/')
+    await openStudioView(page, 'Today')
     await page.getByRole('heading', { name: /Needs attention \(12\)/ }).waitFor()
     assert.equal(await page.getByRole('button', { name: 'Select to dismiss' }).count(), 0)
     await page.getByRole('region', { name: 'Needs attention', exact: true }).getByRole('link', { name: 'Review all', exact: true }).click()

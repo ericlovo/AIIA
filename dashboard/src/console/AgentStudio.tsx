@@ -15,6 +15,7 @@ import { ActivityOverview } from './ActivityOverview'
 import { Switchboard } from './Switchboard'
 import { Today } from './Today'
 import { Jobs } from './Jobs'
+import { Bots } from './Bots'
 import { Projects } from './Projects'
 import { MemoryLog } from './MemoryLog'
 import { SignalJobs } from './SignalJobs'
@@ -177,6 +178,7 @@ export function AgentStudio() {
   const retiredCount = useMemo(() => agents.filter(agent => agent.retired).length, [agents])
 
   const page = (() => {
+    if (view === 'bots') return <Bots agents={agents} loading={isLoading} error={isError} agentId={route.view === 'bots' ? route.agentId : undefined} />
     if (view === 'signals') return <SignalJobs />
     if (view === 'jobs') return <Jobs agents={agents} loading={isLoading} agentError={isError} />
     if (view === 'projects') return <Projects />
