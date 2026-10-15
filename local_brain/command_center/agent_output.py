@@ -12,6 +12,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from local_brain.command_center import slack_memory_posts
+from local_brain.command_center.bot_use_cases import resolve_use_cases
 
 ONE_LINER_MAX = 120
 USE_WHEN_MAX = ONE_LINER_MAX
@@ -164,6 +165,7 @@ def present_agent(
 ) -> dict[str, Any]:
     """Copy for API/UI. Derived fields are not written back to disk."""
     shown = dict(agent)
+    shown["use_cases"] = resolve_use_cases(agent)
     stored = stored_one_liner(agent.get("one_liner"))
     shown["one_liner"] = stored or derive_one_liner(str(agent.get("mission") or ""))
     shown["one_liner_derived"] = not bool(stored)

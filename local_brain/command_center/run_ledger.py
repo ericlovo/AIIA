@@ -276,3 +276,19 @@ class RunLedger:
                 )
             ]
         return {"runs": runs, "total": total, "offset": offset, "limit": limit}
+
+    def agent_history(self, agent_id: str, *, offset: int = 0, limit: int = 20) -> dict:
+        with self.connect() as db:
+            total = db.execute(
+                "SELECT count(*) FROM runs WHERE agent_id=?", (agent_id,)
+            ).fetchone()[0]
+            rows = db.execute(
+                "SELECT * FROM runs WHERE agent_id=? ORDER BY at DESC,id DESC LIMIT ? OFFSET ?",
+                (agent_id, limit, offset),
+            ).fetchall()
+        runs = []
+        for row in rows:
+            record = dict(row)
+            payload = json.loads(record.pop("payload"))
+            runs.append({**payload, **record})
+        return {"runs": runs, "total": total, "offset": offset, "limit": limit}

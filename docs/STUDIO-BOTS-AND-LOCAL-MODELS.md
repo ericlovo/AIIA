@@ -13,6 +13,33 @@ It is based on `main` at `e5a3ab9`, independently of the delivery dashboard PR
 #111 and morning-note PR #108. Reconcile their home/navigation changes before
 merging both; this slice intentionally makes Bots the default destination.
 
+## History and use cases follow-up (2026-10-15)
+
+Cards show the last run time and a single-line outcome. Bot details show History,
+newest first, including manual, interval, and assignment runs. Expand a row for
+its task input and result or failure evidence. Older/Newer controls page through
+the durable ledger, beyond the 12-run recent cache (20 runs per page). Missing
+history is shown as unavailable with retry, separately from an empty history.
+
+Each bot exposes `use_cases: [{"label": "...", "task": "..."}]` through the agent
+configuration API. POST, PUT and PATCH accept up to three shortcuts (80-character
+labels, 6,000-character task prompts). Omitting the field preserves existing
+configuration on edits; an explicit empty list hides shortcuts. Existing records
+without the field get three defaults at read time, without rewriting their stored
+config. Named defaults reflect the current roster's descriptions; other bots use
+their mission as the basis for brief, risk, and next-step tasks. New bots store
+these defaults when created. Custom shortcuts override defaults.
+
+Click a use-case button to run its task immediately. Optional **Additional
+context** is appended as `\n\nAdditional context:\n<context>`. **Send task** submits
+the text alone as a free-form task. The existing 8,000-character request limit,
+busy/retired guards, draft preservation, model selection, and execution path apply.
+A use case whose combined task would exceed the request limit is disabled.
+
+Verification uses temporary SQLite/config files for backend contracts and mocked
+API responses for desktop/mobile browser behavior. No live inference is needed.
+Screenshots are in [the follow-up evidence](screenshots/bot-history-use-cases/).
+
 ## What the performance evidence says
 
 The reported screenshot shows `qwen3:8b`, with 23.1 seconds of Ollama HTTP time.

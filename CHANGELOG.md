@@ -8,6 +8,12 @@ All notable changes to AIIA are documented here. This project adheres to
 
 ### Added
 
+- **Bot context and task shortcuts.** Bot cards show last activity and a one-line
+  outcome. Bot details include expandable, paginated run history and three
+  configuration-backed use cases, with optional additional context and free-form
+  task submission. Existing bot descriptions supply defaults without changing
+  model or execution settings.
+
 - **Bots as the Studio starting point.** Open a named bot, read its latest output
   and give it a task. Work and Projects stay in primary navigation; detailed
   views remain under More with existing deep links. Added optional local chat

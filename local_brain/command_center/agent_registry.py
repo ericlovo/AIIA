@@ -20,6 +20,7 @@ from local_brain.command_center.agent_output import (
     stored_use_when,
 )
 from local_brain.command_center.agent_suites import apply_suite_defaults
+from local_brain.command_center.bot_use_cases import normalize_use_cases, resolve_use_cases
 from local_brain.command_center.persistence import PersistenceError, atomic_write_json
 from local_brain.command_center.run_ledger import RunLedger, token_counts
 
@@ -111,6 +112,7 @@ class AgentRegistry:
         use_when: str = "",
         retired: bool = False,
         handles: list[str] | None = None,
+        use_cases: list[dict[str, str]] | None = None,
     ) -> dict[str, Any]:
         if len(self.agents) >= MAX_AGENTS:
             raise ValueError("agent_limit_reached")
@@ -151,6 +153,9 @@ class AgentRegistry:
             "created_at": now,
             "updated_at": now,
         }
+        agent["use_cases"] = (
+            normalize_use_cases(use_cases) if use_cases is not None else resolve_use_cases(agent)
+        )
         stored = stored_one_liner(one_liner)
         if stored:
             agent["one_liner"] = stored
@@ -220,6 +225,8 @@ class AgentRegistry:
         for field in ("name", "mission", "persona"):
             if field in changes:
                 agent[field] = str(changes[field]).strip()
+        if "use_cases" in changes:
+            agent["use_cases"] = normalize_use_cases(changes["use_cases"])
         if "skills" in changes:
             agent["skills"] = self._skills(changes["skills"])
         if "tools" in changes:

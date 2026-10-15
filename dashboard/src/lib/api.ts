@@ -230,6 +230,11 @@ export interface AgentValue {
   unreviewed: number;
 }
 
+export interface BotUseCase {
+  label: string;
+  task: string;
+}
+
 export interface Agent {
   id: string;
   name: string;
@@ -258,6 +263,7 @@ export interface Agent {
   one_liner?: string;
   one_liner_derived?: boolean;
   use_when?: string;
+  use_cases?: BotUseCase[];
   use_when_derived?: boolean;
   kind?: AgentKind | '';
   kind_derived?: boolean;
@@ -519,6 +525,7 @@ export type AgentDefinition = Pick<Agent,
   output_channel?: OutputChannel;
   kind?: AgentKind | '';
   use_when?: string;
+  use_cases?: BotUseCase[];
   retired?: boolean;
   handles?: string[];
 };
@@ -726,6 +733,7 @@ export const api = {
   configureSignalJob: (id: string, enabled: boolean) => put<SignalJobStatus>(`/api/signal-jobs/${encodeURIComponent(id)}`, { enabled }),
   studioActivity: (agentId = '', day = '', status = '') =>
     get<StudioActivity>(`/api/studio/activity?${new URLSearchParams({ agent_id: agentId, day, status })}`),
+  botHistory: (id: string, offset = 0) => get<{ runs: StudioRun[]; total: number; offset: number; limit: number }>(`/api/agents/${encodeURIComponent(id)}/history?offset=${offset}`),
   studioRun: (id: string) => get<{ run: StudioRun }>(`/api/studio/runs/${encodeURIComponent(id)}`),
   leadReview: (id: string) => get<{ review: LeadReview | null; history: LeadReview[] }>(`/api/public-signals/${encodeURIComponent(id)}/qualification`),
   leadQueue: (status: LeadDecision | 'all', company: string, offset: number) => get<{ leads: LeadSignal[]; total: number; offset: number; limit: number }>(`/api/public-signals/leads?${new URLSearchParams({ status, company, offset: String(offset) })}`),
