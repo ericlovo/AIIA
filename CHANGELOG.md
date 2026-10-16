@@ -70,7 +70,7 @@ All notable changes to AIIA are documented here. This project adheres to
 
 - **Slack daily digest names real work.** Held PRs stay off blocked/waiting
   (config hold list plus a `hold` label). Merge asks are only ready,
-  non-draft PRs Eric owns (`ericlovold`, not `codex/*`); Sanction and Codex
+  non-draft PRs Eric owns (configured login, not `codex/*`); Sanction and Codex
   drafts never create an ask. Dependabot and Codex drafts are summarized as
   `skipped`. Unmounted MIA/Morrow read GitHub by configured slug. Inbox
   `Needs you` dedupes and drops stale next-best/confirm-shipped rows.

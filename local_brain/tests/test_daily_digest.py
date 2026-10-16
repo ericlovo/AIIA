@@ -20,6 +20,12 @@ from local_brain.command_center.aiia_tasks import (
 from local_brain.command_center.memory_inbox import MemoryInbox
 
 DATE = "2026-10-05"
+OWNER = "owner"
+
+
+@pytest.fixture(autouse=True)
+def _digest_owner_login(monkeypatch):
+    monkeypatch.setattr(daily_digest, "load_owners", lambda path=None: frozenset({OWNER}))
 
 
 def agents():
@@ -102,9 +108,7 @@ PRODUCTS = [
     daily_digest.DigestProduct(
         id="mia", name="MIA", github="example/mia", mount="mia", holds=(42,)
     ),
-    daily_digest.DigestProduct(
-        id="morrow", name="Morrow", github="ericlovold/morrow", mount="morrow"
-    ),
+    daily_digest.DigestProduct(id="morrow", name="Morrow", github="example/morrow", mount="morrow"),
 ]
 
 CUSTOMERS = [
@@ -717,7 +721,7 @@ def test_format_product_line_uses_pr_numbers_and_counts():
                 "ready",
                 mergeable=True,
                 mergeable_state="clean",
-                author="ericlovold",
+                author=OWNER,
                 head_ref="cursor/ready",
             ),
             daily_digest.PullSignal(
@@ -726,7 +730,7 @@ def test_format_product_line_uses_pr_numbers_and_counts():
                 draft=True,
                 mergeable=True,
                 mergeable_state="clean",
-                author="ericlovold",
+                author=OWNER,
                 head_ref="cursor/draft",
             ),
         ],
@@ -782,6 +786,8 @@ def test_checked_in_product_config_has_the_five_defaults():
     assert customers[2].consulting is True
     assert customers[2].no_repo is True
     assert customers[2].status_note == ""
+    payload = daily_digest._config_payload() or {}
+    assert payload.get("owners")
 
 
 def test_product_config_env_override(tmp_path, monkeypatch):
@@ -944,7 +950,7 @@ def _status_digest_kwargs(**overrides):
                         "ready",
                         mergeable=True,
                         mergeable_state="clean",
-                        author="ericlovold",
+                        author=OWNER,
                         head_ref="cursor/ready",
                     )
                 ],
@@ -1204,8 +1210,8 @@ def test_held_prs_never_appear_in_blocked_or_waiting():
         complete=True,
         open_pulls=[
             _pull(47, title="hold list", mergeable=False, mergeable_state="dirty"),
-            _pull(52, title="hold list ready", author="ericlovold"),
-            _pull(18, title="eric ready", author="ericlovold"),
+            _pull(52, title="hold list ready", author=OWNER),
+            _pull(18, title="eric ready", author=OWNER),
         ],
     )
     slack = daily_digest.morning_product_line(PRODUCTS[0], evidence)
@@ -1238,7 +1244,7 @@ def test_no_asks_from_codex_drafts_or_sanction():
         repo_id="sanction",
         mounted=True,
         complete=True,
-        open_pulls=[_pull(12, title="ready", author="ericlovold")],
+        open_pulls=[_pull(12, title="ready", author=OWNER)],
     )
     line = daily_digest.morning_product_line(PRODUCTS[2], sanction)
     assert line.waiting == ""
@@ -1252,7 +1258,7 @@ def test_no_asks_from_codex_drafts_or_sanction():
                 111,
                 title="codex draft",
                 draft=True,
-                author="ericlovold",
+                author=OWNER,
                 head_ref="codex/fix-x",
             ),
             _pull(114, title="codex other", draft=True, head_ref="codex/other"),
@@ -1278,7 +1284,7 @@ def test_unmounted_repo_falls_back_to_github_slug():
                     "draft": False,
                     "mergeable": True,
                     "mergeable_state": "clean",
-                    "user": {"login": "ericlovold"},
+                    "user": {"login": OWNER},
                     "head": {"ref": "cursor/ok", "sha": "abc"},
                 }
             ]
@@ -1288,18 +1294,20 @@ def test_unmounted_repo_falls_back_to_github_slug():
             return []
         return {}
 
-    slug = "ericlovold/moral-intention-analyst"
+    slug = "example/moral-intention-analyst"
     row = daily_digest.collect_repo_evidence("mia", github_api=github, mounts={}, github_slug=slug)
     assert row.mounted is False
     assert row.remote is True
     assert row.open_prs == 1
-    assert row.open_pulls[0].author == "ericlovold"
-    assert any("repos/ericlovold/moral-intention-analyst/pulls" in item for item in calls)
+    assert row.open_pulls[0].author == OWNER
+    assert any(f"repos/{slug}/pulls" in item for item in calls)
     line = daily_digest.morning_product_line(PRODUCTS[3], row)
     assert line.state != "unmounted"
     assert "no repo" not in line.note
     morrow = daily_digest.load_products()[4]
-    assert morrow.github == "ericlovold/morrow"
+    assert morrow.github.endswith("/morrow")
+    payload = daily_digest._config_payload() or {}
+    assert payload.get("owners")
 
 
 def test_skipped_dependabot_and_codex_drafts_are_accounted_for():
@@ -1312,7 +1320,7 @@ def test_skipped_dependabot_and_codex_drafts_are_accounted_for():
             _pull(110, author="dependabot[bot]", head_ref="dependabot/npm/y"),
             _pull(111, draft=True, head_ref="codex/one"),
             _pull(114, draft=True, head_ref="codex/two"),
-            _pull(18, author="ericlovold", head_ref="cursor/ready"),
+            _pull(18, author=OWNER, head_ref="cursor/ready"),
         ],
     )
     line = daily_digest.morning_product_line(PRODUCTS[0], evidence)
@@ -1359,7 +1367,7 @@ def test_needs_you_dedupes_and_expires_stale_inbox_items():
             repo_id="aiia",
             mounted=True,
             complete=True,
-            open_pulls=[_pull(18, author="ericlovold")],
+            open_pulls=[_pull(18, author=OWNER)],
             merged_prs=[daily_digest.PullSignal(104, "feed repo CI", merged=True)],
         )
     ]

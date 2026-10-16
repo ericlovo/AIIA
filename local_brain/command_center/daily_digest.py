@@ -45,7 +45,6 @@ PRODUCTION_REF_CANDIDATES = ("origin/production", "production")
 ALUMNI_EXACT_CANDIDATES = ("origin/alumni", "alumni")
 ALUMNI_PREFIXES = ("origin/release/alumni", "release/alumni")
 PRODUCTS_ENV = "AIIA_DIGEST_PRODUCTS"
-ERIC_AUTHORS = frozenset({"ericlovold"})
 DEPENDABOT_AUTHORS = frozenset({"dependabot[bot]", "dependabot"})
 HOLD_LABELS = frozenset({"hold"})
 CODEX_HEAD_PREFIX = "codex/"
@@ -386,6 +385,15 @@ def _config_payload(path: Path | None = None) -> dict[str, Any] | None:
     except (OSError, ValueError):
         return None
     return data if isinstance(data, dict) else None
+
+
+def load_owners(path: Path | None = None) -> frozenset[str]:
+    """Author logins that may receive merge asks. Kept in config, not this module."""
+    data = _config_payload(path)
+    raw = data.get("owners") if isinstance(data, dict) else None
+    if not isinstance(raw, list):
+        return frozenset()
+    return frozenset(str(item).strip().lower() for item in raw if str(item).strip())
 
 
 def load_customers(path: Path | None = None) -> list[DigestCustomer]:
@@ -845,7 +853,7 @@ def _pull_held(pull: PullSignal, holds: Iterable[int] = ()) -> bool:
 def _eric_owned_ready(pull: PullSignal) -> bool:
     if pull.draft or _pull_is_codex(pull) or _pull_is_dependabot(pull):
         return False
-    if pull.author.lower() not in ERIC_AUTHORS:
+    if pull.author.lower() not in load_owners():
         return False
     return _pull_ready(pull)
 
