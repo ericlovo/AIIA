@@ -46,7 +46,7 @@ of the weekend roadmap.
   the Mini produces the local repository analyses. GitHub state is retrieved
   deterministically, not inferred by either model.
 
-## Tony and Eric walkthrough
+## Two-user walkthrough
 
 Use a separate QA dataset first, then one explicitly authorized bounded run.
 Record time-to-complete, wrong turns and confusing language. The human gate is
@@ -89,7 +89,7 @@ npm run test:browser
 
 Browser suites intercept APIs and sockets with synthetic fixtures. They verify
 layout and request/response behavior without mutating live records or invoking
-models. Passing them is not evidence of a real Mini run, Tony's authentication,
+models. Passing them is not evidence of a real Mini run, a second user’s authentication,
 or live scheduling after restart.
 
 For recipe output quality, use the opt-in local evaluation and human rubric in

@@ -49,6 +49,6 @@ separate local-proposal inbox producers.
 
 ## Next human step
 
-Review a small real sample with Eric/Tony before adding quality scoring. Keep
+Review a small real sample with human reviewer before adding quality scoring. Keep
 inbox proposal outcomes separate from assignment output reviews. Do not infer
 quality from queue length, execution success, or dismissal alone.

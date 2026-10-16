@@ -75,6 +75,11 @@ All notable changes to AIIA are documented here. This project adheres to
 
 ### Fixed
 
+- **Public repository hygiene.** Generalized operator and deployment details in
+  documentation, replaced a private endpoint example, and stopped tracking monitor
+  snapshots. Existing installations must preserve their local snapshot before
+  updating across this removal. Runtime paths and behavior are unchanged.
+
 - **Bot context preparation keeps Studio responsive.** Repository and GitHub
   context collection runs off the event loop while preserving the run lock.
 - **Cron catch-up is once per local day.** A restart before 07:40 Chicago used

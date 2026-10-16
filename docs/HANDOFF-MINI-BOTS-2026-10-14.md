@@ -11,6 +11,37 @@ download models, enable Jev/cloud calls, merge other PRs, alter schedules, or ed
 runtime agent/memory data. Those are separate decisions. No destructive Git
 operations, force pushes, or changes to `.planning/` or `.claude/`.
 
+## Monitor snapshot preservation before the public-hygiene update
+
+The later public-hygiene change removes
+`local_brain/command_center/monitor_data.json` from Git and ignores that path.
+The runtime storage path and persistence behavior do not change. A normal pull
+can remove the formerly tracked copy: `.gitignore` alone does not preserve it.
+Complete this procedure on each existing installation before updating across
+that removal; do not merge into an automatically deployed branch until ready.
+
+1. Pause the actual auto-deploy job and stop the Command Center through its
+   confirmed service manager, allowing its shutdown persistence to finish.
+2. Inspect local changes. Preserve unrelated work separately; do not reset,
+   clean, or stash the whole checkout. If the snapshot exists, record its SHA-256
+   and move it into a new, private backup directory outside all Git checkouts.
+   Verify the moved file matches that hash. Keep the exact backup path locally;
+   do not upload the snapshot or its contents to a PR.
+3. Apply the normal fast-forward update. If Git refuses, stop and resolve the
+   reported state without discarding local data. The external snapshot remains
+   the recovery source even if the update fails.
+4. Before restarting, copy the preserved snapshot back to the same runtime path,
+   preserving its permissions. Verify its hash equals the pre-update hash and
+   that it is ignored and absent from `git ls-files`. Keep the external backup.
+   If no snapshot existed, do not install the historical repository copy as seed
+   data; the monitor supports starting without a persisted snapshot.
+5. Restart the confirmed service, verify it loads the preserved monitoring state,
+   then resume auto-deploy. If the update failed, restore the preserved file before
+   restarting the prior revision instead. No agent, assignment, memory, or SQLite
+   data is changed by this procedure.
+
+This is an operator prerequisite, not a migration already performed on the Mini.
+
 ## Verified ground state
 
 Checked on 2026-10-14 from the development checkout:
