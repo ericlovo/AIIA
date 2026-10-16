@@ -984,6 +984,12 @@ def _status_digest_kwargs(**overrides):
                     )
                 ],
             ),
+            daily_digest.RepoEvidence(
+                repo_id="morrow",
+                mounted=False,
+                complete=True,
+                remote=True,
+            ),
         ],
         "products": PRODUCTS,
         "customers": CUSTOMERS,
@@ -1004,7 +1010,7 @@ def test_sample_rendered_digest_matches_the_product_status_shape():
         "Mindmoor: shipped none | blocked production −12, alumni −4 | waiting on you 1 review",
         "Sanction: shipped none | blocked #12 conflict | waiting on you none",
         "MIA: shipped none | blocked none | waiting on you none",
-        "Morrow: no repo mounted",
+        "Morrow: shipped none | blocked none | waiting on you none",
         "",
         "Customers",
         "That's Right Sweetie (TRS): shipped none | blocked main −8 not on TRS | waiting on you none",
@@ -1031,7 +1037,7 @@ def test_slack_digest_matches_the_morning_note_shape():
         "🟡 *Mindmoor*: production 12 behind main · alumni 4 behind main · *waiting on you:* 1 review",
         "🔴 *Sanction*: #12 conflict",
         "🟢 *MIA*: nothing blocked",
-        "⚪ *Morrow*: no repo",
+        "🟢 *Morrow*: nothing blocked",
         "*Customers*",
         "🟡 *That's Right Sweetie*: main 8 behind TRS",
         "🟡 *Alumni Nations*: alumni 4 behind main · *waiting on you:* 1 review · 7 days to kickoff",
@@ -1358,6 +1364,49 @@ def test_unmounted_repo_falls_back_to_github_slug():
     assert morrow.github.endswith("/morrow")
     payload = daily_digest._config_payload() or {}
     assert payload.get("owners")
+
+
+def test_checked_in_mia_and_morrow_use_github_when_unmounted():
+    calls: list[str] = []
+
+    def github(endpoint: str) -> object:
+        calls.append(endpoint)
+        if "/pulls?state=open" in endpoint:
+            return []
+        if "/actions/runs" in endpoint:
+            return {"workflow_runs": []}
+        if "/pulls?state=closed" in endpoint:
+            return []
+        return {}
+
+    products = daily_digest.load_products()
+    by_id = {product.id: product for product in products}
+    assert by_id["mia"].github.endswith("/moral-intention-analyst")
+    assert by_id["morrow"].github.endswith("/morrow")
+    result = daily_digest.collect_digest(github_api=github, mounts={}, products=products)
+    evidence = {row.repo_id: row for row in result.evidence}
+    assert evidence["mia"].mounted is False and evidence["mia"].remote is True
+    assert evidence["morrow"].mounted is False and evidence["morrow"].remote is True
+    assert any("moral-intention-analyst" in item for item in calls)
+    assert any(
+        "/morrow/" in item or item.endswith("/morrow/pulls?state=open&per_page=20")
+        for item in calls
+    )
+    slack = daily_digest.format_slack_digest(
+        date="2026-10-16",
+        agents=[],
+        assignments=[],
+        loops={},
+        tasks=[],
+        inbox_counts={},
+        repo_evidence=result.evidence,
+        products=products,
+        customers=[],
+    )
+    assert "⚪ *MIA*: no repo" not in slack
+    assert "⚪ *Morrow*: no repo" not in slack
+    assert "🟢 *MIA*: nothing blocked" in slack
+    assert "🟢 *Morrow*: nothing blocked" in slack
 
 
 def test_skipped_dependabot_and_codex_drafts_are_accounted_for():

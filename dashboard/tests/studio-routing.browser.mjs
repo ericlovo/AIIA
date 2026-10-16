@@ -256,6 +256,13 @@ try {
     assert.equal(await assigned.inputValue(), 'a1')
     await page.reload()
     await assigned.waitFor()
+    await page.waitForFunction(() => {
+      const field = [...document.querySelectorAll('label')].find((node) =>
+        node.textContent?.trim().startsWith('Assigned agent'),
+      )
+      const select = field?.querySelector('select')
+      return select instanceof HTMLSelectElement && select.value === 'a1'
+    })
     assert.equal(await assigned.inputValue(), 'a1')
     assert.equal(await hash(page), '#/assignments?agent=a1')
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false)
