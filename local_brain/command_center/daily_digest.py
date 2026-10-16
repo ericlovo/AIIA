@@ -15,6 +15,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
@@ -44,11 +45,28 @@ PRODUCTION_REF_CANDIDATES = ("origin/production", "production")
 ALUMNI_EXACT_CANDIDATES = ("origin/alumni", "alumni")
 ALUMNI_PREFIXES = ("origin/release/alumni", "release/alumni")
 PRODUCTS_ENV = "AIIA_DIGEST_PRODUCTS"
+DEPENDABOT_AUTHORS = frozenset({"dependabot[bot]", "dependabot"})
+HOLD_LABELS = frozenset({"hold"})
+CODEX_HEAD_PREFIX = "codex/"
+DEPENDABOT_HEAD_PREFIX = "dependabot/"
+INBOX_STALE = timedelta(hours=72)
+INBOX_STALE_HINTS = ("next best action", "confirm shipped")
+_PR_MENTION = re.compile(
+    r"(?:(?P<slug>[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)\s*)?#(?P<num>\d+)"
+    r"|(?P<label>AIIA|MIA|Mindmoor|Sanction|Morrow)\s+#(?P<named>\d+)",
+    re.IGNORECASE,
+)
 
 # Fallback when the checked-in map is missing. GitHub slugs for Sanction / MIA
 # live only in config/digest_products.json so this module stays sanitizer-clean.
 FALLBACK_PRODUCTS: tuple[dict[str, Any], ...] = (
-    {"id": "aiia", "name": "AIIA", "github": "ericlovo/AIIA", "mount": "aiia"},
+    {
+        "id": "aiia",
+        "name": "AIIA",
+        "github": "ericlovo/AIIA",
+        "mount": "aiia",
+        "holds": [47, 52],
+    },
     {
         "id": "mindmoor",
         "name": "Mindmoor",
@@ -56,8 +74,8 @@ FALLBACK_PRODUCTS: tuple[dict[str, Any], ...] = (
         "mount": "mindmoor",
         "drift": ["production", "alumni"],
     },
-    {"id": "sanction", "name": "Sanction", "github": "", "mount": "sanction"},
-    {"id": "mia", "name": "MIA", "github": "", "mount": "mia"},
+    {"id": "sanction", "name": "Sanction", "github": "", "mount": "sanction", "asks": False},
+    {"id": "mia", "name": "MIA", "github": "", "mount": "mia", "holds": [42]},
     {"id": "morrow", "name": "Morrow", "github": "", "mount": "morrow"},
 )
 
@@ -81,7 +99,14 @@ FALLBACK_CUSTOMERS: tuple[dict[str, Any], ...] = (
         "drift": ["alumni"],
         "phase": {"name": "Phase 1", "start": "2026-10-15", "end": "2027-01-12"},
     },
-    {"id": "smart-medical", "code": "SM", "name": "Smart Medical"},
+    {
+        "id": "smart-medical",
+        "code": "SM",
+        "name": "Smart Medical",
+        "kind": "consulting",
+        "no_repo": True,
+        "status_note": "",
+    },
 )
 
 GitRead = Callable[..., str | None]
@@ -96,6 +121,8 @@ class DigestProduct:
     mount: str = ""
     drift: tuple[str, ...] = ()
     aliases: tuple[str, ...] = ()
+    holds: tuple[int, ...] = ()
+    asks: bool = True
 
     def tokens(self) -> set[str]:
         values = [self.id, self.name, self.mount, self.github, *self.aliases]
@@ -128,6 +155,9 @@ class DigestCustomer:
     excluded_from_releases: bool = False
     phase: DigestPhase | None = None
     label_override: str = ""
+    consulting: bool = False
+    no_repo: bool = False
+    status_note: str = ""
 
     def tokens(self) -> set[str]:
         values = [self.id, self.name, self.code, *self.agents]
@@ -135,7 +165,9 @@ class DigestCustomer:
 
     def mapped(self) -> bool:
         return bool(
-            self.products
+            self.consulting
+            or self.no_repo
+            or self.products
             or self.agents
             or self.suites
             or self.namespaces
@@ -172,6 +204,9 @@ class PullSignal:
     checks: str = ""
     sha: str = ""
     merged: bool = False
+    author: str = ""
+    head_ref: str = ""
+    labels: tuple[str, ...] = ()
 
 
 @dataclass
@@ -190,6 +225,7 @@ class RepoEvidence:
     stuck: list[str] = field(default_factory=list)
     merged_prs: list[PullSignal] = field(default_factory=list)
     open_pulls: list[PullSignal] = field(default_factory=list)
+    remote: bool = False
 
 
 @dataclass
@@ -237,6 +273,11 @@ def _product_from_row(row: dict[str, Any]) -> DigestProduct | None:
     aliases = tuple(
         str(item).strip().lower() for item in (row.get("aliases") or ()) if str(item).strip()
     )
+    asks = True
+    if "asks" in row:
+        asks = bool(row.get("asks"))
+    elif str(row.get("owner") or "").strip().lower() == "codex":
+        asks = False
     return DigestProduct(
         id=product_id,
         name=name,
@@ -244,6 +285,8 @@ def _product_from_row(row: dict[str, Any]) -> DigestProduct | None:
         mount=str(row.get("mount") or product_id).strip(),
         drift=drift,
         aliases=aliases,
+        holds=_ints(row.get("holds")),
+        asks=asks,
     )
 
 
@@ -294,11 +337,25 @@ def _strings(raw: Any) -> tuple[str, ...]:
     return tuple(str(item).strip() for item in raw if str(item).strip())
 
 
+def _ints(raw: Any) -> tuple[int, ...]:
+    if not isinstance(raw, list):
+        return ()
+    numbers: list[int] = []
+    for item in raw:
+        try:
+            numbers.append(int(item))
+        except (TypeError, ValueError):
+            continue
+    return tuple(numbers)
+
+
 def _customer_from_row(row: dict[str, Any]) -> DigestCustomer | None:
     customer_id = str(row.get("id") or "").strip().lower()
     name = str(row.get("name") or "").strip()
     if not customer_id or not name:
         return None
+    kind = str(row.get("kind") or "").strip().lower()
+    consulting = bool(row.get("consulting")) or kind == "consulting"
     return DigestCustomer(
         id=customer_id,
         name=name,
@@ -315,6 +372,9 @@ def _customer_from_row(row: dict[str, Any]) -> DigestCustomer | None:
         excluded_from_releases=bool(row.get("excluded_from_releases")),
         phase=_phase_from_row(row.get("phase")),
         label_override=str(row.get("label") or "").strip(),
+        consulting=consulting,
+        no_repo=bool(row.get("no_repo")),
+        status_note=str(row.get("status_note") or "").strip(),
     )
 
 
@@ -325,6 +385,15 @@ def _config_payload(path: Path | None = None) -> dict[str, Any] | None:
     except (OSError, ValueError):
         return None
     return data if isinstance(data, dict) else None
+
+
+def load_owners(path: Path | None = None) -> frozenset[str]:
+    """Author logins that may receive merge asks. Kept in config, not this module."""
+    data = _config_payload(path)
+    raw = data.get("owners") if isinstance(data, dict) else None
+    if not isinstance(raw, list):
+        return frozenset()
+    return frozenset(str(item).strip().lower() for item in raw if str(item).strip())
 
 
 def load_customers(path: Path | None = None) -> list[DigestCustomer]:
@@ -725,12 +794,28 @@ def _merged_pr_rows(github_api: GitHubApi, slug: str, since: datetime) -> list[P
     return merged
 
 
+def _label_names(raw: Any) -> tuple[str, ...]:
+    if not isinstance(raw, list):
+        return ()
+    names: list[str] = []
+    for item in raw:
+        if isinstance(item, dict):
+            name = str(item.get("name") or "").strip().lower()
+        else:
+            name = str(item or "").strip().lower()
+        if name:
+            names.append(name)
+    return tuple(names)
+
+
 def _pull_from_row(row: dict[str, Any]) -> PullSignal | None:
     number = row.get("number")
     if not isinstance(number, int):
         return None
     head = row.get("head") if isinstance(row.get("head"), dict) else {}
+    user = row.get("user") if isinstance(row.get("user"), dict) else {}
     mergeable = row.get("mergeable")
+    author = str(user.get("login") or row.get("author") or "").strip()
     return PullSignal(
         number=number,
         title=str(row.get("title") or "")[:200],
@@ -739,7 +824,58 @@ def _pull_from_row(row: dict[str, Any]) -> PullSignal | None:
         mergeable_state=str(row.get("mergeable_state") or ""),
         sha=str(head.get("sha") or ""),
         merged=bool(row.get("merged_at") or row.get("merged")),
+        author=author,
+        head_ref=str(head.get("ref") or row.get("head_ref") or "").strip(),
+        labels=_label_names(row.get("labels")),
     )
+
+
+def _pull_is_dependabot(pull: PullSignal) -> bool:
+    login = pull.author.lower()
+    ref = pull.head_ref.lower()
+    return (
+        login in DEPENDABOT_AUTHORS
+        or "dependabot" in login
+        or ref.startswith(DEPENDABOT_HEAD_PREFIX)
+    )
+
+
+def _pull_is_codex(pull: PullSignal) -> bool:
+    return pull.head_ref.lower().startswith(CODEX_HEAD_PREFIX)
+
+
+def _pull_held(pull: PullSignal, holds: Iterable[int] = ()) -> bool:
+    if pull.number in set(holds):
+        return True
+    return bool(HOLD_LABELS.intersection(pull.labels))
+
+
+def _eric_owned_ready(pull: PullSignal) -> bool:
+    if pull.draft or _pull_is_codex(pull) or _pull_is_dependabot(pull):
+        return False
+    if pull.author.lower() not in load_owners():
+        return False
+    return _pull_ready(pull)
+
+
+def _evidence_has_pulls(evidence: RepoEvidence | None) -> bool:
+    return bool(evidence and (evidence.mounted or evidence.remote))
+
+
+def _pr_number_list(pulls: Iterable[PullSignal]) -> str:
+    return ", ".join(f"#{pull.number}" for pull in pulls)
+
+
+def _skipped_part(pulls: Iterable[PullSignal]) -> str:
+    rows = list(pulls)
+    dependabot = [pull for pull in rows if _pull_is_dependabot(pull)]
+    codex_drafts = [pull for pull in rows if pull.draft and _pull_is_codex(pull)]
+    bits: list[str] = []
+    if dependabot:
+        bits.append(f"{len(dependabot)} dependabot ({_pr_number_list(dependabot)})")
+    if codex_drafts:
+        bits.append(f"{len(codex_drafts)} codex drafts ({_pr_number_list(codex_drafts)})")
+    return "skipped: " + ", ".join(bits) if bits else ""
 
 
 def _enrich_pull_checks(github_api: GitHubApi, slug: str, pulls: list[PullSignal]) -> None:
@@ -794,32 +930,40 @@ def collect_repo_evidence(
     mounts: dict[str, Path] | None = None,
     drift_refs: tuple[str, ...] | None = None,
     now: datetime | None = None,
+    github_slug: str = "",
 ) -> RepoEvidence:
     git_read = git_read or _git_read
     github_api = github_api or repos._github_api
     mounts = mounts if mounts is not None else repos.REPO_MOUNTS
     path = mounts.get(repo_id)
-    if not path or not (path / ".git").exists():
-        return RepoEvidence(repo_id=repo_id, mounted=False, complete=True)
+    mounted = bool(path and (path / ".git").exists())
+    configured = str(github_slug or "").strip()
+    slug = _github_slug(path) if mounted else ""
+    if not slug and configured and repos._GITHUB_SLUG.fullmatch(configured):
+        slug = configured
+    if not mounted and not slug:
+        return RepoEvidence(repo_id=repo_id, mounted=False, complete=True, remote=False)
 
     failures: list[str] = []
-    main_ref = _first_ref(git_read, path, MAIN_REF_CANDIDATES)
-    head = git_read(path, "rev-parse", "--verify", "HEAD")
-    if head is None:
-        failures.append("git_head_failed")
-
     behind_main = None
-    if main_ref and head:
-        behind_main = _behind_count(git_read, path, "HEAD", main_ref)
-        if behind_main is None:
-            failures.append("git_behind_main_failed")
+    recent_commits = None
+    main_ref = None
+    if mounted:
+        main_ref = _first_ref(git_read, path, MAIN_REF_CANDIDATES)
+        head = git_read(path, "rev-parse", "--verify", "HEAD")
+        if head is None:
+            failures.append("git_head_failed")
+        if main_ref and head:
+            behind_main = _behind_count(git_read, path, "HEAD", main_ref)
+            if behind_main is None:
+                failures.append("git_behind_main_failed")
+        recent_raw = git_read(path, "rev-list", "--count", "--since=24.hours", "HEAD")
+        recent_commits = (
+            int(recent_raw) if recent_raw is not None and recent_raw.isdigit() else None
+        )
+        if recent_raw is None:
+            failures.append("git_recent_commits_failed")
 
-    recent_raw = git_read(path, "rev-list", "--count", "--since=24.hours", "HEAD")
-    recent_commits = int(recent_raw) if recent_raw is not None and recent_raw.isdigit() else None
-    if recent_raw is None:
-        failures.append("git_recent_commits_failed")
-
-    slug = _github_slug(path)
     open_prs = failing_ci = merge_conflicts = None
     merged_prs: list[PullSignal] = []
     open_pulls: list[PullSignal] = []
@@ -838,12 +982,14 @@ def collect_repo_evidence(
         if clock.tzinfo is None:
             clock = clock.replace(tzinfo=timezone.utc)
         merged_prs = _merged_pr_rows(github_api, slug, clock - SHIPPED_WINDOW)
-    else:
+    elif mounted:
         failures.append("github_origin_missing")
 
-    if drift_refs is None and repo_id == "mindmoor":
-        drift_refs = ("production", "alumni")
-    drift = _configured_drift(git_read, path, main_ref, repo_id, drift_refs or ())
+    drift: list[DriftSignal] = []
+    if mounted:
+        if drift_refs is None and repo_id == "mindmoor":
+            drift_refs = ("production", "alumni")
+        drift = _configured_drift(git_read, path, main_ref, repo_id, drift_refs or ())
 
     moved: list[str] = []
     stuck: list[str] = []
@@ -862,7 +1008,7 @@ def collect_repo_evidence(
     unique_failures = tuple(dict.fromkeys(failures))
     return RepoEvidence(
         repo_id=repo_id,
-        mounted=True,
+        mounted=mounted,
         complete=not unique_failures,
         open_prs=open_prs,
         failing_ci=failing_ci,
@@ -875,6 +1021,7 @@ def collect_repo_evidence(
         stuck=stuck,
         merged_prs=merged_prs,
         open_pulls=open_pulls,
+        remote=bool(slug),
     )
 
 
@@ -1014,6 +1161,7 @@ def collect_digest(
     catalog = list(products) if products is not None else load_products()
     roster = list(customers) if customers is not None else load_customers()
     drift_by_mount = {product.mount: product.drift for product in catalog if product.mount}
+    slug_by_mount = {product.mount: product.github for product in catalog if product.mount}
     evidence = [
         collect_repo_evidence(
             repo_id,
@@ -1022,6 +1170,7 @@ def collect_digest(
             mounts=mounts,
             drift_refs=drift_by_mount.get(repo_id) or None,
             now=now,
+            github_slug=slug_by_mount.get(repo_id, ""),
         )
         for repo_id in watched_repo_ids(mounts, catalog)
     ]
@@ -1080,12 +1229,16 @@ def _blocked_segment(
     paused: list[str],
     failed_agents: int,
     failing_tasks: list[str],
+    holds: Iterable[int] = (),
 ) -> str:
     parts: list[str] = []
-    if evidence and evidence.mounted:
+    if _evidence_has_pulls(evidence) and evidence is not None:
         if evidence.failing_ci:
             parts.append("CI on main")
+        held = set(holds)
         for pull in evidence.open_pulls:
+            if _pull_held(pull, held):
+                continue
             if _pull_conflicted(pull):
                 parts.append(f"#{pull.number} conflict")
             elif _pull_checks_failing(pull):
@@ -1107,13 +1260,17 @@ def _waiting_segment(
     evidence: RepoEvidence | None,
     *,
     review: int,
+    holds: Iterable[int] = (),
+    asks: bool = True,
 ) -> str:
     parts: list[str] = []
-    if evidence and evidence.mounted:
-        ready_merge = [pull for pull in evidence.open_pulls if not pull.draft and _pull_ready(pull)]
-        ready_undraft = [pull for pull in evidence.open_pulls if pull.draft and _pull_ready(pull)]
+    if asks and _evidence_has_pulls(evidence) and evidence is not None:
+        ready_merge = [
+            pull
+            for pull in evidence.open_pulls
+            if not _pull_held(pull, holds) and _eric_owned_ready(pull)
+        ]
         parts.extend(_pr_bits(ready_merge, "merge"))
-        parts.extend(_pr_bits(ready_undraft, "undraft"))
     if review:
         parts.append(f"{review} review")
     return _join_segments(parts)
@@ -1155,6 +1312,9 @@ def format_customer_line(
     date: str = "",
     limit: int = PRODUCT_LINE_MAX,
 ) -> str:
+    if customer.consulting or customer.no_repo:
+        note = customer.status_note.strip() or "no repo, consulting"
+        return f"{customer.label()}: {note}"
     if not customer.mapped():
         return f"{customer.label()}: not mapped yet"
     paused = paused or []
@@ -1199,25 +1359,28 @@ def format_product_line(
 ) -> str:
     paused = paused or []
     failing_tasks = failing_tasks or []
-    readable = bool(evidence and evidence.mounted)
+    readable = bool(evidence and (evidence.mounted or evidence.remote))
     unreadable = bool(readable and not evidence.complete and evidence.open_prs is None)
+    block_kwargs = {
+        "paused": paused,
+        "failed_agents": failed_agents,
+        "failing_tasks": failing_tasks,
+        "holds": product.holds,
+    }
+    wait_kwargs = {"review": review, "holds": product.holds, "asks": product.asks}
     if not readable:
         note = "no repo mounted"
         extras: list[str] = []
-        blocked = _blocked_segment(
-            None, paused=paused, failed_agents=failed_agents, failing_tasks=failing_tasks
-        )
-        waiting = _waiting_segment(None, review=review)
+        blocked = _blocked_segment(None, **block_kwargs)
+        waiting = _waiting_segment(None, **wait_kwargs)
         if blocked != "none":
             extras.append(f"blocked {blocked}")
         if waiting != "none":
             extras.append(f"waiting on you {waiting}")
         line = f"{product.name}: " + " | ".join([note, *extras])
     elif unreadable:
-        blocked = _blocked_segment(
-            evidence, paused=paused, failed_agents=failed_agents, failing_tasks=failing_tasks
-        )
-        waiting = _waiting_segment(evidence, review=review)
+        blocked = _blocked_segment(evidence, **block_kwargs)
+        waiting = _waiting_segment(evidence, **wait_kwargs)
         extras = ["repo unreadable"]
         if blocked != "none":
             extras.append(f"blocked {blocked}")
@@ -1226,10 +1389,8 @@ def format_product_line(
         line = f"{product.name}: " + " | ".join(extras)
     else:
         shipped = _shipped_segment(evidence)
-        blocked = _blocked_segment(
-            evidence, paused=paused, failed_agents=failed_agents, failing_tasks=failing_tasks
-        )
-        waiting = _waiting_segment(evidence, review=review)
+        blocked = _blocked_segment(evidence, **block_kwargs)
+        waiting = _waiting_segment(evidence, **wait_kwargs)
         line = f"{product.name}: shipped {shipped} | blocked {blocked} | waiting on you {waiting}"
     if len(line) <= limit:
         return line
@@ -1251,42 +1412,147 @@ def _decision_sort_key(item: dict[str, Any]) -> tuple[int, str]:
     )
 
 
+def _item_text(item: dict[str, Any]) -> str:
+    return str(item.get("text") or item.get("subject") or "").strip()
+
+
+def _parse_stamp(raw: Any) -> datetime | None:
+    text = str(raw or "").strip()
+    if not text:
+        return None
+    try:
+        when = datetime.fromisoformat(text.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if when.tzinfo is None:
+        when = when.replace(tzinfo=timezone.utc)
+    return when
+
+
+def _item_stamp(item: dict[str, Any]) -> datetime | None:
+    for key in ("created_at", "updated_at", "ts", "timestamp"):
+        when = _parse_stamp(item.get(key))
+        if when:
+            return when
+    return None
+
+
+def _item_pr_key(item: dict[str, Any]) -> str:
+    number = item.get("pr") or item.get("number") or item.get("pr_number")
+    repo = str(item.get("repo") or item.get("project") or "").strip().lower()
+    if isinstance(number, int):
+        return f"{repo}#{number}" if repo else f"#{number}"
+    text = _item_text(item)
+    match = _PR_MENTION.search(text)
+    if not match:
+        return ""
+    num = match.group("num") or match.group("named")
+    slug = (match.group("slug") or match.group("label") or repo or "").lower()
+    return f"{slug}#{num}" if slug else f"#{num}"
+
+
+def _item_subject_key(text: str) -> str:
+    cleaned = " ".join(text.lower().split())
+    for hint in INBOX_STALE_HINTS:
+        prefix = f"{hint}:"
+        if cleaned.startswith(prefix):
+            cleaned = cleaned[len(prefix) :].strip(" -")
+            break
+        if cleaned.startswith(hint):
+            cleaned = cleaned[len(hint) :].strip(" :-")
+            break
+    return cleaned
+
+
+def _stale_kind(text: str) -> bool:
+    lower = text.lower()
+    return any(hint in lower for hint in INBOX_STALE_HINTS)
+
+
+def _pr_keys_from_evidence(
+    evidence: Iterable[RepoEvidence] | None, *, merged: bool = False
+) -> set[str]:
+    keys: set[str] = set()
+    for row in evidence or ():
+        pulls = row.merged_prs if merged else row.open_pulls
+        for pull in pulls:
+            keys.add(f"#{pull.number}")
+            keys.add(f"{row.repo_id}#{pull.number}")
+            if row.repo_id == "aiia":
+                keys.add(f"aiia#{pull.number}")
+    return keys
+
+
+def current_inbox_items(
+    items: list[dict[str, Any]],
+    *,
+    now: datetime | None = None,
+    resolved_prs: Iterable[str] | None = None,
+    open_prs: Iterable[str] | None = None,
+) -> list[dict[str, Any]]:
+    """Drop digest rows, stale next-best/confirm-shipped, resolved PRs; dedupe."""
+    clock = now or datetime.now(timezone.utc)
+    if clock.tzinfo is None:
+        clock = clock.replace(tzinfo=timezone.utc)
+    resolved = {str(key).lower() for key in (resolved_prs or ())}
+    opened = {str(key).lower() for key in (open_prs or ())}
+    kept: list[dict[str, Any]] = []
+    for item in items:
+        text = _item_text(item)
+        if not text or str(item.get("source") or "") == "digest":
+            continue
+        key = _item_pr_key(item).lower()
+        state = str(item.get("pr_state") or item.get("state") or "").lower()
+        if item.get("resolved") or state in {"merged", "closed"}:
+            continue
+        if key and key in resolved:
+            continue
+        if _stale_kind(text):
+            if key and opened and key not in opened:
+                continue
+            stamp = _item_stamp(item)
+            if stamp and clock - stamp > INBOX_STALE:
+                continue
+        kept.append(item)
+
+    seen: set[str] = set()
+    unique: list[dict[str, Any]] = []
+    oldest = datetime.min.replace(tzinfo=timezone.utc)
+    for item in sorted(kept, key=lambda row: _item_stamp(row) or oldest, reverse=True):
+        token = _item_pr_key(item).lower() or _item_subject_key(_item_text(item))
+        if not token or token in seen:
+            continue
+        seen.add(token)
+        unique.append(item)
+    order = {id(item): index for index, item in enumerate(items)}
+    unique.sort(key=lambda item: order.get(id(item), 0))
+    return unique
+
+
 def choose_decisions(
     items: list[dict[str, Any]],
     *,
     products: Iterable[DigestProduct] | None = None,
     inbox_counts: dict[str, int] | None = None,
     limit: int = DECISION_LIMIT,
+    now: datetime | None = None,
+    resolved_prs: Iterable[str] | None = None,
+    open_prs: Iterable[str] | None = None,
 ) -> tuple[list[dict[str, Any]], dict[str, int]]:
-    """Preferred inbox rows (Slack / product-tagged), plus leftover counts by source."""
+    """Preferred current inbox rows; leftover is unused current items only."""
     catalog = list(products) if products is not None else load_products()
-    usable = [
-        item
-        for item in items
-        if str(item.get("source") or "") != "digest" and str(item.get("text") or "").strip()
-    ]
+    usable = current_inbox_items(items, now=now, resolved_prs=resolved_prs, open_prs=open_prs)
     preferred = [item for item in usable if _decision_preferred(item, catalog)]
     preferred.sort(key=_decision_sort_key)
     chosen = preferred[:limit]
-    shown_by_source: dict[str, int] = {}
-    for item in chosen:
-        source = str(item.get("source") or "inbox")
-        shown_by_source[source] = shown_by_source.get(source, 0) + 1
     leftover: dict[str, int] = {}
-    if inbox_counts:
-        for source, total in inbox_counts.items():
-            if source == "digest":
-                continue
-            rest = max(int(total) - shown_by_source.get(source, 0), 0)
-            if rest:
-                leftover[source] = rest
-    else:
-        chosen_ids = {id(item) for item in chosen}
-        for item in usable:
-            if id(item) in chosen_ids:
-                continue
-            source = str(item.get("source") or "inbox")
-            leftover[source] = leftover.get(source, 0) + 1
+    chosen_ids = {id(item) for item in chosen}
+    for item in usable:
+        if id(item) in chosen_ids:
+            continue
+        source = str(item.get("source") or "inbox")
+        leftover[source] = leftover.get(source, 0) + 1
+    _ = inbox_counts
     return chosen, leftover
 
 
@@ -1296,10 +1562,19 @@ def format_decision_lines(
     products: Iterable[DigestProduct] | None = None,
     inbox_counts: dict[str, int] | None = None,
     limit: int = DECISION_LIMIT,
+    now: datetime | None = None,
+    resolved_prs: Iterable[str] | None = None,
+    open_prs: Iterable[str] | None = None,
 ) -> list[str]:
     catalog = list(products) if products is not None else load_products()
     chosen, leftover = choose_decisions(
-        items, products=catalog, inbox_counts=inbox_counts, limit=limit
+        items,
+        products=catalog,
+        inbox_counts=inbox_counts,
+        limit=limit,
+        now=now,
+        resolved_prs=resolved_prs,
+        open_prs=open_prs,
     )
     lines: list[str] = []
     for item in chosen:
@@ -1425,6 +1700,7 @@ SLACK_EMOJI = {
     "countdown": "🟢",
     "unmapped": "⚪",
     "unmounted": "⚪",
+    "consulting": "⚪",
 }
 
 
@@ -1461,12 +1737,16 @@ def _hard_block_parts(
     paused: list[str],
     failed_agents: int,
     failing_tasks: list[str] | None = None,
+    holds: Iterable[int] = (),
 ) -> list[str]:
     parts: list[str] = []
-    if evidence and evidence.mounted:
+    if _evidence_has_pulls(evidence) and evidence is not None:
         if evidence.failing_ci:
             parts.append("CI red on main")
+        held = set(holds)
         for pull in evidence.open_pulls:
+            if _pull_held(pull, held):
+                continue
             if _pull_conflicted(pull):
                 parts.append(f"#{pull.number} conflict")
             elif _pull_checks_failing(pull):
@@ -1488,23 +1768,24 @@ def _waiting_parts(
     review: int,
     drift: Iterable[DriftSignal] | None = None,
     customer_behind: tuple[str, int] | None = None,
+    holds: Iterable[int] = (),
+    asks: bool = True,
 ) -> tuple[list[str], str]:
     """Lead fragments (ready PRs / drift) and the waiting-on-you clause."""
     lead: list[str] = []
     waiting: list[str] = []
-    if evidence and evidence.mounted:
-        ready_merge = [pull for pull in evidence.open_pulls if not pull.draft and _pull_ready(pull)]
-        ready_undraft = [pull for pull in evidence.open_pulls if pull.draft and _pull_ready(pull)]
+    if asks and _evidence_has_pulls(evidence) and evidence is not None:
+        ready_merge = [
+            pull
+            for pull in evidence.open_pulls
+            if not _pull_held(pull, holds) and _eric_owned_ready(pull)
+        ]
         if len(ready_merge) == 1:
             lead.append(f"#{ready_merge[0].number} ready")
             waiting.append("merge")
         elif ready_merge:
             lead.append(f"{len(ready_merge)} PRs ready")
             waiting.append("merge")
-        if len(ready_undraft) == 1:
-            waiting.append("undraft")
-        elif ready_undraft:
-            waiting.append(f"{len(ready_undraft)} undraft")
     if review == 1:
         waiting.append("1 review")
     elif review:
@@ -1551,6 +1832,8 @@ def _morning_state(
 def _compose_morning_note(line: MorningLine) -> str:
     if line.state == "unmapped":
         return "not mapped yet"
+    if line.state == "consulting":
+        return line.note or "no repo, consulting"
     if line.state == "unmounted":
         return "no repo"
     bits = [part for part in line.parts if part]
@@ -1574,12 +1857,18 @@ def morning_product_line(
 ) -> MorningLine:
     paused = paused or []
     hard = _hard_block_parts(
-        evidence, paused=paused, failed_agents=failed_agents, failing_tasks=failing_tasks
+        evidence,
+        paused=paused,
+        failed_agents=failed_agents,
+        failing_tasks=failing_tasks,
+        holds=product.holds,
     )
     drift = evidence.drift if evidence and evidence.mounted else ()
-    lead, waiting = _waiting_parts(evidence, review=review, drift=drift)
+    lead, waiting = _waiting_parts(
+        evidence, review=review, drift=drift, holds=product.holds, asks=product.asks
+    )
     shipped = _shipped_part(evidence)
-    mounted = bool(evidence and evidence.mounted)
+    mounted = bool(evidence and (evidence.mounted or evidence.remote))
     state = _morning_state(
         mounted=mounted,
         hard=hard,
@@ -1596,6 +1885,7 @@ def morning_product_line(
     elif lead:
         # Ready PRs stay in the waiting clause; drift stays visible when blocked.
         parts.extend(bit for bit in lead if "behind" in bit)
+    extra = _skipped_part(evidence.open_pulls if evidence else [])
     line = MorningLine(
         id=product.id,
         name=product.name,
@@ -1603,6 +1893,7 @@ def morning_product_line(
         state=state,
         parts=tuple(parts),
         waiting=waiting,
+        extra=extra,
     )
     line.note = _compose_morning_note(line)
     return line
@@ -1618,6 +1909,16 @@ def morning_customer_line(
     failed_agents: int = 0,
     date: str = "",
 ) -> MorningLine:
+    if customer.consulting or customer.no_repo:
+        note = customer.status_note.strip() or "no repo, consulting"
+        line = MorningLine(
+            id=customer.id,
+            name=customer.name,
+            kind="customer",
+            state="consulting",
+            note=note,
+        )
+        return line
     if not customer.mapped():
         line = MorningLine(id=customer.id, name=customer.name, kind="customer", state="unmapped")
         line.note = _compose_morning_note(line)
@@ -1665,6 +1966,8 @@ def _slack_line(line: MorningLine) -> str:
     name = escape(line.name)
     if line.state == "unmapped":
         return f"{emoji} *{name}*: not mapped yet"
+    if line.state == "consulting":
+        return f"{emoji} *{name}*: {escape(line.note or 'no repo, consulting')}"
     if line.state == "unmounted":
         return f"{emoji} *{name}*: no repo"
     bits = [escape(part) for part in line.parts if part]
@@ -1687,6 +1990,14 @@ def slack_failure_line(
     if failing:
         name = str(failing[0].get("name") or failing[0].get("task_id") or "task")
         extra = f" +{len(failing) - 1}" if len(failing) > 1 else ""
+        reason = _first_line(
+            str(failing[0].get("last_error") or failing[0].get("last_result") or "").replace(
+                "FAILED: ", "", 1
+            ),
+            80,
+        )
+        if reason:
+            return f"{escape(name)} failed: {escape(reason)}{extra}"
         return f"{escape(name)} failed{extra}"
     failed = sum(1 for item in assignments if _agent_failed_today(item, date))
     if failed == 1:
@@ -1780,10 +2091,19 @@ def morning_decision_cards(
     products: Iterable[DigestProduct] | None = None,
     inbox_counts: dict[str, int] | None = None,
     limit: int = DECISION_LIMIT,
+    now: datetime | None = None,
+    resolved_prs: Iterable[str] | None = None,
+    open_prs: Iterable[str] | None = None,
 ) -> tuple[list[dict[str, Any]], int]:
     catalog = list(products) if products is not None else load_products()
     chosen, leftover = choose_decisions(
-        items, products=catalog, inbox_counts=inbox_counts, limit=limit
+        items,
+        products=catalog,
+        inbox_counts=inbox_counts,
+        limit=limit,
+        now=now,
+        resolved_prs=resolved_prs,
+        open_prs=open_prs,
     )
     cards: list[dict[str, Any]] = []
     for item in chosen:
@@ -1840,6 +2160,7 @@ def format_slack_digest(
     customers: Iterable[DigestCustomer] | None = None,
     customer_evidence: list[CustomerEvidence] | None = None,
     run_counts: dict[str, int] | None = None,
+    now: datetime | None = None,
 ) -> str:
     """Morning-note Slack mrkdwn. Empty segments are omitted; no activity counts."""
     catalog = list(products) if products is not None else load_products()
@@ -1855,8 +2176,15 @@ def format_slack_digest(
     lines = [f"*AIIA · {slack_header_date(date)}*", *[_slack_line(line) for line in product_lines]]
     if customer_lines:
         lines += ["*Customers*", *[_slack_line(line) for line in customer_lines]]
+    resolved = _pr_keys_from_evidence(repo_evidence, merged=True)
+    opened = _pr_keys_from_evidence(repo_evidence, merged=False)
     chosen, leftover = choose_decisions(
-        inbox_items or [], products=catalog, inbox_counts=inbox_counts
+        inbox_items or [],
+        products=catalog,
+        inbox_counts=inbox_counts,
+        now=now,
+        resolved_prs=resolved,
+        open_prs=opened,
     )
     total = len(chosen) + sum(leftover.values())
     if total:
@@ -1906,6 +2234,8 @@ def build_morning_note(
         agents=agents,
         products=catalog,
         inbox_counts=inbox_counts,
+        resolved_prs=_pr_keys_from_evidence(repo_evidence, merged=True),
+        open_prs=_pr_keys_from_evidence(repo_evidence, merged=False),
     )
     return {
         "date": date,
@@ -1992,6 +2322,8 @@ def build_digest(
             inbox_items or [],
             products=catalog,
             inbox_counts=inbox_counts,
+            resolved_prs=_pr_keys_from_evidence(repo_evidence, merged=True),
+            open_prs=_pr_keys_from_evidence(repo_evidence, merged=False),
         ),
     ]
     footer = format_footer(
