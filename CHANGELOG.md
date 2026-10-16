@@ -8,10 +8,17 @@ All notable changes to AIIA are documented here. This project adheres to
 
 ### Added
 
-- **Bots as the Studio starting point.** Open a named bot, read its latest output
-  and give it a task. Work and Projects stay in primary navigation; detailed
-  views remain under More with existing deep links. Added optional local chat
-  timing metrics and an inventory-first, opt-in synthetic model benchmark.
+- **Studio morning note.** The default landing view is a one-screen note
+  (greeting, where things stand, needs you, ask for anything) fed from the
+  same digest/product-line data. Existing Studio views stay behind Details.
+  Approve / Not now use the existing inbox promote/dismiss and assignment
+  review/dismiss endpoints. Ask creates an assignment and picks the agent
+  from roster `kind` / `use_when` / `handles`. The page never says runs,
+  loops, inbox, or sources.
+- **Bots in Studio.** Open a named bot, read its latest output and give it a
+  task. Work and Projects stay in primary navigation; detailed views remain
+  under More with existing deep links. Added optional local chat timing
+  metrics and an inventory-first, opt-in synthetic model benchmark.
   See [the evaluation notes](docs/STUDIO-BOTS-AND-LOCAL-MODELS.md).
 - **Slack captures keep their attached files.** People mention the bot with a
   document and no words, so the event text was only the mention and, after

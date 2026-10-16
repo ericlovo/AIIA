@@ -78,9 +78,9 @@ async function open({ handoffs = [], voiceConfigured = false, mintVoice = false,
     }
     await route.fulfill({ contentType: 'application/json', body: JSON.stringify(bodies[path] ?? {}) })
   })
-  await page.goto(studioDist ? 'http://studio.test/' : process.env.STUDIO_URL || 'http://127.0.0.1:5184/')
-  await page.getByRole('heading', { name: 'Bots', exact: true }).waitFor()
-  await openStudioView(page, 'Today')
+  const root = studioDist ? 'http://studio.test/' : process.env.STUDIO_URL || 'http://127.0.0.1:5184/'
+  await page.goto(`${root}#/today`)
+  await page.getByRole('navigation', { name: 'Studio' }).waitFor()
   return { context, page, pageErrors, voiceSessions, voiceConnections }
 }
 
