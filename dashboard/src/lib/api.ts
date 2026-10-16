@@ -873,6 +873,14 @@ export const api = {
   voiceTool: (name: string, arguments_: Record<string, unknown> = {}) =>
     post<VoiceToolResult>('/api/voice/tools', { name, arguments: arguments_ }),
 
+  morningNote: () => get<{
+    date: string
+    products: Array<{ id: string; name: string; kind: string; state: string; note: string; waiting?: string; extra?: string; target?: string }>
+    customers: Array<{ id: string; name: string; kind: string; state: string; note: string; waiting?: string; extra?: string; target?: string }>
+    decisions: Array<{ id: string; kind: string; product: string; title: string; why: string; more: string; expected_version?: string }>
+    needs_you_total: number
+    failure: string | null
+  }>('/api/studio/morning-note'),
   briefingLatest: () => get<{ briefing: string; generated_at: string; source: string }>('/api/briefing/latest'),
   tokensToday: () => get<TokenUsageToday>('/api/tokens/today'),
   tokensRecent: () => get<{ days: TokenUsageDay[] }>('/api/tokens/recent?days=14'),
