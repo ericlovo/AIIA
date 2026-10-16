@@ -143,3 +143,36 @@ async def test_local_chat_reports_length_when_budget_exhausted(monkeypatch):
     assert fake.kwargs["think"] is None
     assert resp.content == ""
     assert resp.done_reason == "length"
+
+
+@pytest.mark.asyncio
+async def test_chat_preserves_provider_durations(monkeypatch):
+    fake = _RecordingOllama(
+        {
+            "message": {"content": "ok"},
+            "total_duration": 23_100_000_000,
+            "load_duration": 2_000_000_000,
+            "prompt_eval_duration": 100_000_000,
+            "eval_duration": 20_000_000_000,
+        }
+    )
+    monkeypatch.setattr(local_api, "_ollama", fake)
+    monkeypatch.setattr(local_api, "_report_metrics", _noop_metrics)
+    response = await local_api.local_chat(local_api.ChatRequest(messages=[], model="test"))
+    assert response.timing.model_dump() == {
+        "total_ms": 23100,
+        "load_ms": 2000,
+        "prompt_eval_ms": 100,
+        "eval_ms": 20000,
+    }
+
+
+@pytest.mark.parametrize("value", [None, True, -1, "100", float("nan"), float("inf"), 2**64])
+def test_invalid_timing_is_unknown(value):
+    assert local_api.OllamaTiming.from_response({"total_duration": value}) is None
+
+
+def test_partial_timing_preserves_zero():
+    timing = local_api.OllamaTiming.from_response({"eval_duration": 0, "load_duration": -1})
+    assert timing.eval_ms == 0 and timing.load_ms is None
+    assert local_api.ChatResponse(content="ok", model="test").timing is None

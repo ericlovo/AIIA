@@ -319,11 +319,36 @@ class ChatRequest(BaseModel):
     think: bool | None = None
 
 
+class OllamaTiming(BaseModel):
+    """Provider durations in milliseconds, excluding Studio context preparation."""
+
+    total_ms: float | None = Field(default=None, ge=0, allow_inf_nan=False)
+    load_ms: float | None = Field(default=None, ge=0, allow_inf_nan=False)
+    prompt_eval_ms: float | None = Field(default=None, ge=0, allow_inf_nan=False)
+    eval_ms: float | None = Field(default=None, ge=0, allow_inf_nan=False)
+
+    @classmethod
+    def from_response(cls, response: dict) -> OllamaTiming | None:
+        fields = {}
+        for source, target in (
+            ("total_duration", "total_ms"),
+            ("load_duration", "load_ms"),
+            ("prompt_eval_duration", "prompt_eval_ms"),
+            ("eval_duration", "eval_ms"),
+        ):
+            value = response.get(source)
+            # Ollama durations are integer nanoseconds. Unknown/malformed means absent.
+            if type(value) is int and 0 <= value <= 2**63 - 1:
+                fields[target] = value / 1_000_000
+        return cls(**fields) if fields else None
+
+
 class ChatResponse(BaseModel):
     """Local chat completion response."""
 
     content: str
     model: str
+    timing: OllamaTiming | None = None
     usage: dict[str, int] = {}
     latency_ms: float = 0.0
     # Ollama's stop reason: "stop", or "length" when max_tokens ran out.
@@ -671,6 +696,7 @@ async def local_chat(request: ChatRequest):
     return ChatResponse(
         content=content,
         model=model,
+        timing=OllamaTiming.from_response(response),
         usage=usage,
         latency_ms=response.get("_latency_ms", 0),
         done_reason=response.get("done_reason"),

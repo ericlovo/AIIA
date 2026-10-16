@@ -1,3 +1,4 @@
+import { openStudioView } from './studio-navigation.mjs'
 // Bulk dismissal in Activity history: a person ticks items, gives a reason, and dismisses them
 // together or not at all. Dismissal never records a verdict, a changed item stops
 // the whole batch, and the error names it. Every response is synthetic.

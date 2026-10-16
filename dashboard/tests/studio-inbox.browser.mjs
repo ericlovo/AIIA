@@ -1,3 +1,4 @@
+import { openStudioView } from './studio-navigation.mjs'
 // Inbox navigation, source counts, legacy empty captures, and query invalidation.
 // All APIs and WebSockets are synthetic; unexpected traffic fails closed.
 import assert from 'node:assert/strict'
@@ -193,7 +194,7 @@ async function expectSource(page, source, state) {
   for (const item of pending) await row(page, cleanText(item.text)).waitFor()
   if (source === 'loops') assert.equal(await row(page, 'Accepted proposal must not enter the pending queue.').count(), 0)
   assert.equal(await captures(page).locator('li:not([data-idea-status="unreviewed"])').count(), 0)
-  assert.equal(await nav(page).getByRole('link', { name: 'Inbox', exact: true }).getAttribute('aria-current'), 'page')
+  assert.equal(await nav(page).locator('a[href="#/inbox"]').getAttribute('aria-current'), 'page')
 }
 async function expectCounts(page, slack = 3, proposals = 3) {
   await queueCount(page, 'Slack', slack)
@@ -206,7 +207,7 @@ try {
     const { page, state, close } = await open('#/today', width)
     await heading(page, 'Today').waitFor()
     await expectCounts(page)
-    assert.equal(await nav(page).getByRole('link', { name: 'Inbox', exact: true }).getAttribute('href'), '#/inbox')
+    assert.equal(await nav(page).locator('a[href="#/inbox"]').getAttribute('href'), '#/inbox')
     await screenshot(page, `today-queues-${width}`)
 
     await activate(page, queue(page, 'Work review'), width === 1440)
@@ -241,6 +242,7 @@ try {
     await page.goBack()
     await heading(page, 'Today').waitFor()
 
+    await nav(page).locator('summary').click()
     await activate(page, nav(page).getByRole('link', { name: 'Inbox', exact: true }), width === 320)
     await page.waitForFunction(() => location.hash === '#/inbox')
     await expectSource(page, 'slack', state)
@@ -327,7 +329,7 @@ try {
     await expectCounts(page)
     // A failed refresh must also override previously cached nonzero counts.
     state.failures = new Set(queueSources)
-    await nav(page).getByRole('link', { name: 'Inbox', exact: true }).click()
+    await openStudioView(page, 'Inbox')
     await heading(page, 'Inbox').waitFor()
     await page.clock.fastForward(16_000)
     for (const label of ['Slack', 'Proposals', 'Work review']) await queueCount(page, label, 'Unavailable')
@@ -383,7 +385,7 @@ try {
     assert.equal(state.assignments.at(-1).status, 'queued')
     assert.deepEqual(state.mutations.map(({ id, action }) => [id, action]), [['slack-empty', 'dismiss'], ['slack-alpha', 'promote'], ['slack-bravo', 'assign']])
     await screenshot(page, `mutations-invalidated-${width}`)
-    await nav(page).getByRole('link', { name: 'Today', exact: true }).click()
+    await openStudioView(page, 'Today')
     await expectCounts(page, 1)
     await page.reload()
     await expectCounts(page, 1)
@@ -405,7 +407,7 @@ try {
     await page.reload()
     await expectSource(page, 'loops', state)
     await expectCounts(page, 1, 2)
-    await nav(page).getByRole('link', { name: 'Today', exact: true }).click()
+    await openStudioView(page, 'Today')
     await expectCounts(page, 1, 2)
     await close()
     console.log(`${width}px: synthetic dismiss/promote/queue invalidation and Today counts passed`)

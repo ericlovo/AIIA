@@ -1831,7 +1831,7 @@ async def _execute_agent(
             )
             chat_request: dict[str, Any] = {
                 "messages": [{"role": "user", "content": task}],
-                "system": _agent_system_prompt(agent, memory_context),
+                "system": await asyncio.to_thread(_agent_system_prompt, agent, memory_context),
                 "max_tokens": agent.get("max_tokens", 1_200),
                 "temperature": agent.get("temperature", 0.35),
                 # qwen3 thinks by default; hidden reasoning spends max_tokens.

@@ -4,6 +4,7 @@ import { formatRoute, parseRoute, type StudioRoute } from '../src/console/studio
 
 test('every route survives a round trip through the URL', () => {
   const routes: StudioRoute[] = [
+    { view: 'bots' }, { view: 'bots', agentId: 'bot/a b' },
     { view: 'inbox' }, { view: 'inbox', source: 'slack' }, { view: 'inbox', source: 'loops' },
     { view: 'inbox', source: 'signals' }, { view: 'inbox', source: 'all' },
     { view: 'jobs' }, { view: 'projects' }, { view: 'history' }, { view: 'history', attention: true },
@@ -23,6 +24,7 @@ test('every route survives a round trip through the URL', () => {
 
 test('paths are the names people see, not internal view ids', () => {
   assert.equal(formatRoute({ view: 'home' }), '#/note')
+  assert.equal(formatRoute({ view: 'bots' }), '#/bots')
   assert.equal(formatRoute({ view: 'switchboard' }), '#/today')
   assert.equal(formatRoute({ view: 'world' }), '#/map')
   assert.equal(formatRoute({ view: 'agents', agentId: 'a/b c' }), '#/agents/a%2Fb%20c')
