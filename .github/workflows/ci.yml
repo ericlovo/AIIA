@@ -109,6 +109,14 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      - name: Keep monitor snapshots out of Git
+        run: |
+          if git ls-files --error-unmatch local_brain/command_center/monitor_data.json >/dev/null 2>&1; then
+            echo "::error::Monitor snapshots are runtime data and must not be tracked."
+            exit 1
+          fi
+          git check-ignore -q local_brain/command_center/monitor_data.json
+
       - name: Scan for banned strings
         # Fails the build if any of these proprietary references reappear.
         # If a file legitimately needs to mention one of them (e.g. a

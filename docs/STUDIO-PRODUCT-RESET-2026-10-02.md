@@ -2,7 +2,7 @@
 
 Status: proposed product reset, grounded in live reads on October 2, 2026.
 Weekend target: October 3-4, America/Chicago.
-Primary users: Eric and Tony, working together on Mindmoor and Performance Labs.
+Primary users: two reviewers collaborating on selected projects.
 
 ## The product promise
 
@@ -10,7 +10,7 @@ AIIA watches selected work, does bounded preparation on the Mini, and brings bac
 evidence and a clear next action. A person can schedule a useful job, understand
 its result, and stop it without learning the agent framework.
 
-The release gate is a human walkthrough: both Tony and Eric complete the core
+The release gate is a human walkthrough: both reviewers complete the core
 tasks without developer coaching. Passing automated tests is necessary but does
 not establish that the product makes sense.
 
@@ -47,7 +47,7 @@ places to learn.
 3. Queuing an assignment does not start a general background worker. A user can
    reasonably expect progress while the item is waiting for a manual start.
 4. The default CI Monitor targets AIIA only and can report task success after an
-   API retrieval error. A green task execution is not proof that Mindmoor CI passes.
+   API retrieval error. A green task execution is not proof that project CI passes.
 5. The repository snapshot and GitHub summaries lack enough revision-specific
    evidence for reliable CI failure investigation.
 6. Studio serialization excludes other callers of the local model. The one-slot
@@ -60,13 +60,13 @@ places to learn.
 | Today | What needs me, and what will happen next? | Open a decision or create a job | Fleet configuration, token charts, heatmap, raw transcript |
 | Jobs | What recurring work have we set up? | New job; test; enable/pause | Model temperature, personas, raw cron expressions |
 | Work | What did it do and is the result useful? | Inspect evidence; accept; request changes | Separate handoff ledger and raw execution metadata |
-| Projects | Is Mindmoor healthy and what changed? | Open a failing check or deployment | Global ambiguous health lamps |
+| Projects | Is the project healthy and what changed? | Open a failing check or deployment | Global ambiguous health lamps |
 
 Agents, the graph, memory administration, connection setup and usage remain
 available under Studio/settings or relevant detail views. A project selector
 scopes everyday views consistently. Advanced pages keep working deep links.
 The map becomes a debugging view of real jobs and handoffs after the job model
-is reliable; it is not the first thing Tony must configure.
+is reliable; it is not the first thing a reviewer must configure.
 
 Today has three sections: needs your decision, running/upcoming jobs, recent
 meaningful changes. Every row says what happened, which project, why it matters,
@@ -89,12 +89,12 @@ The first recipes should be deliberately narrow:
 
 | Recipe | Output | Execution |
 | --- | --- | --- |
-| Watch Mindmoor CI | New failed/recovered check with revision and link | Deterministic GitHub read; optional Mini explanation |
+| Watch project CI | New failed/recovered check with revision and link | Deterministic GitHub read; optional Mini explanation |
 | Morning delivery brief | Source-linked changes, open blockers and next actions | Deterministic evidence assembly + bounded Mini summary |
 | Research a repository question | Evidence packet answering one question | Read-only revision-pinned retrieval + Mini draft |
 | Review market signals | A short list of evidence-backed candidates | Approved public retrieval + Jev screening + optional Mini summary |
 
-Start with Mindmoor CI and one manual research task. Prove those journeys before
+Start with project CI and one manual research task. Prove those journeys before
 adding more agent types or increasing schedule frequency.
 
 ## Scheduling and execution contract
@@ -138,7 +138,7 @@ worker queue. Existing approval gates still govern writes and publication.
 | Jev | Relevance classification, bounded routing, rubric scores over permitted text | External API; typed decisions, not retrieval, prose generation or coding |
 | Mini / Ollama | Private memory/retrieval, bounded log summaries, extraction, first drafts and briefs | Limited context and shared memory/compute; output needs evidence and quality checks |
 | Codex / human review | Architecture, ambiguous debugging, implementation, test design, quality judgment | Explicit development work; do not claim Studio has an automatic Codex worker |
-| Eric / Tony | Accept findings, choose priorities, approve consequential actions | Clear decisions, not routine unchanged checks |
+| Reviewers | Accept findings, choose priorities, approve consequential actions | Clear decisions, not routine unchanged checks |
 
 Existing MCP offload/digest tools explicitly call the local model; they do not
 automatically intercept frontier-agent work. Local tokens and model duration are
@@ -153,7 +153,7 @@ outstanding research assignments. The UI must not imply a stronger cap.
 
 For lead discovery, retain source and publication/observation dates, establish
 company identity, verify the actual change, then apply a shared fit rubric.
-Eric and Tony should label a small fixed evidence set; compare Jev decisions to
+Reviewers should label a small fixed evidence set; compare Jev decisions to
 those judgments before automating promotion. Uncertainty routes to review.
 
 TypeSafe's current guidance confirms these model roles:
@@ -169,7 +169,7 @@ health evidence available while an inference slot is occupied.
 
 Before increasing automation, measure a fixed small set: CI log digest,
 revision summary, repository question and memory retrieval. Record input/output
-tokens, queue wait, execution duration, model, truncation, retry and Eric/Tony's
+tokens, queue wait, execution duration, model, truncation, retry and reviewers’
 accept/reject decision. Record actual hardware utilization where available.
 Report observed numbers; do not invent throughput, savings or quality scores.
 
@@ -180,8 +180,8 @@ Report observed numbers; do not invent throughput, savings or quality scores.
   and unavailable. Expose stale evidence rather than silently showing green.
 - Deployment state comes from the deployment provider, separately from CI.
   A merged commit is not proof that Vercel deployed it. Show unknown until connected.
-- Pin research to the chosen revision. The mounted Mindmoor checkout is on an
-  older branch than remote main; never label checkout context as current production.
+- Pin research to the chosen revision. Compare the mounted project checkout with
+  remote main; never label checkout context as current production without evidence.
 - Document exactly which connections send data off the Mini. Current airgap is
   an application policy with exceptions, not physical network isolation.
 - Do not use the present PII endpoint as a release gate for sensitive data:
@@ -189,7 +189,7 @@ Report observed numbers; do not invent throughput, savings or quality scores.
   failure explicit before relying on it for any outbound decision.
 - Before expanding automatic writes, make approval persistence failures explicit:
   the legacy action queue currently logs save errors without failing the operation.
-- Confirm Tony's real login and shared-workspace visibility. The current Studio
+- Confirm each reviewer’s real login and shared-workspace visibility. The current Studio
   is a shared workspace, not proof of provisioned per-user tenancy or actor audit.
 
 ## Weekend delivery order
@@ -198,10 +198,10 @@ Report observed numbers; do not invent throughput, savings or quality scores.
 | --- | --- | --- | --- |
 | 0. Baseline | Reconcile #95/#96, known runtime, preserve existing data and URLs; prepare an isolated QA dataset | Running revision and connections visible; rollback rehearsed | None |
 | 1. Jobs-first shell | Today/Jobs/Work/Projects; compact voice/status; old routes preserved; job rows from existing runners | Both users find next action, pauseable job and result without opening agent config | Baseline |
-| 2. Trustworthy Mindmoor delivery | Repo/branch/SHA-specific GitHub evidence, source links, stale/error handling; useful investigation packet | A real failure is distinguishable from a fetch failure; investigation uses the same revision | Evidence adapter can run alongside shell |
+| 2. Trustworthy project delivery | Repo/branch/SHA-specific GitHub evidence, source links, stale/error handling; useful investigation packet | A real failure is distinguishable from a fetch failure; investigation uses the same revision | Evidence adapter can run alongside shell |
 | 3. One complete job | Create from CI-watch recipe, test, enable/pause, see next occurrence and result | Saved schedule survives restart; duplicate triggers create one run; no-change produces no review item | Jobs shell + evidence |
 | 4. Work and Mini queue | Distinguish manual start from queued execution; review in one detail view; source-to-result trace | Busy Mini does not lose accepted work; review survives refresh; handoff preserves evidence | Job lifecycle |
-| 5. QA and measured pilot | Eric/Tony walkthrough, repeat after fixes; bounded overnight watch; lead evidence pilot if ready | Core acceptance sheet passes; useful results and issues recorded | First four slices |
+| 5. QA and measured pilot | Two-reviewer walkthrough, repeat after fixes; bounded overnight watch; lead evidence pilot if ready | Core acceptance sheet passes; useful results and issues recorded | First four slices |
 
 The weekend success target is the CI-watch -> investigation -> review flow, plus
 one reliable scheduled local brief if capacity permits. Calendar scheduling,
@@ -223,13 +223,13 @@ interactive design sketch uses example data and cannot pass these checks.
 | Task | Pass condition | Evidence |
 | --- | --- | --- |
 | First arrival | In 30 seconds, each user identifies what needs attention, what's running and the next scheduled job | Observed separately, no coaching |
-| Schedule a watch | In 3 minutes, create/test/enable a Mindmoor watch, identify next run and pause it | Real saved config and scheduler observation |
+| Schedule a watch | In 3 minutes, create/test/enable a project watch, identify next run and pause it | Real saved config and scheduler observation |
 | Check delivery | In 60 seconds, distinguish CI, deployment and agent status; open original run | Same repo/branch/SHA in app and source |
 | Request work | State a task, know whether it needs manual start, run it and reopen it later | Same durable work ID after refresh/restart |
 | Review a result | Find evidence, accept or request changes, see the saved decision | Review event and reopened UI agree |
 | Understand execution | Each can state what ran on Mini, what used Jev and what data was sent | UI matches actual calls and usage |
 | Recover a failure | With unavailable GitHub or Ollama, see the real failure and a useful recovery action | No false success, duplicate work or lost result |
-| Share work | Tony opens Eric's work link and sees the same state after his own login | Two real user sessions; local automation is insufficient proof |
+| Share work | One reviewer opens the other reviewer’s work link and sees the same state after a separate login | Two real user sessions; local automation is insufficient proof |
 | Mobile/keyboard | Complete watch pause and result review at 390px and with keyboard only | No clipped actions, hidden evidence or focus traps |
 
 Record: participant, task, completion time, assistance needed, wrong turns,
@@ -264,5 +264,6 @@ coding swarms and unmeasured high-frequency loops until the simple journeys pass
 - `local_brain/mcp_server.py`: explicit offload/digest tools and input truncation.
 - `local_brain/local_api.py`, `egress.py`, `command_center/action_queue.py`:
   PII error handling, outbound policy and legacy persistence boundary.
-- Mindmoor `origin/main` at `be99f01`: `.github/workflows/ci.yml`, `vercel.json`,
-  `scripts/sync.sh`. Live Vercel deployment state was not inspected.
+- Project delivery evidence should include `.github/workflows/ci.yml`, deployment
+  configuration and synchronization scripts where present. Verify live deployment
+  state separately with the deployment provider.

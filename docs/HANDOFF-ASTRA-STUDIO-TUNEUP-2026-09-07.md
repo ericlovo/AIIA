@@ -1,7 +1,7 @@
 # Handoff — Astra / Agent Studio tune-up (2026-09-07)
 
 **From:** Astra (bigger-picture follow-up)  
-**For:** Eric via AIIA Bot · Mini operators · next engineer on suite + Run ledger  
+**For:** Product owner via AIIA Bot · Mini operators · next engineer on suite + Run ledger
 **Repo:** `ericlovo/AIIA` · base `main`  
 **Air-gap:** stays **ON** (`AIIA_AIRGAP=1`). Do not open xAI Voice egress.
 
@@ -35,7 +35,7 @@ scope: unset air-gap, Sonos, email, GitHub App (#47), Voice live demo.
 | Outcome | Count | Notes |
 |---|---|---|
 | Ran | 22 | Serial, one `agent_run_lock` |
-| Skipped | 1 | Tony's Assistant (email) — out of scope |
+| Skipped | 1 | Personal email assistant (email) — out of scope |
 | Failed | 1 | Mindmoor Cron Review Gate |
 | Weak | 8 | Low caps and/or format drift |
 | OK | 13 | Usable structured output |
@@ -105,7 +105,7 @@ inside Studio. Client-isolated, shared local memory, one mount.
 
 Full contract: [`MINDMOOR-AGENT-SUITE.md`](./MINDMOOR-AGENT-SUITE.md).
 
-Implications Eric asked for:
+Requested product implications:
 
 1. **Air-gapped / client-isolated.** Suite members do not get Voice,
    email, or web tools. They do not read other clients' memory.
@@ -125,7 +125,7 @@ Implications Eric asked for:
 Not suite members (even if they ran in the same 23): Weekend Repo
 Brief, CI Signal Officer, Release Conductor, Sanction Policy Reviewer,
 Test Cartographer, Repo Diff Watcher, Memory Note, Ambiguous Remote
-Canary, Dependency Diplomat, Tony's Assistant.
+Canary, Dependency Diplomat, Personal email assistant.
 
 ---
 
@@ -171,7 +171,7 @@ if the field is still empty.
 
 - Unset air-gap
 - Sonos
-- Email agents (Tony's Assistant)
+- Email agents (Personal email assistant)
 - Merging #47 GitHub App path
 - Full Run ledger (see suite spec §10 — next after this)
 - Parallel Mini runs

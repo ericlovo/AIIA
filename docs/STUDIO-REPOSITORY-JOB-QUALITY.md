@@ -39,7 +39,7 @@ A failed read is unknown, never clean. A clean checkout is not release proof.
    synthetic cases and the actual Jobs definitions and shared Studio prompts.
    Inspect generated reports against each case's `review_expectations`; a model
    response or successful harness run is not human acceptance.
-3. **Tony and Eric acceptance** remains a separate human gate: both assess
+3. **Two-user acceptance** remains a separate human gate: both assess
    grounding, calibrated uncertainty, concision, and usefulness of the one next
    action. Until reviewed, acceptance is pending. No automatic acceptance or
    production enablement follows from this evaluation.
@@ -92,7 +92,7 @@ Developer inspection found no invented modified files, passing CI or successful
 deployment in those four outputs. One source report still included an irrelevant
 tracked test-file reference. This is a small, prompt-tuned fixture set, not a
 held-out benchmark, a reliability rate, a performance comparison against real
-repository jobs, or Eric/Tony acceptance. Their review remains pending.
+repository jobs, or human reviewer acceptance. Their review remains pending.
 
 The trial bypasses Brain routing and Studio persistence and uses Ollama's default
 context sizing. Its measured usage is evaluation-only, not recorded as production
