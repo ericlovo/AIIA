@@ -75,6 +75,10 @@ All notable changes to AIIA are documented here. This project adheres to
 
 ### Fixed
 
+- **Studio dashboard builds on case-insensitive filesystems.** `morningNote.ts`
+  sat next to `MorningNote.tsx`, so TypeScript on macOS treated them as one
+  module (`TS1261` / `TS2724`). The model now lives in `morningNoteModel.ts`,
+  and CI fails if tracked paths or TS/JS module stems collide ignoring case.
 - **Slack daily digest names real work.** Held PRs stay off blocked/waiting
   (config hold list plus a `hold` label). Merge asks are only ready,
   non-draft PRs Eric owns (configured login, not `codex/*`); Sanction and Codex

@@ -13,7 +13,7 @@ import {
   type MorningDecision,
   type MorningLine,
   type MorningNotePayload,
-} from './morningNote'
+} from './morningNoteModel'
 import './MorningNote.css'
 
 const EMPTY_NOTE: MorningNotePayload = {
