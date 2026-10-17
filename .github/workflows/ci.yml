@@ -18,6 +18,9 @@ jobs:
         working-directory: dashboard
     steps:
       - uses: actions/checkout@v7
+      - name: Case-insensitive path collision guard
+        working-directory: .
+        run: python3 scripts/case_collision_guard.py
       - uses: actions/setup-node@v7
         with:
           node-version: "22"
@@ -84,6 +87,9 @@ jobs:
 
       - name: Ignored-rule backlog ratchet
         run: python scripts/ruff_ratchet.py
+
+      - name: Case-insensitive path collision guard
+        run: python scripts/case_collision_guard.py
 
       - name: ruff format check (enforced)
         run: ruff format --check local_brain/

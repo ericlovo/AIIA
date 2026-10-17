@@ -9,7 +9,7 @@ import {
   morningLede,
   pickAgentForAsk,
   type MorningLine,
-} from '../src/console/morningNote.ts'
+} from '../src/console/morningNoteModel.ts'
 
 const agent = (id: string, overrides: Partial<Agent> = {}): Agent => ({
   id, name: id, mission: 'Do the job.', persona: '', skills: [], tools: [], repo_id: '',
