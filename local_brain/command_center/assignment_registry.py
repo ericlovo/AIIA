@@ -102,6 +102,7 @@ class AssignmentRegistry:
         self.assignments: list[dict[str, Any]] = []
         self.handoffs: list[dict[str, Any]] = []
         self._mutating = False
+        self.load_error = False
         self.load()
 
     def list_assignments(self) -> list[dict[str, Any]]:
@@ -675,6 +676,15 @@ class AssignmentRegistry:
             return
         try:
             payload = json.loads(self.data_file.read_text())
+            if not isinstance(payload, dict) or any(
+                not isinstance(payload.get(key, []), list)
+                or any(
+                    not isinstance(item, dict) or not isinstance(item.get("id"), str)
+                    for item in payload.get(key, [])
+                )
+                for key in ("assignments", "handoffs")
+            ):
+                raise ValueError("invalid assignment store")
             self.assignments[:] = payload.get("assignments", [])
             self.handoffs[:] = payload.get("handoffs", [])
             for assignment in self.assignments:
@@ -711,7 +721,8 @@ class AssignmentRegistry:
                     "source_ref",
                     assignment.get("schedule_key") or assignment.get("source_handoff_id") or "",
                 )
-        except (OSError, json.JSONDecodeError) as exc:
+        except (OSError, ValueError) as exc:
+            self.load_error = True
             logger.warning("Could not load assignments: %s", exc)
             return
         self._split_collapsed_dismissals()

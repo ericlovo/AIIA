@@ -8,6 +8,13 @@ All notable changes to AIIA are documented here. This project adheres to
 
 ### Added
 
+- **Mindmoor feature delivery in Projects.** Roadmap features link explicitly to
+  assignments and PRs, with execution/review state, agent navigation, PR-head
+  GitHub Actions evidence and source timestamps. Link edits reject stale versions
+  and persist atomically. Last reported GitHub deployments show environment,
+  revision and provider state separately; a merge or green workflow never proves
+  that a feature is live. Partial reads and missing links remain visible.
+
 - **Bot context and task shortcuts.** Bot cards show last activity and a one-line
   outcome. Bot details include expandable, paginated run history and three
   configuration-backed use cases, with optional additional context and free-form

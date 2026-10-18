@@ -13,10 +13,15 @@ Usage:
 import builtins
 import json
 import logging
+import os
+import tempfile
 import uuid
+from copy import deepcopy
 from datetime import datetime, timezone
 from difflib import SequenceMatcher
+from functools import wraps
 from pathlib import Path
+from threading import RLock
 
 logger = logging.getLogger("aiia.roadmap")
 
@@ -48,23 +53,77 @@ EXTENDED_FIELDS = (
 DEDUP_THRESHOLD = 0.7
 
 
+def _serialized_mutation(method):
+    @wraps(method)
+    def wrapped(self, *args, **kwargs):
+        with self._delivery_lock:
+            return method(self, *args, **kwargs)
+
+    return wrapped
+
+
 class RoadmapStore:
     def __init__(self, data_dir: str | None = None):
         self._dir = Path(data_dir) if data_dir else DATA_DIR
         self._file = self._dir / "stories.json"
         self._dir.mkdir(parents=True, exist_ok=True)
+        self.load_error = False
         self._stories: list[dict] = self._load()
+        self._delivery_lock = RLock()
 
     def _load(self) -> list[dict]:
         if self._file.exists():
             try:
-                return json.loads(self._file.read_text())
-            except (json.JSONDecodeError, OSError):
+                payload = json.loads(self._file.read_text())
+                if not isinstance(payload, list) or any(
+                    not isinstance(s, dict) or not isinstance(s.get("id"), str) for s in payload
+                ):
+                    raise ValueError("invalid stories")
+                return payload
+            except (ValueError, OSError):
+                self.load_error = True
                 return []
         return []
 
     def _save(self) -> None:
         self._file.write_text(json.dumps(self._stories, indent=2))
+
+    def delivery_stories(self, product):
+        with self._delivery_lock:
+            return deepcopy(self.list(product=product))
+
+    def update_delivery_links(
+        self, story_id: str, product: str, assignment_ids, pr_numbers, expected_updated_at=None
+    ):
+        """Persist explicit operator links atomically, outside generic story updates."""
+        with self._delivery_lock:
+            story = self.get(story_id)
+            if story is None or story.get("product") != product:
+                raise KeyError("feature_not_found")
+            if self.load_error:
+                raise OSError("roadmap_unavailable")
+            if expected_updated_at is not None and story.get("updated_at") != expected_updated_at:
+                raise ValueError("delivery_links_changed_refresh_required")
+            updated = {
+                **story,
+                "assignment_ids": list(assignment_ids),
+                "pr_numbers": list(pr_numbers),
+                "updated_at": datetime.now(timezone.utc).isoformat(),
+            }
+            stories = [updated if item is story else item for item in self._stories]
+            temporary = None
+            try:
+                with tempfile.NamedTemporaryFile(mode="w", dir=self._dir, delete=False) as out:
+                    temporary = out.name
+                    json.dump(stories, out, indent=2)
+                    out.flush()
+                    os.fsync(out.fileno())
+                os.replace(temporary, self._file)
+            finally:
+                if temporary and os.path.exists(temporary):
+                    os.unlink(temporary)
+            self._stories = stories
+            return updated
 
     def list(
         self,
@@ -106,6 +165,7 @@ class RoadmapStore:
         matches.sort(key=lambda x: x["_similarity"], reverse=True)
         return matches
 
+    @_serialized_mutation
     def create(
         self,
         title: str,
@@ -159,6 +219,7 @@ class RoadmapStore:
         self._save()
         return story
 
+    @_serialized_mutation
     def update(self, story_id: str, **fields) -> dict | None:
         for s in self._stories:
             if s["id"] == story_id:
@@ -174,6 +235,7 @@ class RoadmapStore:
                 return s
         return None
 
+    @_serialized_mutation
     def delete(self, story_id: str) -> bool:
         before = len(self._stories)
         self._stories = [s for s in self._stories if s["id"] != story_id]
