@@ -78,8 +78,9 @@ async function open({ handoffs = [], voiceConfigured = false, mintVoice = false,
     }
     await route.fulfill({ contentType: 'application/json', body: JSON.stringify(bodies[path] ?? {}) })
   })
-  await page.goto(studioDist ? 'http://studio.test/' : process.env.STUDIO_URL || 'http://127.0.0.1:5184/')
-  await page.getByRole('navigation', { name: 'Studio' }).getByRole('link', { name: 'Today', exact: true }).waitFor()
+  const root = studioDist ? 'http://studio.test/' : process.env.STUDIO_URL || 'http://127.0.0.1:5184/'
+  await page.goto(`${root}#/today`)
+  await page.getByRole('navigation', { name: 'Studio' }).waitFor()
   return { context, page, pageErrors, voiceSessions, voiceConnections }
 }
 
@@ -137,6 +138,7 @@ try {
     await page.keyboard.press('Space')
     await page.getByRole('heading', { name: 'Assignment queue' }).waitFor()
     // ...and is left alone on a focused link, which Enter activates.
+    await page.getByRole('navigation', { name: 'Studio' }).locator('summary').click()
     await page.getByRole('navigation', { name: 'Studio' }).getByRole('link', { name: 'Today', exact: true }).focus()
     await page.keyboard.press('Space')
     await page.keyboard.press('Enter')

@@ -1,9 +1,10 @@
 import type { ReviewBucket } from '../lib/api'
 
 export type InboxSource = 'slack' | 'loops' | 'signals' | 'all'
-export type StudioView = 'switchboard' | 'inbox' | 'jobs' | 'projects' | 'history' | 'activity' | 'agents' | 'assignments' | 'handoffs' | 'memory' | 'world' | 'signals'
+export type StudioView = 'home' | 'bots' | 'switchboard' | 'inbox' | 'jobs' | 'projects' | 'history' | 'activity' | 'agents' | 'assignments' | 'handoffs' | 'memory' | 'world' | 'signals'
 
 export const VIEWS: { id: StudioView; label: string }[] = [
+  { id: 'bots', label: 'Bots' },
   { id: 'switchboard', label: 'Today' },
   { id: 'inbox', label: 'Inbox' },
   { id: 'jobs', label: 'Jobs' },
@@ -24,6 +25,8 @@ export const VIEWS: { id: StudioView; label: string }[] = [
  * can be linked to, reloaded, and reached with the back button.
  */
 export type StudioRoute =
+  | { view: 'home' }
+  | { view: 'bots'; agentId?: string }
   | { view: 'switchboard'; taskId?: string; attention?: boolean }
   | { view: 'history'; attention?: boolean }
   | { view: 'inbox'; source?: InboxSource }
@@ -37,9 +40,11 @@ export type StudioRoute =
   | { view: 'world' }
   | { view: 'signals' }
 
-export const DEFAULT_ROUTE: StudioRoute = { view: 'switchboard' }
+export const DEFAULT_ROUTE: StudioRoute = { view: 'home' }
 
 const PATHS: Record<StudioView, string> = {
+  home: 'note',
+  bots: 'bots',
   switchboard: 'today', activity: 'overview', agents: 'agents', assignments: 'assignments',
   handoffs: 'handoffs', memory: 'memory', world: 'map', signals: 'signals',
   jobs: 'jobs', projects: 'projects', history: 'history', inbox: 'inbox',
@@ -70,6 +75,7 @@ export function parseRoute(hash: string): StudioRoute | null {
       if (id || (source && !['slack', 'loops', 'signals', 'all'].includes(source))) return null
       return { view, source: source as InboxSource | undefined }
     }
+    case 'bots':
     case 'agents': return { view, agentId: id }
     case 'assignments': return { view, assignmentId: id, agentId: id ? undefined : param('agent') }
     case 'handoffs': return id ? null : { view, from: param('from'), to: param('to') }
@@ -98,6 +104,7 @@ export function formatRoute(route: StudioRoute): string {
     case 'history':
       if (route.attention) query.set('attention', '1')
       break
+    case 'bots':
     case 'agents': id = route.agentId ?? ''; break
     case 'assignments':
       id = route.assignmentId ?? ''

@@ -282,3 +282,35 @@ def test_in_flight_run_keeps_the_settings_it_started_with(studio, monkeypatch):
     assert payload["model"] == "gemma3:4b"
     assert payload["max_tokens"] == 900
     assert registry.get(agent["id"])["model"] == "qwen3:8b"
+
+
+def test_prompt_preparation_does_not_block_event_loop(studio, monkeypatch):
+    import threading
+
+    server, registry, _, upstream = studio
+    agent = _agent(registry)
+    entered, release = threading.Event(), threading.Event()
+
+    def blocking_prompt(*args):
+        entered.set()
+        assert release.wait(timeout=2), "event loop did not release prompt worker"
+        return "synthetic prompt"
+
+    monkeypatch.setattr(server, "_agent_system_prompt", blocking_prompt)
+
+    async def run():
+        task = asyncio.create_task(server._execute_agent(agent["id"], "Inspect"))
+        try:
+            for _ in range(100):
+                if entered.is_set():
+                    break
+                await asyncio.sleep(0.01)
+            assert entered.is_set()
+            assert server.agent_run_lock.locked()
+            assert not upstream.chat_payloads
+        finally:
+            release.set()
+        await task
+
+    asyncio.run(run())
+    assert upstream.chat_payloads[0]["system"] == "synthetic prompt"

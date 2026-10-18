@@ -1,6 +1,6 @@
 // Studio routing: every view is an address. Deep links open the right record,
 // back and forward walk the views, selection inside a view keeps the address
-// current without adding history, and unknown addresses land on Today.
+// current without adding history, and unknown addresses land on the morning note.
 //
 // Every API response and the Studio WebSocket are intercepted with synthetic
 // data; nothing is written to a real Brain or Command Center.
@@ -55,6 +55,11 @@ async function open(path = '', { agentsDelayMs = 0, width = 1440, workItems = as
       '/api/health': { aiia: { status: 'online' }, ollama: { status: 'online' } },
       '/api/monitor': { services: {} },
       '/api/voice/status': { status: 'not_configured', configured: false, reason: 'missing_xai_api_key', tools: [] },
+      '/api/studio/morning-note': {
+        date, products: [{ id: 'aiia', name: 'AIIA', kind: 'product', state: 'waiting', note: 'Needs a look.' }],
+        customers: [{ id: 'alumni-nations', name: 'Alumni Nations', kind: 'customer', state: 'waiting', note: '7 days to kickoff', target: '2026-10-15T09:00:00' }],
+        decisions: [], needs_you_total: 0, failure: null,
+      },
     }
     await route.fulfill({ contentType: 'application/json', body: JSON.stringify(bodies[path] ?? {}) })
   })
@@ -104,7 +109,7 @@ try {
   for (const width of [320, 390, 653, 1440]) {
     const { context, page, pageErrors } = await open('#/today', { width })
     await heading(page, 'Today').waitFor()
-    assert.deepEqual(await nav(page).getByRole('link').allTextContents(), ['Today', 'Inbox', 'Jobs', 'Work', 'Projects'])
+    assert.deepEqual(await nav(page).getByRole('link').allTextContents(), ['Bots', 'Work', 'Projects'])
     const tools = nav(page).locator('summary[aria-label="Studio tools"]')
     await tools.click()
     await nav(page).getByRole('link', { name: 'Signals', exact: true }).waitFor()
@@ -130,13 +135,16 @@ try {
   // 1. Every nav item is a real link to its own address, and one is current.
   {
     const { context, page, pageErrors } = await open()
+    await page.getByRole('heading', { level: 1, name: /Eric\.$/ }).waitFor()
+    assert.equal(await hash(page), '#/note', 'an empty address lands on the morning note')
+    await page.getByRole('button', { name: 'Details', exact: true }).first().click()
     await heading(page, 'Today').waitFor()
-    assert.equal(await hash(page), '#/today', 'an empty address lands on Today')
-    assert.deepEqual(await nav(page).getByRole('link').allTextContents(), ['Today', 'Inbox', 'Jobs', 'Work', 'Projects'])
+    assert.equal(await hash(page), '#/today')
+    assert.deepEqual(await nav(page).getByRole('link').allTextContents(), ['Bots', 'Work', 'Projects'])
     await nav(page).locator('summary[aria-label="Studio tools"]').click()
     const links = await nav(page).getByRole('link').evaluateAll(items => items.map(item => [item.textContent, item.getAttribute('href'), item.getAttribute('aria-current')]))
     assert.deepEqual(links, [
-      ['Today', '#/today', 'page'], ['Inbox', '#/inbox', null], ['Jobs', '#/jobs', null], ['Work', '#/assignments', null], ['Projects', '#/projects', null],
+      ['Bots', '#/bots', null], ['Work', '#/assignments', null], ['Projects', '#/projects', null], ['Today', '#/today', 'page'], ['Inbox', '#/inbox', null], ['Jobs', '#/jobs', null],
       ['Activity history', '#/history', null], ['Overview', '#/overview', null], ['Agents', '#/agents', null],
       ['Signals', '#/signals', null],
       ['Handoffs', '#/handoffs', null], ['Memory', '#/memory', null], ['Map', '#/map', null],
@@ -198,17 +206,18 @@ try {
     await context.close()
   }
 
-  // 5. Unknown addresses land on Today and leave no dead entry behind.
+  // 5. Unknown addresses land on the morning note and leave no dead entry behind.
   {
     const { context, page } = await open('#/nowhere/at/all')
+    await page.getByRole('heading', { level: 1, name: /Eric\.$/ }).waitFor()
+    await page.waitForFunction(() => window.location.hash === '#/note')
+    await page.getByRole('button', { name: 'Details', exact: true }).first().click()
     await heading(page, 'Today').waitFor()
-    await page.waitForFunction(() => window.location.hash === '#/today')
-    // Following a bad link from the Map, back returns to the Map, not the bad link.
     await openStudioView(page, 'Map')
     await heading(page, 'Agent control map').waitFor()
     await page.evaluate(() => { window.location.hash = '#/bogus' })
-    await page.waitForFunction(() => window.location.hash === '#/today')
-    await heading(page, 'Today').waitFor()
+    await page.waitForFunction(() => window.location.hash === '#/note')
+    await page.getByRole('heading', { level: 1, name: /Eric\.$/ }).waitFor()
     await page.goBack()
     await heading(page, 'Agent control map').waitFor()
     assert.equal(await hash(page), '#/map', 'the redirect replaces the bad entry, it does not add one')
@@ -247,6 +256,13 @@ try {
     assert.equal(await assigned.inputValue(), 'a1')
     await page.reload()
     await assigned.waitFor()
+    await page.waitForFunction(() => {
+      const field = [...document.querySelectorAll('label')].find((node) =>
+        node.textContent?.trim().startsWith('Assigned agent'),
+      )
+      const select = field?.querySelector('select')
+      return select instanceof HTMLSelectElement && select.value === 'a1'
+    })
     assert.equal(await assigned.inputValue(), 'a1')
     assert.equal(await hash(page), '#/assignments?agent=a1')
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false)

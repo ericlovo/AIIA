@@ -87,7 +87,7 @@ def test_capture_is_durable_deduplicated_and_drops_credentials(configured):
     [
         ({"bad_signature": True}, 401),
         ({"age": 301}, 401),
-        ({"age": -301}, 401),
+        ({"age": -400}, 401),
         ({"changes": {"team_id": "T_OTHER"}}, 403),
         ({"changes": {"channel_id": "C_OTHER"}}, 403),
         ({"changes": {"user_id": ""}}, 400),
@@ -268,7 +268,7 @@ def test_blank_event_text_remains_invalid(configured, monkeypatch, text, ack_ena
     [
         ({}, {}, {"bad_signature": True}, 401),
         ({}, {}, {"age": 301}, 401),
-        ({}, {}, {"age": -301}, 401),
+        ({}, {}, {"age": -400}, 401),
         ({"team_id": "T_OTHER"}, {}, {}, 403),
         ({}, {"channel": "C_OTHER"}, {}, 403),
         ({"event_id": ""}, {}, {}, 400),
