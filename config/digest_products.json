@@ -1,11 +1,13 @@
 {
+  "owners": ["ericlovold"],
   "products": [
     {
       "id": "aiia",
       "name": "AIIA",
       "github": "ericlovo/AIIA",
       "mount": "aiia",
-      "aliases": ["aiia-brain", "aiia-console"]
+      "aliases": ["aiia-brain", "aiia-console"],
+      "holds": [47, 52]
     },
     {
       "id": "mindmoor",
@@ -18,19 +20,21 @@
       "id": "sanction",
       "name": "Sanction",
       "github": "ericlovold/sanction",
-      "mount": "sanction"
+      "mount": "sanction",
+      "asks": false
     },
     {
       "id": "mia",
       "name": "MIA",
       "github": "ericlovold/moral-intention-analyst",
       "mount": "mia",
-      "aliases": ["moral-intention-analyst"]
+      "aliases": ["moral-intention-analyst"],
+      "holds": [42]
     },
     {
       "id": "morrow",
       "name": "Morrow",
-      "github": "",
+      "github": "ericlovold/morrow",
       "mount": "morrow"
     }
   ],
@@ -61,7 +65,10 @@
     {
       "id": "smart-medical",
       "code": "SM",
-      "name": "Smart Medical"
+      "name": "Smart Medical",
+      "kind": "consulting",
+      "no_repo": true,
+      "status_note": ""
     }
   ]
 }

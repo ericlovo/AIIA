@@ -8,10 +8,17 @@ All notable changes to AIIA are documented here. This project adheres to
 
 ### Added
 
-- **Bots as the Studio starting point.** Open a named bot, read its latest output
-  and give it a task. Work and Projects stay in primary navigation; detailed
-  views remain under More with existing deep links. Added optional local chat
-  timing metrics and an inventory-first, opt-in synthetic model benchmark.
+- **Studio morning note.** The default landing view is a one-screen note
+  (greeting, where things stand, needs you, ask for anything) fed from the
+  same digest/product-line data. Existing Studio views stay behind Details.
+  Approve / Not now use the existing inbox promote/dismiss and assignment
+  review/dismiss endpoints. Ask creates an assignment and picks the agent
+  from roster `kind` / `use_when` / `handles`. The page never says runs,
+  loops, inbox, or sources.
+- **Bots in Studio.** Open a named bot, read its latest output and give it a
+  task. Work and Projects stay in primary navigation; detailed views remain
+  under More with existing deep links. Added optional local chat timing
+  metrics and an inventory-first, opt-in synthetic model benchmark.
   See [the evaluation notes](docs/STUDIO-BOTS-AND-LOCAL-MODELS.md).
 - **Slack captures keep their attached files.** People mention the bot with a
   document and no words, so the event text was only the mention and, after
@@ -73,6 +80,18 @@ All notable changes to AIIA are documented here. This project adheres to
   snapshots. Existing installations must preserve their local snapshot before
   updating across this removal. Runtime paths and behavior are unchanged.
 
+- **Studio dashboard builds on case-insensitive filesystems.** `morningNote.ts`
+  sat next to `MorningNote.tsx`, so TypeScript on macOS treated them as one
+  module (`TS1261` / `TS2724`). The model now lives in `morningNoteModel.ts`,
+  and CI fails if tracked paths or TS/JS module stems collide ignoring case.
+- **Slack daily digest names real work.** Held PRs stay off blocked/waiting
+  (config hold list plus a `hold` label). Merge asks are only ready,
+  non-draft PRs Eric owns (configured login, not `codex/*`); Sanction and Codex
+  drafts never create an ask. Dependabot and Codex drafts are summarized as
+  `skipped`. Unmounted MIA/Morrow read GitHub by configured slug. Inbox
+  `Needs you` dedupes and drops stale next-best/confirm-shipped rows.
+  Daily Brief failures include the short error. Smart Medical is a
+  consulting customer with no repo.
 - **Bot context preparation keeps Studio responsive.** Repository and GitHub
   context collection runs off the event loop while preserving the run lock.
 - **Cron catch-up is once per local day.** A restart before 07:40 Chicago used
