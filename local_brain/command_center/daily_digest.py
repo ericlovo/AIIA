@@ -2162,47 +2162,194 @@ def format_slack_digest(
     run_counts: dict[str, int] | None = None,
     now: datetime | None = None,
 ) -> str:
-    """Morning-note Slack mrkdwn. Empty segments are omitted; no activity counts."""
+    """Action-first Slack summary; detailed history remains in Studio."""
     catalog = list(products) if products is not None else load_products()
-    product_lines, customer_lines = collect_morning_lines(
+    roster = list(customers) if customers is not None else load_customers()
+    evidence = {row.repo_id: row for row in (repo_evidence or [])}
+    attention: list[str] = []
+    merged: list[str] = []
+    background: list[str] = []
+    quiet: list[str] = []
+    covered_ids: set[str] = set()
+
+    def label(value: str) -> str:
+        return escape(_short_title(value, 80))
+
+    def row(name: str, parts: list[str]) -> str:
+        return f"- *{label(name)}*: " + "; ".join(label(part) for part in parts)
+
+    def reviews(count: int) -> str:
+        return f"review {count} agent output" + ("s" if count != 1 else "")
+
+    def review_count(ids: set[str]) -> int:
+        pending = [
+            item for item in assignments if item.get("agent_id") in ids and _agent_waiting(item)
+        ]
+        represented = {item.get("agent_id") for item in pending}
+        # An awaiting-review marker is a fallback, not an extra output to review.
+        fallback = {
+            agent.get("id")
+            for agent in agents
+            if agent.get("id") in ids
+            and agent.get("id") not in represented
+            and agent.get("loop_skip_reason") == "awaiting_review"
+        }
+        return len(pending) + len(fallback)
+
+    for product in catalog:
+        ev = evidence.get(product.mount)
+        paused, review, failed = _signals_for_product(
+            product, agents=agents, assignments=assignments, date=date, products=catalog
+        )
+        covered_ids.update(
+            agent.get("id") for agent in agents if map_agent_to_product(agent, catalog) is product
+        )
+        review = review_count(
+            {agent.get("id") for agent in agents if map_agent_to_product(agent, catalog) is product}
+        )
+        parts = []
+        if not ev or not _evidence_has_pulls(ev) or not ev.complete:
+            parts.append("repository status unavailable or incomplete; check Studio")
+        if ev:
+            if ev.failing_ci:
+                parts.append("investigate failing CI on main")
+            pulls = [pull for pull in ev.open_pulls if not _pull_held(pull, product.holds)]
+            active = [pull for pull in pulls if not pull.draft and not _pull_is_dependabot(pull)]
+            conflicts = [pull for pull in active if _pull_conflicted(pull)]
+            checks = [pull for pull in active if _pull_checks_failing(pull)]
+            if conflicts:
+                parts.append("resolve conflicts: " + _pr_number_list(conflicts))
+            if checks:
+                parts.append("investigate failed checks: " + _pr_number_list(checks))
+            ready = [pull for pull in active if _eric_owned_ready(pull)]
+            if ready and product.asks and ev.complete:
+                parts.append("review for merge: " + _pr_number_list(ready))
+            for signal in ev.drift:
+                parts.append(_behind_phrase(signal.ref, signal.behind_main))
+            if ev.merged_prs:
+                merged.append(row(product.name, [_pr_number_list(ev.merged_prs)]))
+            drafts = sum(pull.draft for pull in pulls)
+            dependencies = sum(_pull_is_dependabot(pull) and not pull.draft for pull in pulls)
+            held = sum(_pull_held(pull, product.holds) for pull in ev.open_pulls)
+            notes = []
+            if drafts:
+                notes.append(f"{drafts} draft PR" + ("s" if drafts != 1 else ""))
+            if dependencies:
+                notes.append(f"{dependencies} dependency PR" + ("s" if dependencies != 1 else ""))
+            if held:
+                notes.append(f"{held} PRs on hold")
+            if notes:
+                background.append(row(product.name, notes))
+        if review:
+            parts.append(reviews(review))
+        if failed:
+            parts.append(f"inspect {failed} failed agent runs")
+        if paused:
+            parts.append(f"check {len(paused)} paused agents")
+        if parts:
+            attention.append(row(product.name, parts))
+        else:
+            quiet.append(label(product.name))
+
+    _, customer_lines = collect_morning_lines(
         date=date,
         agents=agents,
         assignments=assignments,
         repo_evidence=repo_evidence,
         products=catalog,
-        customers=customers,
+        customers=roster,
         customer_evidence=customer_evidence,
     )
-    lines = [f"*AIIA · {slack_header_date(date)}*", *[_slack_line(line) for line in product_lines]]
-    if customer_lines:
-        lines += ["*Customers*", *[_slack_line(line) for line in customer_lines]]
-    resolved = _pr_keys_from_evidence(repo_evidence, merged=True)
-    opened = _pr_keys_from_evidence(repo_evidence, merged=False)
-    chosen, leftover = choose_decisions(
-        inbox_items or [],
-        products=catalog,
-        inbox_counts=inbox_counts,
-        now=now,
-        resolved_prs=resolved,
-        open_prs=opened,
+    for line in customer_lines:
+        if line.state in {"consulting", "unmapped", "unmounted"}:
+            background.append(row(line.name, [line.note]))
+            continue
+        parts = list(line.parts)
+        customer = next(item for item in roster if item.id == line.id)
+        covered_ids.update(
+            agent.get("id") for agent in agents if customer in map_agent_to_customers(agent, roster)
+        )
+        count = review_count(
+            {
+                agent.get("id")
+                for agent in agents
+                if customer in map_agent_to_customers(agent, roster)
+            }
+        )
+        if count:
+            parts.append(reviews(count))
+        if line.extra:
+            parts.append(line.extra)
+        if parts:
+            attention.append(row(line.name, parts))
+        else:
+            quiet.append(label(line.name))
+
+    # Failure detail can contain credentials or private context. Keep it in Studio.
+    failing = [task for task in tasks if task.get("last_status") == "failed"]
+    for task in failing[:3]:
+        attention.insert(
+            0,
+            row(
+                str(task.get("name") or "Scheduled task"),
+                ["failed; inspect the run in Studio before retrying"],
+            ),
+        )
+    if len(failing) > 3:
+        attention.insert(3, f"- {len(failing) - 3} more scheduled task failures in Studio")
+
+    other_failures = sum(
+        _agent_failed_today(item, date)
+        for item in assignments
+        if item.get("agent_id") not in covered_ids
     )
-    total = len(chosen) + sum(leftover.values())
-    if total:
-        titles = [
-            escape(_first_line(item.get("text"), DECISION_CHARS))
-            for item in chosen
-            if _first_line(item.get("text"), DECISION_CHARS)
-        ]
-        lines.append(f"*Needs you ({total})*: " + " · ".join(titles))
-    failed = slack_failure_line(tasks=tasks, assignments=assignments, date=date)
-    if failed:
-        lines.append(failed)
-    lines.append("_Details in Studio_")
-    _ = (loops, run_counts)
-    body = "\n".join(lines)
-    if len(body) > SLACK_BODY_MAX:
-        body = body[: SLACK_BODY_MAX - 1].rstrip() + "…"
-    return body
+    if other_failures:
+        attention.append(f"- Inspect {other_failures} other failed agent runs in Studio")
+
+    current = current_inbox_items(
+        inbox_items or [],
+        now=now,
+        resolved_prs=_pr_keys_from_evidence(repo_evidence, merged=True),
+        open_prs=_pr_keys_from_evidence(repo_evidence),
+    )
+    stale = [item for item in current if _item_text(item).lower().startswith("stale story:")]
+    candidates = [item for item in current if item not in stale]
+    chosen, leftover = choose_decisions(candidates, products=catalog, limit=3, now=now)
+    decisions = ["- " + label(_first_line(item.get("text"), DECISION_CHARS)) for item in chosen]
+    backlog = len(stale) + sum(leftover.values())
+    if backlog:
+        background.append(f"- {backlog} backlog items in Studio; not counted as today's decisions")
+
+    lines = [f"*AIIA · {slack_header_date(date)}*"]
+    for heading, rows in (
+        ("Needs attention", attention),
+        ("Decisions", decisions),
+        ("Merged — deployment not verified", merged),
+        ("Background — not merge requests", background),
+    ):
+        if rows:
+            lines.extend(["", f"*{heading}*", *rows])
+    if quiet:
+        lines.extend(
+            [
+                "",
+                "No active alerts: "
+                + ", ".join(quiet)
+                + ". Drafts and maintenance are listed separately.",
+            ]
+        )
+    footer = "_Details in Studio_"
+    # Keep whole rows and a usable footer; never cut a failure or Slack markup mid-line.
+    output: list[str] = []
+    budget = SLACK_BODY_MAX - len(footer) - len("\n_More items in Studio_\n")
+    for line in lines:
+        if len("\n".join([*output, line])) > budget:
+            if output and output[-1].startswith("*"):
+                output.pop()
+            output.append("_More items in Studio_")
+            break
+        output.append(line)
+    return "\n".join([*output, "", footer])
 
 
 def build_morning_note(

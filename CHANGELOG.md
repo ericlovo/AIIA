@@ -8,6 +8,10 @@ All notable changes to AIIA are documented here. This project adheres to
 
 ### Added
 
+- **Action-first Slack daily digest.** Separate actionable PRs from draft and
+  dependency background, summarize stale stories as backlog, distinguish merges
+  from deployments, and keep failures concise with details in Studio.
+
 - **Studio morning note.** The default landing view is a one-screen note
   (greeting, where things stand, needs you, ask for anything) fed from the
   same digest/product-line data. Existing Studio views stay behind Details.

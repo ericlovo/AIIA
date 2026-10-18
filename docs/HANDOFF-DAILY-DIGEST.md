@@ -46,23 +46,30 @@ through the memory-post outbox. The inbox row keeps the fuller
 The Slack post is a separate morning-note body: text only, no buttons,
 Slack mrkdwn enabled for `digest:` posts.
 
-Slack sections:
+Slack sections (action-first format):
 
-- Header `*AIIA · Thu Oct 8*`
-- One product line each, one status emoji (red = blocked, yellow =
-  waiting on Eric, green = shipped or clean, white = not mapped / no
-  repo). Empty segments are omitted. Bold only the name and
-  `waiting on you`.
-- `*Customers*` in the same form. TRS shows Mindmoor `main` commits not
-  yet on its tenant/branch when that ref exists. Alumni Nations shows
-  alumni drift, review waiting on Alumni Nations Research Scout, and
-  days to Phase 1 kickoff (2026-10-15) or days into the phase (through
-  2027-01-12). Smart Medical is `not mapped yet`.
-- `*Needs you (N)*: title · title` when there is something to decide.
-  Omitted when empty — never `none`.
-- One short failure line only when a built-in or agent failed. No
-  agent, loop, run, or inbox counts.
-- `_Details in Studio_`
+- Date header, then **Needs attention**: scheduled-task failures, main CI failures,
+  conflicts/check failures on active non-dependency PRs, eligible PR numbers to
+  review for merge, agent output reviews, and delivery drift. Missing or incomplete
+  repository evidence is explicit; it cannot produce an all-clear or merge ask.
+- **Decisions**: at most three current inbox suggestions, each on its own line.
+  Rows explicitly labeled `Stale story:` become a backlog count instead. No inbox
+  records are dismissed, deleted, or marked reviewed by this presentation filter.
+- **Merged — deployment not verified**: merged PR numbers, without calling them
+  shipped or claiming the deployment is live.
+- **Background — not merge requests**: draft/dependency/held PR counts, consulting
+  status, and remaining backlog. These PR categories stay outside the merge asks.
+- Quiet products share a compact **No active alerts** line. Drafts and maintenance
+  remain separate; this is not a claim that every PR passes.
+- Failure messages name the task and direct the operator to inspect its Studio
+  run before retrying. Raw exception strings stay out of Slack.
+- Whole rows fit within the existing message limit, preserving `_Details in Studio_`
+  and a “More items in Studio” marker when needed.
+
+Slack counts an awaiting-review agent marker only when no pending output already
+represents that agent. The fuller inbox body and Studio morning-note rendering
+retain their existing contracts. Slack formatting does not change schedules,
+permissions, runtime records, or delivery/outbox deduplication.
 
 Quiet/green product days still print the three inbox segments with
 `none`. They do not open a Work item and do not record a `quiet_clear`
