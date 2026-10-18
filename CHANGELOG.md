@@ -8,6 +8,12 @@ All notable changes to AIIA are documented here. This project adheres to
 
 ### Added
 
+- **Bot context and task shortcuts.** Bot cards show last activity and a one-line
+  outcome. Bot details include expandable, paginated run history and three
+  configuration-backed use cases, with optional additional context and free-form
+  task submission. Existing bot descriptions supply defaults without changing
+  model or execution settings.
+
 - **Studio morning note.** The default landing view is a one-screen note
   (greeting, where things stand, needs you, ask for anything) fed from the
   same digest/product-line data. Existing Studio views stay behind Details.
