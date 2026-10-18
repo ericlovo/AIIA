@@ -14,6 +14,7 @@ import { WorkBoard } from './WorkBoard'
 import { ActivityOverview } from './ActivityOverview'
 import { Switchboard } from './Switchboard'
 import { Today } from './Today'
+import { MorningNote } from './MorningNote'
 import { Jobs } from './Jobs'
 import { Bots } from './Bots'
 import { Projects } from './Projects'
@@ -49,7 +50,7 @@ const EMPTY_DRAFT: Draft = {
 const EMPTY_AGENTS: Agent[] = []
 
 // Each view gets its own boundary, so one bad record cannot take the navigation with it.
-const VIEW_NAMES = Object.fromEntries(VIEWS.map(item => [item.id, item.label])) as Record<StudioView, string>
+const VIEW_NAMES = { ...Object.fromEntries(VIEWS.map(item => [item.id, item.label])), home: 'Morning note' } as Record<StudioView, string>
 
 const SKILL_LIBRARY = ['Research', 'Planning', 'Writing', 'Analysis', 'Coding', 'Memory']
 const TOOL_LIBRARY = ['Local memory', 'Repository read', 'GitHub read', 'Git workspace']
@@ -178,6 +179,7 @@ export function AgentStudio() {
   const retiredCount = useMemo(() => agents.filter(agent => agent.retired).length, [agents])
 
   const page = (() => {
+    if (view === 'home') return <MorningNote agents={agents} onDetails={() => navigate({ view: 'switchboard' })} />
     if (view === 'bots') return <Bots agents={agents} loading={isLoading} error={isError} agentId={route.view === 'bots' ? route.agentId : undefined} />
     if (view === 'signals') return <SignalJobs />
     if (view === 'jobs') return <Jobs agents={agents} loading={isLoading} agentError={isError} />
@@ -395,6 +397,10 @@ export function AgentStudio() {
       </main>
     )
   })()
+
+  if (view === 'home') {
+    return <PanelBoundary key={view} name={VIEW_NAMES[view]}>{page}</PanelBoundary>
+  }
 
   return (
     <div className="flex h-full min-h-0 flex-col">

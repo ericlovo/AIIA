@@ -55,7 +55,7 @@ try {
       if (!(url.pathname in bodies)) { blocked.push(url.pathname); return route.fulfill({ status: 503, body: '{}' }) }
       return route.fulfill({ contentType: 'application/json', body: JSON.stringify(bodies[url.pathname]) })
     })
-    await page.goto('http://studio.test/')
+    await page.goto('http://studio.test/#/bots')
     await page.getByRole('heading', { name: 'Bots', exact: true }).waitFor()
     assert.equal(new URL(page.url()).hash, '#/bots')
     const nav = page.getByRole('navigation', { name: 'Studio', exact: true })
