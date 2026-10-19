@@ -83,5 +83,5 @@ Backend fixtures test feed validation, bounded output, failure reservations,
 cross-process exclusion, cancellation, consent flags, payload projection,
 backpressure, endpoint validation and cross-job deduplication. The browser test
 uses fixture responses for desktop/mobile layouts and controls; it is not evidence
-of live Jev quality. Validate the first real batch with Eric or Tony before
+of live Jev quality. Validate the first real batch with a designated reviewer before
 enabling recurrence. Measure pursue/watch/reject outcomes before adjusting policy.

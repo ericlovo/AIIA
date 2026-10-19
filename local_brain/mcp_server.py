@@ -24,7 +24,7 @@ Usage:
     Configured in .mcp.json — Claude Code launches this automatically.
 
     Or manually:
-        AIIA_URL=http://100.125.92.21:8100 python3 mcp_server.py
+        AIIA_URL=http://127.0.0.1:8100 python3 mcp_server.py
 
 Requires:
     pip install mcp httpx

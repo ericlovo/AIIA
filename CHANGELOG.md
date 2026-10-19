@@ -88,6 +88,11 @@ All notable changes to AIIA are documented here. This project adheres to
 
 ### Fixed
 
+- **Public repository hygiene.** Generalized operator and deployment details in
+  documentation, replaced a private endpoint example, and stopped tracking monitor
+  snapshots. Existing installations must preserve their local snapshot before
+  updating across this removal. Runtime paths and behavior are unchanged.
+
 - **Studio dashboard builds on case-insensitive filesystems.** `morningNote.ts`
   sat next to `MorningNote.tsx`, so TypeScript on macOS treated them as one
   module (`TS1261` / `TS2724`). The model now lives in `morningNoteModel.ts`,
