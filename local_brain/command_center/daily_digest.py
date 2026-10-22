@@ -882,9 +882,7 @@ def _pull_counts_as_blocker(pull: PullSignal, holds: Iterable[int] = ()) -> bool
     """Only non-draft open PRs can turn a product line red."""
     if pull.draft or pull.merged or _pull_superseded(pull) or _pull_held(pull, holds):
         return False
-    if _pull_is_skipped(pull):
-        return False
-    return True
+    return not _pull_is_skipped(pull)
 
 
 def _eric_owned_ready(pull: PullSignal) -> bool:

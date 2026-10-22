@@ -1591,7 +1591,14 @@ def test_only_non_draft_open_prs_turn_a_product_line_red():
         mergeable_state="dirty",
         labels=("superseded",),
     )
-    draft = _pull(8, draft=True, mergeable=False, mergeable_state="dirty", checks="failure")
+    draft = daily_digest.PullSignal(
+        8,
+        "draft checks",
+        draft=True,
+        mergeable=False,
+        mergeable_state="dirty",
+        checks="failure",
+    )
     background = daily_digest.RepoEvidence(
         repo_id="aiia",
         mounted=True,
