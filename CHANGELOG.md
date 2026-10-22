@@ -92,6 +92,15 @@ All notable changes to AIIA are documented here. This project adheres to
 
 ### Fixed
 
+- **Digest product lines stay green unless a live PR is actually blocked.**
+  Draft PRs and skipped Codex drafts no longer count as conflict or check
+  blockers (no more `#117 conflict` plus `skipped: 1 codex drafts (#117)`).
+  Superseded PRs also stay off the red line. Only non-draft open PRs with
+  failing checks or merge conflicts turn a product red. `Stale story:`
+  inbox rows become one backlog count instead of dozens of Needs-you
+  decisions. Daily Brief now forwards `think: false` through `/v1/aiia/ask`
+  so qwen3 does not spend the token budget on hidden reasoning.
+
 - **Public repository hygiene.** Generalized operator and deployment details in
   documentation, replaced a private endpoint example, and stopped tracking monitor
   snapshots. Existing installations must preserve their local snapshot before

@@ -974,6 +974,8 @@ class AIIAAskRequest(BaseModel):
     max_tokens: int = 4096
     num_ctx: int = 32768  # Context window: 32K (text), 4096 (voice)
     depth: str = "fast"  # "fast" (local only), "hybrid" (+ cloud), "deep" (+ DeepSeek)
+    # Reasoning toggle. None keeps the model default (qwen3 thinks).
+    think: bool | None = None
 
 
 class AIIARememberRequest(BaseModel):
@@ -1019,6 +1021,7 @@ async def aiia_ask(request: AIIAAskRequest):
         n_results=request.n_results,
         num_ctx=request.num_ctx,
         depth=request.depth,
+        think=request.think,
     )
     latency = (time.monotonic() - start) * 1000
 

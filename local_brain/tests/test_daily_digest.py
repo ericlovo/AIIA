@@ -1513,6 +1513,147 @@ def test_smart_medical_is_consulting_with_optional_note():
     assert "not mapped yet" not in daily_digest.format_customer_line(noted)
 
 
+def test_conflict_count_skips_draft_and_superseded_prs():
+    calls: list[str] = []
+
+    def github(endpoint: str) -> object:
+        calls.append(endpoint)
+        if "/pulls?state=open" in endpoint:
+            return [
+                {
+                    "number": 117,
+                    "title": "draft conflict",
+                    "draft": True,
+                    "mergeable": False,
+                    "mergeable_state": "dirty",
+                    "head": {"ref": "codex/slack-daily-clarity", "sha": "abc"},
+                },
+                {
+                    "number": 9,
+                    "title": "Superseded by #10",
+                    "draft": False,
+                    "mergeable": False,
+                    "mergeable_state": "dirty",
+                    "labels": [{"name": "superseded"}],
+                },
+                {
+                    "number": 10,
+                    "title": "live conflict",
+                    "draft": False,
+                    "mergeable": False,
+                    "mergeable_state": "dirty",
+                    "head": {"ref": "cursor/live", "sha": "def"},
+                },
+            ]
+        if "/actions/runs" in endpoint:
+            return {"workflow_runs": []}
+        if "/pulls?state=closed" in endpoint:
+            return []
+        return {}
+
+    row = daily_digest.collect_repo_evidence(
+        "aiia", github_api=github, mounts={}, github_slug="ericlovo/AIIA"
+    )
+    assert row.merge_conflicts == 1
+    assert [pull.number for pull in row.open_pulls] == [117, 9, 10]
+
+
+def test_draft_and_skipped_codex_drafts_are_not_conflict_blockers():
+    evidence = daily_digest.RepoEvidence(
+        repo_id="aiia",
+        mounted=True,
+        complete=True,
+        open_pulls=[
+            _pull(
+                117,
+                title="Action-first Slack daily digest",
+                draft=True,
+                mergeable=False,
+                mergeable_state="dirty",
+                head_ref="codex/slack-daily-clarity",
+            )
+        ],
+    )
+    slack = daily_digest.morning_product_line(PRODUCTS[0], evidence)
+    inbox = daily_digest.format_product_line(PRODUCTS[0], evidence)
+    assert slack.state != "blocked"
+    assert "#117 conflict" not in slack.note
+    assert slack.extra == "skipped: 1 codex drafts (#117)"
+    assert "#117 conflict" not in inbox
+    assert "blocked none" in inbox
+
+
+def test_only_non_draft_open_prs_turn_a_product_line_red():
+    superseded = _pull(
+        9,
+        title="Superseded by #10",
+        mergeable=False,
+        mergeable_state="dirty",
+        labels=("superseded",),
+    )
+    draft = _pull(8, draft=True, mergeable=False, mergeable_state="dirty", checks="failure")
+    background = daily_digest.RepoEvidence(
+        repo_id="aiia",
+        mounted=True,
+        complete=True,
+        open_pulls=[superseded, draft],
+    )
+    quiet = daily_digest.morning_product_line(PRODUCTS[0], background)
+    assert quiet.state != "blocked"
+    assert "#9" not in quiet.note and "#8 conflict" not in quiet.note
+    assert "conflict" not in daily_digest.format_product_line(PRODUCTS[0], background)
+
+    live = daily_digest.RepoEvidence(
+        repo_id="aiia",
+        mounted=True,
+        complete=True,
+        open_pulls=[
+            superseded,
+            draft,
+            _pull(10, mergeable=False, mergeable_state="dirty"),
+        ],
+    )
+    red = daily_digest.morning_product_line(PRODUCTS[0], live)
+    assert red.state == "blocked"
+    assert "#10 conflict" in red.note
+    assert "#9 conflict" not in red.note
+    assert "#8 conflict" not in red.note
+    inbox = daily_digest.format_product_line(PRODUCTS[0], live)
+    assert "#10 conflict" in inbox
+    assert "#9" not in inbox and "#8" not in inbox
+
+
+def test_stale_stories_are_one_backlog_count_not_decisions():
+    items = [
+        {"text": f"Stale story: P0_private_slug_{n}", "source": "slack", "project": "aiia"}
+        for n in range(77)
+    ] + [
+        {
+            "text": "Ship the digest rewrite today?",
+            "source": "slack",
+            "project": "aiia",
+            "priority": "high",
+        }
+    ]
+    lines = daily_digest.format_decision_lines(items, products=PRODUCTS)
+    assert lines[0] == "- aiia · Ship the digest rewrite today?"
+    assert "- 77 stale stories (backlog)" in lines
+    assert all("P0_private_slug" not in line for line in lines)
+    cards, total = daily_digest.morning_decision_cards(items, products=PRODUCTS)
+    assert [card["title"] for card in cards] == ["Ship the digest rewrite today?"]
+    assert total == 1
+    payload = daily_digest.build_morning_note(
+        **{
+            key: value
+            for key, value in _status_digest_kwargs(inbox_items=items).items()
+            if key not in {"run_counts", "loops"}
+        }
+    )
+    assert payload["needs_you_total"] < 10
+    assert all("Stale story" not in card["title"] for card in payload["decisions"])
+    assert all("P0_private_slug" not in card["title"] for card in payload["decisions"])
+
+
 def test_slack_condenses_stale_stories_without_mutating_inbox():
     items = [
         {"text": f"Stale story: private_internal_slug_{n}", "source": "slack", "project": "aiia"}

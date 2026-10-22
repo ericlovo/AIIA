@@ -98,6 +98,31 @@ def test_daily_brief_timeout_is_not_shorter_than_the_brain_ollama_timeout():
     assert DAILY_BRIEF_TIMEOUT_SECONDS >= 300
 
 
+def test_daily_brief_sends_think_false_on_ask(monkeypatch):
+    monitor = MagicMock()
+    monitor.get_full_snapshot.return_value = {"services": {}}
+    runner = TaskRunner(AsyncMock(), "/unused", monitor)
+    asked: list[dict] = []
+
+    async def fake_request(method, path, body=None, timeout=30.0):
+        if path == "/v1/aiia/ask":
+            asked.append(body or {})
+            return {"answer": "## 1. Shipped Code\nNothing notable."}
+        return {"knowledge": {}, "memory": {}, "memories": [], "total_memories": 0}
+
+    runner._aiia_request = fake_request  # type: ignore[method-assign]
+    runner._progress = AsyncMock()  # type: ignore[method-assign]
+    runner._emit_insight = AsyncMock()  # type: ignore[method-assign]
+    runner._run_git = AsyncMock(return_value="")  # type: ignore[method-assign]
+    monkeypatch.setattr(
+        "local_brain.command_center.aiia_tasks.generate_report", lambda **kwargs: {}
+    )
+
+    asyncio.run(runner._task_daily_brief())
+    assert asked
+    assert asked[0]["think"] is False
+
+
 def test_daily_brief_failure_names_the_exception_and_remembers_nothing(monkeypatch):
     monitor = MagicMock()
     monitor.get_full_snapshot.return_value = {"services": {}}

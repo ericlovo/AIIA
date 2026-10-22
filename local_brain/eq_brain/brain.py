@@ -387,6 +387,7 @@ class AIIA:
         n_results: int = 5,
         num_ctx: int = 32768,
         depth: str = "fast",
+        think: bool | None = None,
     ) -> dict[str, Any]:
         """
         Ask the brain a question. It searches knowledge + memory,
@@ -398,6 +399,9 @@ class AIIA:
             include_sessions: Whether to search past sessions too
             n_results: How many knowledge docs to retrieve
             depth: "fast" (local), "deep" (+ DeepSeek R1), "recursive" (REPL engine)
+            think: Reasoning toggle for thinking-capable models. None keeps the
+                model default. Daily Brief sends False so qwen3 does not spend
+                the token budget on hidden reasoning.
 
         Returns:
             answer: The brain's response
@@ -449,6 +453,7 @@ class AIIA:
             max_tokens=max_tokens,
             num_ctx=num_ctx,
             timeout=timeout,
+            think=think,
         )
 
         raw_answer = response.get("message", {}).get(
