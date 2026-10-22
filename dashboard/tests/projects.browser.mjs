@@ -96,6 +96,12 @@ try {
         }
         if (mode === 'empty') body = { ...body, runs: [], total_count: 0, has_more: false }
       }
+      else if (/^\/api\/projects\/(aiia|mindmoor)\/delivery$/.test(url.pathname)) body = {
+        repo_id: url.pathname.split('/')[3], checked_at: checkedAt, status: 'available', features: [], errors: [],
+        deployments: { checked_at: checkedAt, status: 'available', provider: 'github_deployments',
+          scope: 'recent_reported_deployments', environments: [], errors: [], has_more: false,
+          truncated: false, coverage: 'bounded_recent_history', notice: 'No deployment evidence in this fixture.' },
+      }
       else if (url.pathname === '/api/agents') body = { agents }
       else if (url.pathname === '/api/agents/resources') body = { repos: [], github: { status: 'disconnected' } }
       else if (url.pathname === '/api/agents/models') body = { default: '', models: [] }

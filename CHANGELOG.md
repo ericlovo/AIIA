@@ -12,6 +12,19 @@ All notable changes to AIIA are documented here. This project adheres to
   dependency background, summarize stale stories as backlog, distinguish merges
   from deployments, and keep failures concise with details in Studio.
 
+- **Mindmoor feature delivery in Projects.** Roadmap features link explicitly to
+  assignments and PRs, with execution/review state, agent navigation, PR-head
+  GitHub Actions evidence and source timestamps. Link edits reject stale versions
+  and persist atomically. Last reported GitHub deployments show environment,
+  revision and provider state separately; a merge or green workflow never proves
+  that a feature is live. Partial reads and missing links remain visible.
+
+- **Bot context and task shortcuts.** Bot cards show last activity and a one-line
+  outcome. Bot details include expandable, paginated run history and three
+  configuration-backed use cases, with optional additional context and free-form
+  task submission. Existing bot descriptions supply defaults without changing
+  model or execution settings.
+
 - **Studio morning note.** The default landing view is a one-screen note
   (greeting, where things stand, needs you, ask for anything) fed from the
   same digest/product-line data. Existing Studio views stay behind Details.
@@ -79,6 +92,15 @@ All notable changes to AIIA are documented here. This project adheres to
 
 ### Fixed
 
+- **Public repository hygiene.** Generalized operator and deployment details in
+  documentation, replaced a private endpoint example, and stopped tracking monitor
+  snapshots. Existing installations must preserve their local snapshot before
+  updating across this removal. Runtime paths and behavior are unchanged.
+
+- **Studio dashboard builds on case-insensitive filesystems.** `morningNote.ts`
+  sat next to `MorningNote.tsx`, so TypeScript on macOS treated them as one
+  module (`TS1261` / `TS2724`). The model now lives in `morningNoteModel.ts`,
+  and CI fails if tracked paths or TS/JS module stems collide ignoring case.
 - **Slack daily digest names real work.** Held PRs stay off blocked/waiting
   (config hold list plus a `hold` label). Merge asks are only ready,
   non-draft PRs Eric owns (configured login, not `codex/*`); Sanction and Codex

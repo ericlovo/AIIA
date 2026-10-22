@@ -46,7 +46,7 @@ of the weekend roadmap.
   the Mini produces the local repository analyses. GitHub state is retrieved
   deterministically, not inferred by either model.
 
-## Tony and Eric walkthrough
+## Two-user walkthrough
 
 Use a separate QA dataset first, then one explicitly authorized bounded run.
 Record time-to-complete, wrong turns and confusing language. The human gate is
@@ -89,7 +89,7 @@ npm run test:browser
 
 Browser suites intercept APIs and sockets with synthetic fixtures. They verify
 layout and request/response behavior without mutating live records or invoking
-models. Passing them is not evidence of a real Mini run, Tony's authentication,
+models. Passing them is not evidence of a real Mini run, a second user’s authentication,
 or live scheduling after restart.
 
 For recipe output quality, use the opt-in local evaluation and human rubric in
@@ -125,3 +125,54 @@ work, and dismiss stale reports with a reason and expected review versions.
 Dismissal must not accept model output, delete history, or clear the independent
 Slack/proposal queues. Re-enable a watch only after a fresh, bounded test and
 human review of its evidence and settings.
+
+
+## Mindmoor delivery slice — 2026-10-13
+
+Projects → Mindmoor now connects existing roadmap features (`product=mindmoor`)
+to explicitly selected assignments and PR numbers. It does not create another
+work queue or infer associations from titles or an agent's current repository.
+Old stories without links remain visible and unlinked. Assignment choices are
+existing shared-operator records, not a new tenant permission boundary.
+
+Use Edit links on a feature, select the intended existing assignments, enter PR
+numbers, and save. Saving only changes associations; it never runs an assignment,
+changes a review, or mutates GitHub. Reload verifies persistence. A stale edit
+returns 409; refresh and reopen the editor before retrying. Failed persistence
+keeps the previous stored links. Back up the existing roadmap stories JSON when
+rolling out; the new optional fields are `assignment_ids` and `pr_numbers`.
+
+The read route is `GET /api/projects/{repo_id}/delivery`. Link writes use
+`PUT /api/projects/{repo_id}/features/{story_id}/links` with `assignment_ids`,
+`pr_numbers`, and the displayed feature's `expected_updated_at`. Product scope
+is checked on the server. These are local operator associations, not verified
+actor identity or client authorization. No new database queries are introduced.
+
+GitHub Actions evidence is pinned to each PR's head SHA; it is not a complete
+branch-protection verdict or every external status check. Missing, failed or
+bounded reads remain explicit. The endpoint limits PR evidence collection by
+count and elapsed time. Deployment reads cover at most 30 recent records and
+four distinct environments, with at most five four-second-timeout GETs. Source
+coverage can be partial; an absent production environment remains unknown.
+
+Last reported deployments identify the exact environment and SHA with provider
+status. They are not independent health probes. A failed newest deployment does
+not fall back to an older success. Feature-to-release mapping remains unverified:
+merged code, checkout branches, and preview success never establish production.
+
+Synthetic acceptance checks:
+
+- Feature, assignment, agent and PR links survive refresh and remain scoped to
+  the selected project, even if an agent is later reassigned or removed.
+- Running, awaiting manual start, blocked, needs review and broken links remain
+  distinct. Workflow failures and known PR conflicts expose blocking evidence.
+- Wrong-SHA workflows are not shown as evidence for the PR; failed reads do not
+  appear as an empty successful result.
+- Two editors cannot silently overwrite each other; save failures retain drafts
+  and the previous persisted associations.
+- Preview-only, failed and unavailable deployment reports never say production
+  is live. Source links and timestamps remain visible on desktop and phone.
+
+This slice leaves the existing home direction, schedules, model execution,
+client onboarding and egress policy unchanged. It does not add epic/milestone
+CRUD, automatic GitHub writes or deployment actions.

@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query'
 import { ExternalLink, FolderGit2, GitBranch, Plus, RefreshCw } from 'lucide-react'
 import type { Agent } from '../lib/api'
 import { PageHeader } from './PageHeader'
+import { ProjectDelivery } from './ProjectDelivery'
 import { formatRoute } from './studioRoute'
 
 interface EvidenceError {
@@ -145,11 +146,13 @@ export function Projects() {
           <div className="min-w-0"><dt className="text-neutral-500">Checkout commit</dt><dd className="mt-1 break-all font-mono text-xs">
             {project.head_sha && project.html_url ? <SourceLink href={`${project.html_url}/commit/${project.head_sha}`}>{project.head_sha}</SourceLink> : project.head_sha ?? 'Unavailable'}
           </dd></div>
-          <div><dt className="text-neutral-500">Deployment</dt><dd className="mt-1 text-neutral-400">Unknown / not connected</dd></div>
+          <div><dt className="text-neutral-500">Deployment</dt><dd className="mt-1 text-neutral-400">{project.id === 'mindmoor' ? 'Checkout deployment not verified' : 'Unknown / not connected'}</dd></div>
         </dl>
         <p className="mt-4 text-xs text-neutral-500">Checkout checked <time dateTime={project.checked_at}>{date(project.checked_at)}</time></p>
         {project.errors.map(error => <p key={error.code} role="alert" className="mt-3 text-sm text-amber-300">{error.message}</p>)}
       </section>
+
+      {project.id === 'mindmoor' && <ProjectDelivery key={project.id} repoId={project.id} />}
 
       <section aria-label="GitHub Actions evidence" className="border-b border-neutral-800 px-5 py-5 sm:px-7">
         <div className="flex flex-wrap items-center justify-between gap-3">

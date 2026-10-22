@@ -45,6 +45,7 @@ from local_brain.command_center.agent_prompts import agent_system_prompt
 from local_brain.command_center.agent_prompts import assignment_prompt as _assignment_prompt
 from local_brain.command_center.lead_reviews import review_snapshot
 from local_brain.command_center.lead_reviews import router as lead_review_router
+from local_brain.command_center.project_delivery import create_router as delivery_router
 from local_brain.command_center.project_status import router as project_status_router
 from local_brain.command_center.signal_routes import router as signal_router
 
@@ -1179,6 +1180,13 @@ async def get_monitor_service(service_id: str):
 # ─── Task API ─────────────────────────────────────────────
 
 
+class BotUseCase(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    label: str = Field(min_length=1, max_length=80)
+    task: str = Field(min_length=1, max_length=6000)
+
+
 class AgentCreateRequest(BaseModel):
     name: str = Field(min_length=1, max_length=80)
     mission: str = Field(min_length=1, max_length=2_000)
@@ -1202,6 +1210,7 @@ class AgentCreateRequest(BaseModel):
     use_when: str = Field(default="", max_length=120)
     retired: bool = False
     handles: list[str] = Field(default_factory=list, max_length=12)
+    use_cases: list[BotUseCase] = Field(default_factory=list, max_length=3)
 
 
 class SuiteAgentsPatchRequest(BaseModel):
@@ -1240,6 +1249,7 @@ class AgentPatchRequest(SuiteAgentsPatchRequest):
     use_when: str = Field(default=None, max_length=120)
     retired: bool = Field(default=None)
     handles: list[str] = Field(default=None, max_length=12)
+    use_cases: list[BotUseCase] = Field(default=None, max_length=3)
 
 
 class AgentRunRequest(BaseModel):
@@ -1638,6 +1648,20 @@ async def studio_run(run_id: str):
     return {"run": run}
 
 
+@app.get("/api/agents/{agent_id}/history")
+async def bot_history(agent_id: str, offset: int = 0, limit: int = 20):
+    if not agent_registry.get(agent_id):
+        raise HTTPException(status_code=404, detail="agent_not_found")
+    if offset < 0 or not 1 <= limit <= 50:
+        raise HTTPException(status_code=422, detail="invalid_pagination")
+    try:
+        return agent_registry.recover_runs().agent_history(agent_id, offset=offset, limit=limit)
+    except (RunHistoryUnavailable, sqlite3.Error) as exc:
+        raise HTTPException(
+            status_code=503, detail="Run history unavailable. Saved outputs are retained."
+        ) from exc
+
+
 @app.get("/api/agents/resources")
 async def agent_resources():
     return {
@@ -1723,7 +1747,10 @@ async def create_agent(body: AgentCreateRequest):
     _validate_agent_repo(body)
     await _validate_agent_model(body.model)
     try:
-        agent = agent_registry.create(**body.model_dump())
+        config = body.model_dump()
+        if "use_cases" not in body.model_fields_set:
+            config.pop("use_cases")
+        agent = agent_registry.create(**config)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     shown = _public_agent(agent)
@@ -3693,6 +3720,8 @@ from local_brain.scripts.roadmap_store import RoadmapStore
 from local_brain.scripts.syntax_checker import check_syntax
 
 _roadmap = RoadmapStore()
+
+app.include_router(delivery_router(_roadmap, assignment_registry, agent_registry))
 _pipeline = PipelineStore()
 _story_prioritizer: StoryPrioritizer | None = None
 

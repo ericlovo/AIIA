@@ -18,6 +18,9 @@ jobs:
         working-directory: dashboard
     steps:
       - uses: actions/checkout@v7
+      - name: Case-insensitive path collision guard
+        working-directory: .
+        run: python3 scripts/case_collision_guard.py
       - uses: actions/setup-node@v7
         with:
           node-version: "22"
@@ -85,6 +88,9 @@ jobs:
       - name: Ignored-rule backlog ratchet
         run: python scripts/ruff_ratchet.py
 
+      - name: Case-insensitive path collision guard
+        run: python scripts/case_collision_guard.py
+
       - name: ruff format check (enforced)
         run: ruff format --check local_brain/
 
@@ -108,6 +114,14 @@ jobs:
 
     steps:
       - uses: actions/checkout@v7
+
+      - name: Keep monitor snapshots out of Git
+        run: |
+          if git ls-files --error-unmatch local_brain/command_center/monitor_data.json >/dev/null 2>&1; then
+            echo "::error::Monitor snapshots are runtime data and must not be tracked."
+            exit 1
+          fi
+          git check-ignore -q local_brain/command_center/monitor_data.json
 
       - name: Scan for banned strings
         # Fails the build if any of these proprietary references reappear.
