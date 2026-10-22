@@ -8,6 +8,10 @@ All notable changes to AIIA are documented here. This project adheres to
 
 ### Added
 
+- **Action-first Slack daily digest.** Separate actionable PRs from draft and
+  dependency background, summarize stale stories as backlog, distinguish merges
+  from deployments, and keep failures concise with details in Studio.
+
 - **Mindmoor feature delivery in Projects.** Roadmap features link explicitly to
   assignments and PRs, with execution/review state, agent navigation, PR-head
   GitHub Actions evidence and source timestamps. Link edits reject stale versions
@@ -87,6 +91,15 @@ All notable changes to AIIA are documented here. This project adheres to
   loopback only.
 
 ### Fixed
+
+- **Digest product lines stay green unless a live PR is actually blocked.**
+  Draft PRs and skipped Codex drafts no longer count as conflict or check
+  blockers (no more `#117 conflict` plus `skipped: 1 codex drafts (#117)`).
+  Superseded PRs also stay off the red line. Only non-draft open PRs with
+  failing checks or merge conflicts turn a product red. `Stale story:`
+  inbox rows become one backlog count instead of dozens of Needs-you
+  decisions. Daily Brief now forwards `think: false` through `/v1/aiia/ask`
+  so qwen3 does not spend the token budget on hidden reasoning.
 
 - **Public repository hygiene.** Generalized operator and deployment details in
   documentation, replaced a private endpoint example, and stopped tracking monitor

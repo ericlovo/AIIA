@@ -9,10 +9,13 @@ and see why a response came back empty.
 Run: pytest local_brain/tests/test_chat_think.py -v
 """
 
+from unittest.mock import AsyncMock, MagicMock
+
 import pytest
 
 from local_brain import local_api, ollama_client
 from local_brain.config import LocalBrainConfig
+from local_brain.eq_brain.brain import AIIA
 
 
 class _FakeResponse:
@@ -86,6 +89,31 @@ class _RecordingOllama:
 
 async def _noop_metrics(**kwargs):
     return None
+
+
+@pytest.mark.asyncio
+async def test_aiia_ask_forwards_think_false_for_daily_brief(monkeypatch):
+    fake = _RecordingOllama({"message": {"content": "ok"}})
+    memory = MagicMock()
+    memory.version = 1
+    memory.export_for_context.return_value = ""
+    brain = AIIA(knowledge_store=MagicMock(), memory=memory, ollama_client=fake)
+    brain._gather_context = AsyncMock(return_value=([], [], []))  # type: ignore[method-assign]
+    brain._fire_extraction = MagicMock()  # type: ignore[method-assign]
+
+    result = await brain.ask("Generate a morning briefing", think=False)
+
+    assert fake.kwargs["think"] is False
+    assert result["answer"] == "ok"
+
+    fake_brain = MagicMock()
+    fake_brain.ask = AsyncMock(return_value={"answer": "ok"})
+    fake_brain._model = "qwen3:8b"
+    monkeypatch.setattr(local_api, "_require_aiia", AsyncMock(return_value=fake_brain))
+    monkeypatch.setattr(local_api, "_report_metrics", _noop_metrics)
+
+    await local_api.aiia_ask(local_api.AIIAAskRequest(question="brief", think=False))
+    assert fake_brain.ask.await_args.kwargs["think"] is False
 
 
 @pytest.mark.asyncio

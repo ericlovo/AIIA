@@ -47,10 +47,12 @@ ALUMNI_PREFIXES = ("origin/release/alumni", "release/alumni")
 PRODUCTS_ENV = "AIIA_DIGEST_PRODUCTS"
 DEPENDABOT_AUTHORS = frozenset({"dependabot[bot]", "dependabot"})
 HOLD_LABELS = frozenset({"hold"})
+SUPERSEDED_LABELS = frozenset({"superseded"})
 CODEX_HEAD_PREFIX = "codex/"
 DEPENDABOT_HEAD_PREFIX = "dependabot/"
 INBOX_STALE = timedelta(hours=72)
 INBOX_STALE_HINTS = ("next best action", "confirm shipped")
+STALE_STORY_PREFIX = "stale story:"
 _PR_MENTION = re.compile(
     r"(?:(?P<slug>[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)\s*)?#(?P<num>\d+)"
     r"|(?P<label>AIIA|MIA|Mindmoor|Sanction|Morrow)\s+#(?P<named>\d+)",
@@ -734,7 +736,8 @@ def _conflict_count(
         return 0
     conflicts = 0
     checked = 0
-    for row in pulls[:PR_DETAIL_CAP]:
+    candidates = [row for row in pulls if not _row_is_inactive(row)]
+    for row in candidates[:PR_DETAIL_CAP]:
         number = row.get("number")
         mergeable = row.get("mergeable")
         state = str(row.get("mergeable_state") or "")
@@ -757,8 +760,10 @@ def _conflict_count(
                 row["draft"] = detail.get("draft")
             if detail.get("title"):
                 row["title"] = detail.get("title")
+        if _row_is_inactive(row):
+            continue
         checked += 1
-        if mergeable is False or state in {"dirty", "blocked"}:
+        if mergeable is False or state in {"dirty"}:
             conflicts += 1
     if checked == 0:
         return 0
@@ -830,6 +835,20 @@ def _pull_from_row(row: dict[str, Any]) -> PullSignal | None:
     )
 
 
+def _row_is_inactive(row: dict[str, Any]) -> bool:
+    """Draft or superseded list rows are background, not conflict tallies."""
+    if row.get("draft"):
+        return True
+    return _title_or_labels_superseded(str(row.get("title") or ""), _label_names(row.get("labels")))
+
+
+def _title_or_labels_superseded(title: str, labels: Iterable[str]) -> bool:
+    if SUPERSEDED_LABELS.intersection({str(item).strip().lower() for item in labels}):
+        return True
+    lowered = title.lower()
+    return lowered.startswith("superseded") or "superseded by" in lowered
+
+
 def _pull_is_dependabot(pull: PullSignal) -> bool:
     login = pull.author.lower()
     ref = pull.head_ref.lower()
@@ -848,6 +867,22 @@ def _pull_held(pull: PullSignal, holds: Iterable[int] = ()) -> bool:
     if pull.number in set(holds):
         return True
     return bool(HOLD_LABELS.intersection(pull.labels))
+
+
+def _pull_superseded(pull: PullSignal) -> bool:
+    return _title_or_labels_superseded(pull.title, pull.labels)
+
+
+def _pull_is_skipped(pull: PullSignal) -> bool:
+    """Same set `_skipped_part` reports: Dependabot and Codex drafts."""
+    return _pull_is_dependabot(pull) or (pull.draft and _pull_is_codex(pull))
+
+
+def _pull_counts_as_blocker(pull: PullSignal, holds: Iterable[int] = ()) -> bool:
+    """Only non-draft open PRs can turn a product line red."""
+    if pull.draft or pull.merged or _pull_superseded(pull) or _pull_held(pull, holds):
+        return False
+    return not _pull_is_skipped(pull)
 
 
 def _eric_owned_ready(pull: PullSignal) -> bool:
@@ -1237,7 +1272,7 @@ def _blocked_segment(
             parts.append("CI on main")
         held = set(holds)
         for pull in evidence.open_pulls:
-            if _pull_held(pull, held):
+            if not _pull_counts_as_blocker(pull, held):
                 continue
             if _pull_conflicted(pull):
                 parts.append(f"#{pull.number} conflict")
@@ -1469,6 +1504,10 @@ def _stale_kind(text: str) -> bool:
     return any(hint in lower for hint in INBOX_STALE_HINTS)
 
 
+def _stale_story(text: str) -> bool:
+    return text.lower().startswith(STALE_STORY_PREFIX)
+
+
 def _pr_keys_from_evidence(
     evidence: Iterable[RepoEvidence] | None, *, merged: bool = False
 ) -> set[str]:
@@ -1538,10 +1577,16 @@ def choose_decisions(
     now: datetime | None = None,
     resolved_prs: Iterable[str] | None = None,
     open_prs: Iterable[str] | None = None,
-) -> tuple[list[dict[str, Any]], dict[str, int]]:
-    """Preferred current inbox rows; leftover is unused current items only."""
+) -> tuple[list[dict[str, Any]], dict[str, int], int]:
+    """Preferred current inbox rows; leftover is unused current items only.
+
+    ``Stale story:`` backlog rows are counted separately so they can be
+    summarized instead of listed as decisions.
+    """
     catalog = list(products) if products is not None else load_products()
     usable = current_inbox_items(items, now=now, resolved_prs=resolved_prs, open_prs=open_prs)
+    stale_count = sum(1 for item in usable if _stale_story(_item_text(item)))
+    usable = [item for item in usable if not _stale_story(_item_text(item))]
     preferred = [item for item in usable if _decision_preferred(item, catalog)]
     preferred.sort(key=_decision_sort_key)
     chosen = preferred[:limit]
@@ -1553,7 +1598,7 @@ def choose_decisions(
         source = str(item.get("source") or "inbox")
         leftover[source] = leftover.get(source, 0) + 1
     _ = inbox_counts
-    return chosen, leftover
+    return chosen, leftover, stale_count
 
 
 def format_decision_lines(
@@ -1567,7 +1612,7 @@ def format_decision_lines(
     open_prs: Iterable[str] | None = None,
 ) -> list[str]:
     catalog = list(products) if products is not None else load_products()
-    chosen, leftover = choose_decisions(
+    chosen, leftover, stale_count = choose_decisions(
         items,
         products=catalog,
         inbox_counts=inbox_counts,
@@ -1587,6 +1632,9 @@ def format_decision_lines(
             f"{count} {source}" for source, count in sorted(leftover.items()) if count
         )
         lines.append(f"- plus {leftover_total} more ({detail})")
+    if stale_count:
+        noun = "stale story" if stale_count == 1 else "stale stories"
+        lines.append(f"- {stale_count} {noun} (backlog)")
     if not lines:
         lines.append("- none")
     return lines
@@ -1745,7 +1793,7 @@ def _hard_block_parts(
             parts.append("CI red on main")
         held = set(holds)
         for pull in evidence.open_pulls:
-            if _pull_held(pull, held):
+            if not _pull_counts_as_blocker(pull, held):
                 continue
             if _pull_conflicted(pull):
                 parts.append(f"#{pull.number} conflict")
@@ -2096,7 +2144,7 @@ def morning_decision_cards(
     open_prs: Iterable[str] | None = None,
 ) -> tuple[list[dict[str, Any]], int]:
     catalog = list(products) if products is not None else load_products()
-    chosen, leftover = choose_decisions(
+    chosen, leftover, _stale_count = choose_decisions(
         items,
         products=catalog,
         inbox_counts=inbox_counts,
@@ -2162,47 +2210,193 @@ def format_slack_digest(
     run_counts: dict[str, int] | None = None,
     now: datetime | None = None,
 ) -> str:
-    """Morning-note Slack mrkdwn. Empty segments are omitted; no activity counts."""
+    """Action-first Slack summary; detailed history remains in Studio."""
     catalog = list(products) if products is not None else load_products()
-    product_lines, customer_lines = collect_morning_lines(
+    roster = list(customers) if customers is not None else load_customers()
+    evidence = {row.repo_id: row for row in (repo_evidence or [])}
+    attention: list[str] = []
+    merged: list[str] = []
+    background: list[str] = []
+    quiet: list[str] = []
+    covered_ids: set[str] = set()
+
+    def label(value: str) -> str:
+        return escape(_short_title(value, 80))
+
+    def row(name: str, parts: list[str]) -> str:
+        return f"- *{label(name)}*: " + "; ".join(label(part) for part in parts)
+
+    def reviews(count: int) -> str:
+        return f"review {count} agent output" + ("s" if count != 1 else "")
+
+    def review_count(ids: set[str]) -> int:
+        pending = [
+            item for item in assignments if item.get("agent_id") in ids and _agent_waiting(item)
+        ]
+        represented = {item.get("agent_id") for item in pending}
+        # An awaiting-review marker is a fallback, not an extra output to review.
+        fallback = {
+            agent.get("id")
+            for agent in agents
+            if agent.get("id") in ids
+            and agent.get("id") not in represented
+            and agent.get("loop_skip_reason") == "awaiting_review"
+        }
+        return len(pending) + len(fallback)
+
+    for product in catalog:
+        ev = evidence.get(product.mount)
+        paused, review, failed = _signals_for_product(
+            product, agents=agents, assignments=assignments, date=date, products=catalog
+        )
+        covered_ids.update(
+            agent.get("id") for agent in agents if map_agent_to_product(agent, catalog) is product
+        )
+        review = review_count(
+            {agent.get("id") for agent in agents if map_agent_to_product(agent, catalog) is product}
+        )
+        parts = []
+        if not ev or not _evidence_has_pulls(ev) or not ev.complete:
+            parts.append("repository status unavailable or incomplete; check Studio")
+        if ev:
+            if ev.failing_ci:
+                parts.append("investigate failing CI on main")
+            pulls = [pull for pull in ev.open_pulls if not _pull_held(pull, product.holds)]
+            active = [pull for pull in pulls if _pull_counts_as_blocker(pull, product.holds)]
+            conflicts = [pull for pull in active if _pull_conflicted(pull)]
+            checks = [pull for pull in active if _pull_checks_failing(pull)]
+            if conflicts:
+                parts.append("resolve conflicts: " + _pr_number_list(conflicts))
+            if checks:
+                parts.append("investigate failed checks: " + _pr_number_list(checks))
+            ready = [pull for pull in active if _eric_owned_ready(pull)]
+            if ready and product.asks and ev.complete:
+                parts.append("review for merge: " + _pr_number_list(ready))
+            for signal in ev.drift:
+                parts.append(_behind_phrase(signal.ref, signal.behind_main))
+            if ev.merged_prs:
+                merged.append(row(product.name, [_pr_number_list(ev.merged_prs)]))
+            drafts = sum(pull.draft for pull in pulls)
+            dependencies = sum(_pull_is_dependabot(pull) and not pull.draft for pull in pulls)
+            held = sum(_pull_held(pull, product.holds) for pull in ev.open_pulls)
+            notes = []
+            if drafts:
+                notes.append(f"{drafts} draft PR" + ("s" if drafts != 1 else ""))
+            if dependencies:
+                notes.append(f"{dependencies} dependency PR" + ("s" if dependencies != 1 else ""))
+            if held:
+                notes.append(f"{held} PRs on hold")
+            if notes:
+                background.append(row(product.name, notes))
+        if review:
+            parts.append(reviews(review))
+        if failed:
+            parts.append(f"inspect {failed} failed agent runs")
+        if paused:
+            parts.append(f"check {len(paused)} paused agents")
+        if parts:
+            attention.append(row(product.name, parts))
+        else:
+            quiet.append(label(product.name))
+
+    _, customer_lines = collect_morning_lines(
         date=date,
         agents=agents,
         assignments=assignments,
         repo_evidence=repo_evidence,
         products=catalog,
-        customers=customers,
+        customers=roster,
         customer_evidence=customer_evidence,
     )
-    lines = [f"*AIIA · {slack_header_date(date)}*", *[_slack_line(line) for line in product_lines]]
-    if customer_lines:
-        lines += ["*Customers*", *[_slack_line(line) for line in customer_lines]]
-    resolved = _pr_keys_from_evidence(repo_evidence, merged=True)
-    opened = _pr_keys_from_evidence(repo_evidence, merged=False)
-    chosen, leftover = choose_decisions(
+    for line in customer_lines:
+        if line.state in {"consulting", "unmapped", "unmounted"}:
+            background.append(row(line.name, [line.note]))
+            continue
+        parts = list(line.parts)
+        customer = next(item for item in roster if item.id == line.id)
+        covered_ids.update(
+            agent.get("id") for agent in agents if customer in map_agent_to_customers(agent, roster)
+        )
+        count = review_count(
+            {
+                agent.get("id")
+                for agent in agents
+                if customer in map_agent_to_customers(agent, roster)
+            }
+        )
+        if count:
+            parts.append(reviews(count))
+        if line.extra:
+            parts.append(line.extra)
+        if parts:
+            attention.append(row(line.name, parts))
+        else:
+            quiet.append(label(line.name))
+
+    # Failure detail can contain credentials or private context. Keep it in Studio.
+    failing = [task for task in tasks if task.get("last_status") == "failed"]
+    for task in failing[:3]:
+        attention.insert(
+            0,
+            row(
+                str(task.get("name") or "Scheduled task"),
+                ["failed; inspect the run in Studio before retrying"],
+            ),
+        )
+    if len(failing) > 3:
+        attention.insert(3, f"- {len(failing) - 3} more scheduled task failures in Studio")
+
+    other_failures = sum(
+        _agent_failed_today(item, date)
+        for item in assignments
+        if item.get("agent_id") not in covered_ids
+    )
+    if other_failures:
+        attention.append(f"- Inspect {other_failures} other failed agent runs in Studio")
+
+    chosen, leftover, stale_count = choose_decisions(
         inbox_items or [],
         products=catalog,
-        inbox_counts=inbox_counts,
+        limit=3,
         now=now,
-        resolved_prs=resolved,
-        open_prs=opened,
+        resolved_prs=_pr_keys_from_evidence(repo_evidence, merged=True),
+        open_prs=_pr_keys_from_evidence(repo_evidence),
     )
-    total = len(chosen) + sum(leftover.values())
-    if total:
-        titles = [
-            escape(_first_line(item.get("text"), DECISION_CHARS))
-            for item in chosen
-            if _first_line(item.get("text"), DECISION_CHARS)
-        ]
-        lines.append(f"*Needs you ({total})*: " + " · ".join(titles))
-    failed = slack_failure_line(tasks=tasks, assignments=assignments, date=date)
-    if failed:
-        lines.append(failed)
-    lines.append("_Details in Studio_")
-    _ = (loops, run_counts)
-    body = "\n".join(lines)
-    if len(body) > SLACK_BODY_MAX:
-        body = body[: SLACK_BODY_MAX - 1].rstrip() + "…"
-    return body
+    decisions = ["- " + label(_first_line(item.get("text"), DECISION_CHARS)) for item in chosen]
+    backlog = stale_count + sum(leftover.values())
+    if backlog:
+        background.append(f"- {backlog} backlog items in Studio; not counted as today's decisions")
+
+    lines = [f"*AIIA · {slack_header_date(date)}*"]
+    for heading, rows in (
+        ("Needs attention", attention),
+        ("Decisions", decisions),
+        ("Merged — deployment not verified", merged),
+        ("Background — not merge requests", background),
+    ):
+        if rows:
+            lines.extend(["", f"*{heading}*", *rows])
+    if quiet:
+        lines.extend(
+            [
+                "",
+                "No active alerts: "
+                + ", ".join(quiet)
+                + ". Drafts and maintenance are listed separately.",
+            ]
+        )
+    footer = "_Details in Studio_"
+    # Keep whole rows and a usable footer; never cut a failure or Slack markup mid-line.
+    output: list[str] = []
+    budget = SLACK_BODY_MAX - len(footer) - len("\n_More items in Studio_\n")
+    for line in lines:
+        if len("\n".join([*output, line])) > budget:
+            if output and output[-1].startswith("*"):
+                output.pop()
+            output.append("_More items in Studio_")
+            break
+        output.append(line)
+    return "\n".join([*output, "", footer])
 
 
 def build_morning_note(

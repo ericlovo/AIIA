@@ -1029,29 +1029,17 @@ def test_sample_rendered_digest_matches_the_product_status_shape():
     assert body.index("Customers") < body.index("Needs a decision")
 
 
-def test_slack_digest_matches_the_morning_note_shape():
+def test_slack_digest_leads_with_actions_and_distinguishes_merged_from_deployed():
     slack = daily_digest.format_slack_digest(**_status_digest_kwargs())
-    assert slack.splitlines() == [
-        "*AIIA · Thu Oct 8*",
-        "🔴 *AIIA*: shipped #104 · CI red on main · *waiting on you:* merge, 1 review",
-        "🟡 *Mindmoor*: production 12 behind main · alumni 4 behind main · *waiting on you:* 1 review",
-        "🔴 *Sanction*: #12 conflict",
-        "🟢 *MIA*: nothing blocked",
-        "🟢 *Morrow*: nothing blocked",
-        "*Customers*",
-        "🟡 *That's Right Sweetie*: main 8 behind TRS",
-        "🟡 *Alumni Nations*: alumni 4 behind main · *waiting on you:* 1 review · 7 days to kickoff",
-        "⚪ *Smart Medical*: no repo, consulting",
-        "*Needs you (3)*: Ship the digest rewrite today? · Alumni is 12 commits behind main · Morrow repo still unmounted",
-        "Daily Brief failed: AIIA returned HTTP 500",
-        "_Details in Studio_",
-    ]
-    assert "none" not in slack
-    assert "Agents:" not in slack
-    assert "Loops:" not in slack
-    assert "Inbox" not in slack
-    assert slack.count("🔴") + slack.count("🟡") + slack.count("🟢") + slack.count("⚪") == 8
-    assert slack.count("*waiting on you:*") == 3
+    assert slack.startswith("*AIIA · Thu Oct 8*\n\n*Needs attention*")
+    assert "review for merge: #18" in slack
+    assert "resolve conflicts: #12" in slack
+    assert "review 1 agent output" in slack
+    assert "*Merged — deployment not verified*" in slack
+    assert slack.index("*Needs attention*") < slack.index("*Merged")
+    assert "RuntimeError" not in slack and "HTTP 500" not in slack
+    assert "Daily Brief*: failed; inspect the run in Studio before retrying" in slack
+    assert "*Decisions*" in slack
     assert len(slack) <= daily_digest.SLACK_BODY_MAX
 
 
@@ -1087,11 +1075,10 @@ def test_slack_digest_omits_empty_needs_you_and_quiet_footer():
         products=[PRODUCTS[0]],
         customers=[],
     )
-    assert clean.splitlines() == [
-        "*AIIA · Thu Oct 8*",
-        "🟢 *AIIA*: shipped #131 · nothing blocked",
-        "_Details in Studio_",
-    ]
+    assert "*Needs attention*" not in clean
+    assert "*Merged — deployment not verified*\n- *AIIA*: #131" in clean
+    assert "No active alerts: AIIA" in clean
+    assert clean.endswith("_Details in Studio_")
 
 
 def test_morning_note_payload_uses_the_same_status_lines():
@@ -1405,8 +1392,7 @@ def test_checked_in_mia_and_morrow_use_github_when_unmounted():
     )
     assert "⚪ *MIA*: no repo" not in slack
     assert "⚪ *Morrow*: no repo" not in slack
-    assert "🟢 *MIA*: nothing blocked" in slack
-    assert "🟢 *Morrow*: nothing blocked" in slack
+    assert "No active alerts: AIIA, Mindmoor, Sanction, MIA, Morrow" in slack
 
 
 def test_skipped_dependabot_and_codex_drafts_are_accounted_for():
@@ -1483,7 +1469,7 @@ def test_needs_you_dedupes_and_expires_stale_inbox_items():
         customers=[],
         now=now,
     )
-    assert "*Needs you (2)*:" in slack
+    assert "*Decisions*" in slack
     assert slack.count("merge AIIA #18") == 1
     assert "Confirm shipped" not in slack
     assert "old leftover" not in slack
@@ -1525,3 +1511,282 @@ def test_smart_medical_is_consulting_with_optional_note():
     )
     assert "PerformanceLabs" in daily_digest.format_customer_line(noted)
     assert "not mapped yet" not in daily_digest.format_customer_line(noted)
+
+
+def test_conflict_count_skips_draft_and_superseded_prs():
+    calls: list[str] = []
+
+    def github(endpoint: str) -> object:
+        calls.append(endpoint)
+        if "/pulls?state=open" in endpoint:
+            return [
+                {
+                    "number": 117,
+                    "title": "draft conflict",
+                    "draft": True,
+                    "mergeable": False,
+                    "mergeable_state": "dirty",
+                    "head": {"ref": "codex/slack-daily-clarity", "sha": "abc"},
+                },
+                {
+                    "number": 9,
+                    "title": "Superseded by #10",
+                    "draft": False,
+                    "mergeable": False,
+                    "mergeable_state": "dirty",
+                    "labels": [{"name": "superseded"}],
+                },
+                {
+                    "number": 10,
+                    "title": "live conflict",
+                    "draft": False,
+                    "mergeable": False,
+                    "mergeable_state": "dirty",
+                    "head": {"ref": "cursor/live", "sha": "def"},
+                },
+            ]
+        if "/actions/runs" in endpoint:
+            return {"workflow_runs": []}
+        if "/pulls?state=closed" in endpoint:
+            return []
+        return {}
+
+    row = daily_digest.collect_repo_evidence(
+        "aiia", github_api=github, mounts={}, github_slug="ericlovo/AIIA"
+    )
+    assert row.merge_conflicts == 1
+    assert [pull.number for pull in row.open_pulls] == [117, 9, 10]
+
+
+def test_draft_and_skipped_codex_drafts_are_not_conflict_blockers():
+    evidence = daily_digest.RepoEvidence(
+        repo_id="aiia",
+        mounted=True,
+        complete=True,
+        open_pulls=[
+            _pull(
+                117,
+                title="Action-first Slack daily digest",
+                draft=True,
+                mergeable=False,
+                mergeable_state="dirty",
+                head_ref="codex/slack-daily-clarity",
+            )
+        ],
+    )
+    slack = daily_digest.morning_product_line(PRODUCTS[0], evidence)
+    inbox = daily_digest.format_product_line(PRODUCTS[0], evidence)
+    assert slack.state != "blocked"
+    assert "#117 conflict" not in slack.note
+    assert slack.extra == "skipped: 1 codex drafts (#117)"
+    assert "#117 conflict" not in inbox
+    assert "blocked none" in inbox
+
+
+def test_only_non_draft_open_prs_turn_a_product_line_red():
+    superseded = _pull(
+        9,
+        title="Superseded by #10",
+        mergeable=False,
+        mergeable_state="dirty",
+        labels=("superseded",),
+    )
+    draft = daily_digest.PullSignal(
+        8,
+        "draft checks",
+        draft=True,
+        mergeable=False,
+        mergeable_state="dirty",
+        checks="failure",
+    )
+    background = daily_digest.RepoEvidence(
+        repo_id="aiia",
+        mounted=True,
+        complete=True,
+        open_pulls=[superseded, draft],
+    )
+    quiet = daily_digest.morning_product_line(PRODUCTS[0], background)
+    assert quiet.state != "blocked"
+    assert "#9" not in quiet.note and "#8 conflict" not in quiet.note
+    assert "conflict" not in daily_digest.format_product_line(PRODUCTS[0], background)
+
+    live = daily_digest.RepoEvidence(
+        repo_id="aiia",
+        mounted=True,
+        complete=True,
+        open_pulls=[
+            superseded,
+            draft,
+            _pull(10, mergeable=False, mergeable_state="dirty"),
+        ],
+    )
+    red = daily_digest.morning_product_line(PRODUCTS[0], live)
+    assert red.state == "blocked"
+    assert "#10 conflict" in red.note
+    assert "#9 conflict" not in red.note
+    assert "#8 conflict" not in red.note
+    inbox = daily_digest.format_product_line(PRODUCTS[0], live)
+    assert "#10 conflict" in inbox
+    assert "#9" not in inbox and "#8" not in inbox
+
+
+def test_stale_stories_are_one_backlog_count_not_decisions():
+    items = [
+        {"text": f"Stale story: P0_private_slug_{n}", "source": "slack", "project": "aiia"}
+        for n in range(77)
+    ] + [
+        {
+            "text": "Ship the digest rewrite today?",
+            "source": "slack",
+            "project": "aiia",
+            "priority": "high",
+        }
+    ]
+    lines = daily_digest.format_decision_lines(items, products=PRODUCTS)
+    assert lines[0] == "- aiia · Ship the digest rewrite today?"
+    assert "- 77 stale stories (backlog)" in lines
+    assert all("P0_private_slug" not in line for line in lines)
+    cards, total = daily_digest.morning_decision_cards(items, products=PRODUCTS)
+    assert [card["title"] for card in cards] == ["Ship the digest rewrite today?"]
+    assert total == 1
+    payload = daily_digest.build_morning_note(
+        **{
+            key: value
+            for key, value in _status_digest_kwargs(inbox_items=items).items()
+            if key not in {"run_counts", "loops"}
+        }
+    )
+    assert payload["needs_you_total"] < 10
+    assert all("Stale story" not in card["title"] for card in payload["decisions"])
+    assert all("P0_private_slug" not in card["title"] for card in payload["decisions"])
+
+
+def test_slack_condenses_stale_stories_without_mutating_inbox():
+    items = [
+        {"text": f"Stale story: private_internal_slug_{n}", "source": "slack", "project": "aiia"}
+        for n in range(77)
+    ]
+    body = daily_digest.format_slack_digest(**_status_digest_kwargs(inbox_items=items))
+    assert "77 backlog items in Studio" in body
+    assert "private_internal_slug" not in body
+    assert "*Decisions*" not in body
+    assert len(daily_digest.current_inbox_items(items)) == 77
+
+
+def test_slack_separates_draft_conflicts_and_maintenance_from_main_failure():
+    ev = daily_digest.RepoEvidence(
+        repo_id="aiia",
+        mounted=True,
+        complete=True,
+        failing_ci=1,
+        open_pulls=[
+            _pull(201, draft=True, mergeable=False, mergeable_state="dirty"),
+            daily_digest.PullSignal(
+                202, "Synthetic update", author="dependabot[bot]", checks="failure"
+            ),
+            _pull(203, author=OWNER),
+            _pull(204, author=OWNER),
+        ],
+    )
+    body = daily_digest.format_slack_digest(
+        **_status_digest_kwargs(
+            repo_evidence=[ev],
+            products=[PRODUCTS[0]],
+            customers=[],
+            assignments=[],
+            tasks=[],
+            inbox_items=[],
+        )
+    )
+    assert "investigate failing CI on main" in body
+    assert "review for merge: #203, #204" in body
+    assert "1 draft PR" in body and "1 dependency PR" in body
+    assert "#201" not in body and "#202" not in body
+
+
+def test_slack_incomplete_evidence_is_not_an_all_clear():
+    ev = daily_digest.RepoEvidence(
+        repo_id="aiia",
+        mounted=False,
+        remote=True,
+        complete=False,
+        open_pulls=[_pull(203, author=OWNER)],
+    )
+    body = daily_digest.format_slack_digest(
+        **_status_digest_kwargs(
+            repo_evidence=[ev],
+            products=[PRODUCTS[0]],
+            customers=[],
+            assignments=[],
+            tasks=[],
+            inbox_items=[],
+        )
+    )
+    assert "status unavailable or incomplete" in body
+    assert "No active alerts" not in body
+    assert "review for merge" not in body
+
+
+def test_slack_review_marker_does_not_double_count_an_output():
+    roster = [{"id": "one", "repo_id": "aiia", "loop_skip_reason": "awaiting_review"}]
+    rows = [
+        {
+            "agent_id": "one",
+            "status": "completed",
+            "review_status": "unreviewed",
+            "result": "synthetic",
+        }
+    ]
+    body = daily_digest.format_slack_digest(
+        **_status_digest_kwargs(
+            agents=roster,
+            assignments=rows,
+            products=[PRODUCTS[0]],
+            customers=[],
+            inbox_items=[],
+            tasks=[],
+        )
+    )
+    assert "review 1 agent output" in body
+    assert "review 2 agent outputs" not in body
+
+
+def test_slack_preserves_footer_and_hides_raw_failure_payload_under_size_pressure():
+    products = [
+        daily_digest.DigestProduct(id=f"p{n}", name=f"Project {n}", mount=f"p{n}")
+        for n in range(80)
+    ]
+    body = daily_digest.format_slack_digest(
+        **_status_digest_kwargs(
+            products=products,
+            customers=[],
+            tasks=[
+                {
+                    "name": "Daily Brief",
+                    "last_status": "failed",
+                    "last_error": "secret=synthetic-sensitive-value\nRuntimeError",
+                }
+            ],
+        )
+    )
+    assert len(body) <= daily_digest.SLACK_BODY_MAX
+    assert body.endswith("_Details in Studio_")
+    assert "_More items in Studio_" in body
+    assert "synthetic-sensitive-value" not in body and "RuntimeError" not in body
+    assert "Daily Brief*: failed" in body
+
+
+def test_slack_keeps_failures_for_agents_missing_from_roster():
+    body = daily_digest.format_slack_digest(
+        **_status_digest_kwargs(
+            agents=[],
+            assignments=[
+                {"agent_id": "missing", "status": "failed", "completed_at": "2026-10-08T10:00:00Z"}
+            ],
+            products=[],
+            customers=[],
+            tasks=[],
+            inbox_items=[],
+        )
+    )
+    assert "Inspect 1 other failed agent runs in Studio" in body
