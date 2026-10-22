@@ -8,6 +8,10 @@ All notable changes to AIIA are documented here. This project adheres to
 
 ### Added
 
+- **Synthetic research shadow preparation.** Added an opt-in, replay-only backend
+  with tenant-scoped leases, bounded jobs, review receipts and mocked staging.
+  Production services, providers and schedules remain unchanged.
+
 - **Action-first Slack daily digest.** Separate actionable PRs from draft and
   dependency background, summarize stale stories as backlog, distinguish merges
   from deployments, and keep failures concise with details in Studio.
