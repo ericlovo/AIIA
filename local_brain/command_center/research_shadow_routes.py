@@ -64,6 +64,8 @@ def shadow_router(store: ResearchShadowStore, tenant_dependency: Callable) -> AP
                     "disposition",
                     "policy_version",
                     "usage",
+                    "runner_response",
+                    "runner_http_status",
                 )
                 if key in job["receipt"]
             }

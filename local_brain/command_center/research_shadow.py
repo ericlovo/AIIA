@@ -10,6 +10,13 @@ from urllib.parse import urlsplit
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from .research_shadow_contract import (
+    AssignmentSnapshot,
+    MockRunnerTransport,
+    build_submission,
+    synthetic_assignment,
+)
+
 
 class StrictModel(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True, allow_inf_nan=False)
@@ -54,6 +61,7 @@ class ShadowAssignment(StrictModel):
     signal_taxonomy: list[str] = Field(min_length=1, max_length=20)
     budgets: ReplayBudgets = Field(default_factory=ReplayBudgets)
     retention_days: int = Field(default=7, ge=1, le=30)
+    runner_assignment: dict | None = None
     secret_refs: list[str] = Field(default_factory=list, max_length=5)
 
     @field_validator("source_allowlist")
@@ -127,6 +135,15 @@ def enqueue_replay(store, config: ShadowAssignment, fixture: ReplayFixture) -> d
     if not config.enabled:
         raise ValueError("assignment disabled")
     payload = config.model_dump()
+    snapshot = (
+        AssignmentSnapshot.from_wire(config.runner_assignment)
+        if config.runner_assignment is not None
+        else synthetic_assignment(config.tenant_id)
+    )
+    wire = snapshot.to_wire()
+    if wire["workspaceId"] != config.tenant_id:
+        raise ValueError("assignment workspace mismatch")
+    payload["runner_assignment"] = wire
     payload["fixture"] = fixture.model_dump()
     return store.enqueue(
         config.tenant_id, config.assignment_id, fixture.source_hash, config.policy_version, payload
@@ -185,17 +202,35 @@ def _judgments(recorded):
 
 
 class MockStagingAdapter:
-    """Deterministic local receipt, not a Managed Leads HTTP client."""
+    """Concrete Managed Leads wire contract, entirely in-process and synthetic."""
 
-    def submit(self, tenant_id, idempotency_key, candidate):
-        return {
+    def submit(self, tenant_id, idempotency_key, candidate, assignment):
+        snapshot = AssignmentSnapshot.from_wire(assignment)
+        if snapshot.to_wire()["workspaceId"] != tenant_id:
+            raise ValueError("assignment workspace mismatch")
+        local = {
             "receipt_id": hashlib.sha256(f"{tenant_id}:{idempotency_key}".encode()).hexdigest(),
             "mode": "replay-only",
             "boundary": "mock-no-http",
             "review_status": "correction-needed",
             "approved": False,
             "candidate": candidate,
+            "runner_response": None,
         }
+        if candidate is None:
+            return local
+        # Explicitly fake, inert authentication fixture. Never read environment credentials.
+        fake_token = "fake-offline-replay-token-no-live-authority"
+        runner_id = "synthetic-runner"
+        transport = MockRunnerTransport([snapshot], {runner_id: (tenant_id, fake_token)})
+        headers = {"X-Runner-Client": runner_id, "Authorization": f"Bearer {fake_token}"}
+        _, fetched = transport.get_assignment(headers)
+        envelope = build_submission(
+            AssignmentSnapshot.from_wire(fetched), idempotency_key, candidate
+        )
+        status, response = transport.submit(envelope, headers)
+        local.update(runner_http_status=status, runner_response=response, runner_envelope=envelope)
+        return local
 
 
 def public_job(job):
@@ -255,7 +290,9 @@ def run_once(store, tenant_id, job_id, owner):
             candidate, reason = None, "judgment abstention"
         if time.monotonic() - started > budgets.max_elapsed_seconds:
             return store.fail(tenant_id, job_id, token, "replay_budget_exhausted")
-        receipt = MockStagingAdapter().submit(tenant_id, job_id, candidate)
+        receipt = MockStagingAdapter().submit(
+            tenant_id, job_id, candidate, config.runner_assignment
+        )
         receipt["disposition"] = "mock-staged" if candidate else "withheld"
         receipt["reason"] = reason
         receipt["recorded_judgments"] = fixture.judgments if _judgments(fixture.judgments) else {}

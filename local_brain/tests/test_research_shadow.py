@@ -265,3 +265,46 @@ def test_out_of_range_span_cannot_pass_python_slice(tmp_path):
     receipt = run_once(store, config.tenant_id, job["id"], "worker")["receipt"]
     assert receipt["candidate"] is None
     assert receipt["reason"] == "unsupported exact span"
+
+
+def test_concrete_staging_envelope_and_receipt(tmp_path):
+    from uuid import UUID
+
+    store = ResearchShadowStore(tmp_path / "wire.db")
+    config = assignment()
+    job = enqueue_replay(store, config, fixture())
+    result = run_once(store, config.tenant_id, job["id"], "worker")
+    receipt = result["receipt"]
+    envelope = receipt["runner_envelope"]
+    UUID(envelope["idempotencyKey"])
+    snapshot = job["config"]["runner_assignment"]
+    assert envelope["assignmentRevision"] == snapshot["assignmentRevision"]
+    assert envelope["source"]["brief"] == snapshot["brief"]
+    assert envelope["mode"] == "shadow"
+    candidate = envelope["source"]["candidates"][0]
+    assert candidate["identityStatus"] == "unknown"
+    assert candidate["decision"] == "pending"
+    assert candidate["contacts"] == []
+    assert candidate["claims"] == []
+    assert "probability" not in json.dumps(envelope)
+    assert "Bearer" not in json.dumps(result)
+    assert receipt["runner_response"]["receipt"]["status"] == "shadow_received"
+    assert receipt["runner_http_status"] == 201
+
+
+def test_assignment_scope_mismatch_and_withheld_never_submits(tmp_path):
+    from local_brain.command_center.research_shadow_contract import synthetic_assignment
+
+    store = ResearchShadowStore(tmp_path / "wire.db")
+    with pytest.raises(ValueError, match="workspace mismatch"):
+        enqueue_replay(
+            store,
+            assignment(runner_assignment=synthetic_assignment("synthetic-other").to_wire()),
+            fixture(),
+        )
+    config = assignment()
+    job = enqueue_replay(store, config, fixture(judgments={}))
+    result = run_once(store, config.tenant_id, job["id"], "worker")
+    assert result["receipt"]["disposition"] == "withheld"
+    assert result["receipt"]["runner_response"] is None
+    assert "runner_envelope" not in result["receipt"]
