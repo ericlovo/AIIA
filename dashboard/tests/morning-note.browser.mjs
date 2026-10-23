@@ -126,8 +126,8 @@ try {
     assert.equal(created?.body.agent_id, 'ci')
 
     await page.getByRole('button', { name: 'Details', exact: true }).first().click()
-    await page.getByRole('heading', { name: 'Today', exact: true }).waitFor()
-    assert.equal(await page.evaluate(() => window.location.hash), '#/today')
+    await page.getByRole('heading', { name: 'The research desk.', exact: true }).waitFor()
+    assert.equal(await page.evaluate(() => window.location.hash), '#/bd')
     assert.deepEqual(pageErrors, [])
     console.log(`${width}x${height}: morning note, decisions, ask, and Details passed`)
     await context.close()

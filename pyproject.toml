@@ -89,6 +89,7 @@ version = {attr = "local_brain.__version__.__version__"}
 
 [tool.setuptools.package-data]
 local_brain = [
+    "command_center/config/*.json",
     "command_center/static/*.html",
     "command_center/static/*.css",
     "command_center/static/*.js",

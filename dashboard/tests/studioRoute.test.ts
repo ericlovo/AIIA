@@ -8,7 +8,7 @@ test('every route survives a round trip through the URL', () => {
     { view: 'inbox' }, { view: 'inbox', source: 'slack' }, { view: 'inbox', source: 'loops' },
     { view: 'inbox', source: 'signals' }, { view: 'inbox', source: 'all' },
     { view: 'jobs' }, { view: 'projects' }, { view: 'history' }, { view: 'history', attention: true },
-    { view: 'home' },
+    { view: 'home' }, { view: 'bd' },
     { view: 'switchboard' }, { view: 'switchboard', taskId: 'nightly-sync' }, { view: 'activity' },
     { view: 'agents' }, { view: 'agents', agentId: 'a/b c' }, { view: 'assignments' },
     { view: 'assignments', assignmentId: 'asg-1' }, { view: 'assignments', agentId: 'agent-2' },

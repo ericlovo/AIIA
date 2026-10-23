@@ -1,9 +1,10 @@
 import type { ReviewBucket } from '../lib/api'
 
 export type InboxSource = 'slack' | 'loops' | 'signals' | 'all'
-export type StudioView = 'home' | 'bots' | 'switchboard' | 'inbox' | 'jobs' | 'projects' | 'history' | 'activity' | 'agents' | 'assignments' | 'handoffs' | 'memory' | 'world' | 'signals'
+export type StudioView = 'home' | 'bd' | 'bots' | 'switchboard' | 'inbox' | 'jobs' | 'projects' | 'history' | 'activity' | 'agents' | 'assignments' | 'handoffs' | 'memory' | 'world' | 'signals'
 
 export const VIEWS: { id: StudioView; label: string }[] = [
+  { id: 'bd', label: 'BD conductor' },
   { id: 'bots', label: 'Bots' },
   { id: 'switchboard', label: 'Today' },
   { id: 'inbox', label: 'Inbox' },
@@ -26,6 +27,7 @@ export const VIEWS: { id: StudioView; label: string }[] = [
  */
 export type StudioRoute =
   | { view: 'home' }
+  | { view: 'bd' }
   | { view: 'bots'; agentId?: string }
   | { view: 'switchboard'; taskId?: string; attention?: boolean }
   | { view: 'history'; attention?: boolean }
@@ -44,6 +46,7 @@ export const DEFAULT_ROUTE: StudioRoute = { view: 'home' }
 
 const PATHS: Record<StudioView, string> = {
   home: 'note',
+  bd: 'bd',
   bots: 'bots',
   switchboard: 'today', activity: 'overview', agents: 'agents', assignments: 'assignments',
   handoffs: 'handoffs', memory: 'memory', world: 'map', signals: 'signals',

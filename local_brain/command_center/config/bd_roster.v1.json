@@ -1,0 +1,90 @@
+{
+  "version": 1,
+  "schedule_enabled": false,
+  "mode": "replay",
+  "lease_seconds": 30,
+  "max_attempts": 3,
+  "retry_backoff_seconds": 5,
+  "global_daily_budget": {
+    "tokens": 200000,
+    "calls": 200,
+    "seconds": 7200
+  },
+  "bots": [
+    {
+      "id": "healthcare",
+      "name": "Healthcare research",
+      "segment": "healthcare",
+      "tenant_id": "synthetic-healthcare",
+      "enabled": true,
+      "kind": "segment",
+      "schedule": {
+        "enabled": false,
+        "interval_seconds": 3600
+      },
+      "sources": [
+        "market_news",
+        "lead_signals"
+      ]
+    },
+    {
+      "id": "pe-diligence",
+      "name": "PE technical diligence",
+      "segment": "pe-technical-diligence",
+      "tenant_id": "synthetic-pe",
+      "enabled": true,
+      "kind": "segment",
+      "schedule": {
+        "enabled": false,
+        "interval_seconds": 3600
+      },
+      "sources": [
+        "market_news",
+        "lead_signals"
+      ]
+    },
+    {
+      "id": "alumni-associations",
+      "name": "Alumni and associations",
+      "segment": "alumni-associations",
+      "tenant_id": "synthetic-alumni",
+      "enabled": true,
+      "kind": "segment",
+      "schedule": {
+        "enabled": false,
+        "interval_seconds": 3600
+      },
+      "sources": [
+        "market_news",
+        "lead_signals"
+      ]
+    },
+    {
+      "id": "srg",
+      "name": "SRG BD research",
+      "segment": "client-bd",
+      "tenant_id": "synthetic-srg",
+      "enabled": true,
+      "kind": "client",
+      "schedule": {
+        "enabled": false,
+        "interval_seconds": 3600
+      },
+      "sources": [
+        "market_news",
+        "lead_signals"
+      ]
+    }
+  ],
+  "bot_daily_budget": {
+    "tokens": 50000,
+    "calls": 50,
+    "seconds": 1800
+  },
+  "job_budget": {
+    "tokens": 8000,
+    "calls": 4,
+    "seconds": 120
+  },
+  "max_concurrency": 1
+}

@@ -69,3 +69,6 @@ htmlcov/
 Thumbs.db
 .Spotlight-V100
 .Trashes
+
+# Durable BD conductor runtime (never commit research records)
+local_brain/command_center/bd_data/
