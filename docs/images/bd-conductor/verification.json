@@ -1,0 +1,12 @@
+{
+  "completed": 4,
+  "packets": 4,
+  "snapshots": 11,
+  "triageVerified": [
+    "research_next",
+    "dismissed",
+    "human_review_required"
+  ],
+  "observedRunning": true,
+  "errors": []
+}

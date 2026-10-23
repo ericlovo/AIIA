@@ -43,6 +43,7 @@ from local_brain.command_center.agent_output import (
 )
 from local_brain.command_center.agent_prompts import agent_system_prompt
 from local_brain.command_center.agent_prompts import assignment_prompt as _assignment_prompt
+from local_brain.command_center.bd_routes import create_router as create_bd_router
 from local_brain.command_center.lead_reviews import review_snapshot
 from local_brain.command_center.lead_reviews import router as lead_review_router
 from local_brain.command_center.project_delivery import create_router as delivery_router
@@ -578,6 +579,8 @@ app.include_router(slack_capture_router)
 app.include_router(signal_router)
 app.include_router(lead_review_router)
 app.include_router(project_status_router)
+
+app.include_router(create_bd_router())
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[

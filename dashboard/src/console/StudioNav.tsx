@@ -9,7 +9,7 @@ import { navigate } from './useStudioRoute'
  */
 export function StudioNav({ view }: { view: StudioView }) {
   const menu = useRef<HTMLDetailsElement>(null)
-  const primary: StudioView[] = ['bots', 'assignments', 'projects']
+  const primary: StudioView[] = ['bd', 'bots', 'assignments']
   const advanced = VIEWS.filter(item => !primary.includes(item.id))
   const activeAdvanced = advanced.find(item => item.id === view)
   useEffect(() => {

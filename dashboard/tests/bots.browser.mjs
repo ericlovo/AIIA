@@ -59,7 +59,7 @@ try {
     await page.getByRole('heading', { name: 'Bots', exact: true }).waitFor()
     assert.equal(new URL(page.url()).hash, '#/bots')
     const nav = page.getByRole('navigation', { name: 'Studio', exact: true })
-    assert.deepEqual(await nav.getByRole('link').allTextContents(), ['Bots', 'Work', 'Projects'])
+    assert.deepEqual(await nav.getByRole('link').allTextContents(), ['BD conductor', 'Bots', 'Work'])
     assert.equal(posts.length, 0)
     await page.getByRole('link', { name: 'Open Research Scout' }).focus()
     await page.keyboard.press('Enter')

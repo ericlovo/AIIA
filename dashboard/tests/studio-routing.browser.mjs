@@ -109,7 +109,7 @@ try {
   for (const width of [320, 390, 653, 1440]) {
     const { context, page, pageErrors } = await open('#/today', { width })
     await heading(page, 'Today').waitFor()
-    assert.deepEqual(await nav(page).getByRole('link').allTextContents(), ['Bots', 'Work', 'Projects'])
+    assert.deepEqual(await nav(page).getByRole('link').allTextContents(), ['BD conductor', 'Bots', 'Work'])
     const tools = nav(page).locator('summary[aria-label="Studio tools"]')
     await tools.click()
     await nav(page).getByRole('link', { name: 'Signals', exact: true }).waitFor()
@@ -138,13 +138,13 @@ try {
     await page.getByRole('heading', { level: 1, name: /Eric\.$/ }).waitFor()
     assert.equal(await hash(page), '#/note', 'an empty address lands on the morning note')
     await page.getByRole('button', { name: 'Details', exact: true }).first().click()
-    await heading(page, 'Today').waitFor()
-    assert.equal(await hash(page), '#/today')
-    assert.deepEqual(await nav(page).getByRole('link').allTextContents(), ['Bots', 'Work', 'Projects'])
+    await heading(page, 'The research desk.').waitFor()
+    assert.equal(await hash(page), '#/bd')
+    assert.deepEqual(await nav(page).getByRole('link').allTextContents(), ['BD conductor', 'Bots', 'Work'])
     await nav(page).locator('summary[aria-label="Studio tools"]').click()
     const links = await nav(page).getByRole('link').evaluateAll(items => items.map(item => [item.textContent, item.getAttribute('href'), item.getAttribute('aria-current')]))
     assert.deepEqual(links, [
-      ['Bots', '#/bots', null], ['Work', '#/assignments', null], ['Projects', '#/projects', null], ['Today', '#/today', 'page'], ['Inbox', '#/inbox', null], ['Jobs', '#/jobs', null],
+      ['BD conductor', '#/bd', 'page'], ['Bots', '#/bots', null], ['Work', '#/assignments', null], ['Today', '#/today', null], ['Inbox', '#/inbox', null], ['Jobs', '#/jobs', null], ['Projects', '#/projects', null],
       ['Activity history', '#/history', null], ['Overview', '#/overview', null], ['Agents', '#/agents', null],
       ['Signals', '#/signals', null],
       ['Handoffs', '#/handoffs', null], ['Memory', '#/memory', null], ['Map', '#/map', null],
@@ -212,7 +212,7 @@ try {
     await page.getByRole('heading', { level: 1, name: /Eric\.$/ }).waitFor()
     await page.waitForFunction(() => window.location.hash === '#/note')
     await page.getByRole('button', { name: 'Details', exact: true }).first().click()
-    await heading(page, 'Today').waitFor()
+    await heading(page, 'The research desk.').waitFor()
     await openStudioView(page, 'Map')
     await heading(page, 'Agent control map').waitFor()
     await page.evaluate(() => { window.location.hash = '#/bogus' })
