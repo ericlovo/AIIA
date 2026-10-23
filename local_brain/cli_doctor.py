@@ -300,7 +300,6 @@ def check_optional_api_keys() -> Result:
     keys = {
         "Anthropic": os.environ.get("ANTHROPIC_API_KEY", ""),
         "Google": os.environ.get("GOOGLE_API_KEY", ""),
-        "xAI": os.environ.get("XAI_API_KEY", ""),
     }
     present = [name for name, val in keys.items() if val]
     airgap = os.environ.get("AIIA_AIRGAP", "").lower() in ("true", "1")
@@ -311,30 +310,15 @@ def check_optional_api_keys() -> Result:
             "Cloud API keys",
             "warn",
             "none configured (local-only mode)",
-            hint=(
-                "Optional. Set ANTHROPIC_API_KEY, GOOGLE_API_KEY, or XAI_API_KEY "
-                "in .env (or ~/.aiia/keys.json for xAI Voice Conductor)."
-            ),
+            hint="Optional. Set ANTHROPIC_API_KEY or GOOGLE_API_KEY in .env.",
         )
     if airgap:
-        inert = [name for name in present if name != "xAI"]
-        voice = "xAI" in present
-        if inert:
-            detail = ", ".join(inert) + " configured but inert under AIIA_AIRGAP"
-            if voice:
-                detail += "; xAI allowed for Voice Conductor (xai.realtime)"
-            return Result(
-                "Cloud API keys",
-                "warn",
-                detail,
-                hint="Air-gap mode denies cloud egress except Voice Conductor / xai.realtime.",
-            )
-        if voice:
-            return Result(
-                "Cloud API keys",
-                "ok",
-                "xAI configured (air-gap exception: Voice Conductor / xai.realtime)",
-            )
+        return Result(
+            "Cloud API keys",
+            "warn",
+            ", ".join(present) + " configured but inert under AIIA_AIRGAP",
+            hint="Air-gap mode denies cloud LLM egress.",
+        )
     return Result("Cloud API keys", "ok", ", ".join(present) + " configured")
 
 

@@ -76,7 +76,7 @@ Python 3.10+, ~5GB free for a local model, and either Ollama running on
 Two surfaces are running underneath:
 
 - **Brain API** on `localhost:8100` — memory, RAG, LLM routing
-- **Command Center** on `localhost:8200` — Agent Studio, the Memory log, the story queue, and the Voice Conductor (Grok)
+- **Command Center** on `localhost:8200` — Agent Studio, the Memory log, and the story queue
 
 **Agent Studio** is where local agents live. Each agent is a mission, a persona, a
 model, tools, and an optional bounded loop, running one at a time on the local

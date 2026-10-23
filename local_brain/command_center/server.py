@@ -2512,27 +2512,6 @@ async def delete_handoff(handoff_id: str):
     return {"deleted": True}
 
 
-from local_brain.command_center.voice_conductor import VoiceConductorDeps
-from local_brain.command_center.voice_routes import build_voice_router
-
-app.include_router(
-    build_voice_router(
-        VoiceConductorDeps(
-            list_agents=agent_registry.list,
-            get_agent=agent_registry.get,
-            list_assignments=assignment_registry.list_assignments,
-            get_assignment=assignment_registry.get_assignment,
-            create_assignment=assignment_registry.create_assignment,
-            list_handoffs=assignment_registry.list_handoffs,
-            github_status=github_status,
-            available_repos=available_repos,
-            mini_busy=lambda: agent_run_lock.locked(),
-            run_assignment=run_assignment,
-        )
-    )
-)
-
-
 @app.get("/api/agent-world/layout")
 async def get_agent_world_layout():
     return {"layout": studio_layout_registry.snapshot(_agent_world_node_ids())}

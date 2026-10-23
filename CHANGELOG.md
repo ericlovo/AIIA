@@ -199,6 +199,12 @@ All notable changes to AIIA are documented here. This project adheres to
 
 ### Removed
 
+- **Voice Conductor / Grok realtime.** Studio no longer opens a browser
+  `AudioContext` or mints a Grok voice session. The footer Voice control,
+  `POST /api/voice/session` conductor routes, and `XAI_API_KEY` config are
+  gone. Journal transcription, Brain TTS (`/v1/aiia/voice`, `/api/tts`,
+  `/api/speak`), and the leftover `xai.realtime` air-gap allowlist stay.
+
 - Unreachable Studio components `Direct`, `Mind` and `Files` (no importers).
 
 ### Added
