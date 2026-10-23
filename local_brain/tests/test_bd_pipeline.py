@@ -16,6 +16,12 @@ def async_test(fn):
     return run
 
 
+def selection(extraction, index=0):
+    return {key: value for key, value in extraction.items() if key != "quote"} | {
+        "quote_index": index
+    }
+
+
 def job(**changes):
     return {"tenant_id": "synthetic-test", "segment": "healthcare", "mode": "replay", **changes}
 
@@ -116,7 +122,7 @@ async def test_local_qwen_real_http_contract(monkeypatch):
         return httpx.Response(
             200,
             json={
-                "message": {"content": json.dumps(extraction)},
+                "message": {"content": json.dumps(selection(extraction))},
                 "prompt_eval_count": 99,
                 "eval_count": 30,
             },
@@ -186,7 +192,7 @@ async def test_oversized_qwen_usage_stops_before_jev(monkeypatch):
         return httpx.Response(
             200,
             json={
-                "message": {"content": json.dumps(extraction)},
+                "message": {"content": json.dumps(selection(extraction))},
                 "prompt_eval_count": 100000,
                 "eval_count": 30,
             },
@@ -300,6 +306,8 @@ def public_excerpt(**changes):
 
 
 def test_imported_primary_excerpt_full_text_contacts_and_provenance():
+    import json
+
     source = pipeline.load_public_excerpt(public_excerpt(), ["example.org"])
     _, extraction, judgments = pipeline.synthetic_fixture("healthcare")
     extraction.update(organization="Orchard Clinic", quote=source["text"].splitlines()[0])
@@ -311,7 +319,15 @@ def test_imported_primary_excerpt_full_text_contacts_and_provenance():
     assert packet["provenance"]["captured_at"] == "2026-01-01T12:00:00+00:00"
     for contact in packet["contacts"]:
         assert source["text"][contact["start"] : contact["end"]] == contact["value"]
-    assert pipeline.qwen_payload(source)["messages"][1]["content"] == source["text"]
+    assert (
+        "".join(
+            span["text"]
+            for span in json.loads(pipeline.qwen_payload(source)["messages"][1]["content"])[
+                "source_spans"
+            ]
+        )
+        == source["text"]
+    )
     assert (
         pipeline.jev_payload(source, extraction, "healthcare")["state"]["source_text"]
         == source["text"]
@@ -552,3 +568,226 @@ def test_changed_source_text_has_new_evidence_key():
     assert pipeline.evidence_key(source) != pipeline.evidence_key(
         {**source, "title": "Updated public announcement"}
     )
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Clinic announces a new outpatient service.",
+        "  Clínica École\tannounces care.\r\nPublic desk: office@example.org.  ",
+        "Clinic\u00a0announces\u2009care — a new service.",
+    ],
+)
+def test_quote_selection_preserves_short_source_verbatim(text):
+    import json
+
+    payload = pipeline.qwen_payload({"title": text})
+    assert payload["format"]["properties"]["quote_index"]["enum"] == [0]
+    assert "quote" not in payload["format"]["properties"]
+    assert json.loads(payload["messages"][1]["content"])["source_spans"] == [
+        {"index": 0, "text": text}
+    ]
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "First clinic opens. " * 35
+        + "\n"
+        + "Second clinic expands. " * 40
+        + "\r\nPublic office: hello@example.org.",
+        "医" * 800,
+        "x" * 2000,
+    ],
+)
+def test_long_excerpt_spans_cover_source_exactly_with_bounded_utf8(text):
+    import json
+
+    source = {"title": "Announcement", "text": text}
+    candidates = pipeline.quote_candidates(source)
+    assert 1 < len(candidates) <= 32
+    assert all(0 < len(quote.encode()) <= 300 and quote in text for quote in candidates)
+    assert "".join(candidates) == text
+    payload = pipeline.qwen_payload(source)
+    assert [
+        span["text"] for span in json.loads(payload["messages"][1]["content"])["source_spans"]
+    ] == candidates
+    # Quote bytes occur only in the ordered input spans, never repeated in the schema.
+    assert payload["format"]["properties"]["quote_index"]["enum"] == list(range(len(candidates)))
+    assert all(
+        type(value) is int for value in payload["format"]["properties"]["quote_index"]["enum"]
+    )
+
+
+def test_medium_excerpt_combined_reservations_fit_existing_budget():
+    source = {"title": "Announcement", "text": "Clinic expands services. " * 40}
+    extraction = {
+        "organization": "Clinic",
+        "signal": "expands services",
+        "quote": pipeline.quote_candidates(source)[0],
+        "consumer_insight": "",
+    }
+    qwen = pipeline.qwen_payload(source)
+    jev = pipeline.jev_payload(source, extraction, "healthcare")
+    total = pipeline.token_reservation(qwen, 512) + pipeline.token_reservation(jev, 1024)
+    assert total < 8000
+    assert qwen["options"]["num_predict"] == 512
+
+
+def test_quote_spans_reject_unbounded_or_empty_source():
+    with pytest.raises(pipeline.DataUnavailable, match="candidates_exceeded"):
+        pipeline.quote_candidates({"title": "x" * 2401})
+    with pytest.raises(pipeline.DataUnavailable, match="source_quote_unavailable"):
+        pipeline.quote_candidates({"title": " \t\r\n"})
+
+
+@async_test
+async def test_qwen_http_index_resolution_keeps_unicode_and_whitespace(monkeypatch):
+    import json
+
+    text = "Clínica\tÉcole announces a new ward.\r\n Public desk."
+    source = {"title": text}
+    extraction = {
+        "organization": "Clínica\tÉcole",
+        "signal": "new ward",
+        "quote": text,
+        "consumer_insight": "",
+    }
+
+    def handle(request):
+        body = json.loads(request.content)
+        assert body["format"]["properties"]["quote_index"]["enum"] == [0]
+        return httpx.Response(
+            200,
+            json={
+                "message": {"content": json.dumps(selection(extraction))},
+                "prompt_eval_count": 100,
+                "eval_count": 40,
+            },
+        )
+
+    client = httpx.AsyncClient
+    monkeypatch.setattr(
+        pipeline.httpx,
+        "AsyncClient",
+        lambda **kw: client(transport=httpx.MockTransport(handle), **kw),
+    )
+    result, tokens = await pipeline.extract_local(source)
+    assert result["quote"] == text
+    assert tokens == 140
+
+
+@pytest.mark.parametrize("bad_index", [-1, 99, True, "0", 0.0, None])
+@async_test
+async def test_invalid_quote_index_fails_closed_without_retry(monkeypatch, bad_index):
+    import json
+
+    source = {"title": "Clinic opens a ward."}
+    extraction = {"organization": "Clinic", "signal": "new ward", "consumer_insight": ""}
+    calls = []
+
+    def handle(request):
+        calls.append(request)
+        return httpx.Response(
+            200,
+            json={
+                "message": {"content": json.dumps(selection(extraction, bad_index))},
+                "prompt_eval_count": 100,
+                "eval_count": 40,
+            },
+        )
+
+    client = httpx.AsyncClient
+    monkeypatch.setattr(
+        pipeline.httpx,
+        "AsyncClient",
+        lambda **kw: client(transport=httpx.MockTransport(handle), **kw),
+    )
+    with pytest.raises(ValueError):
+        await pipeline.extract_local(source)
+    assert len(calls) == 1
+
+
+@async_test
+async def test_forged_quote_field_cannot_override_selected_source(monkeypatch):
+    import json
+
+    payload = {
+        "organization": "Clinic",
+        "signal": "new ward",
+        "consumer_insight": "",
+        "quote_index": 0,
+        "quote": "Fabricated quote",
+    }
+    client = httpx.AsyncClient
+
+    def handle(request):
+        return httpx.Response(
+            200,
+            json={
+                "message": {"content": json.dumps(payload)},
+                "prompt_eval_count": 100,
+                "eval_count": 40,
+            },
+        )
+
+    monkeypatch.setattr(
+        pipeline.httpx,
+        "AsyncClient",
+        lambda **kw: client(transport=httpx.MockTransport(handle), **kw),
+    )
+    with pytest.raises(ValueError):
+        await pipeline.extract_local({"title": "Clinic opens a ward."})
+
+
+@async_test
+async def test_blank_span_preserved_in_context_but_not_selectable(monkeypatch):
+    import json
+
+    source = {"title": " " * 300 + "Clinic opens a ward."}
+    body = pipeline.qwen_payload(source)
+    assert body["format"]["properties"]["quote_index"]["enum"] == [1]
+    spans = json.loads(body["messages"][1]["content"])["source_spans"]
+    assert "".join(span["text"] for span in spans) == source["title"]
+    payload = {
+        "organization": "Clinic",
+        "signal": "new ward",
+        "consumer_insight": "",
+        "quote_index": 0,
+    }
+    client = httpx.AsyncClient
+
+    def handle(request):
+        return httpx.Response(
+            200,
+            json={
+                "message": {"content": json.dumps(payload)},
+                "prompt_eval_count": 100,
+                "eval_count": 40,
+            },
+        )
+
+    monkeypatch.setattr(
+        pipeline.httpx,
+        "AsyncClient",
+        lambda **kw: client(transport=httpx.MockTransport(handle), **kw),
+    )
+    with pytest.raises(pipeline.DataUnavailable, match="invalid_source_quote_index"):
+        await pipeline.extract_local(source)
+
+
+@pytest.mark.parametrize(
+    "bad_quote",
+    ["Clinic opens a ward.", "Clinic expands a hospital.", "A fabricated announcement."],
+)
+def test_strict_resolved_quote_validation_remains_unchanged(bad_quote):
+    with pytest.raises(pipeline.DataUnavailable, match="unsupported_source_quote"):
+        pipeline.validate_extraction(
+            {"title": "Clinic\t opens a ward.\r\n"},
+            {
+                "organization": "Clinic",
+                "signal": "new ward",
+                "quote": bad_quote,
+                "consumer_insight": "",
+            },
+        )
