@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { ageLabel, heartbeatFresh, publicSource, type BDSnapshot, type Budget } from './bdModel'
+import { BDActivityBoard } from './BDActivityBoard'
 import './BDConductor.css'
 
 async function request(path: string, body?: unknown): Promise<BDSnapshot> {
@@ -33,6 +34,7 @@ export function BDConductor() {
   const [now, setNow] = useState(() => Date.now())
   const [lane, setLane] = useState('all')
   const [reviewFilter, setReviewFilter] = useState('active')
+  const [reviewTarget, setReviewTarget] = useState('')
   const [pausedFeed, setPausedFeed] = useState(false)
   const [frozenEvents, setFrozenEvents] = useState<BDSnapshot['events']>([])
   const query = useQuery({ queryKey: ['bd-snapshot'], queryFn: () => request('snapshot'), refetchInterval: 15_000, retry: 1 })
@@ -52,6 +54,12 @@ export function BDConductor() {
     })
     return () => { source.close(); window.clearInterval(timer) }
   }, [qc])
+  useEffect(() => {
+    if (!reviewTarget) return
+    const card = document.getElementById(`bd-packet-${reviewTarget}`)
+    card?.scrollIntoView({ block: 'start', behavior: 'instant' })
+    card?.focus({ preventScroll: true })
+  }, [reviewTarget, reviewFilter, lane])
   const action = useMutation({
     mutationFn: ({ path, body }: { path: string; body: unknown }) => request(path, body),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['bd-snapshot'] }),
@@ -83,13 +91,26 @@ export function BDConductor() {
           <div><strong>Schedule {data.schedule_enabled ? 'enabled' : 'disabled'}</strong><span>{data.kill_switch ? 'Kill switch engaged · work stopped' : 'Kill switch released'}</span></div>
           <div><strong>Research → proposal → human</strong><span>Packets are evidence for review, not qualified leads.</span></div>
         </section>
+        <div className="bd-view-controls"><span>Research flow</span><label>Show <select value={lane} onChange={event => setLane(event.target.value)}><option value="all">All segments & clients</option>{data.bots.map(bot => <option key={bot.id} value={bot.id}>{bot.name}</option>)}</select></label></div>
+        <BDActivityBoard data={data} now={now} lane={lane} onReview={packet => {
+          setLane('all')
+          setReviewFilter(packet.review_status === 'dismissed' ? 'dismissed' : 'active')
+          setReviewTarget(packet.id)
+          if (reviewTarget === packet.id) {
+            const card = document.getElementById(`bd-packet-${packet.id}`)
+            card?.scrollIntoView({ block: 'start', behavior: 'instant' })
+            card?.focus({ preventScroll: true })
+          }
+        }} />
+        <details className="bd-connection-details"><summary>Connections & integration health</summary>
         <section className="bd-health" aria-label="Connection health">
           {Object.entries(healthNames).map(([key, name]) => {
             const item = data.health[key as keyof typeof healthNames]
             return <div key={key}><span className={`bd-dot ${item?.status === 'available' ? 'is-live' : ''}`} aria-hidden="true" /><div><strong>{name}</strong><span>{item?.status ?? 'data_unavailable'}{item?.detail ? ` · ${item.detail}` : ''}</span></div></div>
           })}
         </section>
-        <div className="bd-section-heading"><h2>Research lanes</h2><label>Show <select value={lane} onChange={event => setLane(event.target.value)}><option value="all">All segments & clients</option>{data.bots.map(bot => <option key={bot.id} value={bot.id}>{bot.name}</option>)}</select></label></div>
+        </details>
+        <div className="bd-section-heading"><h2>Research lanes</h2><span className="bd-muted">Bot budgets & completed jobs</span></div>
         <section className="bd-lanes" aria-label="Research lanes">
           {data.bots.map(bot => <article className={`bd-lane ${lane === bot.id ? 'selected' : ''}`} key={bot.id}>
             <p className="bd-eyebrow">{bot.tenant_id ? `Tenant · ${bot.tenant_id}` : 'Industry research'}</p><h3>{bot.name}</h3><p className="bd-muted">{bot.segment}</p>
@@ -102,13 +123,13 @@ export function BDConductor() {
           <div className="bd-main-column">
             <section className="bd-section" aria-label="Now running">
               <div className="bd-section-heading"><h2>Now running <span>{visibleActive.length}</span></h2><span className="bd-muted">Elapsed / heartbeat</span></div>
-              {visibleActive.length === 0 ? <p className="bd-empty">No active jobs in this snapshot. Run a shadow batch to exercise the pipeline.</p> : <ul className="bd-jobs">{visibleActive.map(job => <li key={job.id}><span className={`bd-dot ${heartbeatFresh(job.heartbeat_at, now) ? 'is-live bd-pulse' : ''}`} aria-hidden="true" /><div><strong>{botName(job.bot_id)}</strong><p>{job.step || job.state}</p><small>{job.tenant_id} · {job.segment} · {job.id}</small></div><div className="bd-job-time"><strong>{ageLabel(job.started_at, now)}</strong><small>Heartbeat {ageLabel(job.heartbeat_at, now)} ago</small></div></li>)}</ul>}
+              {visibleActive.length === 0 ? <p className="bd-empty">No active jobs in this snapshot.{data.mode === 'replay' ? ' Run a shadow batch to exercise the pipeline.' : data.schedule_enabled ? ' Waiting for the next scheduled cycle.' : ' The schedule is disabled.'}</p> : <ul className="bd-jobs">{visibleActive.map(job => <li key={job.id}><span className={`bd-dot ${heartbeatFresh(job.heartbeat_at, now) ? 'is-live bd-pulse' : ''}`} aria-hidden="true" /><div><strong>{botName(job.bot_id)}</strong><p>{job.step || job.state}</p><small>{job.tenant_id} · {job.segment} · {job.id}</small></div><div className="bd-job-time"><strong>{ageLabel(job.started_at, now)}</strong><small>Heartbeat {ageLabel(job.heartbeat_at, now)} ago</small></div></li>)}</ul>}
             </section>
             <section className="bd-section" aria-label="Waiting on a human">
               <div className="bd-section-heading"><h2>Research packets <span>{packets.length}</span></h2><label>Review <select aria-label="Packet review status" value={reviewFilter} onChange={event => setReviewFilter(event.target.value)}><option value="active">Active packets</option><option value="human_review_required">Waiting on a human</option><option value="research_next">Research next</option><option value="watch">Watch</option><option value="dismissed">Dismissed</option></select></label></div>
               <p className="bd-muted">{pendingCount} waiting on a human. Local triage only; no outreach or CRM changes.</p>
               {packets.length === 0 && <p className="bd-empty">No packets in this view yet. Completed research will appear here.</p>}
-              <div className="bd-packets">{packets.map(packet => <article key={packet.id} className="bd-packet">
+              <div className="bd-packets">{packets.map(packet => <article key={packet.id} id={`bd-packet-${packet.id}`} tabIndex={-1} className="bd-packet">
                 <div className="bd-packet-meta"><span>{packet.tenant_id} / {packet.segment}</span><span>{ageLabel(packet.created_at, now)} ago</span></div>
                 <h3>{packet.organization || 'Research packet'}</h3><p>{packet.summary}</p>
                 <div className="bd-tags"><span>{packet.mode}</span><span>{packet.review_status.replaceAll('_', ' ')}</span><span>{botName(packet.bot_id)}</span></div>

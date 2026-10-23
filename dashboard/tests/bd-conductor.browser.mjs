@@ -12,10 +12,11 @@ const at = new Date().toISOString()
 const bots = ['Healthcare', 'PE technical diligence', 'Alumni & associations', 'Client BD'].map((name, i) => ({ id: `bot-${i}`, name, segment: name, tenant_id: `synthetic-${i}`, counts: { queued: 2, running: i === 0 ? 1 : 0, completed: 1, failed: 0 }, budgets: budget }))
 const snapshot = {
   mode: 'replay', schedule_enabled: false, kill_switch: false, bots, budget,
-  jobs: [{ id: 'job-1', bot_id: 'bot-0', tenant_id: 'synthetic-0', segment: 'Healthcare', state: 'running', step: 'Extracting public evidence', created_at: at, started_at: at, heartbeat_at: at }],
+  jobs: [{ id: 'queue-1', bot_id: 'bot-1', tenant_id: 'synthetic-1', segment: 'PE technical diligence', state: 'queued', step: 'queued', created_at: at, started_at: null, heartbeat_at: null }, { id: 'job-1', bot_id: 'bot-0', tenant_id: 'synthetic-0', segment: 'Healthcare', state: 'running', step: 'Extracting public evidence', created_at: at, started_at: at, heartbeat_at: at }],
   events: [{ id: 'event-1', kind: 'job_running', message: 'Research started from recorded public evidence.', created_at: at, bot_id: 'bot-0', job_id: 'job-1' }],
   packets: [{ id: 'packet-1', index: 0, job_id: 'previous-job', bot_id: 'bot-0', tenant_id: 'synthetic-0', segment: 'Healthcare', created_at: at, mode: 'replay', review_status: 'human_review_required', organization: 'Synthetic Health Group', source_url: 'https://example.com/research', emails: ['research@example.com'], phones: ['+1 202-555-0100'], signals: ['Expansion announcement in recorded source.'], insights: ['Explore demand for intake automation.'], summary: 'Synthetic evidence packet for review. This is not a real prospect.' }],
   health: { qwen: { status: 'replay', detail: 'Recorded extraction' }, jev: { status: 'replay', detail: 'Recorded verdicts' }, managed_leads: { status: 'data_unavailable', detail: 'Staging API is not connected' } },
+  model_activity: { qwen: { status: 'replay', active_jobs: [], calls: 0, completed: 0, replayed: 3, errors: 0, last_event_at: at, latency_ms: null }, jev: { status: 'replay', active_jobs: [], calls: 0, completed: 0, replayed: 2, errors: 0, last_event_at: at, latency_ms: null } },
   jev: { calls_per_minute: 2, verdict_mix: { Choice: 1, Score: 1, Noul: 0 }, latency_ms: null, errors: null },
 }
 try {
@@ -55,8 +56,15 @@ try {
     })
     await page.goto(`${process.env.STUDIO_URL || 'http://127.0.0.1:5187/'}#/bd`)
     await page.getByRole('heading', { name: 'The research desk.' }).waitFor()
-    await page.getByText('Synthetic Health Group', { exact: true }).waitFor()
+    await page.locator('.bd-packet').getByText('Synthetic Health Group', { exact: true }).waitFor()
     await page.getByText('Live', { exact: true }).waitFor()
+    await page.getByRole('region', { name: 'Work queue', exact: true }).getByText('PE technical diligence', { exact: true }).first().waitFor()
+    assert.equal(await page.locator('.bd-model-working').count(), 0, 'replay never claims active inference')
+    await page.getByRole('combobox', { name: 'Packet review status' }).selectOption('dismissed')
+    await page.getByRole('region', { name: 'Completed research', exact: true }).getByRole('button', { name: 'Review packet' }).click()
+    assert.equal(await page.locator('.bd-packet').evaluate(el => document.activeElement === el), true, 'review jump focuses the evidence card')
+    await page.locator('.bd-page').evaluate(el => { el.scrollTop = 0 })
+    await page.screenshot({ path: join(output, `bd-action-${width}.png`), fullPage: true })
     assert.equal(await page.getByRole('link', { name: 'BD conductor', exact: true }).getAttribute('aria-current'), 'page')
     assert.equal(await page.getByLabel('Jev router', { exact: true }).getByText('Unavailable').count(), 2)
     await page.getByText('Review evidence & contacts', { exact: true }).click()
@@ -93,7 +101,31 @@ try {
     await page.getByRole('combobox', { name: 'Packet review status' }).selectOption('dismissed')
     await page.getByRole('button', { name: 'Restore', exact: true }).click()
     await page.getByRole('combobox', { name: 'Packet review status' }).selectOption('human_review_required')
-    await page.getByText('Synthetic Health Group', { exact: true }).waitFor()
+    await page.locator('.bd-packet').getByText('Synthetic Health Group', { exact: true }).waitFor()
+    const live = structuredClone(current)
+    live.mode = 'live'
+    live.health.qwen.status = 'available'
+    live.health.jev.status = 'available'
+    live.jobs[1].step = 'qwen_called'
+    live.jobs[1].heartbeat_at = new Date().toISOString()
+    live.model_activity.qwen = { ...live.model_activity.qwen, status: 'running', calls: 1, active_jobs: ['job-1'] }
+    await page.evaluate(data => window.bdSource.snapshot({ data: JSON.stringify(data) }), live)
+    await page.locator('.bd-model-qwen.bd-model-working').waitFor()
+    assert.equal(await page.locator('.bd-model-jev.bd-model-working').count(), 0)
+    assert.equal(await page.getByRole('button', { name: 'Run shadow batch' }).isDisabled(), true)
+    await page.locator('.bd-page').evaluate(el => { el.scrollTop = 0 })
+    await page.screenshot({ path: join(output, `bd-qwen-working-${width}.png`), fullPage: true })
+    live.model_activity.qwen.active_jobs = []
+    live.model_activity.qwen.completed = 1
+    live.model_activity.jev.active_jobs = ['job-1']
+    live.jobs[1].step = 'jev_called'
+    await page.evaluate(data => window.bdSource.snapshot({ data: JSON.stringify(data) }), live)
+    await page.locator('.bd-model-jev.bd-model-working').waitFor()
+    assert.equal(await page.locator('.bd-model-qwen.bd-model-working').count(), 0)
+    live.jobs[1].state = 'completed'
+    await page.evaluate(data => window.bdSource.snapshot({ data: JSON.stringify(data) }), live)
+    await page.waitForFunction(() => document.querySelectorAll('.bd-model-working').length === 0)
+    await page.evaluate(data => window.bdSource.snapshot({ data: JSON.stringify(data) }), current)
     actionFail = true
     await page.getByRole('button', { name: 'Run shadow batch' }).click()
     await page.getByRole('alert').filter({ hasText: 'fixture_action_unavailable' }).waitFor()

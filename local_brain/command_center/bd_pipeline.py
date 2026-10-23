@@ -598,8 +598,8 @@ async def run_pipeline(job, emit=None):
                 provider_status="data_unavailable",
                 message=code,
             )
-            if provider == "jev":
-                await event("jev_error", message=code)
+            if provider in {"qwen", "jev"}:
+                await event(f"{provider}_error", provider=provider, message=code)
             raise DataUnavailable(code) from None
 
     mode = job.get("mode", "replay")
@@ -639,7 +639,7 @@ async def run_pipeline(job, emit=None):
     )
     if mode == "replay":
         source, extraction, judgments = synthetic_fixture(job["segment"])
-        await event("step", step="recorded_qwen_extraction", mode="replay-only")
+        await event("qwen_replayed", provider="qwen", model="replay:saved-qwen", mode="replay-only")
         validate_extraction(source, extraction)
         validate_judgments(judgments)
         usage = {"tokens": 0, "calls": 0, "network_calls": 0, "kind": "replay-not-inference"}
@@ -679,12 +679,20 @@ async def run_pipeline(job, emit=None):
             }
         source = sources[0]
         await event(
-            "step",
-            step="local_qwen_extraction",
+            "qwen_called",
+            provider="qwen",
+            model="qwen3:8b",
             reserve_calls=1,
             reserve_tokens=token_reservation(qwen_payload(source), 512),
         )
+        qwen_started = time.monotonic()
         extraction, tokens = await observed("qwen", extract_local(source))
+        await event(
+            "qwen_completed",
+            provider="qwen",
+            model="qwen3:8b",
+            latency_ms=round((time.monotonic() - qwen_started) * 1000),
+        )
         await event(
             "provider_health",
             provider="qwen",

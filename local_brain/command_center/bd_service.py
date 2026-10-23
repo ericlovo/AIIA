@@ -197,7 +197,20 @@ class BDService:
             )
         jobs = []
         packets = []
-        for job in raw["jobs"][:200]:
+        active_jobs = [job for job in raw["jobs"] if job["state"] in ("leased", "running")]
+        queued_jobs = sorted(
+            [job for job in reversed(raw["jobs"]) if job["state"] == "queued"],
+            key=lambda job: job["created_at"],
+        )
+        terminal_jobs = [
+            job for job in raw["jobs"] if job["state"] in ("completed", "failed", "cancelled")
+        ]
+        selected_jobs = (active_jobs + queued_jobs + terminal_jobs)[:200]
+        job_counts = {
+            state: sum(job["state"] == state for job in raw["jobs"])
+            for state in ("queued", "leased", "running", "completed", "failed", "cancelled")
+        }
+        for job in selected_jobs:
             public = {
                 key: job.get(key)
                 for key in ("id", "bot_id", "tenant_id", "state", "step", "attempts", "error")
@@ -210,6 +223,7 @@ class BDService:
                 }
             )
             jobs.append(public)
+        for job in [job for job in raw["jobs"] if job["state"] == "completed"][:200]:
             result = job.get("result") or {}
             for index, packet in enumerate(
                 result.get("packets", [result] if result.get("organization") else [])
@@ -232,6 +246,10 @@ class BDService:
                 "created_at": iso(e["timestamp"]),
                 "bot_id": e.get("bot_id"),
                 "job_id": e.get("job_id"),
+                **{
+                    key: e.get(key)
+                    for key in ("provider", "model", "latency_ms", "mode", "primitive")
+                },
             }
             for e in reversed(events)
         ]
@@ -278,15 +296,90 @@ class BDService:
                     else "Last provider observation is stale; status unverified",
                     "observed_at": iso(event["timestamp"]),
                 }
+        model_activity = {}
+        for provider in ("qwen", "jev"):
+            provider_events = [
+                event
+                for event in events
+                if event["kind"]
+                in {
+                    f"{provider}_called",
+                    f"{provider}_completed",
+                    f"{provider}_error",
+                    f"{provider}_replayed",
+                }
+            ]
+            actual = [event for event in provider_events if event.get("mode") == "live"]
+            completed = [event for event in actual if event["kind"] == f"{provider}_completed"]
+            active_jobs = [
+                job["id"]
+                for job in raw["jobs"]
+                if job["mode"] == "live"
+                and job["state"] in ("leased", "running")
+                and job.get("step")
+                in (
+                    f"{provider}_called",
+                    "local_qwen_extraction" if provider == "qwen" else "jev_called",
+                )
+                and job.get("heartbeat_at") is not None
+                and now - job["heartbeat_at"] <= self.store.config["lease_seconds"]
+            ]
+            measured = [
+                event["latency_ms"]
+                for event in completed
+                if type(event.get("latency_ms")) in (int, float)
+            ]
+            count = (
+                sum(event["kind"] == f"{provider}_called" for event in actual)
+                if actual
+                else (0 if replay else None)
+            )
+            model_activity[provider] = {
+                "mode": raw["mode"],
+                "metrics_scope": "latest_200_events",
+                "status": "running"
+                if active_jobs
+                else "replay"
+                if replay
+                else "idle"
+                if health[provider]["status"] == "available"
+                else "data_unavailable",
+                "active_jobs": active_jobs,
+                "calls": count,
+                "attempts": count,
+                "completed": len(completed) if actual or replay else None,
+                "errors": sum(event["kind"] == f"{provider}_error" for event in actual)
+                if actual or replay
+                else None,
+                "replayed": sum(
+                    event["kind"] == f"{provider}_replayed" for event in provider_events
+                ),
+                "last_event_at": iso(provider_events[-1]["timestamp"]) if provider_events else None,
+                "latency_ms": sum(measured) / len(measured) if measured else None,
+            }
         return {
             "mode": raw["mode"],
             "schedule_enabled": raw["schedule_enabled"],
             "kill_switch": raw["kill_switch"],
             "bots": bots,
             "jobs": jobs,
+            "job_counts": job_counts,
+            "job_window": {
+                "limit": 200,
+                "total": len(raw["jobs"]),
+                "returned": len(jobs),
+                "truncated": len(raw["jobs"]) > len(jobs),
+                "queue_total": job_counts["queued"] + job_counts["leased"],
+                "queue_returned": sum(
+                    job["state"] in ("queued", "leased") for job in selected_jobs
+                ),
+                "selection": "active_then_oldest_queue_then_recent_terminal",
+                "packet_history": "latest_200_completed_jobs",
+            },
             "events": feed,
             "packets": packets,
             "health": health,
+            "model_activity": model_activity,
             "budget": budget("global", self.store.config["global_daily_budget"]),
             "budget_policy": raw["budget_policy"],
             "budget_day_timezone": "UTC",

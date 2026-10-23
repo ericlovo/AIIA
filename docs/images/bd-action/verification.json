@@ -1,0 +1,40 @@
+{
+  "completed": 4,
+  "packets": 4,
+  "snapshots": 11,
+  "modelActivity": {
+    "qwen": {
+      "mode": "replay",
+      "metrics_scope": "latest_200_events",
+      "status": "replay",
+      "active_jobs": [],
+      "calls": 0,
+      "attempts": 0,
+      "completed": 0,
+      "errors": 0,
+      "replayed": 4,
+      "last_event_at": "2026-10-23T17:07:16.137106+00:00",
+      "latency_ms": null
+    },
+    "jev": {
+      "mode": "replay",
+      "metrics_scope": "latest_200_events",
+      "status": "replay",
+      "active_jobs": [],
+      "calls": 0,
+      "attempts": 0,
+      "completed": 0,
+      "errors": 0,
+      "replayed": 4,
+      "last_event_at": "2026-10-23T17:07:16.343313+00:00",
+      "latency_ms": null
+    }
+  },
+  "triageVerified": [
+    "research_next",
+    "dismissed",
+    "human_review_required"
+  ],
+  "observedRunning": true,
+  "errors": []
+}
