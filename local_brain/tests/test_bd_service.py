@@ -86,7 +86,9 @@ def test_over_budget_emit_prevents_adapter_work(service):
     performed = []
 
     async def pipeline(job, emit):
-        await emit("qwen_called", {"reserve_calls": 5})
+        await emit(
+            "qwen_called", {"reserve_calls": service.store.config["job_budget"]["calls"] + 1}
+        )
         performed.append(True)
 
     service.pipeline = pipeline
@@ -220,3 +222,28 @@ def test_provider_health_expires_and_preserves_observation_time(service):
     stale = service.snapshot()["health"]["qwen"]
     assert stale["status"] == "data_unavailable"
     assert stale["observed_at"] == fresh["observed_at"]
+
+
+def test_worker_passes_scoped_history_and_hides_integration_config(service):
+    bot = next(iter(service.store.bots.values()))
+    bot["managed_leads"] = {"token_env": "PRIVATE_REF"}
+    bot["source_allowlist"] = ["example.org"]
+    observations = []
+
+    async def pipeline(job, emit):
+        observations.append(job)
+        return {"packets": [{"organization": "Synthetic", "evidence_key": "evidence-one"}]}
+
+    service.pipeline = pipeline
+    service.store.enqueue(bot["id"], bot["tenant_id"], "first", "research")
+    asyncio.run(service.run_once())
+    service.store.enqueue(bot["id"], bot["tenant_id"], "second", "research")
+    asyncio.run(service.run_once())
+    assert observations[0]["seen_evidence"] == []
+    assert observations[1]["seen_evidence"] == ["evidence-one"]
+    assert observations[1]["managed_leads"]["token_env"] == "PRIVATE_REF"
+    assert observations[1]["source_allowlist"] == ["example.org"]
+    public = service.snapshot()
+    assert all(
+        "managed_leads" not in row and "source_allowlist" not in row for row in public["bots"]
+    )

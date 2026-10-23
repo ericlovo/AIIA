@@ -75,6 +75,9 @@ class BDService:
         job["segment"] = self.store.bots.get(job["bot_id"], {}).get("segment", "unknown")
         job["budget"] = job["reserved_budget"]
         job["source_allowlist"] = list(self.store.bots[job["bot_id"]].get("source_allowlist", []))
+        job["managed_leads"] = dict(self.store.bots[job["bot_id"]].get("managed_leads", {}))
+        job["research_segment"] = self.store.bots[job["bot_id"]].get("research_segment")
+        job["seen_evidence"] = self.store.evidence_keys(job["bot_id"], job["tenant_id"])
 
         async def emit(kind, detail=None, **extra):
             data = {**(detail or {}), **extra}
@@ -179,7 +182,10 @@ class BDService:
             jobs = [j for j in raw["jobs"] if j["bot_id"] == bot["id"]]
             bots.append(
                 {
-                    **bot,
+                    **{
+                        key: bot.get(key)
+                        for key in ("id", "name", "segment", "tenant_id", "enabled", "kind")
+                    },
                     "counts": {
                         "queued": sum(j["state"] == "queued" for j in jobs),
                         "running": sum(j["state"] in ("leased", "running") for j in jobs),
@@ -253,11 +259,13 @@ class BDService:
             },
             "managed_leads": {
                 "status": "data_unavailable",
-                "detail": "Tenant-scoped read API is not configured; no CRM records read or written",
+                "detail": "Tenant read adapter is not configured or verified; contact dates remain unavailable",
             },
         }
         for event in events:
-            if event.get("provider") in ("qwen", "jev") and event.get("provider_status") in (
+            if event.get("provider") in ("qwen", "jev", "managed_leads") and event.get(
+                "provider_status"
+            ) in (
                 "available",
                 "data_unavailable",
             ):

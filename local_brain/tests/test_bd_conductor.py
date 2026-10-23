@@ -128,9 +128,19 @@ def test_consumption_enforced_and_rollback(runtime):
     job = enqueue(runtime)
     lease = runtime.lease("worker")
     with pytest.raises(ValueError):
-        runtime.consume(job["id"], lease["lease_token"], tokens=100, calls=5)
+        runtime.consume(
+            job["id"],
+            lease["lease_token"],
+            tokens=100,
+            calls=runtime.config["job_budget"]["calls"] + 1,
+        )
     assert runtime.snapshot()["jobs"][0]["used_budget"] == {"tokens": 0, "calls": 0}
-    runtime.consume(job["id"], lease["lease_token"], tokens=4000, calls=4)
+    runtime.consume(
+        job["id"],
+        lease["lease_token"],
+        tokens=runtime.config["job_budget"]["tokens"],
+        calls=runtime.config["job_budget"]["calls"],
+    )
     with pytest.raises(ValueError):
         runtime.consume(job["id"], lease["lease_token"], calls=1)
 
@@ -350,3 +360,77 @@ def test_source_allowlist_accepts_exact_public_hosts(tmp_path):
         BDConductor(tmp_path / "hosts.sqlite", config=config).bots["healthcare"]["source_allowlist"]
         == config["bots"][0]["source_allowlist"]
     )
+
+
+def test_evidence_keys_durable_scoped_and_legacy_fallback(runtime):
+    import hashlib
+
+    def complete(bot, tenant, entity, packets):
+        job = enqueue(runtime, entity, bot, tenant)
+        lease = runtime.lease("worker")
+        runtime.start(job["id"], lease["lease_token"])
+        runtime.complete(job["id"], lease["lease_token"], {"packets": packets})
+
+    complete(
+        "healthcare",
+        "synthetic-healthcare",
+        "first",
+        [
+            {"evidence_key": "explicit"},
+            {"source_url": "https://example.org/a", "provenance": {"source_hash": "abc"}},
+            {"source_url": "https://example.org/missing-hash"},
+        ],
+    )
+    complete("srg", "synthetic-srg", "other-tenant", [{"evidence_key": "other-tenant"}])
+    # Distinct configured bots can share a tenant without sharing their evidence history.
+    runtime.bots["pe-diligence"]["tenant_id"] = "synthetic-healthcare"
+    complete("pe-diligence", "synthetic-healthcare", "other-bot", [{"evidence_key": "other-bot"}])
+    expected = sorted(["explicit", hashlib.sha256(b"https://example.org/a\0abc").hexdigest()])
+    assert runtime.evidence_keys("healthcare", "synthetic-healthcare") == expected
+    restarted = BDConductor(runtime.path, clock=runtime.clock)
+    assert restarted.evidence_keys("healthcare", "synthetic-healthcare") == expected
+    assert restarted.evidence_keys("srg", "synthetic-srg") == ["other-tenant"]
+    with pytest.raises(ValueError):
+        restarted.evidence_keys("healthcare", "synthetic-srg")
+    with pytest.raises(ValueError):
+        restarted.evidence_keys("unknown", "synthetic-healthcare")
+
+
+def test_evidence_keys_ignore_uncompleted_jobs(runtime):
+    job = enqueue(runtime)
+    lease = runtime.lease("worker")
+    runtime.start(job["id"], lease["lease_token"])
+    assert runtime.evidence_keys("healthcare", "synthetic-healthcare") == []
+    runtime.fail(job["id"], lease["lease_token"], "provider_failed")
+    assert runtime.evidence_keys("healthcare", "synthetic-healthcare") == []
+
+
+def test_managed_leads_optional_configuration_scoped(tmp_path):
+    config = json.loads(CONFIG_PATH.read_text())
+    bot = config["bots"][-1]
+    bot["research_segment"] = "healthcare"
+    bot["managed_leads"] = {
+        "base_url": "https://managed-leads.vercel.app",
+        "client_id_env": "BD_CLIENT_ID",
+        "token_env": "BD_TOKEN",
+        "workspace_id": bot["tenant_id"],
+    }
+    assert (
+        BDConductor(tmp_path / "managed.sqlite", config=config).bots["srg"]["research_segment"]
+        == "healthcare"
+    )
+    for invalid in (
+        {},
+        {"token": "literal-secret"},
+        {**bot["managed_leads"], "workspace_id": "other"},
+        {**bot["managed_leads"], "token_env": "literal-secret"},
+        {**bot["managed_leads"], "base_url": "https://other.example"},
+        {**bot["managed_leads"], "client_id_env": 5},
+    ):
+        modified = copy.deepcopy(config)
+        modified["bots"][-1]["managed_leads"] = invalid
+        with pytest.raises(ValueError):
+            BDConductor(tmp_path / "invalid-managed.sqlite", config=modified)
+    config["bots"][-1]["research_segment"] = "client-bd"
+    with pytest.raises(ValueError):
+        BDConductor(tmp_path / "invalid-segment.sqlite", config=config)

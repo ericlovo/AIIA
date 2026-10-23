@@ -5,6 +5,7 @@ not refunded: this deliberately overcounts rather than letting crashes hide spen
 The runtime defaults to replay and never sends outreach or writes to a CRM.
 """
 
+import hashlib
 import ipaddress
 import json
 import math
@@ -97,6 +98,39 @@ class BDConductor:
                 "client-bd",
             }:
                 raise ValueError("Unknown research segment")
+            if "research_segment" in bot and (
+                not isinstance(bot["research_segment"], str)
+                or bot["research_segment"]
+                not in {
+                    "healthcare",
+                    "pe-technical-diligence",
+                    "alumni-associations",
+                }
+            ):
+                raise ValueError("Unknown client research_segment")
+            if "managed_leads" in bot:
+                managed = bot["managed_leads"]
+                required = {"base_url", "client_id_env", "token_env", "workspace_id"}
+                if (
+                    not isinstance(managed, dict)
+                    or set(managed) != required
+                    or not all(
+                        isinstance(value, str) and value.strip() for value in managed.values()
+                    )
+                ):
+                    raise ValueError("managed_leads requires exact named string configuration")
+                if (
+                    managed["base_url"] != "https://managed-leads.vercel.app"
+                    or managed["workspace_id"] != bot["tenant_id"]
+                ):
+                    raise ValueError(
+                        "Managed Leads base URL and workspace must match configured scope"
+                    )
+                if not all(
+                    re.fullmatch(r"[A-Z][A-Z0-9_]{0,100}", managed[key])
+                    for key in ("client_id_env", "token_env")
+                ):
+                    raise ValueError("Managed Leads credentials must be environment variable names")
             hosts = bot.get("source_allowlist", [])
             if not isinstance(hosts, list):
                 raise ValueError("source_allowlist must be a list of exact hostnames")
@@ -456,6 +490,39 @@ class BDConductor:
                     self._save(db, job)
                     self._event(db, "job_cancelled", job, reason="kill_switch")
             self._event(db, "kill_switch_changed", enabled=enabled)
+
+    def evidence_keys(self, bot_id, tenant_id):
+        bot = self.bots.get(bot_id)
+        if not bot or bot["tenant_id"] != tenant_id:
+            raise ValueError("Evidence lookup requires exact configured bot and tenant")
+        keys = set()
+        with self._transaction() as db:
+            rows = db.execute(
+                "SELECT data FROM bd_jobs WHERE tenant_id=? AND state='completed'",
+                (tenant_id,),
+            ).fetchall()
+            for row in rows:
+                job = json.loads(row[0])
+                if job["bot_id"] != bot_id:
+                    continue
+                result = job.get("result") or {}
+                for packet in result.get("packets", []):
+                    key = packet.get("evidence_key")
+                    if isinstance(key, str) and key:
+                        keys.add(key)
+                        continue
+                    source_url = packet.get("source_url")
+                    source_hash = (packet.get("provenance") or {}).get("source_hash")
+                    if (
+                        isinstance(source_url, str)
+                        and source_url
+                        and isinstance(source_hash, str)
+                        and source_hash
+                    ):
+                        keys.add(
+                            hashlib.sha256((source_url + "\0" + source_hash).encode()).hexdigest()
+                        )
+        return sorted(keys)
 
     def set_packet_review(self, job_id, index, status):
         allowed = {"human_review_required", "research_next", "watch", "dismissed"}

@@ -155,7 +155,7 @@ def test_contact_fields_never_come_from_model():
 async def test_client_replay_and_live_missing_tenant_api():
     result = await pipeline.run_pipeline(job(segment="client-bd", payload={"replay_step_delay": 0}))
     assert result["packets"][0]["segment"] == "client-bd"
-    with pytest.raises(pipeline.DataUnavailable, match="tenant_api_unavailable"):
+    with pytest.raises(pipeline.DataUnavailable, match="client_research_segment_unconfigured"):
         await pipeline.run_pipeline(job(segment="client-bd", mode="live"))
 
 
@@ -384,3 +384,171 @@ def test_inconsistent_score_and_distribution_rejected():
     judgments["answers"]["evidence_strength"]["score"] = 0.1
     with pytest.raises(pipeline.DataUnavailable, match="inconsistent_jev_score"):
         pipeline.validate_judgments(judgments)
+
+
+def managed_config():
+    return {
+        "base_url": "https://managed-leads.vercel.app",
+        "workspace_id": "tenant-one",
+        "client_id_env": "TEST_BD_CLIENT",
+        "token_env": "TEST_BD_TOKEN",
+    }
+
+
+def managed_transport(monkeypatch, handler):
+    from local_brain.egress import EgressDecision
+
+    async def allow(tool, server):
+        assert (tool, server) == ("web.fetch", "managed-leads.vercel.app")
+        return EgressDecision(True, "test")
+
+    client = httpx.AsyncClient
+    monkeypatch.setenv("TEST_BD_CLIENT", "test-client")
+    monkeypatch.setenv("TEST_BD_TOKEN", "synthetic-test-token-" + "x" * 32)
+    monkeypatch.setattr(pipeline, "authorize_egress", allow)
+    monkeypatch.setattr(
+        pipeline.httpx,
+        "AsyncClient",
+        lambda **kw: client(transport=httpx.MockTransport(handler), **kw),
+    )
+
+
+@async_test
+async def test_managed_list_binds_workspace_and_uses_read_auth(monkeypatch):
+    def handler(request):
+        assert request.method == "GET"
+        assert request.url.path == "/api/integrations/v1/accounts"
+        assert request.headers["X-Integration-Client"] == "test-client"
+        assert request.headers["Authorization"].startswith("Bearer synthetic-test-token-")
+        assert set(request.url.params) == {"q", "limit", "after"}
+        assert "cookie" not in request.headers
+        return httpx.Response(
+            200,
+            json={
+                "version": 1,
+                "workspaceId": "tenant-one",
+                "accounts": [{"id": "one", "organization": "Example"}],
+                "nextCursor": None,
+            },
+        )
+
+    managed_transport(monkeypatch, handler)
+    adapter = pipeline.ManagedLeadsReadOnly(managed_config())
+    assert adapter.status("tenant-one")["configured"] is True
+    result = await adapter.read("tenant-one", query="Example", after="zero")
+    assert result["status"] == "available"
+    assert result["outreach_allowed"] is False
+    assert result["requested_contact_date"] == "data_unavailable"
+
+
+@async_test
+async def test_managed_detail_preserves_suppression_flags(monkeypatch):
+    def handler(request):
+        assert request.method == "GET"
+        assert request.url.path == "/api/integrations/v1/accounts/one"
+        assert not request.url.params
+        return httpx.Response(
+            200,
+            json={
+                "version": 1,
+                "workspaceId": "tenant-one",
+                "account": {"id": "one", "organization": "Example"},
+                "people": [
+                    {"email": "held@example.org", "hold": True, "optedOut": True, "verified": False}
+                ],
+                "signals": [],
+            },
+        )
+
+    managed_transport(monkeypatch, handler)
+    result = await pipeline.ManagedLeadsReadOnly(managed_config()).read(
+        "tenant-one", account_id="one"
+    )
+    assert result["status"] == "available"
+    assert result["records"]["people"][0]["hold"] is True
+    assert result["records"]["people"][0]["optedOut"] is True
+    assert result["contact_restrictions"] == "partial_hold_and_opt_out_only"
+
+
+@pytest.mark.parametrize(
+    "response",
+    [
+        httpx.Response(302, headers={"Location": "https://evil.example"}),
+        httpx.Response(401),
+        httpx.Response(503),
+        httpx.Response(200, headers={"Set-Cookie": "session=bad"}, json={}),
+        httpx.Response(
+            200,
+            json={"version": 1, "workspaceId": "other-tenant", "accounts": [], "nextCursor": None},
+        ),
+        httpx.Response(
+            200,
+            json={"version": True, "workspaceId": "tenant-one", "accounts": [], "nextCursor": None},
+        ),
+    ],
+)
+@async_test
+async def test_managed_response_fail_closed(monkeypatch, response):
+    managed_transport(monkeypatch, lambda request: response)
+    result = await pipeline.ManagedLeadsReadOnly(managed_config()).read("tenant-one")
+    assert result["status"] == "data_unavailable"
+    assert result["records"] is None
+
+
+@async_test
+async def test_managed_config_mismatch_does_not_call_network(monkeypatch):
+    def forbidden(request):
+        raise AssertionError("invalid configuration must not dial")
+
+    managed_transport(monkeypatch, forbidden)
+    result = await pipeline.ManagedLeadsReadOnly(managed_config()).read("tenant-two")
+    assert result["reason"] == "managed_leads_workspace_configuration_invalid"
+    config = managed_config()
+    config["base_url"] = "https://evil.example"
+    assert (await pipeline.ManagedLeadsReadOnly(config).read("tenant-one"))["records"] is None
+
+
+@async_test
+async def test_seen_sources_are_skipped_before_qwen(monkeypatch):
+    first, extraction, judgments = pipeline.synthetic_fixture("healthcare")
+    second = {
+        **first,
+        "url": "https://example.org/second",
+        "title": "Second organization opens a clinic",
+    }
+    called = []
+
+    async def retrieve(segment):
+        return [first, second]
+
+    async def local(source):
+        called.append(source)
+        return extraction, 10
+
+    async def judge(source, result, segment):
+        return judgments
+
+    monkeypatch.setattr(pipeline, "retrieve_sources", retrieve)
+    monkeypatch.setattr(pipeline, "extract_local", local)
+    monkeypatch.setattr(pipeline, "judge", judge)
+    result = await pipeline.run_pipeline(
+        job(mode="live", seen_evidence=[pipeline.evidence_key(first)])
+    )
+    assert called == [second]
+    assert result["packets"][0]["evidence_key"] == pipeline.evidence_key(second)
+    called.clear()
+    result = await pipeline.run_pipeline(
+        job(
+            mode="live", seen_evidence=[pipeline.evidence_key(first), pipeline.evidence_key(second)]
+        )
+    )
+    assert called == []
+    assert result["packets"] == []
+    assert result["reason"] == "no_new_evidence"
+
+
+def test_changed_source_text_has_new_evidence_key():
+    source, _, _ = pipeline.synthetic_fixture("healthcare")
+    assert pipeline.evidence_key(source) != pipeline.evidence_key(
+        {**source, "title": "Updated public announcement"}
+    )

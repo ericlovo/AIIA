@@ -83,7 +83,7 @@
   },
   "job_budget": {
     "tokens": 8000,
-    "calls": 4,
+    "calls": 6,
     "seconds": 120
   },
   "max_concurrency": 1
