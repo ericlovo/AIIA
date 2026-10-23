@@ -247,3 +247,127 @@ def test_worker_passes_scoped_history_and_hides_integration_config(service):
     assert all(
         "managed_leads" not in row and "source_allowlist" not in row for row in public["bots"]
     )
+
+
+def test_model_activity_tracks_live_attempt_without_exposing_inputs(service):
+    async def scenario():
+        service.store.config["mode"] = "live"
+        entered = asyncio.Event()
+        release = asyncio.Event()
+
+        async def pipeline(job, emit):
+            await emit(
+                "qwen_called",
+                {
+                    "provider": "qwen",
+                    "model": "qwen3:8b",
+                    "reserve_calls": 1,
+                    "raw_input": "PRIVATE_SOURCE_BODY",
+                },
+            )
+            entered.set()
+            await release.wait()
+            await emit(
+                "qwen_completed", {"provider": "qwen", "model": "qwen3:8b", "latency_ms": 75}
+            )
+            await emit("provider_health", {"provider": "qwen", "provider_status": "available"})
+            return {"packets": []}
+
+        service.pipeline = pipeline
+        job = service.store.enqueue("healthcare", "synthetic-healthcare", "live", "research")
+        work = asyncio.create_task(service.run_once())
+        await entered.wait()
+        active = service.snapshot()
+        assert active["model_activity"]["qwen"]["active_jobs"] == [job["id"]]
+        assert active["model_activity"]["qwen"]["status"] == "running"
+        assert active["model_activity"]["qwen"]["attempts"] == 1
+        assert active["model_activity"]["qwen"]["completed"] == 0
+        assert active["model_activity"]["jev"]["attempts"] is None
+        assert "PRIVATE_SOURCE_BODY" not in json.dumps(active)
+        release.set()
+        await work
+        completed = service.snapshot()["model_activity"]["qwen"]
+        assert completed["status"] == "idle"
+        assert completed["active_jobs"] == []
+        assert completed["completed"] == 1
+        assert completed["latency_ms"] == 75
+        assert completed["replayed"] == 0
+        assert completed["metrics_scope"] == "latest_200_events"
+
+    asyncio.run(scenario())
+
+
+def test_model_activity_replay_is_not_live_inference(service):
+    async def pipeline(job, emit):
+        await emit("qwen_replayed", {"model": "replay:saved-qwen"})
+        await emit("jev_replayed", {"model": "replay:recorded-jev", "latency_ms": 0})
+        return {"packets": []}
+
+    service.pipeline = pipeline
+    service.enqueue_cycle(shadow=True)
+    asyncio.run(service.run_once())
+    for provider in ("qwen", "jev"):
+        activity = service.snapshot()["model_activity"][provider]
+        assert activity["status"] == "replay"
+        assert activity["replayed"] == 1
+        assert activity["attempts"] == 0
+        assert activity["completed"] == 0
+        assert activity["latency_ms"] is None
+        assert activity["active_jobs"] == []
+
+
+def test_failed_model_attempt_has_no_completed_count(service):
+    async def pipeline(job, emit):
+        await emit("jev_called", {"model": "jev-latest", "reserve_calls": 1})
+        await emit("jev_error", {"message": "jev_egress_denied"})
+        raise ValueError("unavailable")
+
+    service.store.config["mode"] = "live"
+    service.pipeline = pipeline
+    service.store.enqueue("healthcare", "synthetic-healthcare", "live", "research")
+    asyncio.run(service.run_once())
+    activity = service.snapshot()["model_activity"]["jev"]
+    assert activity["status"] == "data_unavailable"
+    assert activity["attempts"] == 1
+    assert activity["completed"] == 0
+    assert activity["errors"] == 1
+    assert activity["latency_ms"] is None
+
+
+def test_large_backlog_keeps_running_job_oldest_queue_and_completed_packets(service):
+    store = service.store
+    completed = store.enqueue("healthcare", "synthetic-healthcare", "completed", "research")
+    lease = store.lease("worker")
+    store.start(completed["id"], lease["lease_token"])
+    store.complete(
+        completed["id"], lease["lease_token"], {"packets": [{"organization": "Earlier research"}]}
+    )
+    store.config["mode"] = "live"
+    active = store.enqueue("healthcare", "synthetic-healthcare", "active", "research")
+    lease = store.lease("worker")
+    store.start(active["id"], lease["lease_token"])
+    store.heartbeat(active["id"], lease["lease_token"], step="qwen_called")
+    queued_ids = []
+    for index in range(205):
+        queued_ids.append(
+            store.enqueue("healthcare", "synthetic-healthcare", str(index), "research")["id"]
+        )
+    snapshot = service.snapshot()
+    assert len(snapshot["jobs"]) == 200
+    assert snapshot["jobs"][0]["id"] == active["id"]
+    assert [job["id"] for job in snapshot["jobs"][1:]] == queued_ids[:199]
+    assert snapshot["model_activity"]["qwen"]["active_jobs"] == [active["id"]]
+    assert snapshot["model_activity"]["qwen"]["status"] == "running"
+    assert snapshot["packets"][0]["organization"] == "Earlier research"
+    assert snapshot["job_counts"] == {
+        "queued": 205,
+        "leased": 0,
+        "running": 1,
+        "completed": 1,
+        "failed": 0,
+        "cancelled": 0,
+    }
+    assert snapshot["job_window"]["queue_total"] == 205
+    assert snapshot["job_window"]["queue_returned"] == 199
+    assert snapshot["job_window"]["truncated"] is True
+    assert snapshot["job_window"]["total"] == 207
