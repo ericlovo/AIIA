@@ -162,6 +162,57 @@ class BDService:
                 logger.warning("BD worker unavailable: %s", self.last_error)
             await asyncio.sleep(0.5)
 
+    def _schedule_projection(self, raw):
+        """Display external-guard metadata; this does not activate or stop scheduling."""
+        window = self.store.config.get("schedule_window")
+        start = (
+            datetime.fromisoformat(window["start_at"].replace("Z", "+00:00")).timestamp()
+            if window
+            else None
+        )
+        end = (
+            datetime.fromisoformat(window["end_at"].replace("Z", "+00:00")).timestamp()
+            if window
+            else None
+        )
+        now = raw["timestamp"]
+        bots = [
+            bot for bot in self.store.bots.values() if bot["enabled"] and bot["schedule"]["enabled"]
+        ]
+        projection = {
+            "state": "scheduled",
+            "next_run_at": None,
+            "start_at": iso(start),
+            "stop_at": iso(end),
+            "timezone": window["timezone"] if window else "UTC",
+            "display_only": True,
+        }
+        if end is not None and now >= end:
+            projection["state"] = "expired"
+            return projection
+        if not self.store.config["schedule_enabled"] or not bots:
+            projection["state"] = "disabled"
+            return projection
+        if start is not None and now < start:
+            projection["state"] = "waiting"
+        elif raw["kill_switch"]:
+            projection["state"] = "paused"
+            return projection
+        existing = {(job["tenant_id"], job["entity_id"], job["task"]) for job in raw["jobs"]}
+        candidates = []
+        for bot in bots:
+            interval = bot["schedule"]["interval_seconds"]
+            candidate = max(now, start) if start is not None else now
+            index = int(candidate // interval)
+            while (bot["tenant_id"], f"{bot['id']}:{index}", "public-research") in existing:
+                index += 1
+                candidate = index * interval
+            if end is None or candidate < end:
+                candidates.append(candidate)
+        if candidates:
+            projection["next_run_at"] = iso(min(candidates))
+        return projection
+
     def snapshot(self):
         raw = self.store.snapshot()
         now = raw["timestamp"]
@@ -288,13 +339,14 @@ class BDService:
                 "data_unavailable",
             ):
                 health[event["provider"]] = {
-                    "status": event["provider_status"]
-                    if now - event["timestamp"] <= 120
-                    else "data_unavailable",
-                    "detail": event.get("message", "")
-                    if now - event["timestamp"] <= 120
-                    else "Last provider observation is stale; status unverified",
+                    "status": "stale"
+                    if event["provider_status"] == "available" and now - event["timestamp"] > 120
+                    else event["provider_status"],
+                    "detail": "Last successful provider observation is stale; no current probe"
+                    if event["provider_status"] == "available" and now - event["timestamp"] > 120
+                    else event.get("message", ""),
                     "observed_at": iso(event["timestamp"]),
+                    "last_status": event["provider_status"],
                 }
         model_activity = {}
         for provider in ("qwen", "jev"):
@@ -360,6 +412,7 @@ class BDService:
         return {
             "mode": raw["mode"],
             "schedule_enabled": raw["schedule_enabled"],
+            "schedule": self._schedule_projection(raw),
             "kill_switch": raw["kill_switch"],
             "bots": bots,
             "jobs": jobs,

@@ -16,6 +16,7 @@ import uuid
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 CONFIG_PATH = Path(__file__).with_name("config") / "bd_roster.v1.json"
 ACTIVE = {"leased", "running"}
@@ -65,6 +66,22 @@ class BDConductor:
             raise ValueError("Version 1 and explicit replay or live mode are required")
         if not isinstance(cfg.get("schedule_enabled"), bool):
             raise ValueError("schedule_enabled must be boolean")
+        if "schedule_window" in cfg:
+            window = cfg["schedule_window"]
+            if not isinstance(window, dict) or set(window) != {"start_at", "end_at", "timezone"}:
+                raise ValueError("schedule_window requires start_at, end_at and timezone")
+            try:
+                if not all(isinstance(value, str) and value.strip() for value in window.values()):
+                    raise ValueError("Schedule window values must be strings")
+                start, end = (
+                    datetime.fromisoformat(window[key].replace("Z", "+00:00"))
+                    for key in ("start_at", "end_at")
+                )
+                if start.utcoffset() is None or end.utcoffset() is None or end <= start:
+                    raise ValueError("Schedule window must be timezone-aware with end after start")
+                ZoneInfo(window["timezone"])
+            except (ValueError, ZoneInfoNotFoundError) as exc:
+                raise ValueError("Invalid timezone-aware schedule_window") from exc
         for key in ("lease_seconds", "max_attempts", "retry_backoff_seconds", "max_concurrency"):
             self._positive(cfg.get(key), key)
         if cfg["max_concurrency"] != 1:

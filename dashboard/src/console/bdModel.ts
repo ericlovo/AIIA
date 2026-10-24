@@ -21,13 +21,23 @@ export interface ModelActivity {
   replayed: number | null; errors: number | null; last_event_at: string | null; latency_ms: number | null
   metrics_scope?: string
 }
+export interface BDSchedule {
+  state: 'waiting' | 'scheduled' | 'paused' | 'disabled' | 'expired'
+  next_run_at: string | null; start_at: string | null; stop_at: string | null
+  timezone: string; display_only?: boolean
+}
+export interface ProviderHealth {
+  status: 'available' | 'data_unavailable' | 'replay' | 'stale'
+  detail: string; observed_at?: string | null; last_status?: string
+}
 export interface BDSnapshot {
+  schedule?: BDSchedule
   model_activity?: Partial<Record<'qwen' | 'jev', ModelActivity>>
   job_counts?: Record<BDJob['state'], number>
   job_window?: { limit: number; total: number; returned: number; truncated: boolean; queue_total: number; queue_returned: number }
   mode: string; schedule_enabled: boolean; kill_switch: boolean; bots: BDBot[]; jobs: BDJob[]
   events: BDEvent[]; packets: BDPacket[]; budget: Budget
-  health: Record<'qwen' | 'jev' | 'managed_leads', { status: 'available' | 'data_unavailable' | 'replay'; detail: string }>
+  health: Record<'qwen' | 'jev' | 'managed_leads', ProviderHealth>
   jev: { calls_per_minute: number | null; verdict_mix: Record<'Choice' | 'Score' | 'Noul', number> | null; latency_ms: number | null; errors: number | null }
 }
 export function ageLabel(at: string | null, now: number): string {
@@ -63,4 +73,39 @@ export function queueJobs(jobs: BDJob[]): BDJob[] {
 }
 export function latestPackets(packets: BDPacket[]): BDPacket[] {
   return [...packets].sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at))
+}
+
+export function plannedWaiting(schedule: BDSchedule | undefined, now: number): boolean {
+  return schedule?.state === 'waiting' && schedule.start_at != null
+    && Number.isFinite(Date.parse(schedule.start_at)) && Date.parse(schedule.start_at) > now
+}
+export function scheduleTime(at: string | null | undefined, timezone = 'America/Chicago'): string {
+  if (!at || !Number.isFinite(Date.parse(at))) return 'Not scheduled'
+  try {
+    return new Intl.DateTimeFormat('en-US', {
+      timeZone: timezone, weekday: 'short', month: 'short', day: 'numeric',
+      hour: 'numeric', minute: '2-digit', timeZoneName: 'short',
+    }).format(new Date(at))
+  } catch { return 'Time unavailable' }
+}
+export function providerStatus(health: ProviderHealth | undefined): string {
+  if (health?.status === 'stale') return 'Unverified now'
+  if (health?.status === 'data_unavailable') return health.observed_at ? 'Last call failed' : 'Unverified'
+  if (health?.status === 'replay') return 'Recorded replay'
+  return health?.status === 'available' ? 'Idle' : 'Unverified'
+}
+export function scheduleIdleText(data: BDSnapshot, now: number): string {
+  if (plannedWaiting(data.schedule, now)) return 'Waiting for planned start'
+  if (data.schedule?.state === 'expired') return 'Scheduled window ended'
+  if (data.kill_switch || data.schedule?.state === 'paused') return 'Conductor paused'
+  if (data.schedule?.state === 'scheduled') return 'Waiting for next run'
+  return 'Waiting for work'
+}
+export function scheduleQueueText(data: BDSnapshot, now: number): string {
+  if (plannedWaiting(data.schedule, now)) return `Planned start: ${scheduleTime(data.schedule?.start_at, data.schedule?.timezone)}.${data.kill_switch ? ' Currently paused.' : ''}`
+  if (data.schedule?.state === 'expired') return 'The configured research window has ended.'
+  if (data.kill_switch || data.schedule?.state === 'paused') return 'The conductor is paused. Release the kill switch before starting work.'
+  if (data.schedule?.next_run_at) return `Next planned run: ${scheduleTime(data.schedule.next_run_at, data.schedule.timezone)}.`
+  if (data.schedule_enabled) return 'Waiting for the next scheduled cycle.'
+  return data.mode === 'replay' ? 'The schedule is off. Start a shadow batch to see the research flow.' : 'No jobs are queued. The schedule is disabled.'
 }

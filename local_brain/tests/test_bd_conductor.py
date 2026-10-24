@@ -434,3 +434,43 @@ def test_managed_leads_optional_configuration_scoped(tmp_path):
     config["bots"][-1]["research_segment"] = "client-bd"
     with pytest.raises(ValueError):
         BDConductor(tmp_path / "invalid-segment.sqlite", config=config)
+
+
+@pytest.mark.parametrize(
+    "window",
+    [
+        {},
+        None,
+        {
+            "start_at": "2026-10-24T06:00:00",
+            "end_at": "2026-10-26T05:00:00Z",
+            "timezone": "America/Chicago",
+        },
+        {"start_at": "2026-10-24T06:00:00Z", "end_at": "2026-10-24T06:00:00Z", "timezone": "UTC"},
+        {"start_at": "2026-10-24T06:00:00Z", "end_at": "2026-10-23T06:00:00Z", "timezone": "UTC"},
+        {
+            "start_at": "2026-10-24T06:00:00Z",
+            "end_at": "2026-10-26T05:00:00Z",
+            "timezone": "Not/AZone",
+        },
+        {"start_at": 1, "end_at": "2026-10-26T05:00:00Z", "timezone": "UTC"},
+    ],
+)
+def test_schedule_window_configuration_rejected_when_ambiguous(tmp_path, window):
+    config = json.loads(CONFIG_PATH.read_text())
+    config["schedule_window"] = window
+    with pytest.raises(ValueError):
+        BDConductor(tmp_path / "window.sqlite", config=config)
+
+
+def test_schedule_window_accepts_aware_offsets_and_iana_zone(tmp_path):
+    config = json.loads(CONFIG_PATH.read_text())
+    config["schedule_window"] = {
+        "start_at": "2026-10-24T01:00:00-05:00",
+        "end_at": "2026-10-26T00:00:00-05:00",
+        "timezone": "America/Chicago",
+    }
+    assert (
+        BDConductor(tmp_path / "window.sqlite", config=config).config["schedule_window"]
+        == config["schedule_window"]
+    )

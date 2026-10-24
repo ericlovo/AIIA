@@ -125,6 +125,34 @@ try {
     live.jobs[1].state = 'completed'
     await page.evaluate(data => window.bdSource.snapshot({ data: JSON.stringify(data) }), live)
     await page.waitForFunction(() => document.querySelectorAll('.bd-model-working').length === 0)
+    live.jobs = []
+    live.kill_switch = true
+    live.schedule_enabled = true
+    live.schedule = { state: 'waiting', start_at: new Date(Date.now() + 3600000).toISOString(), next_run_at: new Date(Date.now() + 3600000).toISOString(), stop_at: new Date(Date.now() + 172800000).toISOString(), timezone: 'America/Chicago', display_only: true }
+    live.health.qwen = { status: 'stale', detail: 'Last successful observation is old', observed_at: new Date(Date.now() - 10800000).toISOString(), last_status: 'available' }
+    live.health.jev = { status: 'data_unavailable', detail: 'Provider returned an error', observed_at: new Date(Date.now() - 60000).toISOString(), last_status: 'data_unavailable' }
+    await page.evaluate(data => window.bdSource.snapshot({ data: JSON.stringify(data) }), live)
+    await page.locator('.bd-flow-state').getByText('Waiting for planned start', { exact: true }).waitFor()
+    const schedulePanel = page.getByRole('region', { name: 'Research schedule', exact: true })
+    await schedulePanel.getByText('Planned first run', { exact: true }).waitFor()
+    await schedulePanel.getByText('Scheduled stop', { exact: true }).waitFor()
+    assert.match(await schedulePanel.textContent(), /Currently paused/)
+    assert.match(await schedulePanel.textContent(), /Planned times do not resume paused work/)
+    assert.match(await schedulePanel.textContent(), /CDT|CST/)
+    await page.locator('.bd-page').evaluate(el => { el.scrollTop = 0 })
+    await page.screenshot({ path: join(output, `bd-waiting-${width}.png`), animations: 'disabled' })
+    await schedulePanel.screenshot({ path: join(output, `bd-schedule-${width}.png`), animations: 'disabled' })
+    await page.locator('.bd-model-qwen').getByText('Unverified now', { exact: true }).waitFor()
+    await page.locator('.bd-model-jev').getByText('Last call failed', { exact: true }).waitFor()
+    assert.equal(await page.locator('.bd-model-working').count(), 0)
+    await page.locator('.bd-model-stack').evaluate(el => el.scrollIntoView({ block: 'start' }))
+    await page.screenshot({ path: join(output, `bd-provider-observations-${width}.png`), animations: 'disabled' })
+    live.schedule = { state: 'paused', start_at: null, next_run_at: null, stop_at: null, timezone: 'America/Chicago', display_only: true }
+    await page.evaluate(data => window.bdSource.snapshot({ data: JSON.stringify(data) }), live)
+    await page.getByText('Conductor paused', { exact: true }).waitFor()
+    assert.equal(await page.getByText('Waiting for planned start', { exact: true }).count(), 0)
+    await schedulePanel.getByText('Paused', { exact: true }).waitFor()
+    await schedulePanel.screenshot({ path: join(output, `bd-manual-paused-${width}.png`), animations: 'disabled' })
     await page.evaluate(data => window.bdSource.snapshot({ data: JSON.stringify(data) }), current)
     actionFail = true
     await page.getByRole('button', { name: 'Run shadow batch' }).click()

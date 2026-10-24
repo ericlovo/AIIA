@@ -101,3 +101,32 @@ A client bot additionally needs:
 5. A reviewed **narrow egress design**. The adapter currently asks the existing `web.fetch` gate; that gate has no opt-in exception under the current airgap policy. News/signals flags do not enable it. Client reads therefore cannot activate with the current policy unchanged. Do not broadly allow `web.fetch` or disable airgap to work around this; a scoped read policy/code change requires explicit approval.
 
 The Managed Leads detail response exposes contact `hold`, `optedOut`, and `verified`. It does **not** expose a requested-contact-date restriction. The human workspace has a separate `dueDate` workflow field, but Studio must not reinterpret it as that missing contract. Client research currently verifies account-list availability without guessing identity joins between discovered organizations and CRM accounts. Raw CRM data never enters Qwen or Jev public-evidence payloads. No configured read, high fit score, or completed packet lifts the contact hold: outreach remains unavailable pending verified identity, restrictions, requested dates, and human action.
+
+## Showing an operator-managed schedule in Studio
+
+The snapshot can describe an operator-managed start/stop window using optional
+`schedule_window` configuration. For example, the approved October healthcare
+weekend uses:
+
+```json
+{
+  "schedule_window": {
+    "start_at": "2026-10-24T06:00:00Z",
+    "end_at": "2026-10-26T05:00:00Z",
+    "timezone": "America/Chicago"
+  }
+}
+```
+
+These timestamps describe Saturday 01:00 Central through Monday 00:00 Central.
+They are **display metadata**, not an execution timer. The separately installed
+operator guard remains responsible for releasing the initial hold, stopping the
+conductor at the deadline, disabling the shared news/signals exceptions, and
+checking expiry before service startup. Do not configure a window without a
+matching operational guard. Configuration changes take effect after restart.
+
+Studio projects the next eligible epoch-aligned window from enabled bot intervals
+and already-enqueued jobs. A paused conductor still needs its operator or guard;
+the display is not a promise that a job will start. Budget limits, worker health,
+and provider availability can also prevent execution. Old successful model
+observations are labeled stale/unverified, not presented as a new provider outage.
