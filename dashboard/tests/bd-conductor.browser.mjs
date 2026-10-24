@@ -14,7 +14,7 @@ const snapshot = {
   mode: 'replay', schedule_enabled: false, kill_switch: false, bots, budget,
   jobs: [{ id: 'queue-1', bot_id: 'bot-1', tenant_id: 'synthetic-1', segment: 'PE technical diligence', state: 'queued', step: 'queued', created_at: at, started_at: null, heartbeat_at: null }, { id: 'job-1', bot_id: 'bot-0', tenant_id: 'synthetic-0', segment: 'Healthcare', state: 'running', step: 'Extracting public evidence', created_at: at, started_at: at, heartbeat_at: at }],
   events: [{ id: 'event-1', kind: 'job_running', message: 'Research started from recorded public evidence.', created_at: at, bot_id: 'bot-0', job_id: 'job-1' }],
-  packets: [{ id: 'packet-1', index: 0, job_id: 'previous-job', bot_id: 'bot-0', tenant_id: 'synthetic-0', segment: 'Healthcare', created_at: at, mode: 'replay', review_status: 'human_review_required', organization: 'Synthetic Health Group', source_url: 'https://example.com/research', emails: ['research@example.com'], phones: ['+1 202-555-0100'], signals: ['Expansion announcement in recorded source.'], insights: ['Explore demand for intake automation.'], summary: 'Synthetic evidence packet for review. This is not a real prospect.' }],
+  packets: [{ id: 'packet-1', index: 0, job_id: 'previous-job', bot_id: 'bot-0', tenant_id: 'synthetic-0', segment: 'Healthcare', created_at: at, mode: 'replay', review_status: 'human_review_required', organization: 'Synthetic Health Group', source_url: 'https://example.com/research', source_quote: 'Synthetic source quotation for review.', emails: ['research@example.com'], phones: ['+1 202-555-0100'], signals: ['Expansion announcement in recorded source.'], insights: ['Explore demand for intake automation.'], summary: 'Synthetic evidence packet for review. This is not a real prospect.' }],
   health: { qwen: { status: 'replay', detail: 'Recorded extraction' }, jev: { status: 'replay', detail: 'Recorded verdicts' }, managed_leads: { status: 'data_unavailable', detail: 'Staging API is not connected' } },
   model_activity: { qwen: { status: 'replay', active_jobs: [], calls: 0, completed: 0, replayed: 3, errors: 0, last_event_at: at, latency_ms: null }, jev: { status: 'replay', active_jobs: [], calls: 0, completed: 0, replayed: 2, errors: 0, last_event_at: at, latency_ms: null } },
   jev: { calls_per_minute: 2, verdict_mix: { Choice: 1, Score: 1, Noul: 0 }, latency_ms: null, errors: null },
@@ -63,11 +63,13 @@ try {
     await page.getByRole('combobox', { name: 'Packet review status' }).selectOption('dismissed')
     await page.getByRole('region', { name: 'Completed research', exact: true }).getByRole('button', { name: 'Review packet' }).click()
     assert.equal(await page.locator('.bd-packet').evaluate(el => document.activeElement === el), true, 'review jump focuses the evidence card')
+    await page.getByText('Synthetic source quotation for review.', { exact: true }).waitFor({ state: 'visible' })
+    await page.screenshot({ path: join(output, `bd-review-open-${width}.png`), animations: 'disabled' })
     await page.locator('.bd-page').evaluate(el => { el.scrollTop = 0 })
     await page.screenshot({ path: join(output, `bd-action-${width}.png`), fullPage: true })
-    assert.equal(await page.getByRole('link', { name: 'BD conductor', exact: true }).getAttribute('aria-current'), 'page')
+    assert.equal(await page.getByRole('link', { name: 'Research', exact: true }).getAttribute('aria-current'), 'page')
     assert.equal(await page.getByLabel('Jev router', { exact: true }).getByText('Unavailable').count(), 2)
-    await page.getByText('Review evidence & contacts', { exact: true }).click()
+    assert.equal(await page.locator('.bd-packet details').getAttribute('open'), '')
     assert.equal(await page.getByRole('link', { name: 'Open source evidence' }).getAttribute('href'), 'https://example.com/research')
     await page.getByText('Email: research@example.com', { exact: true }).waitFor()
     await page.screenshot({ path: join(output, `bd-evidence-${width}.png`), fullPage: true })

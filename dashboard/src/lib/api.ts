@@ -1,3 +1,4 @@
+import { studioFetch, studioJSON } from './connection'
 const BASE = '';
 
 export interface LeadReviewDraft {
@@ -48,22 +49,15 @@ export interface TokenUsageToday extends TokenUsageDay {
   }>;
 }
 
-async function parse<T>(res: Response): Promise<T> {
-  if (!res.ok) {
-    const payload = await res.json().catch(() => null) as { detail?: string } | null;
-    const detail = payload?.detail;
-    throw new Error(detail === 'mini_busy' ? 'Mini busy — wait for the active run to finish.' : detail || `${res.status} ${res.statusText}`);
-  }
-  return res.json();
-}
+const parse = studioJSON
 
 async function get<T>(path: string): Promise<T> {
-  const res = await fetch(`${BASE}${path}`);
+  const res = await studioFetch(`${BASE}${path}`);
   return parse<T>(res);
 }
 
 async function post<T>(path: string, body?: unknown): Promise<T> {
-  const res = await fetch(`${BASE}${path}`, {
+  const res = await studioFetch(`${BASE}${path}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: body ? JSON.stringify(body) : undefined,
@@ -72,7 +66,7 @@ async function post<T>(path: string, body?: unknown): Promise<T> {
 }
 
 async function put<T>(path: string, body?: unknown): Promise<T> {
-  const res = await fetch(`${BASE}${path}`, {
+  const res = await studioFetch(`${BASE}${path}`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: body ? JSON.stringify(body) : undefined,
@@ -81,7 +75,7 @@ async function put<T>(path: string, body?: unknown): Promise<T> {
 }
 
 async function del<T>(path: string): Promise<T> {
-  const res = await fetch(`${BASE}${path}`, { method: 'DELETE' });
+  const res = await studioFetch(`${BASE}${path}`, { method: 'DELETE' });
   return parse<T>(res);
 }
 
@@ -772,7 +766,7 @@ export const api = {
   agentSuites: () => get<{ suites: AgentSuite[] }>('/api/agent-suites'),
   agentModels: () => get<{ default: string; models: AgentModel[] }>('/api/agents/models'),
   patchSuiteAgents: async (suite: string, patch: AgentSuitePatch) => {
-    const res = await fetch(`${BASE}/api/agent-suites/${encodeURIComponent(suite)}/agents`, {
+    const res = await studioFetch(`${BASE}/api/agent-suites/${encodeURIComponent(suite)}/agents`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(patch),
@@ -791,7 +785,7 @@ export const api = {
   updateAgent: (id: string, data: AgentDefinition) =>
     put<{ agent: Agent }>(`/api/agents/${id}`, data),
   patchAgent: (id: string, fields: Partial<AgentDefinition>) =>
-    fetch(`${BASE}/api/agents/${id}`, {
+    studioFetch(`${BASE}/api/agents/${id}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(fields),

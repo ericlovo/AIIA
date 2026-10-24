@@ -1,3 +1,4 @@
+import { studioFetch, studioJSON } from '../lib/connection'
 import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { plannedWaiting, providerStatus, scheduleQueueText, ageLabel, heartbeatFresh, publicSource, type BDSnapshot, type Budget } from './bdModel'
@@ -6,14 +7,10 @@ import { BDActivityBoard } from './BDActivityBoard'
 import './BDConductor.css'
 
 async function request(path: string, body?: unknown): Promise<BDSnapshot> {
-  const response = await fetch(`/api/bd/${path}`, body === undefined ? undefined : {
+  const response = await studioFetch(`/api/bd/${path}`, body === undefined ? undefined : {
     method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
   })
-  if (!response.ok) {
-    const data = await response.json().catch(() => null)
-    throw new Error(typeof data?.detail === 'string' ? data.detail : `Conductor unavailable (${response.status}).`)
-  }
-  const result = await response.json()
+  const result = await studioJSON<BDSnapshot>(response)
   if (path === 'snapshot' && (!Array.isArray(result?.bots) || !Array.isArray(result?.jobs) || !Array.isArray(result?.packets) || !Array.isArray(result?.events) || !result?.health || !result?.jev || !result?.budget)) {
     throw new Error('Conductor returned an invalid snapshot.')
   }
@@ -35,6 +32,7 @@ export function BDConductor() {
   const [now, setNow] = useState(() => Date.now())
   const [lane, setLane] = useState('all')
   const [reviewFilter, setReviewFilter] = useState('active')
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({})
   const [reviewTarget, setReviewTarget] = useState('')
   const [pausedFeed, setPausedFeed] = useState(false)
   const [frozenEvents, setFrozenEvents] = useState<BDSnapshot['events']>([])
@@ -75,7 +73,7 @@ export function BDConductor() {
   return <main className="bd-page">
     <div className="bd-wrap">
       <header className="bd-heading">
-        <div><a className="bd-back" href="#/note">Morning note</a><p className="bd-eyebrow">AIIA / BUSINESS DEVELOPMENT</p><h1>The research desk.</h1><p className="bd-intro">Bots find the evidence. You decide what happens next.</p></div>
+        <div><a className="bd-back" href="#/note">Morning note</a><p className="bd-eyebrow">AIIA / BUSINESS DEVELOPMENT</p><h1>The research desk.</h1><p className="bd-intro">Review completed research below, inspect the queue, and follow the planned schedule.</p></div>
         <div className="bd-actions">
           <span className={`bd-stream ${stream === 'Live' ? 'is-live' : ''}`} role="status"><i aria-hidden="true" />{stream}</span>
           <button className="bd-primary" disabled={!data || data.mode !== 'replay' || data.kill_switch || action.isPending || query.isError} onClick={() => action.mutate({ path: 'shadow', body: {} })}>{action.isPending && action.variables?.path === 'shadow' ? 'Starting replay…' : 'Run shadow batch'}</button>
@@ -95,6 +93,7 @@ export function BDConductor() {
         <BDScheduleStrip data={data} now={now} />
         <div className="bd-view-controls"><span>Research flow</span><label>Show <select value={lane} onChange={event => setLane(event.target.value)}><option value="all">All segments & clients</option>{data.bots.map(bot => <option key={bot.id} value={bot.id}>{bot.name}</option>)}</select></label></div>
         <BDActivityBoard data={data} now={now} lane={lane} onReview={packet => {
+          setExpanded(current => ({ ...current, [packet.id]: true }))
           setLane('all')
           setReviewFilter(packet.review_status === 'dismissed' ? 'dismissed' : 'active')
           setReviewTarget(packet.id)
@@ -135,7 +134,7 @@ export function BDConductor() {
                 <div className="bd-packet-meta"><span>{packet.tenant_id} / {packet.segment}</span><span>{ageLabel(packet.created_at, now)} ago</span></div>
                 <h3>{packet.organization || 'Research packet'}</h3><p>{packet.summary}</p>
                 <div className="bd-tags"><span>{packet.mode}</span><span>{packet.review_status.replaceAll('_', ' ')}</span><span>{botName(packet.bot_id)}</span></div>
-                <details><summary>Review evidence & contacts</summary><div className="bd-evidence">
+                <details open={!!expanded[packet.id]} onToggle={event => { const open = event.currentTarget.open; setExpanded(current => current[packet.id] === open ? current : { ...current, [packet.id]: open }) }}><summary>Review evidence & contacts</summary><div className="bd-evidence">
                   {publicSource(packet.source_url) ? <a href={publicSource(packet.source_url)!} target="_blank" rel="noopener noreferrer">Open source evidence ↗</a> : <p>Source evidence unavailable</p>}
                   {packet.source_quote && <blockquote>{packet.source_quote}</blockquote>}<p className="bd-contact-hold">Contact hold: {packet.contact_policy?.replaceAll('_', ' ') || 'pending tenant restriction check'}</p>{packet.disposition && <p>Disposition: {packet.disposition.replaceAll('_', ' ')}</p>}<h4>Public contacts · unverified</h4><p>Email: {packet.emails.length ? packet.emails.join(', ') : 'Not found in source'}</p><p>Phone: {packet.phones.length ? packet.phones.join(', ') : 'Not found in source'}</p>
                   <h4>Market signals</h4>{packet.signals.length ? <ul>{packet.signals.map((signal, i) => <li key={i}>{signal}</li>)}</ul> : <p>No signals recorded</p>}
