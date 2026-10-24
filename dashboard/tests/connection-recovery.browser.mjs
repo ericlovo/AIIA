@@ -1,10 +1,12 @@
 // Local synthetic session/transport failures only; no public origin or login.
 import assert from 'node:assert/strict'
 import { mkdir } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { chromium } from 'playwright'
-const output = '/private/tmp/aiia-connection-recovery'
+const output = process.env.SCREENSHOT_DIR || join(tmpdir(), 'aiia-connection-recovery')
 await mkdir(output, { recursive: true })
-const browser = await chromium.launch({ headless: true })
+const browser = await chromium.launch({ headless: true, executablePath: process.env.CHROMIUM_PATH })
 try {
   for (const width of [1440, 390]) {
     for (const kind of ['session', 'response', 'network']) {
