@@ -44,3 +44,36 @@ test('queue excludes terminal jobs and orders oldest first without changing inpu
   assert.deepEqual(queueJobs(jobs).map(job => job.id), ['old', 'new'])
   assert.equal(jobs[0].id, 'new')
 })
+
+test('planned waiting requires an explicit future start; manual kill switches stay paused', async () => {
+  const { plannedWaiting, scheduleIdleText, scheduleQueueText } = await import('../src/console/bdModel.ts')
+  const now = Date.parse('2026-10-23T17:00:00Z')
+  const schedule = { state: 'waiting', start_at: '2026-10-23T20:00:00Z', next_run_at: '2026-10-23T20:00:00Z', stop_at: '2026-10-26T01:00:00Z', timezone: 'America/Chicago' } as import('../src/console/bdModel.ts').BDSchedule
+  const data = { schedule, kill_switch: true, mode: 'live' } as import('../src/console/bdModel.ts').BDSnapshot
+  assert.equal(plannedWaiting(schedule, now), true)
+  assert.equal(scheduleIdleText(data, now), 'Waiting for planned start')
+  assert.match(scheduleQueueText(data, now), /Currently paused/)
+  assert.equal(plannedWaiting({ ...schedule, start_at: null }, now), false)
+  assert.equal(plannedWaiting({ ...schedule, start_at: 'broken' }, now), false)
+  assert.equal(plannedWaiting(schedule, Date.parse('2026-10-24T00:00:00Z')), false)
+  assert.equal(scheduleIdleText({ ...data, schedule: undefined }, now), 'Conductor paused')
+  assert.equal(scheduleIdleText({ ...data, schedule: { ...schedule, state: 'paused' } }, now), 'Conductor paused')
+  assert.equal(scheduleIdleText({ ...data, schedule: { ...schedule, state: 'expired' } }, now), 'Scheduled window ended')
+})
+
+test('schedule times use the configured timezone and DST, independent of browser timezone', async () => {
+  const { scheduleTime } = await import('../src/console/bdModel.ts')
+  assert.match(scheduleTime('2026-10-23T20:00:00Z', 'America/Chicago'), /3:00 PM CDT/)
+  assert.match(scheduleTime('2026-11-02T20:00:00Z', 'America/Chicago'), /2:00 PM CST/)
+  assert.equal(scheduleTime(null), 'Not scheduled')
+  assert.equal(scheduleTime('invalid'), 'Not scheduled')
+  assert.equal(scheduleTime('2026-10-23T20:00:00Z', 'Invalid/Zone'), 'Time unavailable')
+})
+
+test('stale success is unverified, a real failed observation remains a failure', async () => {
+  const { providerStatus } = await import('../src/console/bdModel.ts')
+  assert.equal(providerStatus({ status: 'stale', detail: 'old success', observed_at: '2026-10-23T12:00:00Z' }), 'Unverified now')
+  assert.equal(providerStatus({ status: 'data_unavailable', detail: 'provider failed', observed_at: '2026-10-23T12:00:00Z' }), 'Last call failed')
+  assert.equal(providerStatus({ status: 'data_unavailable', detail: 'not observed' }), 'Unverified')
+  assert.equal(providerStatus(undefined), 'Unverified')
+})

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { ageLabel, heartbeatFresh, publicSource, type BDSnapshot, type Budget } from './bdModel'
+import { plannedWaiting, providerStatus, scheduleQueueText, ageLabel, heartbeatFresh, publicSource, type BDSnapshot, type Budget } from './bdModel'
+import { BDScheduleStrip } from './BDScheduleStrip'
 import { BDActivityBoard } from './BDActivityBoard'
 import './BDConductor.css'
 
@@ -88,9 +89,10 @@ export function BDConductor() {
       {data && <>
         <section className="bd-mode" aria-label="Operating mode">
           <div><strong>{data.mode === 'replay' ? 'Shadow · replay only' : data.mode}</strong><span>{data.mode === 'replay' ? 'Recorded judgments and synthetic candidates. No outreach.' : 'Public-source research. Human review before outreach.'}</span></div>
-          <div><strong>Schedule {data.schedule_enabled ? 'enabled' : 'disabled'}</strong><span>{data.kill_switch ? 'Kill switch engaged · work stopped' : 'Kill switch released'}</span></div>
+          <div><strong>Schedule {data.schedule_enabled ? 'enabled' : 'disabled'}</strong><span>{plannedWaiting(data.schedule, now) ? 'Waiting for planned start' : data.kill_switch ? 'Kill switch engaged · work paused' : 'Kill switch released'}</span></div>
           <div><strong>Research → proposal → human</strong><span>Packets are evidence for review, not qualified leads.</span></div>
         </section>
+        <BDScheduleStrip data={data} now={now} />
         <div className="bd-view-controls"><span>Research flow</span><label>Show <select value={lane} onChange={event => setLane(event.target.value)}><option value="all">All segments & clients</option>{data.bots.map(bot => <option key={bot.id} value={bot.id}>{bot.name}</option>)}</select></label></div>
         <BDActivityBoard data={data} now={now} lane={lane} onReview={packet => {
           setLane('all')
@@ -106,7 +108,7 @@ export function BDConductor() {
         <section className="bd-health" aria-label="Connection health">
           {Object.entries(healthNames).map(([key, name]) => {
             const item = data.health[key as keyof typeof healthNames]
-            return <div key={key}><span className={`bd-dot ${item?.status === 'available' ? 'is-live' : ''}`} aria-hidden="true" /><div><strong>{name}</strong><span>{item?.status ?? 'data_unavailable'}{item?.detail ? ` · ${item.detail}` : ''}</span></div></div>
+            return <div key={key}><span className={`bd-dot ${item?.status === 'available' ? 'is-live' : ''}`} aria-hidden="true" /><div><strong>{name}</strong><span>{providerStatus(item)}{item?.detail ? ` · ${item.detail}` : ''}</span></div></div>
           })}
         </section>
         </details>
@@ -123,7 +125,7 @@ export function BDConductor() {
           <div className="bd-main-column">
             <section className="bd-section" aria-label="Now running">
               <div className="bd-section-heading"><h2>Now running <span>{visibleActive.length}</span></h2><span className="bd-muted">Elapsed / heartbeat</span></div>
-              {visibleActive.length === 0 ? <p className="bd-empty">No active jobs in this snapshot.{data.mode === 'replay' ? ' Run a shadow batch to exercise the pipeline.' : data.schedule_enabled ? ' Waiting for the next scheduled cycle.' : ' The schedule is disabled.'}</p> : <ul className="bd-jobs">{visibleActive.map(job => <li key={job.id}><span className={`bd-dot ${heartbeatFresh(job.heartbeat_at, now) ? 'is-live bd-pulse' : ''}`} aria-hidden="true" /><div><strong>{botName(job.bot_id)}</strong><p>{job.step || job.state}</p><small>{job.tenant_id} · {job.segment} · {job.id}</small></div><div className="bd-job-time"><strong>{ageLabel(job.started_at, now)}</strong><small>Heartbeat {ageLabel(job.heartbeat_at, now)} ago</small></div></li>)}</ul>}
+              {visibleActive.length === 0 ? <p className="bd-empty">No active jobs in this snapshot. {scheduleQueueText(data, now)}</p> : <ul className="bd-jobs">{visibleActive.map(job => <li key={job.id}><span className={`bd-dot ${heartbeatFresh(job.heartbeat_at, now) ? 'is-live bd-pulse' : ''}`} aria-hidden="true" /><div><strong>{botName(job.bot_id)}</strong><p>{job.step || job.state}</p><small>{job.tenant_id} · {job.segment} · {job.id}</small></div><div className="bd-job-time"><strong>{ageLabel(job.started_at, now)}</strong><small>Heartbeat {ageLabel(job.heartbeat_at, now)} ago</small></div></li>)}</ul>}
             </section>
             <section className="bd-section" aria-label="Waiting on a human">
               <div className="bd-section-heading"><h2>Research packets <span>{packets.length}</span></h2><label>Review <select aria-label="Packet review status" value={reviewFilter} onChange={event => setReviewFilter(event.target.value)}><option value="active">Active packets</option><option value="human_review_required">Waiting on a human</option><option value="research_next">Research next</option><option value="watch">Watch</option><option value="dismissed">Dismissed</option></select></label></div>
@@ -151,7 +153,7 @@ export function BDConductor() {
               {events.length === 0 && <p className="bd-empty">Waiting for conductor events.</p>}
               <ol className="bd-events">{events.slice(0, 40).map(event => <li key={event.id} className={event.kind.includes('fail') ? 'bd-event-failed' : ''}><div><strong>{event.kind.replaceAll('_', ' ')}</strong><time dateTime={event.created_at}>{ageLabel(event.created_at, now)} ago</time></div><p>{event.message}</p><small>{botName(event.bot_id)}</small></li>)}</ol>
             </section>
-            <section className="bd-section" aria-label="Jev router"><div className="bd-section-heading"><h2>Jev router{data.mode === 'replay' ? ' · replay' : ''}</h2><span className="bd-muted">{data.health.jev.status}</span></div><dl className="bd-router"><div><dt>{data.mode === 'replay' ? 'Replayed calls / min' : 'Calls / minute'}</dt><dd>{metric(data.jev.calls_per_minute)}</dd></div><div><dt>Latency</dt><dd>{metric(data.jev.latency_ms)}{data.jev.latency_ms !== null ? ' ms' : ''}</dd></div><div><dt>Errors</dt><dd>{metric(data.jev.errors)}</dd></div></dl><p className="bd-muted">Verdict mix</p><div className="bd-tags">{(['Choice', 'Score', 'Noul'] as const).map(type => <span key={type}>{type} {metric(data.jev.verdict_mix?.[type])}</span>)}</div></section>
+            <section className="bd-section" aria-label="Jev router"><div className="bd-section-heading"><h2>Jev router{data.mode === 'replay' ? ' · replay' : ''}</h2><span className="bd-muted">{providerStatus(data.health.jev)}</span></div><dl className="bd-router"><div><dt>{data.mode === 'replay' ? 'Replayed calls / min' : 'Calls / minute'}</dt><dd>{metric(data.jev.calls_per_minute)}</dd></div><div><dt>Latency</dt><dd>{metric(data.jev.latency_ms)}{data.jev.latency_ms !== null ? ' ms' : ''}</dd></div><div><dt>Errors</dt><dd>{metric(data.jev.errors)}</dd></div></dl><p className="bd-muted">Verdict mix</p><div className="bd-tags">{(['Choice', 'Score', 'Noul'] as const).map(type => <span key={type}>{type} {metric(data.jev.verdict_mix?.[type])}</span>)}</div></section>
             <section className="bd-section" aria-label="Daily budget"><div className="bd-section-heading"><h2>Daily budget</h2></div><BudgetReadout budget={data.budget} /><p className="bd-muted">Reserved use / configured limit · UTC day</p></section>
           </aside>
         </div>

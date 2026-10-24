@@ -193,3 +193,14 @@ to { opacity:1; transform:translateY(0)}
 @media(prefers-reduced-motion:reduce) { .bd-work-state.is-working i { animation: none; } }
 .bd-delivered-list li { animation: bd-appear .25s ease-out; }
 @media(prefers-reduced-motion:reduce) { .bd-delivered-list li { animation: none; } }
+.bd-schedule-strip { display: grid; grid-template-columns: .65fr 2fr; gap: 12px 24px; padding: 16px 20px; margin-top: 12px; border: 1px solid #cdd8dc; border-radius: 9px; background: #eef3f4; }
+.bd-schedule-state strong, .bd-schedule-state small { display: block; }
+.bd-schedule-state strong { font-size: 14px; color: #355765; font-weight: 600; margin-top: 3px; }
+.bd-schedule-state small { color: #68777a; font-size: 10px; margin-top: 2px; }
+.bd-schedule-strip dl { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; align-items: center; }
+.bd-schedule-strip dt { color: #63747b; font-size: 11px; }
+.bd-schedule-strip dd { font-size: 14px; color: #304f5b; margin-top: 3px; font-variant-numeric: tabular-nums; }
+.bd-schedule-strip > p { grid-column: 1 / -1; border-top: 1px solid #d7e0e1; padding-top: 8px; font-size: 10px; color: #64777e; }
+.bd-provider-observation { color: #6e715f; font-size: 10px; margin: 8px 0; padding: 7px 9px; background: #f3f2e9; border-radius: 4px; }
+.bd-provider-error { color: #8c4134; background: #f7eae5; }
+@media(max-width:760px) { .bd-schedule-strip { grid-template-columns: 1fr; padding: 14px 16px; gap: 10px; } .bd-schedule-strip dl { grid-template-columns: 1fr; gap: 12px; } .bd-schedule-strip dd { font-size: 13px; } }

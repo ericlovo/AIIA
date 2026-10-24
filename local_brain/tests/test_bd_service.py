@@ -220,7 +220,7 @@ def test_provider_health_expires_and_preserves_observation_time(service):
     assert fresh["status"] == "available"
     service.now[0] += 121
     stale = service.snapshot()["health"]["qwen"]
-    assert stale["status"] == "data_unavailable"
+    assert stale["status"] == "stale"
     assert stale["observed_at"] == fresh["observed_at"]
 
 
@@ -371,3 +371,118 @@ def test_large_backlog_keeps_running_job_oldest_queue_and_completed_packets(serv
     assert snapshot["job_window"]["queue_returned"] == 199
     assert snapshot["job_window"]["truncated"] is True
     assert snapshot["job_window"]["total"] == 207
+
+
+def configure_window(service, start, end):
+    from datetime import datetime, timezone
+
+    service.store.config["schedule_enabled"] = True
+    service.store.bots["healthcare"]["schedule"].update(enabled=True, interval_seconds=60)
+    service.store.config["schedule_window"] = {
+        "start_at": datetime.fromtimestamp(start, timezone.utc).isoformat(),
+        "end_at": datetime.fromtimestamp(end, timezone.utc).isoformat(),
+        "timezone": "America/Chicago",
+    }
+
+
+def test_schedule_projection_waiting_pause_boundaries_and_expiry(service):
+    now = service.now[0]
+    configure_window(service, now + 50, now + 130)
+    service.set_kill_switch(True)
+    schedule = service.snapshot()["schedule"]
+    assert schedule["state"] == "waiting"
+    assert schedule["next_run_at"] == schedule["start_at"]
+    assert schedule["timezone"] == "America/Chicago"
+    assert schedule["display_only"] is True
+    assert service.snapshot()["kill_switch"] is True
+    service.now[0] += 50
+    assert service.snapshot()["schedule"]["state"] == "paused"
+    assert service.snapshot()["schedule"]["next_run_at"] is None
+    service.set_kill_switch(False)
+    assert service.snapshot()["schedule"]["state"] == "scheduled"
+    service.now[0] = now + 130
+    assert service.snapshot()["schedule"]["state"] == "expired"
+    assert service.snapshot()["schedule"]["next_run_at"] is None
+
+
+def test_schedule_next_run_uses_epoch_intervals_and_existing_dedup_keys(service):
+    from datetime import datetime, timezone
+
+    now = service.now[0]
+    configure_window(service, now + 50, now + 120)
+    bot = service.store.bots["healthcare"]
+    service.store.enqueue(
+        bot["id"], bot["tenant_id"], f"healthcare:{int((now + 50) // 60)}", "public-research"
+    )
+    schedule = service.snapshot()["schedule"]
+    assert schedule["next_run_at"] == datetime.fromtimestamp(now + 60, timezone.utc).isoformat()
+    # A different task does not occupy the periodic research dedup key.
+    service.store.enqueue(
+        bot["id"], bot["tenant_id"], f"healthcare:{int((now + 60) // 60)}", "other-task"
+    )
+    assert service.snapshot()["schedule"]["next_run_at"] == schedule["next_run_at"]
+    service.store.enqueue(
+        bot["id"], bot["tenant_id"], f"healthcare:{int((now + 60) // 60)}", "public-research"
+    )
+    assert service.snapshot()["schedule"]["next_run_at"] is None  # next epoch equals exclusive end
+
+
+def test_schedule_next_run_selects_earliest_eligible_bot(service):
+    from datetime import datetime, timezone
+
+    now = service.now[0]
+    configure_window(service, now - 10, now + 1000)
+    first = service.store.bots["healthcare"]
+    service.store.enqueue(
+        first["id"], first["tenant_id"], f"healthcare:{int(now // 60)}", "public-research"
+    )
+    assert (
+        service.snapshot()["schedule"]["next_run_at"]
+        == datetime.fromtimestamp(now + 60, timezone.utc).isoformat()
+    )
+    second = service.store.bots["pe-diligence"]
+    second["schedule"].update(enabled=True, interval_seconds=120)
+    assert (
+        service.snapshot()["schedule"]["next_run_at"]
+        == datetime.fromtimestamp(now, timezone.utc).isoformat()
+    )
+    second["enabled"] = False
+    assert (
+        service.snapshot()["schedule"]["next_run_at"]
+        == datetime.fromtimestamp(now + 60, timezone.utc).isoformat()
+    )
+
+
+def test_schedule_disabled_and_unwindowed_pause_do_not_invent_dates(service):
+    assert service.snapshot()["schedule"]["state"] == "disabled"
+    assert service.snapshot()["schedule"]["start_at"] is None
+    assert service.snapshot()["schedule"]["stop_at"] is None
+    service.store.config["schedule_enabled"] = True
+    assert service.snapshot()["schedule"]["state"] == "disabled"  # no scheduled bots
+    service.store.bots["healthcare"]["schedule"]["enabled"] = True
+    service.set_kill_switch(True)
+    assert service.snapshot()["schedule"]["state"] == "paused"
+    assert service.snapshot()["schedule"]["next_run_at"] is None
+
+
+def test_aged_provider_failure_remains_failure_not_stale_success(service):
+    async def pipeline(job, emit):
+        await emit(
+            "provider_health",
+            {
+                "provider": "qwen",
+                "provider_status": "data_unavailable",
+                "message": "qwen_unavailable",
+            },
+        )
+        return {"packets": []}
+
+    service.pipeline = pipeline
+    service.enqueue_cycle(shadow=True)
+    asyncio.run(service.run_once())
+    service.now[0] += 121
+    health = service.snapshot()["health"]["qwen"]
+    assert health["status"] == "data_unavailable"
+    assert health["last_status"] == "data_unavailable"
+    assert health["detail"] == "qwen_unavailable"
+    assert health["observed_at"]
