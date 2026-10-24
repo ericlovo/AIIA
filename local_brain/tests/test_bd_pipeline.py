@@ -81,7 +81,7 @@ def test_invalid_typed_judgments_fail_closed(key, field, value):
     _, _, data = pipeline.synthetic_fixture("healthcare")
     data["answers"][key][field] = value
     with pytest.raises(pipeline.DataUnavailable):
-        pipeline.validate_judgments(data)
+        pipeline.validate_judgments(data, pipeline.questions_for("healthcare"))
 
 
 @async_test
@@ -399,7 +399,7 @@ def test_inconsistent_score_and_distribution_rejected():
     _, _, judgments = pipeline.synthetic_fixture("healthcare")
     judgments["answers"]["evidence_strength"]["score"] = 0.1
     with pytest.raises(pipeline.DataUnavailable, match="inconsistent_jev_score"):
-        pipeline.validate_judgments(judgments)
+        pipeline.validate_judgments(judgments, pipeline.questions_for("healthcare"))
 
 
 def managed_config():
@@ -530,7 +530,7 @@ async def test_seen_sources_are_skipped_before_qwen(monkeypatch):
     second = {
         **first,
         "url": "https://example.org/second",
-        "title": "Second organization opens a clinic",
+        "title": first["title"] + " New detail.",
     }
     called = []
 
@@ -791,3 +791,158 @@ def test_strict_resolved_quote_validation_remains_unchanged(bad_quote):
                 "consumer_insight": "",
             },
         )
+
+
+@pytest.mark.parametrize(
+    "title,publisher,organization,quote,signal,reason",
+    [
+        (
+            "Keep politics out of hospital expansion - The Daily Star",
+            "The Daily Star",
+            "The Daily Star",
+            "Keep politics out of hospital expansion",
+            "hospital expansion",
+            "publisher_is_not_prospect",
+        ),
+        (
+            "Marshall Islands eyes hiring Filipino doctors, nurses amid healthcare worker shortage - The Filipino Times",
+            "The Filipino Times",
+            "The Filipino Times",
+            "Marshall Islands eyes hiring Filipino doctors, nurses amid healthcare worker shortage",
+            "hiring",
+            "publisher_is_not_prospect",
+        ),
+        (
+            "Hospital expands services",
+            "",
+            "Hospital",
+            "Hospital expands services",
+            "expands",
+            "generic_healthcare_reference",
+        ),
+        (
+            "Clinic opening reported",
+            "",
+            "",
+            "Clinic opening reported",
+            "opening",
+            "no_named_organization",
+        ),
+        (
+            "Orchard Health mentioned. Another clinic expands.",
+            "",
+            "Orchard Health",
+            "Another clinic expands.",
+            "expands",
+            "organization_not_grounded_in_article_quote",
+        ),
+        (
+            "Orchard Health opens a clinic",
+            "",
+            "Orchard Health",
+            "Orchard Health opens a clinic",
+            "  ",
+            "no_operational_event",
+        ),
+    ],
+)
+@async_test
+async def test_healthcare_deterministic_withhold_skips_jev(
+    monkeypatch, title, publisher, organization, quote, signal, reason
+):
+    source, extraction, _ = pipeline.synthetic_fixture("healthcare")
+    source.update(title=title, publisher=publisher)
+    extraction.update(organization=organization, quote=quote, signal=signal)
+
+    async def retrieve(segment):
+        return [source]
+
+    async def local(source):
+        return extraction, 10
+
+    async def forbidden(*args):
+        raise AssertionError("unsupported prospect must not call cloud judgment")
+
+    monkeypatch.setattr(pipeline, "retrieve_sources", retrieve)
+    monkeypatch.setattr(pipeline, "extract_local", local)
+    monkeypatch.setattr(pipeline, "judge", forbidden)
+    events = []
+    result = await pipeline.run_pipeline(job(mode="live"), lambda kind, data: events.append(kind))
+    assert result["packets"] == []
+    assert result["reason"] == reason
+    assert result["reviewed_evidence"] == [pipeline.evidence_key(source)]
+    assert result["usage"]["calls"] == 2
+    assert "candidate_proposed" not in events
+
+
+@pytest.mark.parametrize(
+    "failure",
+    [
+        "country",
+        "editorial",
+        "publisher",
+        "uncertain",
+        "low_probability",
+        "low_confidence",
+        "unsupported_claim",
+        None,
+        "own_newsroom",
+    ],
+)
+@async_test
+async def test_healthcare_semantic_gate_and_positive_provider(monkeypatch, failure):
+    source, extraction, judgments = pipeline.synthetic_fixture("healthcare")
+    organization = "Marshall Islands" if failure == "country" else "Orchard Health"
+    publisher = organization if failure == "own_newsroom" else "The Daily Star"
+    article = f"{organization} opens a clinic"
+    source.update(title=f"{article} - {publisher}", publisher=publisher)
+    extraction.update(organization=organization, quote=article, signal="opens a clinic")
+    entity = judgments["answers"]["entity_role"]
+    if failure in {"country", "publisher", "uncertain"}:
+        role = "other" if failure == "country" else failure
+        entity.update(
+            choice=role,
+            probabilities={key: 0.9 if key == role else 1 / 30 for key in entity["probabilities"]},
+        )
+    elif failure == "editorial":
+        judgments["answers"]["disposition"]["choice"] = "watch"
+    elif failure == "low_probability":
+        entity["probabilities"] = dict(
+            healthcare_operator=0.26, publisher=0.25, other=0.25, uncertain=0.24
+        )
+    elif failure == "low_confidence":
+        entity["confidence"] = 0.79
+    elif failure == "unsupported_claim":
+        judgments["answers"]["claim_supported"]["noul"] = 0.79
+
+    async def retrieve(segment):
+        return [source]
+
+    async def local(source):
+        return extraction, 10
+
+    async def judge(source, extracted, segment):
+        return judgments
+
+    monkeypatch.setattr(pipeline, "retrieve_sources", retrieve)
+    monkeypatch.setattr(pipeline, "extract_local", local)
+    monkeypatch.setattr(pipeline, "judge", judge)
+    result = await pipeline.run_pipeline(job(mode="live"))
+    assert result["usage"]["calls"] == 3
+    if failure in {None, "own_newsroom"}:
+        packet = result["packets"][0]
+        assert packet["organization"] == organization
+        assert packet["provenance"]["title"] == source["title"]
+    else:
+        assert result["packets"] == []
+        assert result["reason"] == "healthcare_entity_or_event_unconfirmed"
+        assert result["reviewed_evidence"] == [pipeline.evidence_key(source)]
+
+
+def test_publisher_attribution_excluded_from_quote_context_not_provenance():
+    source = {"title": "Orchard Health expands — The Daily Star", "publisher": "The Daily Star"}
+    assert "".join(pipeline.quote_candidates(source)) == "Orchard Health expands"
+    assert pipeline.source_text(source) == source["title"]
+    source["source_kind"] = "imported_primary_excerpt"
+    assert pipeline.article_text(source) == source["title"]
+    assert "entity_role" not in pipeline.questions_for("pe-diligence")
