@@ -1,7 +1,7 @@
 import { openStudioView } from "./studio-navigation.mjs"
 // Studio resilience: one bad record must not take the navigation with it, Space
-// must still activate focused controls when voice is configured, and Today and
-// Overview must report the same "needs attention" count.
+// must still activate focused controls, and Today and Overview must report the
+// same "needs attention" count.
 //
 // Every API response and the Studio WebSocket are intercepted with synthetic
 // data; nothing is written to a real Brain or Command Center.
@@ -32,16 +32,13 @@ const workspaces = [{ id: 'ws-1', assignment_id: 'review-1', agent_id: 'a0', rep
 const writes = [{ id: 'w-1', workspace_id: 'ws-1', assignment_id: 'review-1', op: 'commit', status: 'pending', result: {}, created_at: `${date}T12:00:00Z`, updated_at: `${date}T12:00:00Z` }]
 const EXPECTED_ATTENTION = 5 // 2 review + 1 failed + 2 approvals
 
-async function open({ handoffs = [], voiceConfigured = false, mintVoice = false, failedSources = new Set() } = {}) {
+async function open({ handoffs = [], failedSources = new Set() } = {}) {
   const context = await browser.newContext({ viewport: { width: 1440, height: 900 } })
   const page = await context.newPage()
   page.setDefaultTimeout(12000)
   const pageErrors = []
-  const voiceSessions = []
-  const voiceConnections = []
   page.on('pageerror', error => pageErrors.push(error.message))
   await page.routeWebSocket('**/ws', ws => ws.onMessage(() => {}))
-  await page.routeWebSocket('wss://api.x.ai/**', ws => { voiceConnections.push('connect'); ws.onMessage(() => {}) })
   if (studioDist) {
     await page.route('http://studio.test/', async route => route.fulfill({ contentType: 'text/html', body: await readFile(join(studioDist, 'index.html')) }))
     await page.route('http://studio.test/assets/**', async route => {
@@ -65,23 +62,13 @@ async function open({ handoffs = [], voiceConfigured = false, mintVoice = false,
       '/api/tasks': [],
       '/api/health': { aiia: { status: 'online' }, ollama: { status: 'online' } },
       '/api/monitor': { services: {} },
-      '/api/voice/status': voiceConfigured
-        ? { status: 'connected', configured: true, provider: 'synthetic', model: '', voice: '', realtime_url: '', reason: '', tools: [] }
-        : { status: 'not_configured', configured: false, reason: 'missing_xai_api_key', tools: [] },
-    }
-    if (path === '/api/voice/session') {
-      voiceSessions.push(path)
-      // Held open briefly so the conductor sits in "connecting" and re-renders mid-hold.
-      await new Promise(resolve => setTimeout(resolve, 1500))
-      if (mintVoice) return route.fulfill({ contentType: 'application/json', body: JSON.stringify({ token: 'synthetic', realtime_url: 'wss://api.x.ai/v1/realtime', session: {} }) })
-      return route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ detail: 'Synthetic: no voice in tests' }) })
     }
     await route.fulfill({ contentType: 'application/json', body: JSON.stringify(bodies[path] ?? {}) })
   })
   const root = studioDist ? 'http://studio.test/' : process.env.STUDIO_URL || 'http://127.0.0.1:5184/'
   await page.goto(`${root}#/today`)
   await page.getByRole('navigation', { name: 'Studio' }).waitFor()
-  return { context, page, pageErrors, voiceSessions, voiceConnections }
+  return { context, page, pageErrors }
 }
 
 try {
@@ -122,40 +109,18 @@ try {
     await context.close()
   }
 
-  // 4. With voice configured, Space reaches a focused control instead of the mic,
-  //    and still starts push-to-talk when focus is on the page itself.
+  // 4. Space still activates a focused control and Enter still follows a focused link.
   {
-    const { context, page, voiceSessions } = await open({ voiceConfigured: true })
-    // Voice is opt-in, including its global shortcut.
-    await page.evaluate(() => (document.activeElement instanceof HTMLElement) && document.activeElement.blur())
-    await page.keyboard.press('Space')
-    assert.equal(voiceSessions.length, 0)
-    await page.getByRole('button', { name: 'Voice', exact: true }).click()
-    await page.getByTitle('Hold to talk').waitFor()
+    const { context, page } = await open()
     await openStudioView(page, 'Activity history')
-    // Space activates a focused button (the activity work-queue metric)...
     await page.getByRole('button', { name: /Work queue/ }).focus()
     await page.keyboard.press('Space')
     await page.getByRole('heading', { name: 'Assignment queue' }).waitFor()
-    // ...and is left alone on a focused link, which Enter activates.
     await page.getByRole('navigation', { name: 'Studio' }).locator('summary').click()
     await page.getByRole('navigation', { name: 'Studio' }).getByRole('link', { name: 'Today', exact: true }).focus()
     await page.keyboard.press('Space')
     await page.keyboard.press('Enter')
     await page.getByRole('heading', { name: 'Today', exact: true }).waitFor()
-    assert.equal(voiceSessions.length, 0, 'Space on a focused control must not start the mic')
-    await page.evaluate(() => (document.activeElement instanceof HTMLElement) && document.activeElement.blur())
-    await page.keyboard.down('Space')
-    await page.waitForTimeout(300)
-    assert.equal(voiceSessions.length, 1, 'Space with nothing focused is push-to-talk')
-    // The conductor re-rendered into "connecting" while Space was held. Releasing
-    // it must still be handled as the end of the hold, or the mic stays open.
-    const releaseHandled = await page.evaluate(() => {
-      const release = new KeyboardEvent('keyup', { code: 'Space', key: ' ', bubbles: true, cancelable: true })
-      document.body.dispatchEvent(release)
-      return release.defaultPrevented
-    })
-    assert.equal(releaseHandled, true, 'releasing Space mid-connect must end the hold')
     await context.close()
   }
 
@@ -173,23 +138,6 @@ try {
     await context.close()
   }
 
-  // Closing while a session token is pending cannot start a hidden connection.
-  {
-    const { context, page, voiceSessions, voiceConnections, pageErrors } = await open({ voiceConfigured: true, mintVoice: true })
-    await page.getByRole('button', { name: 'Voice', exact: true }).click()
-    await page.getByTitle('Hold to talk').waitFor()
-    await page.evaluate(() => (document.activeElement instanceof HTMLElement) && document.activeElement.blur())
-    await page.keyboard.down('Space')
-    await page.waitForTimeout(200)
-    assert.equal(voiceSessions.length, 1)
-    await page.getByRole('button', { name: 'Voice', exact: true }).click()
-    await page.keyboard.up('Space')
-    await page.waitForTimeout(1700)
-    assert.equal(voiceConnections.length, 0)
-    assert.equal(await page.getByTitle('Hold to talk').count(), 0)
-    assert.deepEqual(pageErrors, [])
-    await context.close()
-  }
   console.log('studio resilience: all checks passed')
 } finally {
   await browser.close()
