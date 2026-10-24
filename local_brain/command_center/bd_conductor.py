@@ -523,6 +523,9 @@ class BDConductor:
                 if job["bot_id"] != bot_id:
                     continue
                 result = job.get("result") or {}
+                for key in result.get("reviewed_evidence", []):
+                    if isinstance(key, str) and re.fullmatch(r"[a-f0-9]{64}", key):
+                        keys.add(key)
                 for packet in result.get("packets", []):
                     key = packet.get("evidence_key")
                     if isinstance(key, str) and key:

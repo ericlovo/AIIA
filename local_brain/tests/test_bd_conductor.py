@@ -474,3 +474,24 @@ def test_schedule_window_accepts_aware_offsets_and_iana_zone(tmp_path):
         BDConductor(tmp_path / "window.sqlite", config=config).config["schedule_window"]
         == config["schedule_window"]
     )
+
+
+def test_withheld_evidence_is_durable_and_scoped(runtime):
+    key = "a" * 64
+    job = enqueue(runtime)
+    lease = runtime.lease("worker")
+    runtime.start(job["id"], lease["lease_token"])
+    runtime.complete(
+        job["id"],
+        lease["lease_token"],
+        {
+            "packets": [],
+            "status": "no_supported_prospect",
+            "reviewed_evidence": [key, "invalid", None],
+        },
+    )
+    restarted = BDConductor(runtime.path, clock=runtime.clock)
+    assert restarted.evidence_keys("healthcare", "synthetic-healthcare") == [key]
+    assert restarted.evidence_keys("srg", "synthetic-srg") == []
+    restarted.bots["pe-diligence"]["tenant_id"] = "synthetic-healthcare"
+    assert restarted.evidence_keys("pe-diligence", "synthetic-healthcare") == []

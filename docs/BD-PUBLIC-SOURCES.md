@@ -79,3 +79,34 @@ These are references to existing server environment variables, not raw credentia
 A configured client research job reads its bound tenant's account list, then researches only its explicitly configured public `research_segment`. It records read availability and account count locally; it does not guess identity matches between discovered companies and CRM accounts. CRM records are never included in Qwen or Jev public-evidence payloads. Packet contacts remain held for tenant restriction and requested-date checks. The standalone detail adapter preserves suppression flags for future explicit account matching; no write/verification endpoint is implemented.
 
 News evidence keys are SHA-256 of the source URL, a NUL separator, and the SHA-256 of exact source text. `job.seen_evidence` contains prior keys for the same bot and tenant. A job selects the first unseen of up to eight current headlines; if all are seen, it returns `packets: []`, `reason: no_new_evidence` without model calls. The key is stored on each packet. Updated source text gets a new key. Source-key dedup does not assert that differently syndicated articles represent different real-world events.
+
+### Healthcare prospect quality
+
+Healthcare packets now require a named organization in both the article text and
+its selected exact quote, plus a nonblank operational event. RSS publisher
+attribution is excluded from the extraction spans and presented separately to
+Jev; the original title remains in provenance. Attribution alone, generic hospital
+references, and unnamed organizations produce no prospect. An organization's own
+newsroom can still qualify when the organization appears in the article itself.
+
+A fourth typed question in the existing Jev request distinguishes a healthcare
+operator from a publisher, another entity (including a country), or uncertainty.
+A packet requires `healthcare_operator` with both confidence and selected
+probability at least 0.8, a `research` disposition, and claim support at least 0.8.
+These conservative thresholds are not calibrated identity verification. Editorials,
+sector trends, and insufficient evidence are withheld; no company is fabricated to
+fill the queue. Other segments keep their existing three questions.
+
+Completed withholds record the source evidence key without a prospect packet.
+The conductor remembers those keys within the same bot and tenant, so subsequent
+cycles can examine other sources instead of repeating a rejected headline.
+Provider failures remain failures, not completed reviews. Existing historical
+packets are not rewritten.
+
+This remains headline-based discovery with no automatic primary-source fetch or
+independent company verification. Tests use synthetic provider responses, including
+publisher-only and country-subject headlines; they do not establish live model
+accuracy. No additional inference calls, higher budgets, schedule changes, or
+outreach permissions are introduced. The 1,000-character reservation regression
+fixture fits the existing 8,000-token cap; larger inputs can still be rejected by
+conservative preflight limits.
