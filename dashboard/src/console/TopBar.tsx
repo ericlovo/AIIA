@@ -17,8 +17,8 @@ export function TopBar() {
   const online = services.filter(s => s.status === 'online').length
   const allOnline = online === services.length && services.length > 0
   // Tri-state for status so we don't lie by defaulting to "down" during load
-  const brainState = healthError ? 'unknown' : !health ? 'loading' : health.aiia?.status === 'online' ? 'up' : 'down'
-  const ollamaState = healthError ? 'unknown' : !health ? 'loading' : health.ollama?.status === 'online' ? 'up' : 'down'
+  const brainState = healthError ? 'unknown' : !health ? 'loading' : health.aiia?.status === 'online' ? 'up' : health.aiia?.status === 'offline' ? 'down' : 'unknown'
+  const ollamaState = healthError ? 'unknown' : !health ? 'loading' : health.ollama?.status === 'online' ? 'up' : health.ollama?.status === 'offline' ? 'down' : 'unknown'
 
   return (
     <header className="h-14 shrink-0 border-b border-neutral-900 flex items-center justify-between px-3 sm:px-6 bg-neutral-950">
@@ -32,16 +32,16 @@ export function TopBar() {
         {/* Status pills */}
         <div className="hidden items-center gap-4 text-xs sm:flex">
           <Pill
-            dot={brainState === 'up' ? 'green' : brainState === 'loading' ? 'gray' : 'red'}
+            dot={brainState === 'up' ? 'green' : brainState === 'down' ? 'red' : 'gray'}
             label={brainState === 'loading' ? 'checking brain…' : brainState === 'up' ? 'brain online' : brainState === 'unknown' ? 'brain status unavailable' : 'brain down'}
           />
           <Pill
-            dot={ollamaState === 'up' ? 'green' : ollamaState === 'loading' ? 'gray' : 'amber'}
-            label={ollamaState === 'loading' ? 'checking ollama…' : ollamaState === 'up' ? 'ollama ready' : 'ollama unavailable'}
+            dot={ollamaState === 'up' ? 'green' : ollamaState === 'down' ? 'amber' : 'gray'}
+            label={ollamaState === 'loading' ? 'checking ollama…' : ollamaState === 'up' ? 'ollama ready' : ollamaState === 'unknown' ? 'ollama status unverified' : 'ollama unavailable'}
           />
           <Pill
-            dot={!monitor ? 'gray' : allOnline ? 'green' : 'amber'}
-            label={monitorError ? 'service status unavailable' : !monitor ? 'checking services…' : `${online}/${services.length} services`}
+            dot={monitorError || !monitor || services.length === 0 ? 'gray' : allOnline ? 'green' : 'amber'}
+            label={monitorError ? 'service status unavailable' : !monitor ? 'checking services…' : services.length === 0 ? 'service status unverified' : `${online}/${services.length} services`}
           />
         </div>
       </div>
