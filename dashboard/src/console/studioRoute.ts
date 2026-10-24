@@ -4,7 +4,7 @@ export type InboxSource = 'slack' | 'loops' | 'signals' | 'all'
 export type StudioView = 'home' | 'bd' | 'bots' | 'switchboard' | 'inbox' | 'jobs' | 'projects' | 'history' | 'activity' | 'agents' | 'assignments' | 'handoffs' | 'memory' | 'world' | 'signals'
 
 export const VIEWS: { id: StudioView; label: string }[] = [
-  { id: 'bd', label: 'BD conductor' },
+  { id: 'bd', label: 'Research' },
   { id: 'bots', label: 'Bots' },
   { id: 'switchboard', label: 'Today' },
   { id: 'inbox', label: 'Inbox' },

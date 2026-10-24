@@ -1,3 +1,4 @@
+import { ConnectionError, studioFetch, studioJSON } from '../lib/connection'
 import { useState, type ReactNode } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { ExternalLink, FolderGit2, GitBranch, Plus, RefreshCw } from 'lucide-react'
@@ -57,14 +58,7 @@ interface ProjectCI {
 }
 
 async function get<T>(path: string, signal: AbortSignal): Promise<T> {
-  const response = await fetch(path, { signal, cache: 'no-store' })
-  if (!response.ok) {
-    const payload: unknown = await response.json().catch(() => null)
-    const detail = payload && typeof payload === 'object' && 'detail' in payload && typeof payload.detail === 'string'
-      ? payload.detail : `Request failed (${response.status})`
-    throw new Error(detail)
-  }
-  return response.json() as Promise<T>
+  return studioJSON<T>(await studioFetch(path, { signal, cache: 'no-store' }))
 }
 
 function date(value: string) {
@@ -118,13 +112,14 @@ export function Projects() {
   }
 
   return <main className="h-full min-h-0 overflow-y-auto bg-neutral-950 text-neutral-200">
+    <p className="px-7 pt-3 text-sm text-neutral-400">Looking for research results? <a href="#/bd" className="inline-flex min-h-11 items-center text-emerald-300 underline">Open research desk</a></p>
     <PageHeader title="Projects" meta={<span>Mounted checkouts and GitHub Actions</span>} actions={
       <button type="button" onClick={refresh} disabled={busy} title="Refresh projects and CI" aria-label="Refresh projects and CI" className="flex h-11 w-11 shrink-0 items-center justify-center rounded border border-neutral-700 hover:border-neutral-400 disabled:opacity-40">
         <RefreshCw size={17} className={busy ? 'animate-spin' : ''} />
       </button>
     } />
     {projects.isPending && <p role="status" className="px-7 py-6">Loading projects...</p>}
-    {projects.isError && <p role="alert" className="px-7 py-4 text-sm text-red-300">Projects unavailable: {projects.error.message}. Check Command Center connectivity, then refresh.</p>}
+    {projects.isError && <p role="alert" className={`px-7 py-4 text-sm ${projects.error instanceof ConnectionError ? 'text-neutral-400' : 'text-red-300'}`}>{projects.error instanceof ConnectionError ? 'Project data could not be refreshed. Use the connection controls above.' : `Projects unavailable: ${projects.error.message}. Check Command Center connectivity, then refresh.`}</p>}
     {projects.isSuccess && available.length === 0 && <p className="px-7 py-6 text-sm text-neutral-400">No repositories configured.</p>}
     {project && <>
       <section aria-label="Project checkout" className="border-b border-neutral-800 px-5 py-5 sm:px-7">

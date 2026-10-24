@@ -1,3 +1,4 @@
+import { ConnectionRecovery } from './ConnectionRecovery'
 import { TopBar } from './TopBar'
 import { Pulse } from './Pulse'
 import { PanelBoundary } from './ErrorBoundary'
@@ -16,6 +17,7 @@ export function Console() {
         <TopBar />
       </PanelBoundary>}
 
+      <ConnectionRecovery />
       <div className={home ? '' : 'min-h-0 min-w-0 flex-1 overflow-hidden'}>
         <div className={home ? '' : 'h-full min-h-0 overflow-hidden'}>
           <PanelBoundary name="agent studio"><AgentStudio /></PanelBoundary>

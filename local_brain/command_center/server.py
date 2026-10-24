@@ -1041,16 +1041,19 @@ class ChatMessage(BaseModel):
 @app.get("/", response_class=HTMLResponse)
 async def serve_console():
     """Serve the React Command Center dashboard, or fallback to legacy."""
+    headers = {"Cache-Control": "no-store"}
     react_index = REACT_DIST / "index.html" if REACT_DIST.exists() else None
     if react_index and react_index.exists():
-        return HTMLResponse(content=react_index.read_text())
+        return HTMLResponse(content=react_index.read_text(), headers=headers)
     html_path = STATIC_DIR / "console.html"
     if html_path.exists():
-        return HTMLResponse(content=html_path.read_text())
+        return HTMLResponse(content=html_path.read_text(), headers=headers)
     html_path = STATIC_DIR / "dashboard.html"
     if html_path.exists():
-        return HTMLResponse(content=html_path.read_text())
-    return HTMLResponse(content="<h1>AIIA Command Center</h1><p>No dashboard found.</p>")
+        return HTMLResponse(content=html_path.read_text(), headers=headers)
+    return HTMLResponse(
+        content="<h1>AIIA Command Center</h1><p>No dashboard found.</p>", headers=headers
+    )
 
 
 @app.get("/old", response_class=HTMLResponse)
