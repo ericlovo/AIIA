@@ -77,3 +77,26 @@ test('stale success is unverified, a real failed observation remains a failure',
   assert.equal(providerStatus({ status: 'data_unavailable', detail: 'not observed' }), 'Unverified')
   assert.equal(providerStatus(undefined), 'Unverified')
 })
+
+test('candidate display requires current projection; old dispositions and manual triage never promote history', async () => {
+  const { packetOutcome } = await import('../src/console/bdModel.ts')
+  const packet = { organization: 'Synthetic operator', source_url: 'https://example.com/evidence', disposition: 'research' } as import('../src/console/bdModel.ts').BDPacket
+  for (const disposition of ['research', 'reject', 'watch', 'uncertain', '']) {
+    for (const review_status of ['human_review_required', 'research_next', 'watch']) {
+      assert.equal(packetOutcome({ ...packet, disposition, review_status }), 'inconclusive')
+    }
+  }
+  assert.equal(packetOutcome({ ...packet, candidate_status: 'supported' }), 'supported')
+  assert.equal(packetOutcome({ ...packet, candidate_status: 'rejected' }), 'rejected')
+  assert.equal(packetOutcome({ ...packet, candidate_status: 'supported', organization: '  ' }), 'inconclusive')
+  assert.equal(packetOutcome({ ...packet, candidate_status: 'supported', source_url: 'javascript:alert(1)' }), 'inconclusive')
+  assert.equal(packet.candidate_status, undefined, 'classification does not rewrite history')
+})
+test('withheld outcomes explain absent evidence instead of implying provider failure', async () => {
+  const { researchReason, outcomeLabel } = await import('../src/console/bdModel.ts')
+  assert.equal(researchReason('no_new_evidence'), 'No new evidence was found in this run.')
+  assert.match(researchReason('segment_entity_or_event_unconfirmed'), /not confirmed/)
+  assert.match(researchReason(undefined), /not established/)
+  assert.equal(outcomeLabel('rejected'), 'Rejected research')
+  assert.equal(outcomeLabel('inconclusive'), 'Inconclusive research')
+})

@@ -946,3 +946,189 @@ def test_publisher_attribution_excluded_from_quote_context_not_provenance():
     source["source_kind"] = "imported_primary_excerpt"
     assert pipeline.article_text(source) == source["title"]
     assert "entity_role" not in pipeline.questions_for("pe-diligence")
+
+
+@pytest.mark.parametrize(
+    "segment,article,organization",
+    [
+        (
+            "pe-technical-diligence",
+            "Orchard Capital, a private equity firm, acquires a software business for technology integration.",
+            "Orchard Capital",
+        ),
+        (
+            "alumni-associations",
+            "Orchard Alumni Association launches a membership engagement platform.",
+            "Orchard Alumni Association",
+        ),
+    ],
+)
+@pytest.mark.parametrize(
+    "failure",
+    [
+        None,
+        "blank_org",
+        "blank_signal",
+        "publisher",
+        "ungrounded_quote",
+        "irrelevant",
+        "uncertain",
+        "low_probability",
+        "watch",
+        "unsupported",
+    ],
+)
+@async_test
+async def test_segment_prospect_gate(monkeypatch, segment, article, organization, failure):
+    source, extraction, judgments = pipeline.synthetic_fixture(segment)
+    source.update(title=article + " - Daily Reporter", publisher="Daily Reporter")
+    extraction.update(
+        organization=organization,
+        quote=article,
+        signal="launches a platform"
+        if segment == "alumni-associations"
+        else "acquires a software business",
+    )
+    role = pipeline.SEGMENT_ENTITIES[segment][0]
+    entity = judgments["answers"]["entity_role"]
+    if failure == "blank_org":
+        extraction["organization"] = "  "
+    elif failure == "blank_signal":
+        extraction["signal"] = "  "
+    elif failure == "publisher":
+        extraction["organization"] = "Daily Reporter"
+    elif failure == "ungrounded_quote":
+        extraction["quote"] = (
+            "technology integration" if segment.startswith("pe-") else "membership engagement"
+        )
+    elif failure in {"irrelevant", "uncertain"}:
+        choice = "other" if failure == "irrelevant" else "uncertain"
+        entity.update(
+            choice=choice,
+            probabilities={
+                key: 0.9 if key == choice else 1 / 30 for key in entity["probabilities"]
+            },
+        )
+    elif failure == "low_probability":
+        entity["probabilities"] = {role: 0.26, "publisher": 0.25, "other": 0.25, "uncertain": 0.24}
+    elif failure == "watch":
+        judgments["answers"]["disposition"]["choice"] = "watch"
+    elif failure == "unsupported":
+        judgments["answers"]["claim_supported"]["noul"] = 0.1
+    called = []
+
+    async def retrieve(segment):
+        return [source]
+
+    async def local(source):
+        return extraction, 10
+
+    async def judge(source, result, segment):
+        called.append("jev")
+        return judgments
+
+    monkeypatch.setattr(pipeline, "retrieve_sources", retrieve)
+    monkeypatch.setattr(pipeline, "extract_local", local)
+    monkeypatch.setattr(pipeline, "judge", judge)
+    result = await pipeline.run_pipeline(job(mode="live", segment=segment))
+    if failure:
+        assert result["packets"] == []
+        assert result["status"] == "no_supported_prospect"
+        assert result["reviewed_evidence"] == [pipeline.evidence_key(source)]
+        assert result["research_outcome"] == (
+            "rejected" if failure in {"publisher", "irrelevant"} else "inconclusive"
+        )
+    else:
+        assert result["packets"][0]["organization"] == organization
+    assert len(called) == (
+        0 if failure in {"blank_org", "blank_signal", "publisher", "ungrounded_quote"} else 1
+    )
+
+
+@pytest.mark.parametrize(
+    "segment,title,organization",
+    [
+        (
+            "alumni-associations",
+            "Orchard University remembers alumnus in obituary",
+            "Orchard University",
+        ),
+        (
+            "alumni-associations",
+            "Orchard Alumni Association honors graduate athletic achievement",
+            "Orchard Alumni Association",
+        ),
+        (
+            "pe-technical-diligence",
+            "Orchard Software acquires another business with no disclosed sponsor",
+            "Orchard Software",
+        ),
+    ],
+)
+@async_test
+async def test_named_but_irrelevant_segment_evidence_is_withheld(
+    monkeypatch, segment, title, organization
+):
+    source, extraction, judgments = pipeline.synthetic_fixture(segment)
+    source["title"] = title
+    extraction.update(organization=organization, quote=title, signal=title)
+    entity = judgments["answers"]["entity_role"]
+    entity.update(
+        choice="other",
+        probabilities={key: 0.9 if key == "other" else 1 / 30 for key in entity["probabilities"]},
+    )
+
+    async def retrieve(segment):
+        return [source]
+
+    async def local(source):
+        return extraction, 10
+
+    async def judge(source, result, segment):
+        payload = pipeline.jev_payload(source, result, segment)
+        assert payload["questions"]["entity_role"] == pipeline.questions_for(segment)["entity_role"]
+        return judgments
+
+    monkeypatch.setattr(pipeline, "retrieve_sources", retrieve)
+    monkeypatch.setattr(pipeline, "extract_local", local)
+    monkeypatch.setattr(pipeline, "judge", judge)
+    result = await pipeline.run_pipeline(job(mode="live", segment=segment))
+    assert result["packets"] == []
+    assert result["reason"] == "segment_entity_or_event_unconfirmed"
+    assert result["research_outcome"] == "rejected"
+
+
+@pytest.mark.parametrize("segment", ["pe-technical-diligence", "alumni-associations"])
+@async_test
+async def test_segment_typed_fixture_and_medium_budget(segment):
+    source, extraction, judgments = pipeline.synthetic_fixture(segment)
+    pipeline.validate_judgments(judgments, pipeline.questions_for(segment))
+    assert (await pipeline.run_pipeline(job(segment=segment)))["packets"]
+    source["text"] = "Orchard announces change. " * 40
+    extraction.update(
+        organization="Orchard",
+        quote=pipeline.quote_candidates(source)[0],
+        signal="announces change",
+        consumer_insight="",
+    )
+    total = pipeline.token_reservation(
+        pipeline.qwen_payload(source), 512
+    ) + pipeline.token_reservation(pipeline.jev_payload(source, extraction, segment), 1024)
+    assert total < 8000
+
+
+@pytest.mark.parametrize("segment", list(pipeline.SEGMENT_ENTITIES))
+def test_persisted_answers_validate_without_usage_envelope(segment):
+    _, _, judgments = pipeline.synthetic_fixture(segment)
+    answers = judgments["answers"]
+    assert pipeline.validate_answers(answers, pipeline.questions_for(segment)) is answers
+    assert pipeline.validate_judgments(judgments, pipeline.questions_for(segment)) is judgments
+    answers["claim_supported"]["noul"] = True
+    with pytest.raises(pipeline.DataUnavailable):
+        pipeline.validate_answers(answers, pipeline.questions_for(segment))
+
+
+@pytest.mark.parametrize("answers", [None, [], "", {"unexpected": {}}])
+def test_persisted_invalid_answers_fail_closed(answers):
+    with pytest.raises(pipeline.DataUnavailable, match="invalid_jev_answers"):
+        pipeline.validate_answers(answers)

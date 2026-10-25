@@ -1,4 +1,4 @@
-import { providerStatus, scheduleIdleText, scheduleQueueText, ageLabel, latestPackets, modelWorkingJobs, queueJobs, type BDPacket, type BDSnapshot } from './bdModel'
+import { packetOutcome, providerStatus, scheduleIdleText, scheduleQueueText, ageLabel, latestPackets, modelWorkingJobs, queueJobs, type BDPacket, type BDSnapshot } from './bdModel'
 
 const count = (value: number | null | undefined) => value == null ? '—' : value.toLocaleString()
 
@@ -27,13 +27,13 @@ export function BDActivityBoard({ data, now, lane, onReview }: { data: BDSnapsho
   const active = jobs.filter(job => job.state === 'running')
   const fresh = active.some(job => modelWorkingJobs(data, 'qwen', now).some(work => work.id === job.id) || modelWorkingJobs(data, 'jev', now).some(work => work.id === job.id))
   const completed = jobs.filter(job => job.state === 'completed')
-  const packets = latestPackets(data.packets.filter(packet => lane === 'all' || packet.bot_id === lane))
+  const packets = latestPackets(data.packets.filter(packet => (lane === 'all' || packet.bot_id === lane) && packetOutcome(packet) === 'supported' && packet.review_status !== 'dismissed'))
   const pending = packets.filter(packet => packet.review_status === 'human_review_required')
   const botName = (id: string) => data.bots.find(bot => bot.id === id)?.name ?? id
   return <section className="bd-activity-board" aria-label="Research activity">
     <div className="bd-flow-summary">
       <div className="bd-flow-state"><span className={`bd-work-state ${fresh ? 'is-working' : ''}`}><i aria-hidden="true" />{data.kill_switch || !active.length && !queueTotal ? scheduleIdleText(data, now) : active.length ? data.mode === 'replay' ? 'Replay in progress' : 'Research in progress' : 'Work queued'}</span><p>{data.mode === 'replay' ? 'Synthetic research · replay only' : 'Public-source research · human review'}</p></div>
-      <dl className="bd-flow-counts"><div><dt>Queued / leased</dt><dd>{queueTotal}</dd></div><div><dt>Running</dt><dd>{totals?.running ?? active.length}</dd></div><div><dt>Jobs complete</dt><dd>{totals?.completed ?? completed.length}</dd></div><div><dt>To review</dt><dd>{pending.length}</dd></div></dl>
+      <dl className="bd-flow-counts"><div><dt>Queued / leased</dt><dd>{queueTotal}</dd></div><div><dt>Running</dt><dd>{totals?.running ?? active.length}</dd></div><div><dt>Jobs complete</dt><dd>{totals?.completed ?? completed.length}</dd></div><div><dt>Candidates to review</dt><dd>{pending.length}</dd></div></dl>
     </div>
     <div className="bd-action-grid">
       <section className="bd-queue-panel" aria-label="Work queue"><div className="bd-panel-title"><h2>Up next <span>{queueTotal}</span></h2><span>Oldest first</span></div>
@@ -42,8 +42,8 @@ export function BDActivityBoard({ data, now, lane, onReview }: { data: BDSnapsho
         <p className="bd-board-note">{totals ? 'All recorded jobs' : 'Visible job window'} · {totals?.failed ?? jobs.filter(job => job.state === 'failed').length} failed · {totals?.cancelled ?? jobs.filter(job => job.state === 'cancelled').length} cancelled</p>{queueTotal > 0 && <p className="bd-board-note">{queue.length} of {queueTotal} queued / leased jobs in this snapshot.</p>}
       </section>
       <div className="bd-model-stack"><ModelWork data={data} provider="qwen" now={now} lane={lane} /><ModelWork data={data} provider="jev" now={now} lane={lane} /></div>
-      <section className="bd-delivered-panel" aria-label="Completed research"><div className="bd-panel-title"><h2>Research delivered <span>{packets.length}</span></h2><span>Newest first</span></div><p className="bd-delivered-note">Packets delivered here for review. No emails sent.</p>
-        {packets.length ? <ol className="bd-delivered-list">{packets.slice(0, 3).map(packet => <li key={packet.id}><div className="bd-delivered-stamp"><span>{packet.mode === 'replay' ? 'REPLAY PACKET' : 'RESEARCH COMPLETE'}</span><time dateTime={packet.created_at}>{ageLabel(packet.created_at, now)} ago</time></div><h3>{packet.organization}</h3><p>{botName(packet.bot_id)}</p><div className="bd-delivered-facts"><span>{packet.signals.length} {packet.signals.length === 1 ? 'signal' : 'signals'}</span><span>{packet.emails.length} {packet.emails.length === 1 ? 'email' : 'emails'} found</span><span>{packet.phones.length} {packet.phones.length === 1 ? 'phone' : 'phones'} found</span></div><button onClick={() => onReview(packet)}>Review packet <span aria-hidden="true">→</span></button></li>)}</ol> : <div className="bd-queue-empty"><strong>No research delivered yet.</strong><p>Completed work will land here with its sources and contact restrictions.</p></div>}
+      <section className="bd-delivered-panel" aria-label="Completed research"><div className="bd-panel-title"><h2>Supported candidates <span>{packets.length}</span></h2><span>Newest first</span></div><p className="bd-delivered-note">Evidence supports further research, not qualification or outreach. Counts reflect this snapshot.</p>
+        {packets.length ? <ol className="bd-delivered-list">{packets.slice(0, 3).map(packet => <li key={packet.id}><div className="bd-delivered-stamp"><span>{packet.mode === 'replay' ? 'REPLAY CANDIDATE' : 'SUPPORTED CANDIDATE'}</span><time dateTime={packet.created_at}>{ageLabel(packet.created_at, now)} ago</time></div><h3>{packet.organization}</h3><p>{botName(packet.bot_id)}</p><div className="bd-delivered-facts"><span>{packet.signals.length} {packet.signals.length === 1 ? 'signal' : 'signals'}</span><span>{packet.emails.length} {packet.emails.length === 1 ? 'email' : 'emails'} found</span><span>{packet.phones.length} {packet.phones.length === 1 ? 'phone' : 'phones'} found</span></div><button onClick={() => onReview(packet)}>Review packet <span aria-hidden="true">→</span></button></li>)}</ol> : <div className="bd-queue-empty"><strong>No supported candidates in this view.</strong><p>Rejected and inconclusive results remain in Research history below.</p></div>}
       </section>
     </div>
   </section>

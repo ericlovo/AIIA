@@ -66,8 +66,40 @@ HEALTHCARE_ENTITY = {
 }
 
 
+SEGMENT_ENTITIES = {
+    "healthcare": ("healthcare_operator", HEALTHCARE_ENTITY),
+    "pe-technical-diligence": (
+        "pe_operator",
+        {
+            "type": "choice",
+            "instructions": "Identify the proposed organization from article evidence, not attribution. Require explicit private-equity involvement; an acquisition alone is insufficient.",
+            "criteria": {
+                "pe_operator": "Named PE sponsor, fund manager or explicitly PE-backed portfolio business involved in an acquisition, diligence or technology integration event.",
+                "publisher": "Reporting outlet, byline or content publisher rather than the deal subject.",
+                "other": "Unrelated company, public-market commentary, person or generic industry topic.",
+                "uncertain": "PE role or relevant business event is not established by the source.",
+            },
+        },
+    ),
+    "alumni-associations": (
+        "alumni_operator",
+        {
+            "type": "choice",
+            "instructions": "Identify the proposed organization and event from article evidence. Alumni biography, obituary, awards, sports or mere alumni mentions do not qualify.",
+            "criteria": {
+                "alumni_operator": "Named alumni association or institution's alumni-relations unit changing membership, engagement, fundraising operations or an alumni platform.",
+                "publisher": "Reporting outlet, byline or content publisher rather than the alumni operator.",
+                "other": "Individual alumnus, unrelated association, biography, obituary or general campus news.",
+                "uncertain": "Alumni operational role or relevant business change is not established.",
+            },
+        },
+    ),
+}
+
+
 def questions_for(segment):
-    return {**QUESTIONS, "entity_role": HEALTHCARE_ENTITY} if segment == "healthcare" else QUESTIONS
+    entity = SEGMENT_ENTITIES.get(segment)
+    return {**QUESTIONS, "entity_role": entity[1]} if entity else QUESTIONS
 
 
 def article_text(source):
@@ -80,7 +112,7 @@ def article_text(source):
     return text
 
 
-def healthcare_entity_gap(source, extraction):
+def entity_gap(source, extraction, segment):
     organization = extraction["organization"]
     normalized = re.sub(r"[^\w]+", " ", organization.casefold()).strip().removeprefix("the ")
     publisher = (
@@ -95,7 +127,7 @@ def healthcare_entity_gap(source, extraction):
         and source.get("source_kind") != "imported_primary_excerpt"
     ):
         return "publisher_is_not_prospect"
-    if normalized in {
+    if segment == "healthcare" and normalized in {
         "hospital",
         "hospitals",
         "clinic",
@@ -109,11 +141,28 @@ def healthcare_entity_gap(source, extraction):
         "nurses",
     }:
         return "generic_healthcare_reference"
+    if segment != "healthcare" and normalized in {
+        "private equity",
+        "private equity firms",
+        "company",
+        "companies",
+        "fund",
+        "alumni",
+        "alumni association",
+        "association",
+        "university",
+        "college",
+    }:
+        return "generic_segment_reference"
     if not extraction["signal"].strip():
         return "no_operational_event"
     if organization not in article_text(source) or organization not in extraction["quote"]:
         return "organization_not_grounded_in_article_quote"
     return None
+
+
+def healthcare_entity_gap(source, extraction):
+    return entity_gap(source, extraction, "healthcare")
 
 
 class DataUnavailable(ValueError):
@@ -497,9 +546,8 @@ def validate_extraction(source, extraction):
     return extraction
 
 
-def validate_judgments(data, questions=QUESTIONS):
-    answers = data.get("answers", {})
-    if set(answers) != set(questions):
+def validate_answers(answers, questions=QUESTIONS):
+    if not isinstance(answers, dict) or set(answers) != set(questions):
         raise DataUnavailable("invalid_jev_answers")
     for key, question in questions.items():
         answer = answers[key]
@@ -533,6 +581,13 @@ def validate_judgments(data, questions=QUESTIONS):
             weighted = sum(int(level) * probability for level, probability in probabilities.items())
             if not math.isclose(score, weighted, abs_tol=0.02):
                 raise DataUnavailable("inconsistent_jev_score")
+    return answers
+
+
+def validate_judgments(data, questions=QUESTIONS):
+    if not isinstance(data, dict):
+        raise DataUnavailable("invalid_jev_answers")
+    validate_answers(data.get("answers"), questions)
     Usage.model_validate(data["usage"])
     if not isinstance(data.get("model"), str) or not data["model"]:
         raise DataUnavailable("invalid_jev_model")
@@ -580,13 +635,15 @@ async def judge(source, extraction, segment):
 def synthetic_fixture(segment):
     topic = {
         "healthcare": "a new outpatient clinic",
-        "pe-technical-diligence": "an acquisition requiring technology integration",
+        "pe-technical-diligence": "a private equity acquisition requiring technology integration",
         "alumni-associations": "an alumni membership platform",
         "client-bd": "an unspecified business expansion for a synthetic client",
     }[segment]
-    title = (
-        f"Synthetic Orchard announces {topic}. Public contact: research@example.org, 608-555-0100."
-    )
+    organization = {
+        "pe-technical-diligence": "Synthetic Orchard Capital",
+        "alumni-associations": "Synthetic Orchard Alumni Association",
+    }.get(segment, "Synthetic Orchard")
+    title = f"{organization} announces {topic}. Public contact: research@example.org, 608-555-0100."
     source = {
         "title": title,
         "url": "https://example.org/synthetic-bd",
@@ -594,7 +651,7 @@ def synthetic_fixture(segment):
         "published_at": "2026-10-23T00:00:00Z",
     }
     extraction = {
-        "organization": "Synthetic Orchard",
+        "organization": organization,
         "signal": topic,
         "quote": title,
         "consumer_insight": "Test hypothesis: users may need support adopting the announced service.",
@@ -623,13 +680,14 @@ def synthetic_fixture(segment):
             "claim_supported": {"type": "noul", "noul": 0.95},
         },
     }
-    if segment == "healthcare":
+    if segment in SEGMENT_ENTITIES:
+        role = SEGMENT_ENTITIES[segment][0]
         judgments["answers"]["entity_role"] = {
             "type": "choice",
-            "choice": "healthcare_operator",
+            "choice": role,
             "confidence": 0.9,
             "probabilities": {
-                "healthcare_operator": 0.9,
+                role: 0.9,
                 "publisher": 0.01,
                 "other": 0.01,
                 "uncertain": 0.08,
@@ -797,6 +855,7 @@ async def run_pipeline(job, emit=None):
             return {
                 "reason": "no_new_evidence",
                 "status": "no_observations",
+                "research_outcome": "inconclusive",
                 "packets": [],
                 "mode": "live",
                 "tenant_id": job["tenant_id"],
@@ -829,8 +888,8 @@ async def run_pipeline(job, emit=None):
             provider_status="available",
             message="Local extraction completed",
         )
-        if research_segment == "healthcare":
-            gap = healthcare_entity_gap(source, extraction)
+        if research_segment in SEGMENT_ENTITIES:
+            gap = entity_gap(source, extraction, research_segment)
             if gap:
                 usage = {
                     "tokens": tokens,
@@ -842,11 +901,14 @@ async def run_pipeline(job, emit=None):
                 await event(
                     "candidate_withheld",
                     reason=gap,
-                    message="Healthcare evidence did not identify a supported prospect",
+                    message="Evidence did not identify a supported segment prospect",
                 )
                 return {
                     "status": "no_supported_prospect",
                     "reason": gap,
+                    "research_outcome": (
+                        "rejected" if gap == "publisher_is_not_prospect" else "inconclusive"
+                    ),
                     "packets": [],
                     "reviewed_evidence": [evidence_key(source)],
                     "usage": usage,
@@ -893,25 +955,42 @@ async def run_pipeline(job, emit=None):
             provider_status="available",
             message="Typed judgment completed",
         )
-    if research_segment == "healthcare":
+    if research_segment in SEGMENT_ENTITIES:
         answers = judgments["answers"]
         entity = answers["entity_role"]
+        role = SEGMENT_ENTITIES[research_segment][0]
+        reason = (
+            "healthcare_entity_or_event_unconfirmed"
+            if research_segment == "healthcare"
+            else "segment_entity_or_event_unconfirmed"
+        )
         if (
-            healthcare_entity_gap(source, extraction)
-            or entity["choice"] != "healthcare_operator"
+            entity_gap(source, extraction, research_segment)
+            or entity["choice"] != role
             or entity["confidence"] < 0.8
-            or entity["probabilities"].get("healthcare_operator", 0) < 0.8
+            or entity["probabilities"].get(role, 0) < 0.8
             or answers["disposition"]["choice"] != "research"
             or answers["claim_supported"]["noul"] < 0.8
         ):
             await event(
                 "candidate_withheld",
-                reason="healthcare_entity_or_event_unconfirmed",
-                message="No supported healthcare prospect in this evidence",
+                reason=reason,
+                message="No supported segment prospect in this evidence",
             )
             return {
                 "status": "no_supported_prospect",
-                "reason": "healthcare_entity_or_event_unconfirmed",
+                "reason": reason,
+                "research_outcome": (
+                    "rejected"
+                    if (
+                        answers["disposition"]["choice"] == "reject"
+                        or (
+                            entity["choice"] in {"publisher", "other"}
+                            and entity["confidence"] >= 0.8
+                        )
+                    )
+                    else "inconclusive"
+                ),
                 "packets": [],
                 "reviewed_evidence": [evidence_key(source)],
                 "usage": usage,
