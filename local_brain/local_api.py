@@ -971,7 +971,7 @@ class AIIAAskRequest(BaseModel):
     context: str | None = None
     include_sessions: bool = True
     n_results: int = 5
-    max_tokens: int = 4096
+    max_tokens: int | None = Field(default=None, ge=1, le=8192)
     num_ctx: int = 32768  # Context window: 32K (text), 4096 (voice)
     depth: str = "fast"  # "fast" (local only), "hybrid" (+ cloud), "deep" (+ DeepSeek)
     # Reasoning toggle. None keeps the model default (qwen3 thinks).
@@ -1014,15 +1014,19 @@ async def aiia_ask(request: AIIAAskRequest):
     _aiia = await _require_aiia()
 
     start = time.monotonic()
-    result = await _aiia.ask(
-        question=request.question,
-        context=request.context,
-        include_sessions=request.include_sessions,
-        n_results=request.n_results,
-        num_ctx=request.num_ctx,
-        depth=request.depth,
-        think=request.think,
-    )
+    try:
+        result = await _aiia.ask(
+            question=request.question,
+            context=request.context,
+            include_sessions=request.include_sessions,
+            n_results=request.n_results,
+            num_ctx=request.num_ctx,
+            depth=request.depth,
+            think=request.think,
+            max_tokens=request.max_tokens,
+        )
+    except httpx.TimeoutException as exc:
+        raise HTTPException(status_code=504, detail="Local model generation timed out") from exc
     latency = (time.monotonic() - start) * 1000
 
     # Report AIIA ask as a local LLM request

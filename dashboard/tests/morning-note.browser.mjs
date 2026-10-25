@@ -26,7 +26,7 @@ const decisions = [
 const note = {
   date: '2026-10-08',
   products: [
-    { id: 'aiia', name: 'AIIA', kind: 'product', state: 'waiting', note: 'Digest redesign is finished and checked.' },
+    { id: 'aiia', name: 'AIIA', kind: 'product', state: 'waiting', note: 'verified deployed #127; merged #128; deployment not verified · waiting on you: 1 review' },
     { id: 'mindmoor', name: 'Mindmoor', kind: 'product', state: 'waiting', note: 'Alumni version is 12 changes behind main.' },
     { id: 'sanction', name: 'Sanction', kind: 'product', state: 'blocked', note: 'Automated checks are red on the latest change.' },
     { id: 'mia', name: 'MIA', kind: 'product', state: 'shipped', note: "Last week's update is out." },
@@ -107,6 +107,8 @@ try {
     await page.getByText('Alumni Nations', { exact: true }).first().waitFor()
     const copy = await page.locator('main.morning-note').innerText()
     assert.equal(forbidden.test(copy), false, `forbidden word on ${label}: ${copy.match(forbidden)}`)
+    assert.ok(copy.includes('verified deployed #127'))
+    assert.ok(copy.includes('merged #128; deployment not verified'))
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth > innerWidth + 1)
     assert.equal(overflow, false, `${label} overflowed horizontally`)
 

@@ -3155,6 +3155,7 @@ async def get_latest_briefing():
         "briefing": task.get("last_output") or task.get("last_result", ""),
         "last_run": task.get("last_run"),
         "status": task.get("status", "unknown"),
+        "last_status": (task.get("run_history") or [{}])[0].get("status"),
         "duration_ms": task.get("last_duration_ms"),
         "run_count": task.get("run_count", 0),
     }

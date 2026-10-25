@@ -388,6 +388,7 @@ class AIIA:
         num_ctx: int = 32768,
         depth: str = "fast",
         think: bool | None = None,
+        max_tokens: int | None = None,
     ) -> dict[str, Any]:
         """
         Ask the brain a question. It searches knowledge + memory,
@@ -424,12 +425,12 @@ class AIIA:
         if depth == "deep" and self._deep_model:
             model = self._deep_model
             temperature = 0.6
-            max_tokens = 8192
+            max_tokens = max_tokens if max_tokens is not None else 8192
             timeout = 600.0  # 10 min — DeepSeek cold load + chain-of-thought
         else:
             model = self._model
             temperature = 0.3
-            max_tokens = 4096
+            max_tokens = max_tokens if max_tokens is not None else 4096
             timeout = None  # Use default
 
         (

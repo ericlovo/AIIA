@@ -24,6 +24,7 @@ from typing import Any
 from urllib.parse import urlsplit
 
 from local_brain.command_center import repository_tools as repos
+from local_brain.command_center.deployment_verification import verified_receipt
 
 MAX_BODY = 2_800
 SLACK_BODY_MAX = 3_000
@@ -228,6 +229,7 @@ class RepoEvidence:
     merged_prs: list[PullSignal] = field(default_factory=list)
     open_pulls: list[PullSignal] = field(default_factory=list)
     remote: bool = False
+    verified_deployments: dict[int, str] = field(default_factory=dict)
 
 
 @dataclass
@@ -795,6 +797,7 @@ def _merged_pr_rows(github_api: GitHubApi, slug: str, since: datetime) -> list[P
         pull = _pull_from_row(row)
         if pull:
             pull.merged = True
+            pull.sha = str(row.get("merge_commit_sha") or "")
             merged.append(pull)
     return merged
 
@@ -1040,6 +1043,15 @@ def collect_repo_evidence(
     if behind_main and behind_main > 0 and (repo_id != "mindmoor" or not drift):
         stuck.append(f"{label} −{behind_main} behind main")
 
+    verified_deployments: dict[int, str] = {}
+    receipt = verified_receipt(slug, now)
+    if mounted and receipt:
+        for pull in merged_prs:
+            if re.fullmatch(r"[0-9a-f]{40}", pull.sha):
+                ancestor = git_read(path, "merge-base", pull.sha, receipt["sha"])
+                if ancestor == pull.sha:
+                    verified_deployments[pull.number] = receipt["environment"]
+
     unique_failures = tuple(dict.fromkeys(failures))
     return RepoEvidence(
         repo_id=repo_id,
@@ -1057,6 +1069,7 @@ def collect_repo_evidence(
         merged_prs=merged_prs,
         open_pulls=open_pulls,
         remote=bool(slug),
+        verified_deployments=verified_deployments,
     )
 
 
@@ -1849,10 +1862,14 @@ def _waiting_parts(
 def _shipped_part(evidence: RepoEvidence | None) -> str:
     if not evidence or not evidence.merged_prs:
         return ""
-    pulls = evidence.merged_prs
-    if len(pulls) == 1:
-        return f"shipped #{pulls[0].number}"
-    return f"shipped {len(pulls)} PRs"
+    verified = [p for p in evidence.merged_prs if p.number in evidence.verified_deployments]
+    unverified = [p for p in evidence.merged_prs if p.number not in evidence.verified_deployments]
+    parts = []
+    if verified:
+        parts.append("verified deployed " + _pr_number_list(verified))
+    if unverified:
+        parts.append("merged " + _pr_number_list(unverified) + "; deployment not verified")
+    return "; ".join(parts)
 
 
 def _morning_state(
@@ -1921,11 +1938,11 @@ def morning_product_line(
         mounted=mounted,
         hard=hard,
         waiting=waiting,
-        shipped=shipped,
+        shipped=shipped if evidence and evidence.verified_deployments else "",
         pending=bool(lead),
     )
     parts: list[str] = []
-    if shipped and state != "waiting":
+    if shipped:
         parts.append(shipped)
     parts.extend(hard)
     if state != "blocked":
@@ -2216,6 +2233,7 @@ def format_slack_digest(
     evidence = {row.repo_id: row for row in (repo_evidence or [])}
     attention: list[str] = []
     merged: list[str] = []
+    deployed: list[str] = []
     background: list[str] = []
     quiet: list[str] = []
     covered_ids: set[str] = set()
@@ -2275,7 +2293,15 @@ def format_slack_digest(
             for signal in ev.drift:
                 parts.append(_behind_phrase(signal.ref, signal.behind_main))
             if ev.merged_prs:
-                merged.append(row(product.name, [_pr_number_list(ev.merged_prs)]))
+                verified = [p for p in ev.merged_prs if p.number in ev.verified_deployments]
+                unverified = [p for p in ev.merged_prs if p.number not in ev.verified_deployments]
+                if verified:
+                    environments = sorted({ev.verified_deployments[p.number] for p in verified})
+                    deployed.append(
+                        row(product.name, [_pr_number_list(verified), ", ".join(environments)])
+                    )
+                if unverified:
+                    merged.append(row(product.name, [_pr_number_list(unverified)]))
             drafts = sum(pull.draft for pull in pulls)
             dependencies = sum(_pull_is_dependabot(pull) and not pull.draft for pull in pulls)
             held = sum(_pull_held(pull, product.holds) for pull in ev.open_pulls)
@@ -2371,6 +2397,7 @@ def format_slack_digest(
     for heading, rows in (
         ("Needs attention", attention),
         ("Decisions", decisions),
+        ("Verified deployed", deployed),
         ("Merged — deployment not verified", merged),
         ("Background — not merge requests", background),
     ):

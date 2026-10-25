@@ -101,9 +101,10 @@ async def test_aiia_ask_forwards_think_false_for_daily_brief(monkeypatch):
     brain._gather_context = AsyncMock(return_value=([], [], []))  # type: ignore[method-assign]
     brain._fire_extraction = MagicMock()  # type: ignore[method-assign]
 
-    result = await brain.ask("Generate a morning briefing", think=False)
+    result = await brain.ask("Generate a morning briefing", think=False, max_tokens=1024)
 
     assert fake.kwargs["think"] is False
+    assert fake.kwargs["max_tokens"] == 1024
     assert result["answer"] == "ok"
 
     fake_brain = MagicMock()
@@ -112,8 +113,11 @@ async def test_aiia_ask_forwards_think_false_for_daily_brief(monkeypatch):
     monkeypatch.setattr(local_api, "_require_aiia", AsyncMock(return_value=fake_brain))
     monkeypatch.setattr(local_api, "_report_metrics", _noop_metrics)
 
-    await local_api.aiia_ask(local_api.AIIAAskRequest(question="brief", think=False))
+    await local_api.aiia_ask(
+        local_api.AIIAAskRequest(question="brief", think=False, max_tokens=1024)
+    )
     assert fake_brain.ask.await_args.kwargs["think"] is False
+    assert fake_brain.ask.await_args.kwargs["max_tokens"] == 1024
 
 
 @pytest.mark.asyncio
@@ -204,3 +208,18 @@ def test_partial_timing_preserves_zero():
     timing = local_api.OllamaTiming.from_response({"eval_duration": 0, "load_duration": -1})
     assert timing.eval_ms == 0 and timing.load_ms is None
     assert local_api.ChatResponse(content="ok", model="test").timing is None
+
+
+@pytest.mark.asyncio
+async def test_aiia_ask_timeout_returns_actionable_gateway_timeout(monkeypatch):
+    import httpx
+    from fastapi import HTTPException
+
+    fake = MagicMock()
+    fake.ask = AsyncMock(side_effect=httpx.ReadTimeout(""))
+    monkeypatch.setattr(local_api, "_require_aiia", AsyncMock(return_value=fake))
+    with pytest.raises(HTTPException) as error:
+        await local_api.aiia_ask(local_api.AIIAAskRequest(question="brief", max_tokens=1024))
+    assert error.value.status_code == 504
+    assert "timed out" in error.value.detail
+    assert fake.ask.await_count == 1
