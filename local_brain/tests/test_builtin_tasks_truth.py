@@ -77,7 +77,7 @@ def _runner(monkeypatch, output: bytes, returncode: int) -> TaskRunner:
 def test_test_runner_raises_when_collection_is_interrupted(monkeypatch):
     output = b"ERROR local_brain/tests/test_phase2_config.py\n!!! Interrupted: 1 error during collection !!!\n1 error in 1.6s\n"
     runner = _runner(monkeypatch, output, returncode=2)
-    with pytest.raises(RuntimeError, match="did not run"):
+    with pytest.raises(RuntimeError, match="did not complete"):
         asyncio.run(runner._task_test_runner())
     args = runner._calls[0]  # type: ignore[attr-defined]
     # pytest is given the test root, not every file, so conftest governs collection.
@@ -88,9 +88,9 @@ def test_test_runner_raises_when_collection_is_interrupted(monkeypatch):
 
 def test_test_runner_records_a_real_run(monkeypatch):
     runner = _runner(monkeypatch, b"...\n3 passed, 1 failed in 0.4s\n", returncode=1)
-    summary, report = asyncio.run(runner._task_test_runner())
-    assert summary == "3 passed, 1 failed, 0 errors"
-    assert "3 passed" in report
+    with pytest.raises(RuntimeError, match="3 passed, 1 failed, 0 errors") as exc:
+        asyncio.run(runner._task_test_runner())
+    assert "3 passed" in exc.value.output
     assert runner._extra["test_trends"][-1]["passed"] == 3
 
 
@@ -121,6 +121,8 @@ def test_daily_brief_sends_think_false_on_ask(monkeypatch):
     asyncio.run(runner._task_daily_brief())
     assert asked
     assert asked[0]["think"] is False
+    assert asked[0]["max_tokens"] == 1024
+    assert asked[0]["include_sessions"] is False
 
 
 def test_daily_brief_failure_names_the_exception_and_remembers_nothing(monkeypatch):
@@ -148,3 +150,45 @@ def test_daily_brief_failure_names_the_exception_and_remembers_nothing(monkeypat
         asyncio.run(runner._task_daily_brief())
     assert "ReadTimeout" in str(excinfo.value)
     assert not any("Daily Brief" in str(item.get("fact")) for item in remembered)
+
+
+def test_test_runner_passes_clean_suite(monkeypatch):
+    runner = _runner(monkeypatch, b"3 passed in 0.4s\n", returncode=0)
+    assert asyncio.run(runner._task_test_runner())[0] == "3 passed, 0 failed, 0 errors"
+    assert "asyncio" in runner._calls[0]
+
+
+def test_test_runner_non_test_exit_is_failure_even_with_partial_results(monkeypatch):
+    runner = _runner(monkeypatch, b"1 passed in 0.4s\ninternal error\n", returncode=3)
+    with pytest.raises(RuntimeError, match="did not complete"):
+        asyncio.run(runner._task_test_runner())
+
+
+def test_failed_suite_updates_task_history_and_retains_report(monkeypatch):
+    runner = _runner(monkeypatch, b"FAILED example\n3 passed, 1 failed in 0.4s\n", 1)
+    runner.save_state = MagicMock()
+    asyncio.run(runner._execute_task("test_runner"))
+    task = runner.tasks["test_runner"]
+    assert task["run_history"][0]["status"] == "failed"
+    assert task["fail_count"] == 1
+    assert "FAILED example" in task["last_output"]
+    runner._aiia_request.assert_not_called()
+
+
+def test_test_runner_uses_configured_test_interpreter(monkeypatch):
+    monkeypatch.setenv("AIIA_TEST_PYTHON", "/isolated/tests/bin/python")
+    runner = _runner(monkeypatch, b"3 passed in 0.4s\n", returncode=0)
+    asyncio.run(runner._task_test_runner())
+    assert runner._calls[0][0] == "/isolated/tests/bin/python"
+
+
+def test_failed_brief_cannot_display_previous_success(monkeypatch):
+    runner = _runner(monkeypatch, b"", 0)
+    runner.save_state = MagicMock()
+    runner.tasks["daily_brief"]["last_output"] = "Yesterday's successful brief"
+    runner._implementations["daily_brief"] = AsyncMock(
+        side_effect=RuntimeError("generation timeout")
+    )
+    asyncio.run(runner._execute_task("daily_brief"))
+    assert runner.tasks["daily_brief"]["last_output"] is None
+    assert runner.tasks["daily_brief"]["run_history"][0]["status"] == "failed"

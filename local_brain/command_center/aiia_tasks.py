@@ -567,6 +567,12 @@ TASK_DEFINITIONS = {
 # ─────────────────────────────────────────────────────────────
 
 
+class TaskRunFailure(RuntimeError):
+    def __init__(self, summary: str, output: str):
+        super().__init__(summary)
+        self.output = output
+
+
 class TaskRunner:
     """Manages scheduling, execution, progress, and persistence for AIIA tasks."""
 
@@ -792,6 +798,7 @@ class TaskRunner:
             task["progress"] = 0
             task["current_step"] = f"Error: {error_msg}"
             task["last_run"] = finished_at
+            task["last_output"] = e.output if isinstance(e, TaskRunFailure) else None
             task["last_result"] = f"FAILED: {error_msg}"
             task["last_duration_ms"] = elapsed_ms
             task["fail_count"] += 1
@@ -1598,7 +1605,11 @@ class TaskRunner:
             for m in recent_memories[:10]
         )
 
-        prompt = f"""Generate a morning briefing for the development team lead. Structure your response in exactly 4 sections:
+        commits_section = commits_section[:6000]
+        health_section = health_section[:2000]
+        token_section = token_section[:1000]
+
+        prompt = f"""Generate a morning briefing for the development team lead. Use at most 500 words and exactly 4 sections:
 
 ## 1. Shipped Code (by product)
 Summarize what was built yesterday, grouped by product. Highlight notable features, fixes, and patterns.
@@ -1642,6 +1653,8 @@ RECENT MEMORIES:
                     "question": prompt,
                     "context": "You are AIIA generating the morning briefing for the development team. Be concise, actionable, and specific. Use the 4-section format requested. Prioritize recommendations based on revenue impact and client deadlines.",
                     "n_results": 3,
+                    "max_tokens": 1024,
+                    "include_sessions": False,
                     # qwen3 thinks by default and spends the budget on hidden reasoning.
                     "think": False,
                 },
@@ -2098,13 +2111,16 @@ Be specific and reference actual file names. Keep each point to 1-2 sentences.""
         proc = None
         try:
             proc = await asyncio.create_subprocess_exec(
-                sys.executable,
+                os.environ.get("AIIA_TEST_PYTHON") or sys.executable,
                 "-m",
                 "pytest",
                 "--tb=short",
                 "-q",
                 "-p",
                 "no:cacheprovider",
+                "-p",
+                "asyncio",
+                "--strict-config",
                 TEST_ROOT,
                 cwd=self.repo_path,
                 stdout=asyncio.subprocess.PIPE,
@@ -2118,13 +2134,14 @@ Be specific and reference actual file names. Keep each point to 1-2 sentences.""
             interrupted = any(
                 line.startswith("!!!") or "Interrupted:" in line for line in output_lines
             )
-            if proc.returncode not in (0, 1) and not (passed or failed):
+            if proc.returncode not in (0, 1):
                 # 2 = interrupted, 3 = internal error, 4 = usage error, 5 = nothing collected
                 errors = max(errors, 1)
                 interrupted = True
         except asyncio.TimeoutError:
             if proc is not None:
                 proc.kill()
+                await proc.communicate()
             output_lines = [f"Tests timed out after {TEST_RUNNER_TIMEOUT}s"]
             errors = 1
             interrupted = True
@@ -2140,7 +2157,9 @@ Be specific and reference actual file names. Keep each point to 1-2 sentences.""
                 (line for line in output_lines if "ERROR" in line or "error" in line.lower()),
                 output_lines[-1] if output_lines else "no output",
             )
-            raise RuntimeError(f"Test suite did not run: {detail[:200]}")
+            raise TaskRunFailure(
+                f"Test suite did not complete: {detail[:200]}", "\n".join(output_lines[-30:])
+            )
 
         await self._progress("test_runner", 85, "Recording results")
 
@@ -2192,13 +2211,16 @@ Be specific and reference actual file names. Keep each point to 1-2 sentences.""
                     "new_action",
                     {"count": failed + errors, "source": "test_runner"},
                 )
-        elif passed > 0:
+        elif passed > 0 and proc.returncode == 0:
             await self._emit_insight(
                 "quality",
                 "success",
                 f"All {passed} tests passing across {len(test_files)} files",
                 source_task="test_runner",
             )
+
+        if failed or errors or proc.returncode != 0:
+            raise TaskRunFailure(f"{passed} passed, {failed} failed, {errors} errors", report)
 
         # Store in AIIA
         status_word = (

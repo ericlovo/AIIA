@@ -97,6 +97,12 @@ All notable changes to AIIA are documented here. This project adheres to
 
 ### Fixed
 
+- Bound Daily Brief generation and forward output limits to the local model; surface
+  explicit timeout failures. Scheduled test failures now retain their report and
+  mark the task failed, with required asyncio plugin checks and an optional test
+  interpreter. Studio and the digest recognize explicit production verification
+  receipts separately from unverified merges.
+
 - **Digest product lines stay green unless a live PR is actually blocked.**
   Draft PRs and skipped Codex drafts no longer count as conflict or check
   blockers (no more `#117 conflict` plus `skipped: 1 codex drafts (#117)`).
