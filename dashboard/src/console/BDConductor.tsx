@@ -1,8 +1,9 @@
 import { studioFetch, studioJSON } from '../lib/connection'
 import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { plannedWaiting, providerStatus, scheduleQueueText, ageLabel, heartbeatFresh, publicSource, type BDSnapshot, type Budget } from './bdModel'
+import { packetOutcome, outcomeLabel, researchReason, plannedWaiting, providerStatus, scheduleQueueText, ageLabel, heartbeatFresh, publicSource, type BDSnapshot, type Budget } from './bdModel'
 import { BDScheduleStrip } from './BDScheduleStrip'
+import { BDResearchHistory } from './BDResearchHistory'
 import { BDActivityBoard } from './BDActivityBoard'
 import './BDConductor.css'
 
@@ -31,6 +32,7 @@ export function BDConductor() {
   const [stream, setStream] = useState('Connecting')
   const [now, setNow] = useState(() => Date.now())
   const [lane, setLane] = useState('all')
+  const [outcomeFilter, setOutcomeFilter] = useState('supported')
   const [reviewFilter, setReviewFilter] = useState('active')
   const [expanded, setExpanded] = useState<Record<string, boolean>>({})
   const [reviewTarget, setReviewTarget] = useState('')
@@ -58,7 +60,7 @@ export function BDConductor() {
     const card = document.getElementById(`bd-packet-${reviewTarget}`)
     card?.scrollIntoView({ block: 'start', behavior: 'instant' })
     card?.focus({ preventScroll: true })
-  }, [reviewTarget, reviewFilter, lane])
+  }, [reviewTarget, reviewFilter, outcomeFilter, lane])
   const action = useMutation({
     mutationFn: ({ path, body }: { path: string; body: unknown }) => request(path, body),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['bd-snapshot'] }),
@@ -66,10 +68,22 @@ export function BDConductor() {
   const botName = (id: string) => data?.bots.find(bot => bot.id === id)?.name ?? id
   const active = data?.jobs.filter(job => ['running', 'leased'].includes(job.state)) ?? []
   const lanePackets = data?.packets.filter(packet => lane === 'all' || packet.bot_id === lane) ?? []
-  const pendingCount = lanePackets.filter(packet => packet.review_status === 'human_review_required').length
-  const packets = lanePackets.filter(packet => reviewFilter === 'active' ? packet.review_status !== 'dismissed' : packet.review_status === reviewFilter)
+  const pendingCount = lanePackets.filter(packet => packetOutcome(packet) === 'supported' && packet.review_status === 'human_review_required').length
+  const packets = lanePackets.filter(packet => outcomeFilter === 'all' || (outcomeFilter === 'supported' ? packetOutcome(packet) === 'supported' : packetOutcome(packet) !== 'supported')).filter(packet => reviewFilter === 'active' ? packet.review_status !== 'dismissed' : packet.review_status === reviewFilter)
   const visibleActive = active.filter(job => lane === 'all' || job.bot_id === lane)
   const events = (pausedFeed ? frozenEvents : data?.events ?? []).filter(event => lane === 'all' || event.bot_id === lane)
+  const reviewPacket = (packet: BDSnapshot['packets'][number]) => {
+    setExpanded(current => ({ ...current, [packet.id]: true }))
+    setLane('all')
+    setOutcomeFilter(packetOutcome(packet) === 'supported' ? 'supported' : 'history')
+    setReviewFilter(packet.review_status === 'dismissed' ? 'dismissed' : 'active')
+    setReviewTarget(packet.id)
+    if (reviewTarget === packet.id) {
+      const card = document.getElementById(`bd-packet-${packet.id}`)
+      card?.scrollIntoView({ block: 'start', behavior: 'instant' })
+      card?.focus({ preventScroll: true })
+    }
+  }
   return <main className="bd-page">
     <div className="bd-wrap">
       <header className="bd-heading">
@@ -92,17 +106,8 @@ export function BDConductor() {
         </section>
         <BDScheduleStrip data={data} now={now} />
         <div className="bd-view-controls"><span>Research flow</span><label>Show <select value={lane} onChange={event => setLane(event.target.value)}><option value="all">All segments & clients</option>{data.bots.map(bot => <option key={bot.id} value={bot.id}>{bot.name}</option>)}</select></label></div>
-        <BDActivityBoard data={data} now={now} lane={lane} onReview={packet => {
-          setExpanded(current => ({ ...current, [packet.id]: true }))
-          setLane('all')
-          setReviewFilter(packet.review_status === 'dismissed' ? 'dismissed' : 'active')
-          setReviewTarget(packet.id)
-          if (reviewTarget === packet.id) {
-            const card = document.getElementById(`bd-packet-${packet.id}`)
-            card?.scrollIntoView({ block: 'start', behavior: 'instant' })
-            card?.focus({ preventScroll: true })
-          }
-        }} />
+        <BDActivityBoard data={data} now={now} lane={lane} onReview={reviewPacket} />
+        <BDResearchHistory data={data} now={now} lane={lane} onReview={reviewPacket} />
         <details className="bd-connection-details"><summary>Connections & integration health</summary>
         <section className="bd-health" aria-label="Connection health">
           {Object.entries(healthNames).map(([key, name]) => {
@@ -127,12 +132,12 @@ export function BDConductor() {
               {visibleActive.length === 0 ? <p className="bd-empty">No active jobs in this snapshot. {scheduleQueueText(data, now)}</p> : <ul className="bd-jobs">{visibleActive.map(job => <li key={job.id}><span className={`bd-dot ${heartbeatFresh(job.heartbeat_at, now) ? 'is-live bd-pulse' : ''}`} aria-hidden="true" /><div><strong>{botName(job.bot_id)}</strong><p>{job.step || job.state}</p><small>{job.tenant_id} · {job.segment} · {job.id}</small></div><div className="bd-job-time"><strong>{ageLabel(job.started_at, now)}</strong><small>Heartbeat {ageLabel(job.heartbeat_at, now)} ago</small></div></li>)}</ul>}
             </section>
             <section className="bd-section" aria-label="Waiting on a human">
-              <div className="bd-section-heading"><h2>Research packets <span>{packets.length}</span></h2><label>Review <select aria-label="Packet review status" value={reviewFilter} onChange={event => setReviewFilter(event.target.value)}><option value="active">Active packets</option><option value="human_review_required">Waiting on a human</option><option value="research_next">Research next</option><option value="watch">Watch</option><option value="dismissed">Dismissed</option></select></label></div>
-              <p className="bd-muted">{pendingCount} waiting on a human. Local triage only; no outreach or CRM changes.</p>
+              <div className="bd-section-heading"><h2>Research packets <span>{packets.length}</span></h2><label>Outcome <select aria-label="Research outcome" value={outcomeFilter} onChange={event => setOutcomeFilter(event.target.value)}><option value="supported">Supported candidates</option><option value="history">Rejected / inconclusive</option><option value="all">All research</option></select></label><label>Review <select aria-label="Packet review status" value={reviewFilter} onChange={event => setReviewFilter(event.target.value)}><option value="active">Active packets</option><option value="human_review_required">Waiting on a human</option><option value="research_next">Research next</option><option value="watch">Watch</option><option value="dismissed">Dismissed</option></select></label></div>
+              <p className="bd-muted">{pendingCount} supported candidates waiting on a human. Local triage only; no outreach or CRM changes.</p>
               {packets.length === 0 && <p className="bd-empty">No packets in this view yet. Completed research will appear here.</p>}
               <div className="bd-packets">{packets.map(packet => <article key={packet.id} id={`bd-packet-${packet.id}`} tabIndex={-1} className="bd-packet">
                 <div className="bd-packet-meta"><span>{packet.tenant_id} / {packet.segment}</span><span>{ageLabel(packet.created_at, now)} ago</span></div>
-                <h3>{packet.organization || 'Research packet'}</h3><p>{packet.summary}</p>
+                <h3>{packet.organization || 'Unnamed research result'}</h3><p className="bd-outcome-label">{outcomeLabel(packetOutcome(packet))}</p><p>{researchReason(packet.candidate_reason ?? (packetOutcome(packet) === 'supported' ? 'source_supported_candidate' : undefined))}</p><p>{packet.summary}</p>
                 <div className="bd-tags"><span>{packet.mode}</span><span>{packet.review_status.replaceAll('_', ' ')}</span><span>{botName(packet.bot_id)}</span></div>
                 <details open={!!expanded[packet.id]} onToggle={event => { const open = event.currentTarget.open; setExpanded(current => current[packet.id] === open ? current : { ...current, [packet.id]: open }) }}><summary>Review evidence & contacts</summary><div className="bd-evidence">
                   {publicSource(packet.source_url) ? <a href={publicSource(packet.source_url)!} target="_blank" rel="noopener noreferrer">Open source evidence ↗</a> : <p>Source evidence unavailable</p>}

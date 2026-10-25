@@ -14,7 +14,7 @@ const snapshot = {
   mode: 'replay', schedule_enabled: false, kill_switch: false, bots, budget,
   jobs: [{ id: 'queue-1', bot_id: 'bot-1', tenant_id: 'synthetic-1', segment: 'PE technical diligence', state: 'queued', step: 'queued', created_at: at, started_at: null, heartbeat_at: null }, { id: 'job-1', bot_id: 'bot-0', tenant_id: 'synthetic-0', segment: 'Healthcare', state: 'running', step: 'Extracting public evidence', created_at: at, started_at: at, heartbeat_at: at }],
   events: [{ id: 'event-1', kind: 'job_running', message: 'Research started from recorded public evidence.', created_at: at, bot_id: 'bot-0', job_id: 'job-1' }],
-  packets: [{ id: 'packet-1', index: 0, job_id: 'previous-job', bot_id: 'bot-0', tenant_id: 'synthetic-0', segment: 'Healthcare', created_at: at, mode: 'replay', review_status: 'human_review_required', organization: 'Synthetic Health Group', source_url: 'https://example.com/research', source_quote: 'Synthetic source quotation for review.', emails: ['research@example.com'], phones: ['+1 202-555-0100'], signals: ['Expansion announcement in recorded source.'], insights: ['Explore demand for intake automation.'], summary: 'Synthetic evidence packet for review. This is not a real prospect.' }],
+  packets: [{ id: 'packet-1', index: 0, candidate_status: 'supported', candidate_reason: 'source_supported_candidate', job_id: 'previous-job', bot_id: 'bot-0', tenant_id: 'synthetic-0', segment: 'Healthcare', created_at: at, mode: 'replay', review_status: 'human_review_required', organization: 'Synthetic Health Group', source_url: 'https://example.com/research', source_quote: 'Synthetic source quotation for review.', emails: ['research@example.com'], phones: ['+1 202-555-0100'], signals: ['Expansion announcement in recorded source.'], insights: ['Explore demand for intake automation.'], summary: 'Synthetic evidence packet for review. This is not a real prospect.' }],
   health: { qwen: { status: 'replay', detail: 'Recorded extraction' }, jev: { status: 'replay', detail: 'Recorded verdicts' }, managed_leads: { status: 'data_unavailable', detail: 'Staging API is not connected' } },
   model_activity: { qwen: { status: 'replay', active_jobs: [], calls: 0, completed: 0, replayed: 3, errors: 0, last_event_at: at, latency_ms: null }, jev: { status: 'replay', active_jobs: [], calls: 0, completed: 0, replayed: 2, errors: 0, last_event_at: at, latency_ms: null } },
   jev: { calls_per_minute: 2, verdict_mix: { Choice: 1, Score: 1, Noul: 0 }, latency_ms: null, errors: null },
@@ -155,6 +155,36 @@ try {
     assert.equal(await page.getByText('Waiting for planned start', { exact: true }).count(), 0)
     await schedulePanel.getByText('Paused', { exact: true }).waitFor()
     await schedulePanel.screenshot({ path: join(output, `bd-manual-paused-${width}.png`), animations: 'disabled' })
+    await page.evaluate(data => window.bdSource.snapshot({ data: JSON.stringify(data) }), current)
+    const quality = structuredClone(current)
+    quality.packets.push(...['reject', 'watch', 'uncertain', 'blank'].map((disposition, index) => ({
+      ...quality.packets[0], id: `history-${index}`, job_id: `history-job-${index}`,
+      organization: disposition === 'blank' ? '' : `Synthetic ${disposition} result`, disposition,
+      candidate_status: disposition === 'reject' ? 'rejected' : undefined,
+      candidate_reason: disposition === 'reject' ? 'segment_rejected' : 'segment_entity_or_event_unconfirmed',
+      review_status: disposition === 'watch' ? 'research_next' : 'human_review_required',
+    })))
+    quality.jobs.push({ ...quality.jobs[0], id: 'withheld-job', state: 'completed', finished_at: at, research_outcome: 'inconclusive', result_reason: 'no_new_evidence' })
+    await page.evaluate(data => window.bdSource.snapshot({ data: JSON.stringify(data) }), quality)
+    const delivered = page.getByRole('region', { name: 'Completed research', exact: true })
+    assert.equal(await delivered.getByRole('button', { name: 'Review packet' }).count(), 1)
+    assert.equal(await delivered.getByText(/Synthetic reject|Synthetic watch|Synthetic uncertain/).count(), 0)
+    assert.equal(await page.locator('.bd-packet').count(), 1)
+    const history = page.getByRole('region', { name: 'Research history', exact: true })
+    await history.getByText('Inspect research outcomes (5)', { exact: true }).click()
+    await history.getByText('No new evidence was found in this run.', { exact: true }).waitFor()
+    await history.getByText('Unnamed research result', { exact: true }).waitFor()
+    await history.scrollIntoViewIfNeeded()
+    await page.screenshot({ path: join(output, `bd-outcome-history-${width}.png`), animations: 'disabled' })
+    const writesBeforeInspection = posts.length
+    await history.getByRole('listitem').filter({ hasText: 'Synthetic watch result' }).getByRole('button', { name: 'Inspect evidence' }).click()
+    await page.locator('#bd-packet-history-1').getByRole('link', { name: 'Open source evidence' }).waitFor({ state: 'visible' })
+    assert.equal(await page.getByRole('combobox', { name: 'Research outcome' }).inputValue(), 'history')
+    assert.equal(posts.length, writesBeforeInspection, 'inspecting history does not mutate reviews')
+    assert.equal(await page.locator('.bd-page').evaluate(el => el.scrollWidth > el.clientWidth), false)
+    await page.getByRole('combobox', { name: 'Research outcome' }).selectOption('all')
+    assert.equal(await page.locator('.bd-packet').count(), 5)
+    await page.getByRole('combobox', { name: 'Research outcome' }).selectOption('supported')
     await page.evaluate(data => window.bdSource.snapshot({ data: JSON.stringify(data) }), current)
     actionFail = true
     await page.getByRole('button', { name: 'Run shadow batch' }).click()

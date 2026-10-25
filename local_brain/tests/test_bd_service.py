@@ -486,3 +486,89 @@ def test_aged_provider_failure_remains_failure_not_stale_success(service):
     assert health["last_status"] == "data_unavailable"
     assert health["detail"] == "qwen_unavailable"
     assert health["observed_at"]
+
+
+def test_candidates_require_segment_role_and_grounded_history(service):
+    from local_brain.command_center.bd_pipeline import proposal_packet, synthetic_fixture
+    from local_brain.command_center.bd_service import candidate_assessment
+
+    for segment in ("healthcare", "pe-technical-diligence", "alumni-associations"):
+        source, extraction, judgments = synthetic_fixture(segment)
+        packet = proposal_packet(
+            {"segment": segment, "tenant_id": "synthetic-test"}, source, extraction, judgments, {}
+        )
+        assert candidate_assessment(packet, segment)[0] == "supported"
+        packet["judgments"].pop("entity_role")
+        assert candidate_assessment(packet, segment)[0] == "inconclusive"
+        packet["review_status"] = "research_next"
+        assert candidate_assessment(packet, segment)[0] == "inconclusive"
+        packet["organization"] = ""
+        assert candidate_assessment(packet, segment) == ("inconclusive", "no_named_organization")
+        packet["disposition"] = "reject"
+        assert candidate_assessment(packet, segment)[0] == "rejected"
+
+
+def test_withheld_outcome_visible_without_exposing_raw_result(service):
+    async def pipeline(job, emit):
+        return {
+            "status": "no_supported_prospect",
+            "research_outcome": "rejected",
+            "reason": "segment_entity_or_event_unconfirmed",
+            "packets": [],
+            "private_debug": "DO_NOT_EXPOSE",
+        }
+
+    service.pipeline = pipeline
+    service.enqueue_cycle(shadow=True)
+    asyncio.run(service.run_once())
+    snapshot = service.snapshot()
+    job = next(j for j in snapshot["jobs"] if j["state"] == "completed")
+    assert job["research_outcome"] == "rejected"
+    assert job["result_reason"] == "segment_entity_or_event_unconfirmed"
+    assert snapshot["packets"] == []
+    assert "DO_NOT_EXPOSE" not in json.dumps(snapshot)
+
+
+@pytest.mark.parametrize("mutation", ["quote", "provenance", "disposition", "nan"])
+def test_historical_evidence_fails_closed(mutation):
+    from local_brain.command_center.bd_pipeline import proposal_packet, synthetic_fixture
+    from local_brain.command_center.bd_service import candidate_assessment
+
+    source, extraction, judgments = synthetic_fixture("pe-technical-diligence")
+    packet = proposal_packet(
+        {"segment": "pe-technical-diligence", "tenant_id": "synthetic-pe"},
+        source,
+        extraction,
+        judgments,
+        {},
+    )
+    if mutation == "quote":
+        packet["market_signals"][0]["quote"] = packet["organization"] + " fabricated quote"
+    elif mutation == "provenance":
+        packet["provenance"] = {"url": "https://example.org"}
+    elif mutation == "disposition":
+        packet["disposition"] = "watch"
+    else:
+        packet["judgments"]["entity_role"]["confidence"] = float("nan")
+    assert candidate_assessment(packet, "pe-technical-diligence")[0] == "inconclusive"
+
+
+def test_client_candidate_uses_configured_research_segment(service):
+    from local_brain.command_center.bd_pipeline import proposal_packet, synthetic_fixture
+
+    bot = service.store.bots["srg"]
+    bot["research_segment"] = "pe-technical-diligence"
+    source, extraction, judgments = synthetic_fixture("pe-technical-diligence")
+    packet = proposal_packet(
+        {"segment": "client-bd", "tenant_id": bot["tenant_id"]}, source, extraction, judgments, {}
+    )
+
+    async def pipeline(job, emit):
+        return {"packets": [packet]}
+
+    service.pipeline = pipeline
+    service.store.enqueue("srg", bot["tenant_id"], "client-preview", "research", mode="replay")
+    asyncio.run(service.run_once())
+    snapshot = service.snapshot()
+    assert snapshot["packets"][0]["candidate_status"] == "supported"
+    assert snapshot["jobs"][0]["research_outcome"] == "supported"

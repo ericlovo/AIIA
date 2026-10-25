@@ -58,3 +58,21 @@ Autonomous primary-page crawling is not implemented: the existing fetcher does n
 Run the repository backend tests, Ruff and its backlog ratchet, dashboard lint/unit/build/browser suites. New focused suites are `test_bd_conductor.py`, `test_bd_service.py`, `test_bd_routes.py`, and `test_bd_pipeline.py`. The dashboard has fixture tests plus `dashboard/tests/bd-live.mjs` for the real isolated backend (hard-bound to loopback port 8231 and synthetic replay).
 
 Tests cover durable state, concurrent dedup/leases, retry limits, deadline/heartbeat fencing, restart recovery, global/per-bot caps, kill/resume, schedule validation, strict tenant binding, same-origin mutations, evidence validation, provider denial, triage persistence, and no fake packet for a successful empty source result. Browser checks cover SSE running/completion, source evidence, triage, filters, error states, and phone layouts. Real local Qwen extraction was separately exercised on synthetic text; live cloud retrieval/Jev and authenticated tenant API access remain unverified because their activation boundaries are closed.
+
+## Candidate quality and research history
+
+Healthcare, PE technical diligence, and alumni/associations use the same strict
+source-grounding checks. A candidate requires a named organization in the article
+and selected quote, a concrete event, a supported claim, and a confident
+segment-specific entity-role judgment. PE requires relevant investment,
+acquisition, diligence, or technology operations; alumni requires relevant
+membership, engagement, fundraising, or platform operations. Publisher names,
+blank organizations, generic themes, and unrelated personal news are withheld.
+These judgments use the existing Jev request and retain the per-job budget checks.
+
+Studio separates **Supported candidates** from **Research history**. Completed
+jobs can be rejected, inconclusive, or contain no new evidence; completion alone
+is not a candidate. Historical packets remain intact, but missing role/evidence
+checks keep them in research history. Local triage cannot upgrade their evidence
+classification. Supported candidates still require human verification and remain
+on contact hold; neither classification nor triage authorizes outreach.

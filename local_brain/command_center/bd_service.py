@@ -15,6 +15,62 @@ def iso(value):
     return datetime.fromtimestamp(value, timezone.utc).isoformat() if value is not None else None
 
 
+def candidate_assessment(packet, segment):
+    """Classify retained evidence without promoting historical or human-triaged packets."""
+    from .bd_pipeline import (
+        SEGMENT_ENTITIES,
+        entity_gap,
+        questions_for,
+        validate_answers,
+        validate_extraction,
+    )
+
+    answers = packet.get("judgments") or {}
+    if not isinstance(answers, dict):
+        return "inconclusive", "source_evidence_unverified"
+    disposition = answers.get("disposition") or {}
+    role = answers.get("entity_role") or {}
+    if packet.get("disposition") == "reject":
+        return "rejected", "segment_rejected"
+    if not str(packet.get("organization") or "").strip():
+        return "inconclusive", "no_named_organization"
+    if segment not in SEGMENT_ENTITIES:
+        return "inconclusive", "segment_evidence_unverified"
+    if packet.get("disposition") != "research":
+        return "inconclusive", "segment_entity_or_event_unconfirmed"
+    source = packet.get("provenance") or {}
+    signals = packet.get("market_signals") or []
+    if not source or not signals:
+        return "inconclusive", "source_evidence_missing"
+    if not isinstance(signals, list) or not isinstance(signals[0], dict):
+        return "inconclusive", "source_evidence_unverified"
+    signal = signals[0]
+    extraction = {
+        "organization": packet["organization"],
+        "signal": signal.get("text", ""),
+        "quote": signal.get("quote", ""),
+        "consumer_insight": "",
+    }
+    try:
+        validate_extraction(source, extraction)
+        validate_answers(answers, questions_for(segment))
+        gap = entity_gap(source, extraction, segment)
+    except (ValueError, KeyError, TypeError, AttributeError):
+        return "inconclusive", "source_evidence_unverified"
+    if gap:
+        return "inconclusive", gap
+    expected = SEGMENT_ENTITIES[segment][0]
+    if (
+        role.get("choice") != expected
+        or role.get("confidence", 0) < 0.8
+        or (role.get("probabilities") or {}).get(expected, 0) < 0.8
+        or disposition.get("choice") != "research"
+        or (answers.get("claim_supported") or {}).get("noul", 0) < 0.8
+    ):
+        return "inconclusive", "segment_entity_or_event_unconfirmed"
+    return "supported", "source_supported_candidate"
+
+
 class BDService:
     def __init__(self, store: BDConductor, pipeline=None):
         self.store = store
@@ -76,7 +132,7 @@ class BDService:
         job["budget"] = job["reserved_budget"]
         job["source_allowlist"] = list(self.store.bots[job["bot_id"]].get("source_allowlist", []))
         job["managed_leads"] = dict(self.store.bots[job["bot_id"]].get("managed_leads", {}))
-        job["research_segment"] = self.store.bots[job["bot_id"]].get("research_segment")
+        job["research_segment"] = self.store.bots.get(job["bot_id"], {}).get("research_segment")
         job["seen_evidence"] = self.store.evidence_keys(job["bot_id"], job["tenant_id"])
 
         async def emit(kind, detail=None, **extra):
@@ -273,6 +329,29 @@ class BDService:
                     for key in ("created_at", "started_at", "heartbeat_at", "finished_at")
                 }
             )
+            if job["state"] == "completed":
+                result = job.get("result") or {}
+                retained = result.get("packets", [result] if result.get("organization") else [])
+                assessments = [
+                    candidate_assessment(
+                        packet,
+                        self.store.bots.get(job["bot_id"], {}).get("research_segment")
+                        or public["segment"],
+                    )
+                    for packet in retained
+                ]
+                outcome = result.get("research_outcome", "inconclusive")
+                reason = result.get("reason", "no_supported_prospect")
+                if assessments:
+                    outcome, reason = next(
+                        (item for item in assessments if item[0] == "supported"), assessments[0]
+                    )
+                public["research_outcome"] = (
+                    outcome
+                    if outcome in {"supported", "rejected", "inconclusive"}
+                    else "inconclusive"
+                )
+                public["result_reason"] = reason
             jobs.append(public)
         for job in [job for job in raw["jobs"] if job["state"] == "completed"][:200]:
             result = job.get("result") or {}
@@ -461,7 +540,13 @@ class BDService:
                 str(value) for value in packet.get(key, []) if isinstance(value, (str, int, float))
             ]
 
+        segment = self.store.bots.get(job["bot_id"], {}).get("segment", "unknown")
+        status, reason = candidate_assessment(
+            packet, self.store.bots.get(job["bot_id"], {}).get("research_segment") or segment
+        )
         return {
+            "candidate_status": status,
+            "candidate_reason": reason,
             "id": packet.get("id", f"{job['id']}:{index}"),
             "job_id": job["id"],
             "bot_id": job["bot_id"],

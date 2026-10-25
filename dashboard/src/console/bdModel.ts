@@ -1,3 +1,4 @@
+export type ResearchOutcome = 'supported' | 'rejected' | 'inconclusive'
 export type Budget = Record<'tokens' | 'calls' | 'seconds', { used: number | null; limit: number | null }>
 export interface BDBot {
   id: string; name: string; segment: string; tenant_id: string; budgets: Budget
@@ -6,11 +7,13 @@ export interface BDBot {
 export interface BDJob {
   id: string; bot_id: string; tenant_id: string; segment: string
   state: 'queued' | 'leased' | 'running' | 'completed' | 'failed' | 'cancelled'
+  mode?: string; research_outcome?: ResearchOutcome; result_reason?: string
   finished_at?: string | null; error?: string | null; attempts?: number
   step: string; created_at: string; started_at: string | null; heartbeat_at: string | null
 }
 export interface BDEvent { provider?: string; model?: string; latency_ms?: number | null; mode?: string; primitive?: string; id: string | number; kind: string; message: string; created_at: string; bot_id: string; job_id: string }
 export interface BDPacket {
+  candidate_status?: ResearchOutcome; candidate_reason?: string
   id: string; index: number; contact_policy?: string; disposition?: string; source_quote?: string; job_id: string; bot_id: string; tenant_id: string; segment: string; created_at: string
   mode: string; review_status: string; organization: string; source_url: string
   emails: string[]; phones: string[]; signals: string[]; insights: string[]; summary: string
@@ -108,4 +111,31 @@ export function scheduleQueueText(data: BDSnapshot, now: number): string {
   if (data.schedule?.next_run_at) return `Next planned run: ${scheduleTime(data.schedule.next_run_at, data.schedule.timezone)}.`
   if (data.schedule_enabled) return 'Waiting for the next scheduled cycle.'
   return data.mode === 'replay' ? 'The schedule is off. Start a shadow batch to see the research flow.' : 'No jobs are queued. The schedule is disabled.'
+}
+
+export function packetOutcome(packet: BDPacket): ResearchOutcome {
+  if (packet.candidate_status === 'supported' && packet.organization.trim() && publicSource(packet.source_url)) return 'supported'
+  return packet.candidate_status === 'rejected' ? 'rejected' : 'inconclusive'
+}
+export function outcomeLabel(outcome: ResearchOutcome): string {
+  return outcome === 'supported' ? 'Supported candidate' : outcome === 'rejected' ? 'Rejected research' : 'Inconclusive research'
+}
+export function researchReason(reason: string | undefined): string {
+  const reasons: Record<string, string> = {
+    source_supported_candidate: 'Source evidence and segment checks support further research; human review is still required.',
+    segment_rejected: 'The research judgment rejected this result for the segment.',
+    segment_evidence_unverified: 'Segment evidence checks have not verified this result.',
+    source_evidence_missing: 'The retained result is missing source evidence.',
+    no_supported_prospect: 'The evidence did not support a prospect for this segment.',
+    no_named_organization: 'No named organization was supported by the source.',
+    no_new_evidence: 'No new evidence was found in this run.',
+    segment_entity_or_event_unconfirmed: 'The organization or market event was not confirmed for this segment.',
+    healthcare_entity_or_event_unconfirmed: 'The healthcare organization or market event was not confirmed.',
+    entity_not_grounded: 'The organization could not be grounded in the source.',
+    segment_role_mismatch: 'The organization does not match the segment role.',
+    disposition_reject: 'The research judgment rejected this result.',
+    disposition_watch: 'The research judgment requested watching for stronger evidence.',
+    disposition_uncertain: 'The research judgment remained uncertain.',
+  }
+  return reason ? reasons[reason] ?? reason.replaceAll('_', ' ') : 'Evidence checks have not established a supported candidate.'
 }
