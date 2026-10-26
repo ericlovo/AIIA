@@ -291,12 +291,12 @@ try {
     await page.getByText('Select a target agent for “Scan repository”').waitFor()
     await page.locator('[data-edge="hierarchy:asg-draft"]').click()
     await page.getByText('Select a target agent for “Scan repository”').waitFor()
-    assert.equal(await page.getByRole('heading', { name: 'Assignment queue' }).count(), 0)
+    assert.equal(await page.getByRole('heading', { name: 'Work' }).count(), 0)
     await page.getByRole('button', { name: 'Cancel', exact: true }).click()
 
     // Selecting an agent-to-assignment edge opens that assignment.
     await page.locator('[data-edge="hierarchy:asg-draft"]').click()
-    await page.getByRole('heading', { name: 'Assignment queue' }).waitFor()
+    await page.getByRole('heading', { name: 'Work' }).waitFor()
     await page.getByText('Assignment controls', { exact: true }).waitFor()
     await page.locator('div.text-lg', { hasText: 'Draft summary' }).waitFor()
 

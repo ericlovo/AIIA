@@ -130,7 +130,7 @@ try {
     await openStudioView(page, "Assignments")
     await page.getByText('Cron contract test slice', { exact: true }).click()
     await page.getByRole('region', { name: 'Attention tracking' }).getByRole('button', { name: 'Restore to attention' }).click()
-    await page.getByRole('region', { name: 'Attention tracking' }).getByText('In the attention list', { exact: true }).waitFor()
+    await page.getByRole('region', { name: 'Attention tracking' }).getByText('Not dismissed', { exact: true }).waitFor()
     await review.getByText('Rejected output', { exact: true }).waitFor()
     await openStudioView(page, "Today")
     await page.getByRole('heading', { name: /Needs attention \(1\)/ }).waitFor()
