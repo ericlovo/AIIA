@@ -101,7 +101,9 @@ async def test_aiia_ask_forwards_think_false_for_daily_brief(monkeypatch):
     brain._gather_context = AsyncMock(return_value=([], [], []))  # type: ignore[method-assign]
     brain._fire_extraction = MagicMock()  # type: ignore[method-assign]
 
-    result = await brain.ask("Generate a morning briefing", think=False, max_tokens=1024)
+    result = await brain.ask(
+        "Generate a morning briefing", think=False, max_tokens=1024, warmup=True
+    )
 
     assert fake.kwargs["think"] is False
     assert fake.kwargs["max_tokens"] == 1024
@@ -114,10 +116,11 @@ async def test_aiia_ask_forwards_think_false_for_daily_brief(monkeypatch):
     monkeypatch.setattr(local_api, "_report_metrics", _noop_metrics)
 
     await local_api.aiia_ask(
-        local_api.AIIAAskRequest(question="brief", think=False, max_tokens=1024)
+        local_api.AIIAAskRequest(question="brief", think=False, max_tokens=1024, warmup=True)
     )
     assert fake_brain.ask.await_args.kwargs["think"] is False
     assert fake_brain.ask.await_args.kwargs["max_tokens"] == 1024
+    assert fake_brain.ask.await_args.kwargs["warmup"] is True
 
 
 @pytest.mark.asyncio
@@ -217,9 +220,45 @@ async def test_aiia_ask_timeout_returns_actionable_gateway_timeout(monkeypatch):
 
     fake = MagicMock()
     fake.ask = AsyncMock(side_effect=httpx.ReadTimeout(""))
+    fake._model = "qwen3:8b"
+    fake._ollama = MagicMock(timeout=300.0)
     monkeypatch.setattr(local_api, "_require_aiia", AsyncMock(return_value=fake))
     with pytest.raises(HTTPException) as error:
         await local_api.aiia_ask(local_api.AIIAAskRequest(question="brief", max_tokens=1024))
     assert error.value.status_code == 504
-    assert "timed out" in error.value.detail
+    assert error.value.detail == "Local model generation timed out after 300s (model=qwen3:8b)"
     assert fake.ask.await_count == 1
+
+
+@pytest.mark.asyncio
+async def test_ask_warmup_loads_the_model_before_the_prompt():
+    loaded: list[str] = []
+
+    class _WarmOllama(_RecordingOllama):
+        async def ensure_loaded(self, model):
+            loaded.append(model)
+            return {"model": model}
+
+    fake = _WarmOllama({"message": {"content": "ok"}})
+    memory = MagicMock()
+    memory.version = 1
+    memory.export_for_context.return_value = ""
+    brain = AIIA(knowledge_store=MagicMock(), memory=memory, ollama_client=fake, model="qwen3:8b")
+    brain._gather_context = AsyncMock(return_value=([], [], []))  # type: ignore[method-assign]
+    brain._fire_extraction = MagicMock()  # type: ignore[method-assign]
+
+    await brain.ask("brief", warmup=True, think=False, max_tokens=8, num_ctx=512)
+    assert loaded == ["qwen3:8b"]
+    assert fake.kwargs["num_ctx"] == 512
+
+
+@pytest.mark.asyncio
+async def test_ollama_ensure_loaded_sends_tiny_keep_alive(monkeypatch):
+    sent = _patch_httpx(monkeypatch, {"message": {"content": "ok"}, "load_duration": 2_000_000_000})
+    data = await _client().ensure_loaded("qwen3:8b")
+    assert sent["payload"]["model"] == "qwen3:8b"
+    assert sent["payload"]["keep_alive"] == "30m"
+    assert sent["payload"]["think"] is False
+    assert sent["payload"]["options"]["num_ctx"] == 512
+    assert sent["payload"]["options"]["num_predict"] == 1
+    assert data["_latency_ms"] >= 0

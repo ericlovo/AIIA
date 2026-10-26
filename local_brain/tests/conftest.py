@@ -124,13 +124,56 @@ def isolated_aiia_dir(tmp_path, monkeypatch: pytest.MonkeyPatch) -> Iterator[str
     yield str(aiia_root)
 
 
-@pytest.fixture(autouse=True)
-def _disable_real_telemetry(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Defensive: ensure tests never hit external telemetry endpoints.
+# Launchd on the Mini exports production flags into the scheduled test
+# runner. Tests that assert default-off / isolated behavior must not see
+# those, and must not read or write the live ~/.aiia tree.
+_HOST_ENV_ISOLATE = (
+    "AIIA_AIRGAP",
+    "AIIA_DEFAULT_MODEL",
+    "AIIA_DEPLOYMENT_RECEIPTS",
+    "AIIA_LIVE_TESTS",
+    "AIIA_MEMORY_INBOX_PATH",
+    "AIIA_NEWS_ENABLED",
+    "AIIA_PRODUCTS_CONFIG",
+    "AIIA_SIGNALS_ENABLED",
+    "AIIA_SLACK_ACK_ENABLED",
+    "AIIA_SLACK_BOT_TOKEN",
+    "AIIA_SLACK_CHANNEL_IDS",
+    "AIIA_SLACK_FILE_CAPTURE_ENABLED",
+    "AIIA_SLACK_MEMORY_POST_CHANNEL_ID",
+    "AIIA_SLACK_MEMORY_POST_ENABLED",
+    "AIIA_SLACK_SIGNING_SECRET",
+    "AIIA_SLACK_TEAM_ID",
+    "AIIA_TEST_PYTHON",
+    "AIIA_TYPESAFE_ENABLED",
+    "COMMAND_CENTER_HOST",
+    "LOCAL_ROUTING_MODEL",
+    "LOCAL_TASK_MODEL",
+    "OBSIDIAN_VAULT_DIR",
+    "OLLAMA_TIMEOUT",
+    "XAI_API_KEY",
+)
 
-    AIIA doesn't ship telemetry, but Chromadb has historically had
-    optional anonymous-usage reporting. Lock it off so a CI run can't
-    leak signal to a third party.
+
+@pytest.fixture(autouse=True)
+def _isolate_host_environment(
+    tmp_path_factory: pytest.TempPathFactory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Keep the suite hermetic on a Mini that has real state and launchd env.
+
+    The scheduled test runner inherits AIIA_AIRGAP, Slack/Typesafe opt-ins,
+    the live default model, and HOME → ~/.aiia. Those are production
+    settings, not test fixtures; leaking them made four assertions fail
+    only on that host.
     """
+    from local_brain import config as config_mod
+
+    host = tmp_path_factory.mktemp("isolated-host")
+    # Do not rewrite HOME: nested pytest/ruff subprocesses resolve user-site
+    # packages from ~/.local. Point only AIIA data at a temp tree.
+    monkeypatch.setenv("EQ_BRAIN_DATA_DIR", str(host / "eq_data"))
+    for key in _HOST_ENV_ISOLATE:
+        monkeypatch.delenv(key, raising=False)
+    monkeypatch.setattr(config_mod, "_config", None)
     monkeypatch.setenv("ANONYMIZED_TELEMETRY", "False")
     monkeypatch.setenv("CHROMA_TELEMETRY_ENABLED", "0")

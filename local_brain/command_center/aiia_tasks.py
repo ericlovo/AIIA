@@ -40,10 +40,47 @@ logger = logging.getLogger("aiia.tasks")
 # owns the ignore list), and a suite that never ran is a runner failure.
 TEST_ROOT = "local_brain/tests"
 TEST_RUNNER_TIMEOUT = 300
-# The Brain's Ollama timeout is 300s; the brief must not give up before it.
+# Caller stays above the Brain's Ollama deadline (Mini sets OLLAMA_TIMEOUT=300;
+# the library default is 120). A shorter client timeout hid the 504 for weeks.
 DAILY_BRIEF_TIMEOUT_SECONDS = 330.0
+# 32k ctx + a cold qwen3:8b load spent the entire 300s deadline on the 07:00
+# brief. The brief already ships its evidence; do not also retrieve RAG or
+# allocate a 32k window. One tighter retry follows a 504 / timeout.
+DAILY_BRIEF_NUM_CTX = 8192
+DAILY_BRIEF_RETRY_NUM_CTX = 4096
+DAILY_BRIEF_MAX_TOKENS = 1024
+DAILY_BRIEF_RETRY_MAX_TOKENS = 512
+DAILY_BRIEF_CONTEXT = (
+    "You are AIIA generating the morning briefing for the development team. "
+    "Be concise, actionable, and specific. Use the 4-section format requested. "
+    "Prioritize recommendations based on revenue impact and client deadlines."
+)
 
 _SUMMARY_COUNT = re.compile(r"(\d+) (passed|failed|error)")
+
+
+def daily_brief_ask_body(prompt: str, *, retry: bool = False) -> dict[str, Any]:
+    """Bounded /v1/aiia/ask payload for the scheduled morning brief."""
+    return {
+        "question": prompt,
+        "context": DAILY_BRIEF_CONTEXT,
+        # The task already assembled commits, health, WIP and memories.
+        "n_results": 0,
+        "max_tokens": DAILY_BRIEF_RETRY_MAX_TOKENS if retry else DAILY_BRIEF_MAX_TOKENS,
+        "num_ctx": DAILY_BRIEF_RETRY_NUM_CTX if retry else DAILY_BRIEF_NUM_CTX,
+        "include_sessions": False,
+        # qwen3 thinks by default and spends the budget on hidden reasoning.
+        "think": False,
+        "warmup": not retry,
+    }
+
+
+def is_generation_timeout(exc: BaseException) -> bool:
+    """True when Brain generation hit its Ollama deadline (HTTP 504) or the client did."""
+    if isinstance(exc, (httpx.TimeoutException, TimeoutError, asyncio.TimeoutError)):
+        return True
+    text = f"{type(exc).__name__}: {exc}".lower()
+    return "http 504" in text or "timed out" in text or "timeout" in type(exc).__name__.lower()
 
 
 def cron_zone(defn: dict) -> ZoneInfo:
@@ -969,6 +1006,30 @@ class TaskRunner:
                 raise RuntimeError(f"AIIA returned HTTP {resp.status_code}: {resp.text[:200]}")
             return resp.json()
 
+    async def _generate_daily_brief(self, prompt: str) -> str:
+        """Warm the local model, ask once, retry once on a generation timeout."""
+        for retry in (False, True):
+            try:
+                result = await self._aiia_request(
+                    "POST",
+                    "/v1/aiia/ask",
+                    daily_brief_ask_body(prompt, retry=retry),
+                    timeout=DAILY_BRIEF_TIMEOUT_SECONDS,
+                )
+                brief = str(result.get("answer") or "").strip()
+                if brief:
+                    return brief
+                raise RuntimeError("empty_answer")
+            except Exception as exc:
+                if retry or not is_generation_timeout(exc):
+                    raise
+                logger.warning(
+                    "Daily Brief generation timed out; retrying with num_ctx=%s max_tokens=%s",
+                    DAILY_BRIEF_RETRY_NUM_CTX,
+                    DAILY_BRIEF_RETRY_MAX_TOKENS,
+                )
+        raise RuntimeError("Brief generation failed")  # pragma: no cover
+
     async def _task_project_pulse(self) -> str:
         """Fetch each project's backlog → roadmap stories → prioritized cards.
 
@@ -1646,28 +1707,14 @@ RECENT MEMORIES:
 {memory_section}"""
 
         try:
-            result = await self._aiia_request(
-                "POST",
-                "/v1/aiia/ask",
-                {
-                    "question": prompt,
-                    "context": "You are AIIA generating the morning briefing for the development team. Be concise, actionable, and specific. Use the 4-section format requested. Prioritize recommendations based on revenue impact and client deadlines.",
-                    "n_results": 3,
-                    "max_tokens": 1024,
-                    "include_sessions": False,
-                    # qwen3 thinks by default and spends the budget on hidden reasoning.
-                    "think": False,
-                },
-                # The Brain's own Ollama timeout is 300s; a shorter client timeout
-                # here just abandons a brief that is still being written.
-                timeout=DAILY_BRIEF_TIMEOUT_SECONDS,
-            )
-            brief = str(result.get("answer") or "").strip()
-            if not brief:
-                raise RuntimeError("empty_answer")
+            brief = await self._generate_daily_brief(prompt)
         except Exception as e:
             # httpx timeouts stringify to "", which hid every failure for weeks.
             reason = f"{type(e).__name__}: {str(e)[:160]}".rstrip(": ")
+            if is_generation_timeout(e):
+                raise RuntimeError(
+                    f"Brief generation failed after warmup and one bounded retry ({reason})"
+                ) from e
             raise RuntimeError(f"Brief generation failed ({reason})") from e
 
         await self._progress("daily_brief", 80, "Storing brief")
