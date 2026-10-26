@@ -236,6 +236,8 @@ try {
     await page.getByText('QA source evidence needs review', { exact: true }).click()
     const inspector = page.getByRole('complementary', { name: 'Selected work', exact: true })
     await inspector.getByText('QA evidence only', { exact: true }).waitFor()
+    assert.equal(await page.getByText('QA archived work 131', { exact: true }).count(), 0)
+    await page.getByRole('button', { name: /^History \(/ }).click()
     await page.getByText('QA archived work 131', { exact: true }).waitFor({ state: 'attached' })
     const box = await inspector.boundingBox()
     assert.ok(box && box.height > 100, `Selected work row collapsed at ${width}px`)

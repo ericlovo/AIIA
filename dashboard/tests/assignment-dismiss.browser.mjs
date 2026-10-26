@@ -128,6 +128,7 @@ try {
 
     // Restoring brings it back to attention still carrying the rejection.
     await openStudioView(page, "Assignments")
+    await page.getByRole('button', { name: /^History \(/ }).click()
     await page.getByText('Cron contract test slice', { exact: true }).click()
     await page.getByRole('region', { name: 'Attention tracking' }).getByRole('button', { name: 'Restore to attention' }).click()
     await page.getByRole('region', { name: 'Attention tracking' }).getByText('Not dismissed', { exact: true }).waitFor()
