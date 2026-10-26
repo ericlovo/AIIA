@@ -239,6 +239,7 @@ try {
     assert.equal(await page.getByText('QA archived work 131', { exact: true }).count(), 0)
     await page.getByRole('button', { name: /^History \(/ }).click()
     await page.getByText('QA archived work 131', { exact: true }).waitFor({ state: 'attached' })
+    await inspector.scrollIntoViewIfNeeded()
     const box = await inspector.boundingBox()
     assert.ok(box && box.height > 100, `Selected work row collapsed at ${width}px`)
     assert.equal(await inspector.evaluate(element => {
