@@ -976,6 +976,8 @@ class AIIAAskRequest(BaseModel):
     depth: str = "fast"  # "fast" (local only), "hybrid" (+ cloud), "deep" (+ DeepSeek)
     # Reasoning toggle. None keeps the model default (qwen3 thinks).
     think: bool | None = None
+    # Load the local model before the real prompt (Daily Brief cold start).
+    warmup: bool = False
 
 
 class AIIARememberRequest(BaseModel):
@@ -1024,9 +1026,17 @@ async def aiia_ask(request: AIIAAskRequest):
             depth=request.depth,
             think=request.think,
             max_tokens=request.max_tokens,
+            warmup=request.warmup,
         )
     except httpx.TimeoutException as exc:
-        raise HTTPException(status_code=504, detail="Local model generation timed out") from exc
+        model = getattr(_aiia, "_model", None) or "unknown"
+        timeout = getattr(getattr(_aiia, "_ollama", None), "timeout", None)
+        if timeout is None:
+            timeout = get_config().ollama_timeout
+        raise HTTPException(
+            status_code=504,
+            detail=f"Local model generation timed out after {timeout:g}s (model={model})",
+        ) from exc
     latency = (time.monotonic() - start) * 1000
 
     # Report AIIA ask as a local LLM request

@@ -49,6 +49,17 @@ def test_no_airgap_leaves_flags_alone(monkeypatch):
 
 
 def test_airgap_status_shape(monkeypatch):
+    # Opt-in exceptions read the process env. The Mini enables several of
+    # them in launchd; this test is about the static allowlist, so pin them off.
+    for flag in (
+        "AIIA_SLACK_ACK_ENABLED",
+        "AIIA_SLACK_MEMORY_POST_ENABLED",
+        "AIIA_SLACK_FILE_CAPTURE_ENABLED",
+        "AIIA_TYPESAFE_ENABLED",
+        "AIIA_NEWS_ENABLED",
+        "AIIA_SIGNALS_ENABLED",
+    ):
+        monkeypatch.delenv(flag, raising=False)
     on = airgap_status(SimpleNamespace(airgap_enabled=True))
     assert on["enabled"] is True
     assert on["egress"]

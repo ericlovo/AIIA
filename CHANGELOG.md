@@ -103,6 +103,11 @@ All notable changes to AIIA are documented here. This project adheres to
   interpreter. Studio and the digest recognize explicit production verification
   receipts separately from unverified merges.
 
+- Daily Brief warms the local model, uses an 8k context window, and retries once
+  on a generation timeout so a cold qwen3:8b load at 07:00 is not a 504. HTTP 504
+  names the model and Ollama deadline. The scheduled test runner isolates Mini
+  launchd env and `~/.aiia` so host flags cannot fail default-off assertions.
+
 - **Digest product lines stay green unless a live PR is actually blocked.**
   Draft PRs and skipped Codex drafts no longer count as conflict or check
   blockers (no more `#117 conflict` plus `skipped: 1 codex drafts (#117)`).

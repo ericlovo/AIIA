@@ -149,6 +149,34 @@ class OllamaClient:
         data["_latency_ms"] = latency_ms
         return data
 
+    async def ensure_loaded(self, model: str) -> dict[str, Any]:
+        """Load `model` if it is cold so a later timed call is spent on generation.
+
+        Daily Brief at 07:00 is often the first chat of the day. qwen3:8b is
+        then unloaded (`ollama ps` empty), and a 32k-ctx ask can burn the
+        entire Ollama deadline on load + prompt eval. A 512-token ping with
+        keep_alive keeps the weights resident without changing the model.
+        """
+        payload = {
+            "model": model,
+            "messages": [{"role": "user", "content": "ok"}],
+            "stream": False,
+            "keep_alive": "30m",
+            "think": False,
+            "options": {
+                "temperature": 0,
+                "num_predict": 1,
+                "num_ctx": 512,
+            },
+        }
+        start = time.monotonic()
+        async with httpx.AsyncClient(timeout=self.timeout) as client:
+            response = await client.post(f"{self.base_url}/api/chat", json=payload)
+            response.raise_for_status()
+            data = response.json()
+        data["_latency_ms"] = (time.monotonic() - start) * 1000
+        return data
+
     async def chat_stream(
         self,
         model: str,

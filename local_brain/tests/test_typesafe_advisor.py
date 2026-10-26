@@ -229,10 +229,11 @@ async def test_an_air_gapped_mini_allows_it_only_once_switched_on(upstream, monk
     assert len(upstream["requests"]) == 1
 
 
-def test_the_advisor_is_a_registered_egress_point():
+def test_the_advisor_is_a_registered_egress_point(monkeypatch):
     """A call site /health cannot see is a hole in the egress inventory."""
     from local_brain import egress
 
+    monkeypatch.delenv("AIIA_TYPESAFE_ENABLED", raising=False)
     assert "typesafe.routing" in egress.EGRESS_POINTS
     # Never a static exception: it has to be switched on deliberately.
     assert "typesafe.routing" not in egress.AIRGAP_ALLOWED_EGRESS

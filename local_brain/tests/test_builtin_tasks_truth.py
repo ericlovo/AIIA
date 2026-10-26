@@ -9,8 +9,14 @@ import httpx
 import pytest
 
 from local_brain.command_center.aiia_tasks import (
+    DAILY_BRIEF_MAX_TOKENS,
+    DAILY_BRIEF_NUM_CTX,
+    DAILY_BRIEF_RETRY_MAX_TOKENS,
+    DAILY_BRIEF_RETRY_NUM_CTX,
     DAILY_BRIEF_TIMEOUT_SECONDS,
     TaskRunner,
+    daily_brief_ask_body,
+    is_generation_timeout,
     parse_pytest_summary,
 )
 
@@ -96,12 +102,43 @@ def test_test_runner_records_a_real_run(monkeypatch):
 
 def test_daily_brief_timeout_is_not_shorter_than_the_brain_ollama_timeout():
     assert DAILY_BRIEF_TIMEOUT_SECONDS >= 300
+    assert DAILY_BRIEF_NUM_CTX < 32768
+    assert DAILY_BRIEF_RETRY_NUM_CTX < DAILY_BRIEF_NUM_CTX
+    assert DAILY_BRIEF_RETRY_MAX_TOKENS < DAILY_BRIEF_MAX_TOKENS
 
 
-def test_daily_brief_sends_think_false_on_ask(monkeypatch):
+def test_daily_brief_ask_body_is_bounded_and_warms_up():
+    first = daily_brief_ask_body("brief me")
+    retry = daily_brief_ask_body("brief me", retry=True)
+    assert first["think"] is False
+    assert first["include_sessions"] is False
+    assert first["n_results"] == 0
+    assert first["warmup"] is True
+    assert first["num_ctx"] == DAILY_BRIEF_NUM_CTX
+    assert first["max_tokens"] == DAILY_BRIEF_MAX_TOKENS
+    assert retry["warmup"] is False
+    assert retry["num_ctx"] == DAILY_BRIEF_RETRY_NUM_CTX
+    assert retry["max_tokens"] == DAILY_BRIEF_RETRY_MAX_TOKENS
+    assert is_generation_timeout(RuntimeError('AIIA returned HTTP 504: {"detail":"timed out"}'))
+    assert is_generation_timeout(httpx.ReadTimeout(""))
+    assert not is_generation_timeout(RuntimeError("empty_answer"))
+
+
+def _brief_runner(monkeypatch, request_impl) -> TaskRunner:
     monitor = MagicMock()
     monitor.get_full_snapshot.return_value = {"services": {}}
     runner = TaskRunner(AsyncMock(), "/unused", monitor)
+    runner._aiia_request = request_impl  # type: ignore[method-assign]
+    runner._progress = AsyncMock()  # type: ignore[method-assign]
+    runner._emit_insight = AsyncMock()  # type: ignore[method-assign]
+    runner._run_git = AsyncMock(return_value="")  # type: ignore[method-assign]
+    monkeypatch.setattr(
+        "local_brain.command_center.aiia_tasks.generate_report", lambda **kwargs: {}
+    )
+    return runner
+
+
+def test_daily_brief_sends_think_false_on_ask(monkeypatch):
     asked: list[dict] = []
 
     async def fake_request(method, path, body=None, timeout=30.0):
@@ -110,25 +147,42 @@ def test_daily_brief_sends_think_false_on_ask(monkeypatch):
             return {"answer": "## 1. Shipped Code\nNothing notable."}
         return {"knowledge": {}, "memory": {}, "memories": [], "total_memories": 0}
 
-    runner._aiia_request = fake_request  # type: ignore[method-assign]
-    runner._progress = AsyncMock()  # type: ignore[method-assign]
-    runner._emit_insight = AsyncMock()  # type: ignore[method-assign]
-    runner._run_git = AsyncMock(return_value="")  # type: ignore[method-assign]
-    monkeypatch.setattr(
-        "local_brain.command_center.aiia_tasks.generate_report", lambda **kwargs: {}
-    )
-
-    asyncio.run(runner._task_daily_brief())
+    asyncio.run(_brief_runner(monkeypatch, fake_request)._task_daily_brief())
     assert asked
     assert asked[0]["think"] is False
     assert asked[0]["max_tokens"] == 1024
     assert asked[0]["include_sessions"] is False
+    assert asked[0]["n_results"] == 0
+    assert asked[0]["warmup"] is True
+    assert asked[0]["num_ctx"] == DAILY_BRIEF_NUM_CTX
 
 
-def test_daily_brief_failure_names_the_exception_and_remembers_nothing(monkeypatch):
-    monitor = MagicMock()
-    monitor.get_full_snapshot.return_value = {"services": {}}
-    runner = TaskRunner(AsyncMock(), "/unused", monitor)
+def test_daily_brief_retries_once_on_generation_timeout(monkeypatch):
+    asked: list[dict] = []
+
+    async def fake_request(method, path, body=None, timeout=30.0):
+        if path == "/v1/aiia/ask":
+            asked.append(dict(body or {}, timeout=timeout))
+            if len(asked) == 1:
+                raise RuntimeError(
+                    'AIIA returned HTTP 504: {"detail":'
+                    '"Local model generation timed out after 300s (model=qwen3:8b)"}'
+                )
+            return {"answer": "## 1. Shipped Code\nRetry wrote the brief."}
+        return {"knowledge": {}, "memory": {}, "memories": [], "total_memories": 0}
+
+    result = asyncio.run(_brief_runner(monkeypatch, fake_request)._task_daily_brief())
+    assert len(asked) == 2
+    assert asked[0]["warmup"] is True
+    assert asked[0]["num_ctx"] == DAILY_BRIEF_NUM_CTX
+    assert asked[1]["warmup"] is False
+    assert asked[1]["num_ctx"] == DAILY_BRIEF_RETRY_NUM_CTX
+    assert asked[1]["max_tokens"] == DAILY_BRIEF_RETRY_MAX_TOKENS
+    assert asked[0]["timeout"] == DAILY_BRIEF_TIMEOUT_SECONDS
+    assert "Retry wrote the brief" in result[1]
+
+
+def test_daily_brief_failure_names_the_timeout_after_retry(monkeypatch):
     remembered: list[dict] = []
 
     async def fake_request(method, path, body=None, timeout=30.0):
@@ -138,18 +192,26 @@ def test_daily_brief_failure_names_the_exception_and_remembers_nothing(monkeypat
             remembered.append(body or {})
         return {"total_docs": 1, "memories": [], "stats": {}, "total_memories": 0, "items": []}
 
-    runner._aiia_request = fake_request  # type: ignore[method-assign]
-    runner._progress = AsyncMock()  # type: ignore[method-assign]
-    runner._emit_insight = AsyncMock()  # type: ignore[method-assign]
-    runner._run_git = AsyncMock(return_value="")  # type: ignore[method-assign]
-    monkeypatch.setattr(
-        "local_brain.command_center.aiia_tasks.generate_report", lambda **kwargs: {}
-    )
-
     with pytest.raises(RuntimeError) as excinfo:
-        asyncio.run(runner._task_daily_brief())
-    assert "ReadTimeout" in str(excinfo.value)
+        asyncio.run(_brief_runner(monkeypatch, fake_request)._task_daily_brief())
+    message = str(excinfo.value)
+    assert "ReadTimeout" in message
+    assert "after warmup and one bounded retry" in message
     assert not any("Daily Brief" in str(item.get("fact")) for item in remembered)
+
+
+def test_daily_brief_does_not_retry_a_non_timeout_failure(monkeypatch):
+    asked = []
+
+    async def fake_request(method, path, body=None, timeout=30.0):
+        if path == "/v1/aiia/ask":
+            asked.append(body or {})
+            raise RuntimeError("empty_answer")
+        return {"knowledge": {}, "memory": {}, "memories": [], "total_memories": 0}
+
+    with pytest.raises(RuntimeError, match="empty_answer"):
+        asyncio.run(_brief_runner(monkeypatch, fake_request)._task_daily_brief())
+    assert len(asked) == 1
 
 
 def test_test_runner_passes_clean_suite(monkeypatch):

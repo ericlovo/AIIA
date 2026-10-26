@@ -389,6 +389,7 @@ class AIIA:
         depth: str = "fast",
         think: bool | None = None,
         max_tokens: int | None = None,
+        warmup: bool = False,
     ) -> dict[str, Any]:
         """
         Ask the brain a question. It searches knowledge + memory,
@@ -403,6 +404,8 @@ class AIIA:
             think: Reasoning toggle for thinking-capable models. None keeps the
                 model default. Daily Brief sends False so qwen3 does not spend
                 the token budget on hidden reasoning.
+            warmup: If True, load the model with a tiny keep-alive ping before
+                the real prompt so a cold 07:00 brief is not one 300s timeout.
 
         Returns:
             answer: The brain's response
@@ -432,6 +435,11 @@ class AIIA:
             temperature = 0.3
             max_tokens = max_tokens if max_tokens is not None else 4096
             timeout = None  # Use default
+
+        if warmup:
+            ensure = getattr(self._ollama, "ensure_loaded", None)
+            if ensure is not None:
+                await ensure(model)
 
         (
             knowledge_results,

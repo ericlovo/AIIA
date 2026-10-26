@@ -1,10 +1,12 @@
 # Studio task and deployment verification
 
 Daily Brief now requests at most 1024 output tokens, disables reasoning and session
-retrieval, and bounds the supplied commit/health/token sections. The Brain forwards
-the requested token limit to Ollama. Its existing 300-second deadline and the
-caller's 330-second deadline are unchanged. A timeout returns HTTP 504 with a
-specific error; there is no automatic retry or fabricated successful briefing.
+retrieval, skips extra RAG (`n_results=0`), and uses an 8k context window instead of
+the 32k ask default. It warms the configured local model with a 512-token keep-alive
+ping before the real prompt so a 07:00 cold load of qwen3:8b is not one 300-second
+timeout. A generation timeout (HTTP 504 or client ReadTimeout) retries once with a
+4k window and 512 output tokens. The 504 names the model and the Ollama deadline.
+A second failure reports that retry and the real cause. No fabricated briefing.
 
 The scheduled test runner requires the `asyncio` pytest plugin and strict pytest
 configuration. Missing plugins, interrupted runs and non-test exit codes fail the

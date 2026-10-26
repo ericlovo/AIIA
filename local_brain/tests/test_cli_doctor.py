@@ -127,13 +127,17 @@ def test_ollama_ok_with_models(mock_get):
 
 
 @patch("local_brain.cli_doctor._http_get_status")
-def test_default_model_ok_when_present(mock_get):
+def test_default_model_ok_when_present(mock_get, monkeypatch):
+    # Mini launchd sets AIIA_DEFAULT_MODEL=qwen3:8b; this check is about the
+    # packaged default being present in the mocked tag list.
+    monkeypatch.delenv("AIIA_DEFAULT_MODEL", raising=False)
     mock_get.return_value = (
         200,
         {"models": [{"name": "llama3.1:8b-instruct-q8_0"}]},
     )
     r = check_default_model()
     assert r.level == "ok"
+    assert "llama3.1:8b-instruct-q8_0" in r.message
 
 
 @patch("local_brain.cli_doctor._http_get_status")
