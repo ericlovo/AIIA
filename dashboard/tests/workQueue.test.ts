@@ -27,8 +27,18 @@ test('matching tasks group without merging evidence or changing input records', 
   assert.deepEqual(groupWork(records)[0].map(a => a.result), ['new', 'old'])
   assert.equal(JSON.stringify(records), before)
 })
-test('different owners, scope, sources and decisions remain separate', () => {
-  for (const difference of [{ agent_id: 'other' }, { objective: 'Different task' }, { context: 'Different scope' }, { source_ref: 'other' }, { source_handoff_id: 'other' }, { priority: 'urgent' }, { review_status: 'accepted' }, { revision_of: 'original' }]) {
+test('different scope, non-manual sources and decisions remain separate', () => {
+  for (const difference of [{ objective: 'Different task' }, { context: 'Different scope' }, { source_ref: 'other' }, { source_handoff_id: 'other' }, { priority: 'urgent' }, { review_status: 'accepted' }, { revision_of: 'original' }]) {
     assert.equal(groupWork([work('one'), work('two', difference as Partial<Assignment>)]).length, 2)
   }
+})
+
+test('matching manual tasks across historical agents and run references group without bulk decisions', () => {
+  const records = [work('one', { agent_id: 'old-agent', source_kind: 'manual', source_ref: 'run-1' }), work('two', { agent_id: 'new-agent', source_kind: 'manual', source_ref: 'run-2' })]
+  assert.equal(groupWork(records).length, 1)
+  assert.equal(groupWork(records)[0].length, 2)
+  records[1].review_status = 'accepted'
+  assert.equal(workLane(records[0]), 'needs-you')
+  assert.equal(workLane(records[1]), 'history')
+  assert.equal(groupWork(records).length, 2)
 })

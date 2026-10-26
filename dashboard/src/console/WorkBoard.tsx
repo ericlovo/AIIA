@@ -283,8 +283,8 @@ export function WorkBoard({
                 {groups.map(group => <section key={group[0].id} className="border border-neutral-800">
                   <AssignmentCard approvalPending={group.some(item => pendingApprovalIds.has(item.id))} assignment={group[0]} agentName={agentName(group[0].agent_id)} selected={selectedAssignmentId === group[0].id} onSelect={() => openAssignment(group[0].id)} />
                   {group.length > 1 && <details className="px-4 pb-3 text-sm text-neutral-300"><summary className="cursor-pointer">{group.length} matching records · Review each separately</summary>
-                    <p className="py-2 text-xs text-neutral-400">Same task and source. Evidence and decisions are preserved for each run.</p>
-                    {group.map(item => <button key={item.id} onClick={() => openAssignment(item.id)} className="block w-full border-t border-neutral-800 py-2 text-left">Open {new Date(item.updated_at).toLocaleString()} · {item.id} · {reviewLabel(item)}</button>)}
+                    <p className="py-2 text-xs text-neutral-400">Matching task text. Owners, sources, evidence and decisions remain separate for each run.</p>
+                    {group.map(item => <button key={item.id} onClick={() => openAssignment(item.id)} className="block w-full border-t border-neutral-800 py-2 text-left">Open {new Date(item.updated_at).toLocaleString()} · {item.id} · {agentName(item.agent_id)} · {reviewLabel(item)}</button>)}
                   </details>}
                 </section>)}
               </div>
