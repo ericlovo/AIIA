@@ -136,7 +136,7 @@ try {
     // Space activates a focused button (the activity work-queue metric)...
     await page.getByRole('button', { name: /Work queue/ }).focus()
     await page.keyboard.press('Space')
-    await page.getByRole('heading', { name: 'Assignment queue' }).waitFor()
+    await page.getByRole('heading', { name: 'Work' }).waitFor()
     // ...and is left alone on a focused link, which Enter activates.
     await page.getByRole('navigation', { name: 'Studio' }).locator('summary').click()
     await page.getByRole('navigation', { name: 'Studio' }).getByRole('link', { name: 'Today', exact: true }).focus()
