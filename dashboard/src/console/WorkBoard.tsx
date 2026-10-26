@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { ChevronDown, Plus, RotateCcw, X } from 'lucide-react'
+import { groupWork, isTestFixture, workLane, type WorkLane } from './workQueue'
 import { AssignmentHistory } from './AssignmentHistory'
 import { RoutingAdvisor } from './RoutingAdvisor'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
@@ -99,6 +100,7 @@ export function WorkBoard({
   const workspaces = workspaceData?.workspaces ?? EMPTY_WORKSPACES
   const writes = writeData?.writes ?? EMPTY_WRITES
   const repos = resourceData?.repos ?? EMPTY_REPOS
+  const [lane, setLane] = useState<WorkLane>('needs-you')
   const [selectedAssignmentId, setSelectedAssignmentId] = useState<string | null>(initialAssignmentId || null)
   const [creatingAssignment, setCreatingAssignment] = useState(Boolean(initialAgentId) && !initialAssignmentId)
   const [selectedHandoffId, setSelectedHandoffId] = useState<string | null>(null)
@@ -224,6 +226,10 @@ export function WorkBoard({
     setSelectedAssignmentId(id)
   }
 
+  const pendingApprovalIds = new Set(workspaces.filter(workspace => workspace.status === 'pending' || writes.some(write => write.workspace_id === workspace.id && write.status === 'pending')).map(workspace => workspace.assignment_id))
+  const laneItems = assignments.filter(item => workLane(item, pendingApprovalIds.has(item.id)) === lane)
+  const groups = groupWork(laneItems)
+
   const loading = view === 'assignments' ? assignmentsLoading : handoffsLoading
   const items = view === 'assignments' ? assignments : handoffs
   const inspectorOpen = view === 'handoffs' || creatingAssignment || Boolean(selectedAssignmentId)
@@ -231,7 +237,7 @@ export function WorkBoard({
   return (
     <main className={`grid h-full min-h-0 max-h-full auto-rows-max grid-cols-1 overflow-y-auto bg-neutral-950 lg:grid-rows-[minmax(0,1fr)] lg:overflow-hidden [&_button]:min-h-11 [&_button]:min-w-11 [&_summary]:min-h-11 [&_summary]:tracking-normal ${inspectorOpen ? 'lg:grid-cols-[minmax(0,1fr)_minmax(390px,480px)]' : ''}`}>
       <section className={`flex min-w-0 flex-col border-neutral-900 lg:overflow-hidden ${inspectorOpen ? 'border-b lg:border-r lg:border-b-0' : ''}`}>
-        <PageHeader title={view === 'assignments' ? 'Assignment queue' : 'Handoff ledger'} meta={<>
+        <PageHeader title={view === 'assignments' ? 'Work' : 'Handoff ledger'} meta={<>
           <span>{assignments.length} assignments</span>
           <span>{manualStartCount} awaiting manual start</span>
           <span>{runningCount} running</span>
@@ -242,7 +248,7 @@ export function WorkBoard({
           <div className="mx-auto max-w-5xl">
             <div className="mb-4 flex items-center justify-between gap-4">
               <div className="text-xs font-semibold text-neutral-400">
-                {view === 'assignments' ? 'Recent work' : 'Artifact routes'}
+                {view === 'assignments' ? `${groups.length} ${groups.length === 1 ? 'group' : 'groups'} · ${laneItems.length} ${laneItems.length === 1 ? 'record' : 'records'}` : 'Artifact routes'}
               </div>
               <button
                 ref={newWorkRef}
@@ -266,17 +272,21 @@ export function WorkBoard({
               </button>
             )}
 
+            {view === 'assignments' && <nav aria-label="Work views" className="mb-5 flex flex-wrap gap-2">
+              {([['needs-you', 'Needs you'], ['working', 'Working'], ['history', 'History']] as const).map(([value, label]) => <button key={value} aria-pressed={lane === value} onClick={() => setLane(value)} className={`border px-3 py-2 text-sm ${lane === value ? 'border-cyan-400 text-cyan-200' : 'border-neutral-700 text-neutral-300'}`}>
+                {label} ({assignments.filter(item => workLane(item, pendingApprovalIds.has(item.id)) === value).length})
+              </button>)}
+            </nav>}
             {view === 'assignments' ? (
-              <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
-                {assignments.map(assignment => (
-                  <AssignmentCard
-                    key={assignment.id}
-                    assignment={assignment}
-                    agentName={agentName(assignment.agent_id)}
-                    selected={selectedAssignmentId === assignment.id}
-                    onSelect={() => openAssignment(assignment.id)}
-                  />
-                ))}
+              <div className="space-y-3">
+                {!loading && laneItems.length === 0 && <p role="status" className="text-sm text-neutral-400">{lane === 'needs-you' ? 'Nothing needs your decision. Working and History remain available.' : 'No work in this view.'}</p>}
+                {groups.map(group => <section key={group[0].id} className="border border-neutral-800">
+                  <AssignmentCard approvalPending={group.some(item => pendingApprovalIds.has(item.id))} assignment={group[0]} agentName={agentName(group[0].agent_id)} selected={selectedAssignmentId === group[0].id} onSelect={() => openAssignment(group[0].id)} />
+                  {group.length > 1 && <details className="px-4 pb-3 text-sm text-neutral-300"><summary className="cursor-pointer">{group.length} matching records · Review each separately</summary>
+                    <p className="py-2 text-xs text-neutral-400">Same task and source. Evidence and decisions are preserved for each run.</p>
+                    {group.map(item => <button key={item.id} onClick={() => openAssignment(item.id)} className="block w-full border-t border-neutral-800 py-2 text-left">Open {new Date(item.updated_at).toLocaleString()} · {item.id} · {reviewLabel(item)}</button>)}
+                  </details>}
+                </section>)}
               </div>
             ) : (
               <div className="space-y-3">
@@ -368,10 +378,10 @@ export function WorkBoard({
   )
 }
 
-function AssignmentCard({ assignment, agentName, selected, onSelect }: { assignment: Assignment; agentName: string; selected: boolean; onSelect: () => void }) {
+function AssignmentCard({ assignment, agentName, selected, onSelect, approvalPending }: { approvalPending: boolean; assignment: Assignment; agentName: string; selected: boolean; onSelect: () => void }) {
   return (
-    <button onClick={onSelect} aria-pressed={selected} className={`min-h-40 min-w-0 border p-5 text-left transition-colors ${selected ? 'border-cyan-400/70 bg-cyan-500/10' : 'border-neutral-800 bg-neutral-900/60 hover:border-neutral-600'}`}>
-      <div className="mb-2 text-xs text-cyan-200">{assignmentOrigin(assignment)}{assignmentLabel(assignment) ? ` · ${assignmentLabel(assignment)}` : ''}</div>
+    <button onClick={onSelect} aria-pressed={selected} className={`w-full min-h-40 min-w-0 border p-5 text-left transition-colors ${selected ? 'border-cyan-400/70 bg-cyan-500/10' : 'border-neutral-800 bg-neutral-900/60 hover:border-neutral-600'}`}>
+      <div className="mb-2 text-xs text-cyan-200">{approvalPending && 'Approval needed · '}{isTestFixture(assignment) ? 'Test fixture' : assignmentOrigin(assignment)}{assignmentLabel(assignment) ? ` · ${assignmentLabel(assignment)}` : ''}</div>
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="break-words text-base font-medium text-white">{assignment.title}</div>
@@ -488,20 +498,22 @@ function AssignmentDetails({ assignment, agent, agentName, workspace, writes, re
   const pendingWriteCount = workspaceWrites.filter(item => item.status === 'pending').length
   const workspaceNeedsAttention = workspace?.status === 'pending' || workspace?.status === 'failed' || pendingWriteCount > 0
   return (
-    <Panel title={assignment.title} eyebrow="Assignment controls">
+    <Panel title={assignment.title} eyebrow="Decision and evidence">
+      {isTestFixture(assignment) && <p className="text-sm text-amber-200">Test fixture · Preserved for reference. Any pending approval still needs your decision.</p>}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <span className="min-w-0 break-words text-sm text-neutral-300">{agentName}</span>
         <StatusLabel status={assignment.status} />
       </div>
       <section aria-label="Next action" className="space-y-2 border-l-2 border-cyan-600 pl-3">
         <h3 className="text-xs font-semibold text-cyan-200">Next action</h3>
-        <p className="text-sm leading-relaxed text-neutral-300">{assignmentNextAction(assignment)}</p>
+        <p className="text-sm leading-relaxed text-neutral-300">{workspace?.status === 'pending' ? 'Review the Git workspace request below. Accepting output does not approve this request.' : pendingWriteCount ? 'Review the pending Git writes below. Each write needs its own approval.' : isTestFixture(assignment) ? 'Reference exercise. No decision is required unless an approval request is pending. Evidence and optional review remain available here.' : assignmentNextAction(assignment)}</p>
       </section>
       {error && <ErrorNotice error={error} />}
       {runnable && <button disabled={isRunning} onClick={onRun} className="min-h-11 w-full bg-white px-3 py-2.5 text-sm font-medium text-neutral-950 disabled:cursor-not-allowed disabled:opacity-40">{isRunning ? 'Mini is working…' : assignment.status === 'failed' ? 'Retry assignment' : 'Run assignment'}</button>}
       {assignment.error && <section aria-label="Failure evidence" className="border-l-2 border-red-500 bg-red-950/20 p-3 text-sm text-red-200"><h3 className="font-medium">What went wrong</h3><p className="mt-2 whitespace-pre-wrap break-words">{assignment.error}</p></section>}
       {assignment.result && <TextBlock label="Work product" value={assignment.result} />}
-      <Disclosure key={`brief-${assignment.id}`} title="Assignment brief">
+      {assignment.status === 'completed' && assignment.result.trim() && <ArtifactReview key={assignment.id} assignment={assignment} />}
+      <Disclosure key={`brief-${assignment.id}`} title="Assignment brief" initiallyOpen>
         <TextBlock label="Objective" value={assignment.objective} />
         {assignment.success_criteria && <TextBlock label="Success criteria" value={assignment.success_criteria} />}
         {assignment.context && <TextBlock label="Context" value={assignment.context} muted />}
@@ -511,7 +523,6 @@ function AssignmentDetails({ assignment, agent, agentName, workspace, writes, re
         </dl>
         {assignment.revision_of && <button onClick={() => onOpenAssignment(assignment.revision_of!)} className="text-sm text-cyan-200 underline">Open original assignment</button>}
       </Disclosure>
-      {assignment.status === 'completed' && assignment.result.trim() && <ArtifactReview key={assignment.id} assignment={assignment} />}
       {assignment.review_status === 'rejected' && <RevisionPanel key={`revision-${assignment.id}`} assignment={assignment} onOpen={onOpenAssignment} />}
       <OutputRecovery key={`recovery-${assignment.id}`} assignment={assignment} busy={isRunning} />
       {(assignment.status === 'completed' || assignment.status === 'failed') && <DismissalPanel key={`dismiss-${assignment.id}`} assignment={assignment} />}
@@ -580,7 +591,7 @@ function DismissalPanel({ assignment }: { assignment: Assignment }) {
     onSettled: () => qc.invalidateQueries({ queryKey: ['assignments'] }),
   })
   return <section aria-label="Attention tracking" className="space-y-3 border border-neutral-700 p-3">
-    <div className="text-sm text-cyan-200">{dismissed ? 'Dismissed' : 'In the attention list'}</div>
+    <div className="text-sm text-cyan-200">{dismissed ? 'Dismissed' : 'Not dismissed'}</div>
     <p className="text-xs leading-relaxed text-neutral-400">{dismissed
       ? 'This assignment is hidden from the attention list. Its outcome and any review verdict are unchanged; restoring brings it back with both intact.'
       : 'Dismissing hides this from the attention list without judging the work. The outcome, the failure and any review verdict are all kept.'}</p>
@@ -616,7 +627,7 @@ function ArtifactReview({ assignment }: { assignment: Assignment }) {
   const options = (['accepted', 'rejected', 'unreviewed'] as ReviewStatus[])
   return <section aria-label="Artifact review" className="space-y-3 border border-neutral-700 p-3">
     <div className="text-sm text-cyan-200">{reviewLabel(assignment)}</div>
-    <p className="text-xs leading-relaxed text-neutral-400">Inspect the work product against the objective and success criteria. This decision records output quality and is kept if the assignment is later dismissed.</p>
+    <p className="text-xs leading-relaxed text-neutral-400">Inspect the work product against the objective and success criteria. This decision records output quality only. It does not authorize execution, Git writes, deployment, or outreach. It is kept if the assignment is later dismissed.</p>
     {assignment.reviewed_at && <p className="text-xs text-neutral-400">Decision saved {new Date(assignment.reviewed_at).toLocaleString()}</p>}
     <Field label="Review note"><textarea value={note} onChange={event => setDraftNote({ version: assignment.review_version, note: event.target.value })} maxLength={2000} rows={3} placeholder="Evidence, gaps, or requested corrections" /></Field>
     {!assignment.review_version && <p role="alert" className="text-xs text-amber-200">Review is unavailable until the server supports artifact review.</p>}
