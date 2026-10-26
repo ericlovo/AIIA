@@ -28,7 +28,7 @@ test('matching tasks group without merging evidence or changing input records', 
   assert.equal(JSON.stringify(records), before)
 })
 test('different scope, non-manual sources and decisions remain separate', () => {
-  for (const difference of [{ objective: 'Different task' }, { context: 'Different scope' }, { source_ref: 'other' }, { source_handoff_id: 'other' }, { priority: 'urgent' }, { review_status: 'accepted' }, { revision_of: 'original' }]) {
+  for (const difference of [{ agent_id: 'other' }, { objective: 'Different task' }, { context: 'Different scope' }, { source_ref: 'other' }, { source_handoff_id: 'other' }, { priority: 'urgent' }, { review_status: 'accepted' }, { revision_of: 'original' }]) {
     assert.equal(groupWork([work('one'), work('two', difference as Partial<Assignment>)]).length, 2)
   }
 })
