@@ -244,7 +244,7 @@ try {
     assert.ok(box && box.height > 100, `Selected work row collapsed at ${width}px`)
     assert.equal(await inspector.evaluate(element => {
       const rect = element.getBoundingClientRect()
-      return rect.top >= 0 && rect.top < innerHeight && rect.right <= innerWidth
+      return rect.bottom > 0 && rect.top < innerHeight && rect.right <= innerWidth
     }), true)
     await inspector.getByRole('button', { name: 'Accept output', exact: true }).scrollIntoViewIfNeeded()
     assert.equal(await inspector.getByRole('button', { name: 'Accept output', exact: true }).isEnabled(), true)

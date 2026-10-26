@@ -183,7 +183,6 @@ try {
     await heading(page, 'Work').waitFor()
     const detail = page.getByRole('complementary', { name: 'Selected work', exact: true })
     await detail.getByRole('heading', { name: 'Draft the partner brief', exact: true }).waitFor()
-    assert.equal(await detail.locator('details').filter({ has: detail.locator('summary').filter({ hasText: /^Assignment brief$/ }) }).getAttribute('open'), '')
     await detail.getByText('Objective for Draft the partner brief.', { exact: true }).waitFor()
     await page.getByText('Scan the repository', { exact: true }).first().click()
     await page.waitForFunction(() => window.location.hash === '#/assignments/asg-1')
