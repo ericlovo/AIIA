@@ -169,9 +169,8 @@ def _isolate_host_environment(
     from local_brain import config as config_mod
 
     host = tmp_path_factory.mktemp("isolated-host")
-    home = host / "home"
-    home.mkdir()
-    monkeypatch.setenv("HOME", str(home))
+    # Do not rewrite HOME: nested pytest/ruff subprocesses resolve user-site
+    # packages from ~/.local. Point only AIIA data at a temp tree.
     monkeypatch.setenv("EQ_BRAIN_DATA_DIR", str(host / "eq_data"))
     for key in _HOST_ENV_ISOLATE:
         monkeypatch.delenv(key, raising=False)
