@@ -97,41 +97,35 @@ def test_recovery_failure_blocks_initialization_and_preserves_disk(linked, monke
     assert registry.data_file.read_bytes() == stable
 
 
-def test_capacity_preserves_links_and_active_work(linked, monkeypatch):
+def test_backlog_growth_preserves_every_record_and_link(linked):
     registry, source, link, target, spare = linked
-    monkeypatch.setattr(module, "MAX_ASSIGNMENTS", 3)
-    before, disk = deepcopy(registry.assignments), registry.data_file.read_bytes()
-    with pytest.raises(ValueError, match="assignment_capacity_reached"):
-        create(registry)
-    assert registry.assignments == before
-    assert registry.data_file.read_bytes() == disk
     registry.finish_assignment(spare["id"], error="Synthetic failure")
-    # An unacknowledged failure is still open work: it is kept, and the registry
-    # reports it is full instead of evicting it.
-    with pytest.raises(ValueError, match="assignment_capacity_reached"):
-        create(registry)
-    assert registry.get_assignment(spare["id"])["status"] == "failed"
-    failed = registry.get_assignment(spare["id"])
     registry.dismiss_assignment(
-        spare["id"], dismissed=True, expected_version=failed["review_version"]
+        spare["id"], dismissed=True, expected_version=spare["review_version"]
     )
+    before = deepcopy(registry.assignments)
+    # Seed a large legacy store without hundreds of disk writes.
+    for index in range(400):
+        item = deepcopy(spare)
+        item["id"] = f"old-{index}"
+        registry.assignments.append(item)
+    registry.save()
     new = create(registry)
     restored = AssignmentRegistry(registry.data_file)
-    assert restored.get_assignment(spare["id"]) is None
-    for item in (source, target, new):
+    assert len(restored.assignments) == 404
+    for item in before + [new]:
         assert restored.get_assignment(item["id"]) == item
     assert restored.get_handoff(link["id"]) == link
+    assert restored.get_assignment("old-399") is not None
 
 
-def test_failed_eviction_restores_exact_order(linked, monkeypatch):
+def test_failed_creation_restores_exact_order(linked, monkeypatch):
     registry, _, _, _, spare = linked
     registry.finish_assignment(spare["id"], error="Synthetic")
     failed = registry.get_assignment(spare["id"])
-    # Only closed work is evictable; dismiss it so the eviction path runs.
     registry.dismiss_assignment(
         spare["id"], dismissed=True, expected_version=failed["review_version"]
     )
-    monkeypatch.setattr(module, "MAX_ASSIGNMENTS", 3)
     before, disk = deepcopy(registry.assignments), registry.data_file.read_bytes()
     monkeypatch.setattr(module, "atomic_write_json", Mock(side_effect=PersistenceError("injected")))
     with pytest.raises(PersistenceError):
@@ -140,10 +134,9 @@ def test_failed_eviction_restores_exact_order(linked, monkeypatch):
     assert registry.data_file.read_bytes() == disk
 
 
-@pytest.mark.parametrize("capacity", ["MAX_ASSIGNMENTS", "MAX_HANDOFFS"])
-def test_handoff_capacity_failure_leaves_no_orphans(linked, monkeypatch, capacity):
+def test_handoff_capacity_failure_leaves_no_orphans(linked, monkeypatch):
     registry, source, *_ = linked
-    monkeypatch.setattr(module, capacity, 1)
+    monkeypatch.setattr(module, "MAX_HANDOFFS", 1)
     before = deepcopy((registry.assignments, registry.handoffs))
     disk = registry.data_file.read_bytes()
     with pytest.raises(ValueError, match="capacity_reached"):
@@ -154,7 +147,6 @@ def test_handoff_capacity_failure_leaves_no_orphans(linked, monkeypatch, capacit
 
 def test_load_never_truncates_existing_records(linked, monkeypatch):
     registry, *_ = linked
-    monkeypatch.setattr(module, "MAX_ASSIGNMENTS", 1)
     monkeypatch.setattr(module, "MAX_HANDOFFS", 0)
     restored = AssignmentRegistry(registry.data_file)
     assert restored.assignments == registry.assignments

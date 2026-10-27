@@ -1961,19 +1961,45 @@ async def run_agent(agent_id: str, body: AgentRunRequest):
         raise HTTPException(status_code=503, detail="run_output_persistence_failed") from exc
 
 
+def _assignment_response(assignment: dict, summary: bool = False) -> dict:
+    item = {
+        **assignment,
+        "recovery_pending": bool(
+            assignment.get("attempt_id") and not assignment.get("completed_run_id")
+        ),
+    }
+    if summary:
+        import hashlib
+
+        item["summary"] = True
+        item["has_result"] = bool(item.get("result", "").strip())
+        item["group_scope"] = hashlib.sha256(
+            json.dumps(
+                [item.get(key, "") for key in ("objective", "context", "success_criteria")]
+            ).encode()
+        ).hexdigest()
+        item["objective"] = item.get("objective", "")[:300]
+        for key in ("result", "context", "success_criteria", "review_note", "dismiss_note"):
+            item[key] = ""
+    return item
+
+
 @app.get("/api/assignments")
-async def list_assignments():
+async def list_assignments(summary: bool = False):
     return {
         "assignments": [
-            {
-                **assignment,
-                "recovery_pending": bool(
-                    assignment.get("attempt_id") and not assignment.get("completed_run_id")
-                ),
-            }
+            _assignment_response(assignment, summary)
             for assignment in assignment_registry.list_assignments()
         ]
     }
+
+
+@app.get("/api/assignments/{assignment_id}")
+async def get_assignment(assignment_id: str):
+    assignment = assignment_registry.get_assignment(assignment_id)
+    if assignment is None:
+        raise HTTPException(status_code=404, detail="assignment_not_found")
+    return {"assignment": _assignment_response(assignment)}
 
 
 @app.get("/api/integrations/typesafe/status")
