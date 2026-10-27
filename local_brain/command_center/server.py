@@ -1961,9 +1961,28 @@ async def run_agent(agent_id: str, body: AgentRunRequest):
         raise HTTPException(status_code=503, detail="run_output_persistence_failed") from exc
 
 
-def _assignment_response(assignment: dict, summary: bool = False) -> dict:
+def _pending_attention_approvals():
+    return {
+        item["assignment_id"]
+        for item in git_workspace_registry.list()
+        if item.get("status") == "pending"
+    } | {
+        item["assignment_id"]
+        for item in git_write_registry.list()
+        if item.get("status") == "pending"
+    }
+
+
+def _assignment_response(assignment: dict, summary: bool = False, seen=None) -> dict:
+    from .attention import acknowledged_keys, evidence_key
+
+    key = evidence_key(assignment)
+    if seen is None:
+        seen = acknowledged_keys(assignment_registry.list_assignments())
     item = {
         **assignment,
+        "attention_key": key,
+        "attention_seen": bool(key and key in seen),
         "recovery_pending": bool(
             assignment.get("attempt_id") and not assignment.get("completed_run_id")
         ),
@@ -1986,12 +2005,53 @@ def _assignment_response(assignment: dict, summary: bool = False) -> dict:
 
 @app.get("/api/assignments")
 async def list_assignments(summary: bool = False):
+    from .attention import acknowledged_keys
+
+    seen = acknowledged_keys(assignment_registry.list_assignments())
     return {
         "assignments": [
-            _assignment_response(assignment, summary)
+            _assignment_response(assignment, summary, seen)
             for assignment in assignment_registry.list_assignments()
         ]
     }
+
+
+@app.get("/api/attention/fixture-preview")
+async def attention_fixture_preview():
+    from .attention import fixture_preview
+
+    return fixture_preview(
+        assignment_registry.list_assignments(),
+        {item["id"] for item in agent_registry.list()},
+        _pending_attention_approvals(),
+    )
+
+
+class AttentionRequest(BaseModel):
+    expected_version: str
+    key: str
+    active: bool
+
+
+@app.post("/api/assignments/{assignment_id}/attention")
+async def acknowledge_attention(assignment_id: str, body: AttentionRequest):
+    from .attention import evidence_key
+
+    if body.active and any(
+        evidence_key(item) == body.key and item["id"] in _pending_attention_approvals()
+        for item in assignment_registry.list_assignments()
+    ):
+        raise HTTPException(status_code=409, detail="pending_approval_requires_decision")
+    try:
+        item = assignment_registry.acknowledge_attention(
+            assignment_id,
+            expected_version=body.expected_version,
+            key=body.key,
+            active=body.active,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return {"assignment": _assignment_response(item)}
 
 
 @app.get("/api/assignments/{assignment_id}")

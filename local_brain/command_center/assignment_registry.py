@@ -461,6 +461,28 @@ class AssignmentRegistry:
         return dismissed
 
     @_durable_mutation
+    def acknowledge_attention(self, assignment_id, *, expected_version, key, active):
+        from .attention import evidence_key
+
+        item = self.get_assignment(assignment_id)
+        if not item:
+            raise ValueError("assignment_not_found")
+        if item.get("review_version") != expected_version:
+            raise ValueError("review_changed_refresh_required")
+        if not key or evidence_key(item) != key:
+            raise ValueError("evidence_changed_refresh_required")
+        now = _now()
+        if not active:
+            for record in self.assignments:
+                for event in record.get("attention_events", []):
+                    if event.get("key") == key and event.get("active"):
+                        event.update(active=False, restored_at=now)
+        else:
+            item.setdefault("attention_events", []).append({"key": key, "at": now, "active": True})
+        item.update(review_version=uuid.uuid4().hex, updated_at=now)
+        return item
+
+    @_durable_mutation
     def review_assignment(
         self, assignment_id: str, *, decision: str, expected_version: str, note: str = ""
     ) -> dict[str, Any]:

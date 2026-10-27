@@ -531,6 +531,8 @@ export type AssignmentTrigger = 'manual' | 'interval' | 'handoff' | 'revision';
 export type AssignmentSource = 'manual' | 'memory_capture' | 'loop_schedule' | 'agent_handoff' | 'revision' | 'loop_check';
 
 export interface Assignment {
+  attention_key?: string;
+  attention_seen?: boolean;
   summary?: boolean;
   has_result?: boolean;
   group_scope?: string;
@@ -834,6 +836,9 @@ export const api = {
     post<{ assignments: Assignment[]; dismissed: number }>('/api/assignments/dismiss', { items, note }),
   dismissAssignment: (id: string, dismissed: boolean, expected_version: string, note = '') =>
     post<{ assignment: Assignment }>(`/api/assignments/${encodeURIComponent(id)}/dismiss`, { dismissed, expected_version, note }),
+  fixturePreview: () => get<{ preview_only: boolean; warning: string; candidates: { id: string; title: string; result: string; reason: string; fingerprint: string }[]; blocked: { id: string; title: string }[] }>('/api/attention/fixture-preview'),
+  acknowledgeAttention: (item: Assignment, active: boolean) =>
+    post<{ assignment: Assignment }>(`/api/assignments/${item.id}/attention`, { expected_version: item.review_version, key: item.attention_key, active }),
   reviewAssignment: (id: string, decision: ReviewStatus, expected_version: string, note: string) =>
     post<{ assignment: Assignment }>(`/api/assignments/${id}/review`, { decision, expected_version, note }),
   createAssignment: (data: AssignmentDefinition) =>

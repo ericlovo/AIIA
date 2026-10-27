@@ -54,3 +54,10 @@ test('compact backlog rows classify output and group full scope without evidence
   assert.equal(workLane({ ...rows[0], review_status: 'accepted' }, true), 'needs-you')
   assert.equal(groupWork([rows[0], { ...rows[1], group_scope: 'different-full-context' }]).length, 2)
 })
+
+test('attention acknowledgement does not hide approvals or failures', () => {
+  assert.equal(workLane(work('same', { attention_seen: true })), 'history')
+  assert.equal(workLane(work('same', { attention_seen: true }), true), 'needs-you')
+  assert.equal(workLane(work('failure', { attention_seen: true, status: 'failed' })), 'needs-you')
+  assert.equal(workLane(work('changed', { attention_seen: false })), 'needs-you')
+})
