@@ -12,6 +12,7 @@ export function workLane(item: Assignment, approvalPending = false): WorkLane {
   if (isTestFixture(item) || item.dismissed_at) return 'history'
   if (item.status === 'running') return 'working'
   if (item.recovery_pending || item.status === 'queued' || item.status === 'failed' || (item.status === 'completed' && !(item.has_result ?? Boolean(item.result.trim())))) return 'needs-you'
+  if (item.attention_seen) return 'history'
   return !item.review_status || item.review_status === 'unreviewed' || item.review_status === 'rejected' ? 'needs-you' : 'history'
 }
 

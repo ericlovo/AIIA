@@ -95,6 +95,12 @@ export function WorkBoard({
     queryKey: ['agent-resources'],
     queryFn: api.agentResources,
   })
+  const [previewOpen, setPreviewOpen] = useState(false)
+  const fixturePreview = useQuery({ queryKey: ['fixture-preview'], queryFn: api.fixturePreview, enabled: previewOpen, refetchInterval: previewOpen ? 5000 : false })
+  const attention = useMutation({
+    mutationFn: ({ item, active }: { item: Assignment; active: boolean }) => api.acknowledgeAttention(item, active),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['assignments'] }),
+  })
   const assignments = assignmentData?.assignments ?? EMPTY_ASSIGNMENTS
   const handoffs = handoffData?.handoffs ?? EMPTY_HANDOFFS
   const workspaces = workspaceData?.workspaces ?? EMPTY_WORKSPACES
@@ -234,7 +240,8 @@ export function WorkBoard({
     setSelectedAssignmentId(id)
   }
 
-  const pendingApprovalIds = new Set(workspaces.filter(workspace => workspace.status === 'pending' || writes.some(write => write.workspace_id === workspace.id && write.status === 'pending')).map(workspace => workspace.assignment_id))
+  const pendingApprovalIds = new Set([...workspaces.filter(workspace => workspace.status === 'pending' || writes.some(write => write.workspace_id === workspace.id && write.status === 'pending')).map(workspace => workspace.assignment_id), ...writes.filter(write => write.status === 'pending').map(write => write.assignment_id)])
+  const matchingEvidence = selectedAssignment?.attention_key ? assignments.filter(item => item.attention_key === selectedAssignment.attention_key) : []
   const laneItems = assignments.filter(item => workLane(item, pendingApprovalIds.has(item.id)) === lane)
   const groups = groupWork(laneItems)
 
@@ -268,6 +275,23 @@ export function WorkBoard({
                 <Plus size={16} aria-hidden="true" />{view === 'assignments' ? 'New work' : 'New handoff'}
               </button>
             </div>
+
+            {view === 'assignments' && <section className="my-4 space-y-3 border border-neutral-800 p-3 text-sm">
+              <button onClick={() => setPreviewOpen(!previewOpen)} aria-expanded={previewOpen}>Preview suspected test records</button>
+              {previewOpen && <div className="space-y-3">
+                {fixturePreview.isLoading && <p>Loading preview…</p>}
+                {fixturePreview.error && <p role="alert">Could not load classification preview.</p>}
+                {fixturePreview.data && <>
+                  <p>{fixturePreview.data.candidates.length} suspected test records · {fixturePreview.data.blocked.length} blocked by pending approvals</p>
+                  <p>{fixturePreview.data.warning}</p>
+                  <p>Preview only. Original records, verdicts and history remain unchanged. No classification action is enabled.</p>
+                  <details><summary>Inspect candidate IDs and evidence</summary>
+                    {fixturePreview.data.candidates.map(item => <div key={item.id} className="break-words border-t border-neutral-800 py-3"><button onClick={() => openAssignment(item.id)}>{item.title} · {item.id}</button><p>{item.result}</p><p>{item.reason}</p><p className="break-all text-xs">Fingerprint: {item.fingerprint}</p></div>)}
+                  </details>
+                  {fixturePreview.data.blocked.map(item => <p key={item.id}>Approval protected: {item.title} · {item.id}</p>)}
+                </>}
+              </div>}
+            </section>}
 
             {assignmentsError && <p role="alert" className="py-6 text-sm text-red-300">Could not refresh the backlog. Counts may be stale; refresh before deciding.</p>}
             {loading && <p role="status" className="py-6 text-sm text-neutral-400">Loading work...</p>}
@@ -321,6 +345,13 @@ export function WorkBoard({
       </section>
 
       {inspectorOpen && <aside ref={inspectorRef} tabIndex={-1} aria-label={view === 'assignments' ? creatingAssignment ? 'New work' : 'Selected work' : 'Handoff details'} className="min-h-0 min-w-0 bg-neutral-950 outline-none lg:overflow-y-auto">
+        {view === 'assignments' && selectedAssignment?.attention_key && <section aria-label="Attention decision" className="m-4 space-y-3 border border-neutral-700 p-4 text-sm">
+          <h3>{selectedAssignment.attention_seen ? 'Acknowledged repeat' : 'Attention decision'}</h3>
+          <p>{matchingEvidence.length} record(s) have identical evidence and scope from the same agent. Acknowledgement moves these and future exact repeats to History. It does not accept output, start work, or approve permissions. Changed evidence returns to Needs you.</p>
+          {matchingEvidence.some(item => pendingApprovalIds.has(item.id)) && <p>Pending approval must be decided separately. Acknowledgement is blocked.</p>}
+          <button className="border border-neutral-600 p-3 disabled:opacity-50" disabled={attention.isPending || (!selectedAssignment.attention_seen && matchingEvidence.some(item => pendingApprovalIds.has(item.id)))} onClick={() => attention.mutate({ item: selectedAssignment, active: !selectedAssignment.attention_seen })}>{selectedAssignment.attention_seen ? 'Restore identical reports to attention' : 'Acknowledge identical reports'}</button>
+          {attention.error && <p role="alert">{attention.error.message}</p>}
+        </section>}
         {view === 'assignments' ? (
           selectedAssignment ? (
             <AssignmentDetails
@@ -391,7 +422,7 @@ export function WorkBoard({
 function AssignmentCard({ assignment, agentName, selected, onSelect, approvalPending }: { approvalPending: boolean; assignment: Assignment; agentName: string; selected: boolean; onSelect: () => void }) {
   return (
     <button onClick={onSelect} aria-pressed={selected} className={`w-full min-h-40 min-w-0 border p-5 text-left transition-colors ${selected ? 'border-cyan-400/70 bg-cyan-500/10' : 'border-neutral-800 bg-neutral-900/60 hover:border-neutral-600'}`}>
-      <div className="mb-2 text-xs text-cyan-200">{approvalPending && 'Approval needed · '}{isTestFixture(assignment) ? 'Test fixture' : assignmentOrigin(assignment)}{assignmentLabel(assignment) ? ` · ${assignmentLabel(assignment)}` : ''}</div>
+      <div className="mb-2 text-xs text-cyan-200">{approvalPending && 'Approval needed · '}{assignment.attention_seen && 'Acknowledged repeat · '}{isTestFixture(assignment) ? 'Test fixture' : assignmentOrigin(assignment)}{assignmentLabel(assignment) ? ` · ${assignmentLabel(assignment)}` : ''}</div>
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="break-words text-base font-medium text-white">{assignment.title}</div>

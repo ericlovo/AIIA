@@ -177,3 +177,43 @@ def _isolate_host_environment(
     monkeypatch.setattr(config_mod, "_config", None)
     monkeypatch.setenv("ANONYMIZED_TELEMETRY", "False")
     monkeypatch.setenv("CHROMA_TELEMETRY_ENABLED", "0")
+
+
+@pytest.fixture(autouse=True)
+def isolated_studio_stores(tmp_path, monkeypatch):
+    """No test may fall back to checkout-backed Studio records."""
+    import importlib
+
+    stores = {
+        "agent_registry": "AGENT_DATA_FILE",
+        "assignment_registry": "ASSIGNMENT_DATA_FILE",
+        "git_workspace_registry": "WORKSPACE_DATA_FILE",
+        "git_write_registry": "WRITE_DATA_FILE",
+        "studio_layout": "AGENT_WORLD_LAYOUT_FILE",
+        "action_queue": "ACTION_DATA_FILE",
+    }
+    for name, constant in stores.items():
+        module = importlib.import_module(f"local_brain.command_center.{name}")
+        monkeypatch.setattr(module, constant, tmp_path / f"{name}.json")
+    from local_brain.command_center import git_workspace_registry as workspace_module
+
+    monkeypatch.setattr(workspace_module, "WORKTREE_ROOT", tmp_path / "worktrees")
+    from local_brain.command_center import server
+
+    for attribute, factory in (
+        ("agent_registry", server.AgentRegistry),
+        ("assignment_registry", server.AssignmentRegistry),
+        ("git_workspace_registry", server.GitWorkspaceRegistry),
+        ("studio_layout_registry", server.StudioLayoutRegistry),
+        ("action_queue", server.ActionQueue),
+    ):
+        monkeypatch.setattr(server, attribute, factory())
+    monkeypatch.setattr(
+        server,
+        "git_write_registry",
+        server.GitWriteRegistry(workspace_registry=server.git_workspace_registry),
+    )
+    monkeypatch.setattr(server, "CHAT_HISTORY_FILE", tmp_path / "chat_history.json")
+    monkeypatch.setattr(server, "MONITOR_DATA_FILE", tmp_path / "monitor_data.json")
+
+    monkeypatch.setattr(server.token_tracker, "_data_file", tmp_path / "tokens.json")
