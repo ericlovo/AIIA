@@ -2744,19 +2744,14 @@ async def _run_scheduled_agent(agent: dict[str, Any]) -> dict[str, Any]:
         return await _skip_scheduled_agent(
             agent, "awaiting_review", pending_reviews=pending_reviews
         )
-    try:
-        assignment, created = assignment_registry.create_scheduled_assignment(
-            agent_id=agent["id"],
-            agent_name=agent["name"],
-            objective=agent["loop_task"],
-            schedule_key=_loop_schedule_key(agent),
-            interval_minutes=agent.get("loop_interval_minutes", 60),
-            observed_fingerprint=input_hash,
-        )
-    except ValueError as exc:
-        if str(exc) != "assignment_capacity_reached":
-            raise
-        return await _skip_scheduled_agent(agent, "assignment_capacity_reached")
+    assignment, created = assignment_registry.create_scheduled_assignment(
+        agent_id=agent["id"],
+        agent_name=agent["name"],
+        objective=agent["loop_task"],
+        schedule_key=_loop_schedule_key(agent),
+        interval_minutes=agent.get("loop_interval_minutes", 60),
+        observed_fingerprint=input_hash,
+    )
     if created:
         await broadcast_assignment_event("created", assignment)
     if assignment["status"] != "queued":
