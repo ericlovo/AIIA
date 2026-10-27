@@ -97,6 +97,11 @@ All notable changes to AIIA are documented here. This project adheres to
 
 ### Fixed
 
+- **Studio attention versions the whole identical-evidence group.** Acknowledging
+  or restoring one completed report now bumps `review_version` on every current
+  sibling with the same evidence. A stale sibling can no longer re-acknowledge
+  after a restore and hide the group again. Output review verdicts are unchanged.
+
 - Bound Daily Brief generation and forward output limits to the local model; surface
   explicit timeout failures. Scheduled test failures now retain their report and
   mark the task failed, with required asyncio plugin checks and an optional test

@@ -67,6 +67,48 @@ def test_stale_sibling_cannot_suppress_restored_group(tmp_path):
     assert registry.get_assignment(second["id"])["review_version"] != stale_sibling
 
 
+def test_acknowledge_and_restore_version_the_identical_evidence_group(tmp_path):
+    registry = AssignmentRegistry(tmp_path / "work.json")
+    first = completed(registry)
+    second = completed(registry)
+    other = completed(registry, result="Different evidence")
+    key = evidence_key(first)
+    other_version = other["review_version"]
+    first_version = first["review_version"]
+    second_version = second["review_version"]
+    registry.acknowledge_attention(
+        first["id"], expected_version=first_version, key=key, active=True
+    )
+    first = registry.get_assignment(first["id"])
+    second = registry.get_assignment(second["id"])
+    assert first["review_version"] not in {first_version, second_version}
+    assert second["review_version"] not in {first_version, second_version}
+    assert other["review_version"] == other_version
+    assert key in acknowledged_keys(registry.assignments)
+    assert all(item["review_status"] == "unreviewed" for item in registry.assignments)
+    loaded = AssignmentRegistry(registry.data_file)
+    first = loaded.get_assignment(first["id"])
+    second = loaded.get_assignment(second["id"])
+    assert first["review_version"] == registry.get_assignment(first["id"])["review_version"]
+    with pytest.raises(ValueError, match="review_changed_refresh_required"):
+        loaded.acknowledge_attention(
+            second["id"], expected_version=second_version, key=key, active=False
+        )
+    loaded.acknowledge_attention(
+        second["id"], expected_version=second["review_version"], key=key, active=False
+    )
+    assert not acknowledged_keys(loaded.assignments)
+    first = loaded.get_assignment(first["id"])
+    second = loaded.get_assignment(second["id"])
+    loaded.acknowledge_attention(
+        second["id"], expected_version=second["review_version"], key=key, active=True
+    )
+    assert key in acknowledged_keys(loaded.assignments)
+    assert loaded.get_assignment(other["id"])["review_version"] == other_version
+    assert first["review_status"] == "unreviewed"
+    assert second["review_status"] == "unreviewed"
+
+
 @pytest.mark.parametrize(
     "change",
     [
@@ -89,6 +131,7 @@ def test_changes_never_inherit_acknowledgement(tmp_path, change):
 def test_stale_and_failed_save_are_atomic(tmp_path, monkeypatch):
     registry = AssignmentRegistry(tmp_path / "work.json")
     item = completed(registry)
+    sibling = completed(registry)
     before = copy.deepcopy(registry.assignments)
     with pytest.raises(ValueError):
         registry.acknowledge_attention(
@@ -100,6 +143,7 @@ def test_stale_and_failed_save_are_atomic(tmp_path, monkeypatch):
             item["id"], expected_version=item["review_version"], key=evidence_key(item), active=True
         )
     assert registry.assignments == before
+    assert registry.get_assignment(sibling["id"])["review_version"] == sibling["review_version"]
 
 
 def test_preview_never_classifies_and_protects_approvals(tmp_path):
