@@ -8,6 +8,13 @@ All notable changes to AIIA are documented here. This project adheres to
 
 ### Added
 
+- **Standing BD research cadence.** The conductor now has a versioned
+  America/Chicago weekday/weekend schedule, per-slot bot rotation, Qwen
+  `keep_alive` warmup with one retry, inconclusive next-query suggestions, and
+  a daily summary. Studio shows an explicit `Paused: kill switch on` /
+  `Paused: schedule off` / `Running` banner and an **Activate daily research**
+  control. The default roster stays off.
+
 - **Synthetic research shadow preparation.** Added an opt-in, replay-only backend
   with tenant-scoped leases, bounded jobs, review receipts and mocked staging.
   Added Managed Leads v1 contract alignment and a separate explicit private-file

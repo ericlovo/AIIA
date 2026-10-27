@@ -26,6 +26,7 @@ def test_shadow_manual_ignores_disabled_schedule_and_dedups(service):
 
 
 def test_schedule_respects_bot_enabled_flags(service):
+    service.store.config.pop("cadence", None)
     service.store.config["schedule_enabled"] = True
     assert service.enqueue_cycle() == []
     bot = service.store.bots["healthcare"]
@@ -34,6 +35,7 @@ def test_schedule_respects_bot_enabled_flags(service):
 
 
 def test_schedule_uses_bot_interval_and_survives_service_restart(service):
+    service.store.config.pop("cadence", None)
     bot = service.store.bots["healthcare"]
     bot["schedule"].update(enabled=True, interval_seconds=30)
     service.store.config["schedule_enabled"] = True
@@ -134,6 +136,7 @@ def test_kill_cancels_current_attempt_without_killing_worker(service):
 
 
 def test_live_shadow_rejected_and_configured_tenant_used(service):
+    service.store.config.pop("cadence", None)
     service.store.config["mode"] = "live"
     bot = service.store.bots["healthcare"]
     bot["tenant_id"] = "configured-tenant"
@@ -376,6 +379,7 @@ def test_large_backlog_keeps_running_job_oldest_queue_and_completed_packets(serv
 def configure_window(service, start, end):
     from datetime import datetime, timezone
 
+    service.store.config.pop("cadence", None)
     service.store.config["schedule_enabled"] = True
     service.store.bots["healthcare"]["schedule"].update(enabled=True, interval_seconds=60)
     service.store.config["schedule_window"] = {
@@ -454,6 +458,7 @@ def test_schedule_next_run_selects_earliest_eligible_bot(service):
 
 
 def test_schedule_disabled_and_unwindowed_pause_do_not_invent_dates(service):
+    service.store.config.pop("cadence", None)
     assert service.snapshot()["schedule"]["state"] == "disabled"
     assert service.snapshot()["schedule"]["start_at"] is None
     assert service.snapshot()["schedule"]["stop_at"] is None
@@ -525,6 +530,7 @@ def test_withheld_outcome_visible_without_exposing_raw_result(service):
     job = next(j for j in snapshot["jobs"] if j["state"] == "completed")
     assert job["research_outcome"] == "rejected"
     assert job["result_reason"] == "segment_entity_or_event_unconfirmed"
+    assert job["next_query"]
     assert snapshot["packets"] == []
     assert "DO_NOT_EXPOSE" not in json.dumps(snapshot)
 
@@ -572,3 +578,115 @@ def test_client_candidate_uses_configured_research_segment(service):
     snapshot = service.snapshot()
     assert snapshot["packets"][0]["candidate_status"] == "supported"
     assert snapshot["jobs"][0]["research_outcome"] == "supported"
+
+
+def chicago_open(service, hour=10, day=27):
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+
+    service.now[0] = datetime(2026, 10, day, hour, tzinfo=ZoneInfo("America/Chicago")).timestamp()
+
+
+def test_standing_cadence_disabled_by_default_and_closed_after_hours(service):
+    assert service.store.config["schedule_enabled"] is False
+    assert service.enqueue_cycle() == []
+    assert service.snapshot()["status_banner"]["label"] == "Paused: schedule off"
+    chicago_open(service)
+    service.store.config["schedule_enabled"] = True
+    first = service.enqueue_cycle()
+    assert len(first) == 1
+    assert service.store.snapshot()["jobs"][0]["bot_id"] != "srg"
+    assert service.enqueue_cycle() == first
+    service.now[0] += 1800
+    second = service.enqueue_cycle()
+    assert second != first
+    assert {job["bot_id"] for job in service.store.snapshot()["jobs"]} != {
+        service.store.snapshot()["jobs"][0]["bot_id"]
+    }
+    chicago_open(service, hour=19)
+    assert service.enqueue_cycle() == []
+
+
+def test_standing_cadence_skips_srg_until_a_contract_exists(service):
+    chicago_open(service)
+    service.set_schedule_enabled(True)
+    queued = {service.enqueue_cycle()[0]}
+    for _ in range(6):
+        service.now[0] += 1800
+        queued.update(service.enqueue_cycle())
+    bots = {job["bot_id"] for job in service.store.snapshot()["jobs"]}
+    assert bots == {"healthcare", "pe-diligence", "alumni-associations"}
+    assert all(
+        job["tenant_id"].startswith("synthetic-") for job in service.store.snapshot()["jobs"]
+    )
+    assert service.snapshot()["status_banner"]["label"] == "Running"
+
+
+def test_schedule_control_persists_and_overrides_config(service):
+    chicago_open(service)
+    assert service.snapshot()["schedule_enabled"] is False
+    service.set_schedule_enabled(True)
+    restarted = BDService(service.store)
+    assert restarted.snapshot()["schedule_enabled"] is True
+    assert restarted.enqueue_cycle()
+    service.set_schedule_enabled(False)
+    assert service.snapshot()["status_banner"]["label"] == "Paused: schedule off"
+    assert service.enqueue_cycle() == []
+
+
+def test_kill_switch_banner_beats_an_enabled_schedule(service):
+    service.set_schedule_enabled(True)
+    service.set_kill_switch(True)
+    snapshot = service.snapshot()
+    assert snapshot["status_banner"]["label"] == "Paused: kill switch on"
+    assert snapshot["schedule"]["state"] == "paused"
+
+
+def test_daily_summary_and_next_query_surface_inconclusive_work(service):
+    chicago_open(service)
+
+    async def pipeline(job, emit):
+        return {
+            "packets": [],
+            "research_outcome": "inconclusive",
+            "reason": "healthcare_entity_or_event_unconfirmed",
+            "next_query": "Find a named healthcare operator and a confirmed operational event",
+        }
+
+    service.pipeline = pipeline
+    service.store.enqueue("healthcare", "synthetic-healthcare", "today", "research")
+    asyncio.run(service.run_once())
+    snapshot = service.snapshot()
+    job = next(item for item in snapshot["jobs"] if item["state"] == "completed")
+    assert job["next_query"]
+    assert "healthcare" in job["next_query"].lower() or "named" in job["next_query"].lower()
+    assert snapshot["daily_summary"]["timezone"] == "America/Chicago"
+    assert snapshot["daily_summary"]["inconclusive"] == 1
+    assert snapshot["daily_summary"]["candidates_proposed"] == 0
+    assert snapshot["daily_summary"]["failed"] == 0
+    assert snapshot["daily_summary"]["awaiting_human_review"] == 0
+
+
+def test_standing_cadence_ignores_an_expired_display_window(service):
+    chicago_open(service)
+    service.store.config["schedule_window"] = {
+        "start_at": "2026-10-24T06:00:00Z",
+        "end_at": "2026-10-26T05:00:00Z",
+        "timezone": "America/Chicago",
+    }
+    service.set_schedule_enabled(True)
+    schedule = service.snapshot()["schedule"]
+    assert schedule["state"] != "expired"
+    assert schedule["display_only"] is False
+    assert service.enqueue_cycle()
+
+
+def test_weekend_cadence_uses_the_slower_interval(service):
+    chicago_open(service, hour=11, day=25)  # Sunday
+    service.set_schedule_enabled(True)
+    first = service.enqueue_cycle()
+    assert first
+    service.now[0] += 1800
+    assert service.enqueue_cycle() == first
+    service.now[0] += 1800
+    assert service.enqueue_cycle() != first

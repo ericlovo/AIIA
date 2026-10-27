@@ -18,7 +18,12 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from local_brain.egress import airgap_status, authorize_egress
 
+from .bd_cadence import next_query_for
 from .typesafe_advisor import Usage
+
+QWEN_MODEL = "qwen3:8b"
+QWEN_KEEP_ALIVE = "30m"
+QWEN_ENDPOINT = "http://127.0.0.1:11434/api/chat"
 
 SEGMENTS = {
     "healthcare": "(healthcare OR hospital OR clinic) (expansion OR acquisition OR hiring)",
@@ -476,9 +481,10 @@ def qwen_payload(source):
         index for index, candidate in enumerate(candidates) if candidate.strip()
     ]
     return {
-        "model": "qwen3:8b",
+        "model": QWEN_MODEL,
         "stream": False,
         "think": False,
+        "keep_alive": QWEN_KEEP_ALIVE,
         "format": schema,
         "options": {"num_predict": 512, "temperature": 0},
         "messages": [
@@ -516,10 +522,32 @@ def token_reservation(payload, output_tokens):
     return len(json.dumps(payload, ensure_ascii=False).encode("utf-8")) + output_tokens + 256
 
 
+def qwen_retryable(exc):
+    if isinstance(exc, DataUnavailable) and exc.code == "qwen_unavailable":
+        return True
+    return isinstance(exc, (httpx.HTTPError, TimeoutError, asyncio.TimeoutError))
+
+
+async def ensure_qwen_loaded():
+    """Load qwen3:8b with a tiny keep-alive ping so a later extract is not a cold start."""
+    payload = {
+        "model": QWEN_MODEL,
+        "messages": [{"role": "user", "content": "ok"}],
+        "stream": False,
+        "keep_alive": QWEN_KEEP_ALIVE,
+        "think": False,
+        "options": {"temperature": 0, "num_predict": 1, "num_ctx": 512},
+    }
+    async with httpx.AsyncClient(timeout=90, trust_env=False) as client:
+        response = await client.post(QWEN_ENDPOINT, json=payload)
+        response.raise_for_status()
+    return response.json()
+
+
 async def extract_local(source):
     payload = qwen_payload(source)
     async with httpx.AsyncClient(timeout=90, trust_env=False) as client:
-        response = await client.post("http://127.0.0.1:11434/api/chat", json=payload)
+        response = await client.post(QWEN_ENDPOINT, json=payload)
         response.raise_for_status()
     data = response.json()
     selection = QwenSelection.model_validate_json(data["message"]["content"]).model_dump()
@@ -534,6 +562,38 @@ async def extract_local(source):
     if sum(counts) > token_reservation(payload, 512):
         raise DataUnavailable("qwen_usage_exceeded_reservation")
     return validate_extraction(source, extraction), sum(counts)
+
+
+async def extract_ready(source, emit=None):
+    """Warm qwen3:8b, extract once, then retry once on a cold-start failure."""
+    try:
+        await ensure_qwen_loaded()
+        if emit:
+            result = emit(
+                "qwen_warmup",
+                provider="qwen",
+                model=QWEN_MODEL,
+                message="qwen3:8b loaded with keep_alive",
+            )
+            if inspect.isawaitable(result):
+                await result
+    except (httpx.HTTPError, TimeoutError, asyncio.TimeoutError, ValueError):
+        pass
+    try:
+        return await extract_local(source)
+    except Exception as exc:
+        if not qwen_retryable(exc):
+            raise
+        if emit:
+            result = emit(
+                "qwen_retry",
+                provider="qwen",
+                model=QWEN_MODEL,
+                message="Retrying local extraction after qwen_unavailable",
+            )
+            if inspect.isawaitable(result):
+                await result
+        return await extract_local(source)
 
 
 def validate_extraction(source, extraction):
@@ -854,6 +914,7 @@ async def run_pipeline(job, emit=None):
             )
             return {
                 "reason": "no_new_evidence",
+                "next_query": next_query_for("no_new_evidence"),
                 "status": "no_observations",
                 "research_outcome": "inconclusive",
                 "packets": [],
@@ -875,7 +936,7 @@ async def run_pipeline(job, emit=None):
             reserve_tokens=token_reservation(qwen_payload(source), 512),
         )
         qwen_started = time.monotonic()
-        extraction, tokens = await observed("qwen", extract_local(source))
+        extraction, tokens = await observed("qwen", extract_ready(source))
         await event(
             "qwen_completed",
             provider="qwen",
@@ -906,6 +967,7 @@ async def run_pipeline(job, emit=None):
                 return {
                     "status": "no_supported_prospect",
                     "reason": gap,
+                    "next_query": next_query_for(gap),
                     "research_outcome": (
                         "rejected" if gap == "publisher_is_not_prospect" else "inconclusive"
                     ),
@@ -980,6 +1042,7 @@ async def run_pipeline(job, emit=None):
             return {
                 "status": "no_supported_prospect",
                 "reason": reason,
+                "next_query": next_query_for(reason),
                 "research_outcome": (
                     "rejected"
                     if (

@@ -463,6 +463,13 @@ def test_schedule_window_configuration_rejected_when_ambiguous(tmp_path, window)
         BDConductor(tmp_path / "window.sqlite", config=config)
 
 
+def test_invalid_cadence_rejected_by_conductor(tmp_path):
+    config = json.loads(CONFIG_PATH.read_text())
+    config["cadence"]["weekday"]["interval_seconds"] = 15
+    with pytest.raises(ValueError):
+        BDConductor(tmp_path / "bad-cadence.sqlite", config=config)
+
+
 def test_schedule_window_accepts_aware_offsets_and_iana_zone(tmp_path):
     config = json.loads(CONFIG_PATH.read_text())
     config["schedule_window"] = {

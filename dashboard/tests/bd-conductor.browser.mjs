@@ -11,7 +11,10 @@ const budget = { tokens: { used: 1250, limit: 40000 }, calls: { used: 4, limit: 
 const at = new Date().toISOString()
 const bots = ['Healthcare', 'PE technical diligence', 'Alumni & associations', 'Client BD'].map((name, i) => ({ id: `bot-${i}`, name, segment: name, tenant_id: `synthetic-${i}`, counts: { queued: 2, running: i === 0 ? 1 : 0, completed: 1, failed: 0 }, budgets: budget }))
 const snapshot = {
-  mode: 'replay', schedule_enabled: false, kill_switch: false, bots, budget,
+  mode: 'replay', schedule_enabled: false, kill_switch: false,
+  status_banner: { state: 'paused_schedule_off', label: 'Paused: schedule off' },
+  daily_summary: { day: '2026-10-27', timezone: 'America/Chicago', candidates_proposed: 1, inconclusive: 2, failed: 0, awaiting_human_review: 1 },
+  bots, budget,
   jobs: [{ id: 'queue-1', bot_id: 'bot-1', tenant_id: 'synthetic-1', segment: 'PE technical diligence', state: 'queued', step: 'queued', created_at: at, started_at: null, heartbeat_at: null }, { id: 'job-1', bot_id: 'bot-0', tenant_id: 'synthetic-0', segment: 'Healthcare', state: 'running', step: 'Extracting public evidence', created_at: at, started_at: at, heartbeat_at: at }],
   events: [{ id: 'event-1', kind: 'job_running', message: 'Research started from recorded public evidence.', created_at: at, bot_id: 'bot-0', job_id: 'job-1' }],
   packets: [{ id: 'packet-1', index: 0, candidate_status: 'supported', candidate_reason: 'source_supported_candidate', job_id: 'previous-job', bot_id: 'bot-0', tenant_id: 'synthetic-0', segment: 'Healthcare', created_at: at, mode: 'replay', review_status: 'human_review_required', organization: 'Synthetic Health Group', source_url: 'https://example.com/research', source_quote: 'Synthetic source quotation for review.', emails: ['research@example.com'], phones: ['+1 202-555-0100'], signals: ['Expansion announcement in recorded source.'], insights: ['Explore demand for intake automation.'], summary: 'Synthetic evidence packet for review. This is not a real prospect.' }],
@@ -44,7 +47,22 @@ try {
         posts.push({ path, body: route.request().postDataJSON() })
         if (actionFail) return route.fulfill({ status: 503, json: { detail: 'fixture_action_unavailable' } })
         if (path.endsWith('/review')) current.packets[0].review_status = route.request().postDataJSON().status
-        if (path.endsWith('kill-switch')) current.kill_switch = route.request().postDataJSON().enabled
+        if (path.endsWith('kill-switch')) {
+          current.kill_switch = route.request().postDataJSON().enabled
+          current.status_banner = current.kill_switch
+            ? { state: 'paused_kill_switch', label: 'Paused: kill switch on' }
+            : current.schedule_enabled
+              ? { state: 'running', label: 'Running' }
+              : { state: 'paused_schedule_off', label: 'Paused: schedule off' }
+        }
+        if (path.endsWith('schedule')) {
+          current.schedule_enabled = route.request().postDataJSON().enabled
+          current.status_banner = current.kill_switch
+            ? { state: 'paused_kill_switch', label: 'Paused: kill switch on' }
+            : current.schedule_enabled
+              ? { state: 'running', label: 'Running' }
+              : { state: 'paused_schedule_off', label: 'Paused: schedule off' }
+        }
         data = { ok: true }
       } else if (path === '/api/agents') data = { agents: [] }
       else if (path === '/api/agents/resources') data = { repos: [], github: { status: 'disconnected' } }
@@ -56,6 +74,8 @@ try {
     })
     await page.goto(`${process.env.STUDIO_URL || 'http://127.0.0.1:5187/'}#/bd`)
     await page.getByRole('heading', { name: 'The research desk.' }).waitFor()
+    await page.getByRole('status', { name: 'Conductor status' }).getByText('Paused: schedule off', { exact: true }).waitFor()
+    await page.getByRole('region', { name: 'Daily research summary' }).getByText('Candidates proposed', { exact: true }).waitFor()
     await page.locator('.bd-packet').getByText('Synthetic Health Group', { exact: true }).waitFor()
     await page.getByText('Live', { exact: true }).waitFor()
     await page.getByRole('region', { name: 'Work queue', exact: true }).getByText('PE technical diligence', { exact: true }).first().waitFor()
@@ -87,10 +107,17 @@ try {
     assert.equal(await page.getByText('SSE packet arrived without refreshing.').count(), 0)
     await page.getByRole('button', { name: 'Resume feed' }).click()
     await page.getByText('SSE packet arrived without refreshing.').waitFor()
+    await page.getByRole('button', { name: 'Activate daily research' }).click()
+    await page.getByText('Daily research schedule is on.', { exact: false }).waitFor()
+    await page.getByRole('status', { name: 'Conductor status' }).getByText('Running', { exact: true }).waitFor()
+    assert.deepEqual(posts.at(-1), { path: '/api/bd/schedule', body: { enabled: true } })
+    await page.getByRole('button', { name: 'Pause daily schedule' }).click()
+    await page.getByRole('status', { name: 'Conductor status' }).getByText('Paused: schedule off', { exact: true }).waitFor()
     await page.getByRole('button', { name: 'Run shadow batch' }).click()
     await page.getByText('Shadow batch accepted.', { exact: false }).waitFor()
     assert.deepEqual(posts.at(-1), { path: '/api/bd/shadow', body: {} })
     await page.getByRole('button', { name: 'Stop conductor' }).click()
+    await page.getByRole('status', { name: 'Conductor status' }).getByText('Paused: kill switch on', { exact: true }).waitFor()
     await page.getByRole('button', { name: 'Release kill switch' }).waitFor()
     assert.equal(await page.getByRole('button', { name: 'Run shadow batch' }).isDisabled(), true)
     await page.getByRole('button', { name: 'Release kill switch' }).click()

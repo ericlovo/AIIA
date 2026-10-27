@@ -19,7 +19,13 @@ The normal Command Center mounts the same router and starts one worker during ap
 `local_brain/command_center/config/bd_roster.v1.json` is the versioned roster:
 
 - Healthcare, PE technical diligence, alumni/associations, and a synthetic SRG client lane.
-- `mode: replay`, `schedule_enabled: false`, and every bot schedule disabled by default.
+- `mode: replay`, `schedule_enabled: false` (the one activation flag), and a
+  standing `cadence` in America/Chicago: weekdays 08:00–18:00 every 30 minutes,
+  weekends 09:00–17:00 hourly. The worker rotates one eligible bot per slot.
+  Client bots join rotation only when they have a BD contract
+  (`research_segment` plus `managed_leads`). SRG stays on `synthetic-srg` until
+  an approved tenant binding exists. Studio **Activate daily research** persists
+  the flag; the default roster stays off.
 - Exact configured tenant per bot. API requests cannot override tenant or inference mode.
 - One concurrent job across worker processes to protect the M4.
 - Global daily, per-bot daily, and per-attempt caps for tokens, calls, and wall time.
@@ -32,7 +38,9 @@ Adapters reserve calls and conservative UTF-8 payload/output token envelopes bef
 
 ## Evidence and review
 
-Public-news discovery uses fixed segment-specific RSS queries through the existing `news.fetch` egress gate. Each cycle checks up to eight returned sources and selects the first unseen URL/content hash from the bot and tenant's durable completed-evidence history. Qwen runs only at the fixed local Ollama endpoint with JSON-schema output. Jev uses Choice, Score and Noul over a public-only projection through `typesafe.signals`. Tenant identities, private records, and contact restrictions never enter the Jev state.
+Public-news discovery uses fixed segment-specific RSS queries through the existing `news.fetch` egress gate. Each cycle checks up to eight returned sources and selects the first unseen URL/content hash from the bot and tenant's durable completed-evidence history. Qwen runs only at the fixed local Ollama endpoint with JSON-schema output.
+Live extraction warms `qwen3:8b` with a tiny `keep_alive` ping and retries once
+on `qwen_unavailable`. Jev uses Choice, Score and Noul over a public-only projection through `typesafe.signals`. Tenant identities, private records, and contact restrictions never enter the Jev state.
 
 Exact source spans establish any extracted email or phone. An exact quote is necessary but not sufficient to support a market signal: Jev separately evaluates the proposed quote in context. Provider failures are `data_unavailable`, never an invented empty lead inventory. Consumer insights are unverified hypotheses, and public contacts have unverified identity. Discovery is not buying intent or qualification.
 
@@ -49,13 +57,13 @@ A shadow preview is not live BD activation. Before enabling the all-day schedule
 1. Review and merge the draft through normal branch protections, then approve the Mini deployment/restart.
 2. Approve the exact existing egress exceptions and provider spend. At inspection on 2026-10-23 the Mini had `AIIA_AIRGAP` on, `news.fetch` and `typesafe.signals` disabled, and Qwen3:8B installed. This change does not edit any of those flags or widen `AIRGAP_ALLOWED_EGRESS`.
 3. Configure scoped credential environment references and the exact workspace identity for the implemented **read-only** Managed Leads adapter. Its account-list/detail contract is verified against the published API; authenticated access remains untested. Reads require the existing `web.fetch` policy gate, which this change does not open. Client bots also require an explicit research segment. Requested-contact-date semantics remain unavailable, so every contact stays held. No admin cookies, database-owner access, ZIP import, or cross-tenant access is used.
-4. Review segment scope, exact tenant bindings, sources, cadence and budgets; switch a separate config/database to live and enable only intended bot schedules. Both global and per-bot schedule switches are required.
+4. Review segment scope, exact tenant bindings, sources, cadence and budgets; switch a separate config/database to live. Keep the kill switch on until ready. Then either set `schedule_enabled: true` in that live config or click **Activate daily research** in Studio. Do not flip the flag on the Mini from this change. The standing cadence replaces the expired weekend display window; an old `schedule_window` is ignored when `cadence` is present.
 
 Autonomous primary-page crawling is not implemented: the existing fetcher does not supply the SSRF protections needed for arbitrary discovered URLs. Headlines may yield no contact data. The explicit excerpt import path supports operator-supplied public primary evidence with hash/time/allowlist validation, without fetching arbitrary URLs; it remains human-supplied rather than independently fetched evidence.
 
 ## Verification
 
-Run the repository backend tests, Ruff and its backlog ratchet, dashboard lint/unit/build/browser suites. New focused suites are `test_bd_conductor.py`, `test_bd_service.py`, `test_bd_routes.py`, and `test_bd_pipeline.py`. The dashboard has fixture tests plus `dashboard/tests/bd-live.mjs` for the real isolated backend (hard-bound to loopback port 8231 and synthetic replay).
+Run the repository backend tests, Ruff and its backlog ratchet, dashboard lint/unit/build/browser suites. New focused suites are `test_bd_conductor.py`, `test_bd_service.py`, `test_bd_routes.py`, `test_bd_pipeline.py`, and `test_bd_cadence.py`. The dashboard has fixture tests plus `dashboard/tests/bd-live.mjs` for the real isolated backend (hard-bound to loopback port 8231 and synthetic replay).
 
 Tests cover durable state, concurrent dedup/leases, retry limits, deadline/heartbeat fencing, restart recovery, global/per-bot caps, kill/resume, schedule validation, strict tenant binding, same-origin mutations, evidence validation, provider denial, triage persistence, and no fake packet for a successful empty source result. Browser checks cover SSE running/completion, source evidence, triage, filters, error states, and phone layouts. Real local Qwen extraction was separately exercised on synthetic text; live cloud retrieval/Jev and authenticated tenant API access remain unverified because their activation boundaries are closed.
 

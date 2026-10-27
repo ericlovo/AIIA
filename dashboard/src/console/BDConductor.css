@@ -13,6 +13,8 @@
 .bd-page button,.bd-page select { border:1px solid #d6d1c7; border-radius:7px; padding:9px 12px; background:#fff; min-height:44px; cursor:pointer; font:inherit}
 .bd-page button:hover { background:#f1eee8}
 .bd-page button:disabled { opacity:.5; cursor:not-allowed}
+.bd-page .bd-activate { background:#1f3d66; color:#fff; border-color:#1f3d66}
+.bd-page .bd-activate:hover { background:#173052}
 .bd-page .bd-primary { background:#284e3c; color:#fff; border-color:#284e3c}
 .bd-page .bd-primary:hover { background:#1d3c2d}
 .bd-page .bd-stop { color:#8c352b}
@@ -20,6 +22,18 @@
 .bd-stream i,.bd-dot { display:inline-block; width:7px; height:7px; border-radius:50%; border:1px solid #817c6e; flex:none}
 .bd-stream.is-live i,.bd-dot.is-live { background:#318056; border-color:#318056}
 .bd-stream.is-live { color:#286342}
+.bd-status-banner { display:flex; align-items:baseline; justify-content:space-between; gap:16px; padding:16px 20px; margin-bottom:14px; border-radius:10px; border:1px solid #d6d1c7; background:#f3efe6}
+.bd-status-banner strong { font-size:22px; letter-spacing:-.02em}
+.bd-status-banner span { color:#5f5b51; font-size:13px; max-width:42em}
+.bd-status-banner.is-paused_kill_switch { background:#f6e4df; border-color:#e0b2a6; color:#7a3228}
+.bd-status-banner.is-paused_schedule_off { background:#f4efe0; border-color:#d8cc9e; color:#6a5420}
+.bd-status-banner.is-running { background:#e5f0e6; border-color:#9cbc9d; color:#215534}
+.bd-daily-summary { display:grid; grid-template-columns:.7fr 2.3fr; gap:16px; padding:16px 20px; margin:12px 0 0; border:1px solid #ded9cf; border-radius:9px; background:#fff}
+.bd-daily-summary strong { display:block; font-size:16px; margin-top:4px}
+.bd-daily-summary dl { display:grid; grid-template-columns:repeat(4,1fr); gap:12px}
+.bd-daily-summary dt { font-size:11px; color:#6b665d}
+.bd-daily-summary dd { font-size:22px; font-variant-numeric:tabular-nums; margin-top:3px}
+.bd-next-query { background:#f3efe4; border-radius:6px; padding:8px 10px; color:#5a5344}
 .bd-mode { background:#eeeae0; border:1px solid #e2ddcf; display:grid; grid-template-columns:repeat(3,1fr); gap:24px; padding:17px 20px; border-radius:10px}
 .bd-mode strong,.bd-mode span { display:block}
 .bd-mode strong { font-weight:600; font-size:13px}
@@ -95,7 +109,8 @@ to { opacity:1; transform:translateY(0)}
 @media(max-width:1100px) { .bd-lanes { grid-template-columns:repeat(2,minmax(0,1fr))}
 .bd-wrap { padding:24px}
 }
-@media(max-width:760px) { .bd-heading { align-items:flex-start; flex-direction:column; gap:16px}
+@media(max-width:760px) { .bd-status-banner { flex-direction:column; gap:8px} .bd-status-banner strong { font-size:20px} .bd-daily-summary { grid-template-columns:1fr} .bd-daily-summary dl { grid-template-columns:repeat(2,1fr)}
+.bd-heading { align-items:flex-start; flex-direction:column; gap:16px}
 .bd-actions { max-width:none; justify-content:flex-start}
 .bd-stream { justify-content:flex-start}
 .bd-mode,.bd-health { grid-template-columns:1fr; gap:12px}

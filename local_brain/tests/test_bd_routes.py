@@ -52,6 +52,27 @@ def test_shadow_dedup_snapshot_and_kill_resume(route_app):
         assert not service._worker.done()
 
 
+def test_schedule_toggle_is_the_activation_flag(route_app):
+    app, service = route_app
+    with TestClient(app) as client:
+        snapshot = client.get("/api/bd/snapshot").json()
+        assert snapshot["schedule_enabled"] is False
+        assert snapshot["status_banner"]["label"] == "Paused: schedule off"
+        enabled = client.post("/api/bd/schedule", json={"enabled": True}).json()
+        assert enabled["schedule_enabled"] is True
+        assert enabled["status_banner"]["label"] == "Running"
+        assert service.store.schedule_enabled() is True
+        paused = client.post("/api/bd/schedule", json={"enabled": False}).json()
+        assert paused["status_banner"]["label"] == "Paused: schedule off"
+        assert client.post("/api/bd/schedule", json={"enabled": "true"}).status_code == 422
+        assert (
+            client.post(
+                "/api/bd/schedule", json={"enabled": True, "tenant_id": "victim"}
+            ).status_code
+            == 422
+        )
+
+
 @pytest.mark.parametrize(
     "headers", [{"origin": "https://evil.example"}, {"sec-fetch-site": "cross-site"}]
 )
@@ -61,6 +82,10 @@ def test_cross_origin_mutations_rejected(route_app, headers):
         assert client.post("/api/bd/shadow", json={}, headers=headers).status_code == 403
         assert (
             client.post("/api/bd/kill-switch", json={"enabled": True}, headers=headers).status_code
+            == 403
+        )
+        assert (
+            client.post("/api/bd/schedule", json={"enabled": True}, headers=headers).status_code
             == 403
         )
         assert service.store.snapshot()["jobs"] == []

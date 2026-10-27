@@ -92,6 +92,14 @@ test('candidate display requires current projection; old dispositions and manual
   assert.equal(packetOutcome({ ...packet, candidate_status: 'supported', source_url: 'javascript:alert(1)' }), 'inconclusive')
   assert.equal(packet.candidate_status, undefined, 'classification does not rewrite history')
 })
+test('status banner never treats a quiet system as working', async () => {
+  const { statusBanner } = await import('../src/console/bdModel.ts')
+  assert.deepEqual(statusBanner({ kill_switch: true, schedule_enabled: true }), { state: 'paused_kill_switch', label: 'Paused: kill switch on' })
+  assert.deepEqual(statusBanner({ kill_switch: false, schedule_enabled: false }), { state: 'paused_schedule_off', label: 'Paused: schedule off' })
+  assert.deepEqual(statusBanner({ kill_switch: false, schedule_enabled: true }), { state: 'running', label: 'Running' })
+  assert.equal(statusBanner({ kill_switch: false, schedule_enabled: false, status_banner: { state: 'running', label: 'Running' } }).label, 'Paused: schedule off')
+})
+
 test('withheld outcomes explain absent evidence instead of implying provider failure', async () => {
   const { researchReason, outcomeLabel } = await import('../src/console/bdModel.ts')
   assert.equal(researchReason('no_new_evidence'), 'No new evidence was found in this run.')

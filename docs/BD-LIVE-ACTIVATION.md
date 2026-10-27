@@ -11,7 +11,24 @@ The conductor is deployed at revision `bf9d85a`. Its initial synthetic shadow cy
 
 The verified pre-activation configuration has airgap enabled, an existing TypeSafe credential configured, and `news.fetch`, `typesafe.signals`, and `web.fetch` disabled. Recheck these conditions before activation; a saved configuration is not proof of current process state.
 
-## First pilot: one healthcare attempt per UTC day
+## Standing daily cadence (shipped off)
+
+The repo roster now defines a standing America/Chicago cadence instead of a
+one-off weekend window. Weekdays run 08:00–18:00 every 30 minutes; weekends run
+09:00–17:00 hourly. Each open slot rotates one eligible bot (healthcare, PE
+technical diligence, alumni/associations, then any client bot that has a BD
+contract). SRG stays bound to `synthetic-srg` until an approved tenant binding
+exists in config. Inconclusive jobs record a reason and a next-query
+suggestion. The snapshot includes a daily summary and a status banner:
+`Paused: kill switch on`, `Paused: schedule off`, or `Running`.
+
+`schedule_enabled` defaults to `false`. Studio **Activate daily research**
+persists that flag. This change does not flip it on any host.
+
+Live Qwen calls warm `qwen3:8b` with a tiny `keep_alive` ping (same approach as
+the Daily Brief) and retry once on `qwen_unavailable`.
+
+## First live activation (operator-owned, still off until you flip it)
 
 Use an operator-owned configuration copied from `local_brain/command_center/config/bd_roster.v1.json`. Keep the repository default roster in replay mode. Use a **separate live database**; do not change a replay database into a live database.
 
@@ -28,23 +45,22 @@ Keep `AIIA_AIRGAP=1`. The existing news and signals flags enable their existing 
 
 Apply these changes to the copied roster:
 
-| Field | First-pilot value |
+| Field | Standing live value |
 | --- | --- |
 | `mode` | `"live"` |
-| `schedule_enabled` | `true` |
-| `max_attempts` | `1` |
+| `schedule_enabled` | Leave `false` until you click **Activate daily research** or set this flag |
+| `cadence` | Keep the repo weekday/weekend hours; do not add a `schedule_window` |
+| `max_attempts` | `3` |
 | `max_concurrency` | `1` |
-| `job_budget` | `{"tokens":8000,"calls":6,"seconds":120}` |
-| `global_daily_budget` | `{"tokens":8000,"calls":6,"seconds":120}` |
-| `bot_daily_budget` | `{"tokens":8000,"calls":6,"seconds":120}` |
-| Healthcare `enabled` | `true` |
-| Healthcare `schedule.enabled` | `true` |
-| Healthcare `schedule.interval_seconds` | `86400` |
+| `job_budget` | Keep repo defaults (`8000` / `6` / `120`) |
+| `global_daily_budget` | Keep repo defaults (`200000` / `200` / `7200`) |
+| `bot_daily_budget` | Keep repo defaults (`50000` / `50` / `1800`) |
+| Segment bots `enabled` | `true` for healthcare, PE, and alumni |
+| SRG `enabled` | `true` only if you want it visible; it still will not rotate without a BD contract |
 | Healthcare `tenant_id` | An explicit internal research scope, such as `research-healthcare`; this is not a Managed Leads client tenant |
-| Every other bot `enabled` | `false` |
-| Every other bot `schedule.enabled` | `false` |
+| SRG `tenant_id` | `synthetic-srg` unless a real, approved tenant binding exists |
 
-Retain the existing lease duration and retry-backoff fields. Both the global schedule switch and the bot's schedule switch must be enabled. A 24-hour interval is an epoch-aligned UTC window, not “24 hours after the last run.” This configuration permits at most one attempt per UTC day; it is not a permanently self-disabling one-shot switch. After reviewing the first completed attempt, stop the conductor with the kill switch if further daily runs are not yet approved. There is no general “run one live discovery cycle” HTTP endpoint in this version; `/api/bd/shadow` is replay-only.
+Retain the existing lease duration and retry-backoff fields. The standing cadence is the schedule; an expired `schedule_window` is ignored when `cadence` is present. After news/signals flags and a live database are in place: release the kill switch, then click **Activate daily research**. There is no general “run one live discovery cycle” HTTP endpoint; `/api/bd/shadow` is replay-only.
 
 The worker begins scheduling when the service starts; an open dashboard is not required. Configuration is read when the service instance starts. Editing the JSON without restarting does not apply new settings.
 

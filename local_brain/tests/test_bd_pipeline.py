@@ -118,6 +118,7 @@ async def test_local_qwen_real_http_contract(monkeypatch):
         body = json.loads(request.content)
         assert str(request.url) == "http://127.0.0.1:11434/api/chat"
         assert body["model"] == "qwen3:8b"
+        assert body["keep_alive"] == "30m"
         assert body["format"]["additionalProperties"] is False
         return httpx.Response(
             200,
@@ -373,7 +374,7 @@ async def test_imported_live_skips_discovery_and_preserves_guarded_judgment(monk
         }, 150
 
     monkeypatch.setattr(pipeline, "retrieve_sources", forbidden)
-    monkeypatch.setattr(pipeline, "extract_local", local)
+    monkeypatch.setattr(pipeline, "extract_ready", local)
     monkeypatch.delenv("AIIA_SIGNALS_ENABLED", raising=False)
     with pytest.raises(pipeline.DataUnavailable, match="jev_not_configured"):
         await pipeline.run_pipeline(
@@ -545,7 +546,7 @@ async def test_seen_sources_are_skipped_before_qwen(monkeypatch):
         return judgments
 
     monkeypatch.setattr(pipeline, "retrieve_sources", retrieve)
-    monkeypatch.setattr(pipeline, "extract_local", local)
+    monkeypatch.setattr(pipeline, "extract_ready", local)
     monkeypatch.setattr(pipeline, "judge", judge)
     result = await pipeline.run_pipeline(
         job(mode="live", seen_evidence=[pipeline.evidence_key(first)])
@@ -864,12 +865,13 @@ async def test_healthcare_deterministic_withhold_skips_jev(
         raise AssertionError("unsupported prospect must not call cloud judgment")
 
     monkeypatch.setattr(pipeline, "retrieve_sources", retrieve)
-    monkeypatch.setattr(pipeline, "extract_local", local)
+    monkeypatch.setattr(pipeline, "extract_ready", local)
     monkeypatch.setattr(pipeline, "judge", forbidden)
     events = []
     result = await pipeline.run_pipeline(job(mode="live"), lambda kind, data: events.append(kind))
     assert result["packets"] == []
     assert result["reason"] == reason
+    assert result["next_query"]
     assert result["reviewed_evidence"] == [pipeline.evidence_key(source)]
     assert result["usage"]["calls"] == 2
     assert "candidate_proposed" not in events
@@ -925,7 +927,7 @@ async def test_healthcare_semantic_gate_and_positive_provider(monkeypatch, failu
         return judgments
 
     monkeypatch.setattr(pipeline, "retrieve_sources", retrieve)
-    monkeypatch.setattr(pipeline, "extract_local", local)
+    monkeypatch.setattr(pipeline, "extract_ready", local)
     monkeypatch.setattr(pipeline, "judge", judge)
     result = await pipeline.run_pipeline(job(mode="live"))
     assert result["usage"]["calls"] == 3
@@ -1028,7 +1030,7 @@ async def test_segment_prospect_gate(monkeypatch, segment, article, organization
         return judgments
 
     monkeypatch.setattr(pipeline, "retrieve_sources", retrieve)
-    monkeypatch.setattr(pipeline, "extract_local", local)
+    monkeypatch.setattr(pipeline, "extract_ready", local)
     monkeypatch.setattr(pipeline, "judge", judge)
     result = await pipeline.run_pipeline(job(mode="live", segment=segment))
     if failure:
@@ -1090,7 +1092,7 @@ async def test_named_but_irrelevant_segment_evidence_is_withheld(
         return judgments
 
     monkeypatch.setattr(pipeline, "retrieve_sources", retrieve)
-    monkeypatch.setattr(pipeline, "extract_local", local)
+    monkeypatch.setattr(pipeline, "extract_ready", local)
     monkeypatch.setattr(pipeline, "judge", judge)
     result = await pipeline.run_pipeline(job(mode="live", segment=segment))
     assert result["packets"] == []
@@ -1132,3 +1134,87 @@ def test_persisted_answers_validate_without_usage_envelope(segment):
 def test_persisted_invalid_answers_fail_closed(answers):
     with pytest.raises(pipeline.DataUnavailable, match="invalid_jev_answers"):
         pipeline.validate_answers(answers)
+
+
+@async_test
+async def test_qwen_warmup_sends_tiny_keep_alive_before_extract(monkeypatch):
+    import json
+
+    source, extraction, _ = pipeline.synthetic_fixture("healthcare")
+    payloads = []
+
+    def handle(request):
+        body = json.loads(request.content)
+        payloads.append(body)
+        if "format" not in body:
+            assert body["model"] == "qwen3:8b"
+            assert body["keep_alive"] == "30m"
+            assert body["options"]["num_ctx"] == 512
+            return httpx.Response(200, json={"message": {"content": "ok"}})
+        return httpx.Response(
+            200,
+            json={
+                "message": {"content": json.dumps(selection(extraction))},
+                "prompt_eval_count": 40,
+                "eval_count": 10,
+            },
+        )
+
+    client = httpx.AsyncClient
+    monkeypatch.setattr(
+        pipeline.httpx,
+        "AsyncClient",
+        lambda **kw: client(transport=httpx.MockTransport(handle), **kw),
+    )
+    result, tokens = await pipeline.extract_ready(source)
+    assert result == extraction
+    assert tokens == 50
+    assert payloads[0]["keep_alive"] == "30m"
+    assert "format" not in payloads[0]
+    assert payloads[1]["keep_alive"] == "30m"
+    assert "format" in payloads[1]
+
+
+@async_test
+async def test_qwen_retries_once_after_unavailable_then_succeeds(monkeypatch):
+    import json
+
+    source, extraction, _ = pipeline.synthetic_fixture("healthcare")
+    extracts = []
+
+    async def fake_ensure():
+        return {"ok": True}
+
+    async def fake_extract(current):
+        extracts.append(current)
+        if len(extracts) == 1:
+            raise httpx.ConnectError("cold")
+        return extraction, 12
+
+    events = []
+    monkeypatch.setattr(pipeline, "ensure_qwen_loaded", fake_ensure)
+    monkeypatch.setattr(pipeline, "extract_local", fake_extract)
+    result, tokens = await pipeline.extract_ready(
+        source, emit=lambda kind, **data: events.append(kind)
+    )
+    assert (result, tokens) == (extraction, 12)
+    assert len(extracts) == 2
+    assert "qwen_retry" in events
+
+
+@async_test
+async def test_qwen_does_not_retry_invalid_quote_selection(monkeypatch):
+    extracts = []
+
+    async def fake_ensure():
+        return {}
+
+    async def fake_extract(source):
+        extracts.append(source)
+        raise pipeline.DataUnavailable("invalid_source_quote_index")
+
+    monkeypatch.setattr(pipeline, "ensure_qwen_loaded", fake_ensure)
+    monkeypatch.setattr(pipeline, "extract_local", fake_extract)
+    with pytest.raises(pipeline.DataUnavailable, match="invalid_source_quote_index"):
+        await pipeline.extract_ready({"title": "Clinic opens a ward."})
+    assert len(extracts) == 1
