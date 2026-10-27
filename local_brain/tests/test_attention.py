@@ -42,6 +42,31 @@ def test_acknowledge_exact_repeats_durable_and_reversible(tmp_path):
     assert loaded.get_assignment(first["id"])["attention_events"][0]["restored_at"]
 
 
+def test_stale_sibling_cannot_suppress_restored_group(tmp_path):
+    registry = AssignmentRegistry(tmp_path / "work.json")
+    first = completed(registry)
+    second = completed(registry)
+    key = evidence_key(first)
+    stale_sibling = second["review_version"]
+    assert evidence_key(second) == key
+    registry.acknowledge_attention(
+        first["id"], expected_version=first["review_version"], key=key, active=True
+    )
+    registry.acknowledge_attention(
+        first["id"],
+        expected_version=registry.get_assignment(first["id"])["review_version"],
+        key=key,
+        active=False,
+    )
+    assert not acknowledged_keys(registry.assignments)
+    with pytest.raises(ValueError, match="review_changed_refresh_required"):
+        registry.acknowledge_attention(
+            second["id"], expected_version=stale_sibling, key=key, active=True
+        )
+    assert not acknowledged_keys(registry.assignments)
+    assert registry.get_assignment(second["id"])["review_version"] != stale_sibling
+
+
 @pytest.mark.parametrize(
     "change",
     [
