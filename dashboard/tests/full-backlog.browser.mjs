@@ -1,4 +1,6 @@
 import assert from 'node:assert/strict'
+import { mkdir } from 'node:fs/promises'
+import { join } from 'node:path'
 import { chromium } from 'playwright'
 
 const browser = await chromium.launch({ headless: true, executablePath: process.env.CHROMIUM_PATH })
@@ -6,6 +8,7 @@ try {
   for (const width of [1440, 390]) {
     const context = await browser.newContext({ viewport: { width, height: 844 } })
     const page = await context.newPage()
+    page.on('pageerror', error => console.error('Backlog page error:', error.message))
     const rows = Array.from({ length: 405 }, (_, i) => ({
       id: `old-${i}`, title: `Decision ${i}`, objective: 'Inspect the evidence',
       agent_id: 'reviewer', priority: 'normal', context: 'Full scope', success_criteria: 'Supported',
@@ -46,7 +49,15 @@ try {
       await route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) })
     })
     await page.goto(`${process.env.STUDIO_URL}#/assignments`)
-    await page.getByRole('button', { name: 'Needs you (404)', exact: true }).waitFor()
+    try {
+      await page.getByRole('button', { name: /^Needs you\s*\(\s*404\s*\)$/ }).waitFor()
+    } catch (error) {
+      const output = process.env.SCREENSHOT_DIR || '/tmp/full-backlog-qa'
+      await mkdir(output, { recursive: true })
+      await page.screenshot({ path: join(output, `backlog-failure-${width}.png`) })
+      console.error(await page.locator('body').innerText())
+      throw error
+    }
     assert.deepEqual(detailReads, [])
     assert.equal(await page.getByRole('button', { name: /Show more groups/ }).count(), 1)
     while (await page.getByRole('button', { name: /Show more groups/ }).count()) {
@@ -57,12 +68,12 @@ try {
     assert.deepEqual([...new Set(detailReads)], ['old-404'])
     await page.getByLabel('Review note', { exact: true }).fill('Synthetic quality decision')
     await page.getByRole('button', { name: 'Accept output', exact: true }).click()
-    await page.getByRole('button', { name: 'History (2)', exact: true }).waitFor()
+    await page.getByRole('button', { name: /^History\s*\(\s*2\s*\)$/ }).waitFor()
     assert.deepEqual(reviews, ['old-404'])
     assert.equal(rows[403].review_status, 'unreviewed')
-    await page.getByRole('button', { name: 'History (2)', exact: true }).click()
+    await page.getByRole('button', { name: /^History\s*\(\s*2\s*\)$/ }).click()
     await page.getByRole('button', { name: /Eval A-1 fixture Reviewer/ }).waitFor()
-    await page.getByRole('button', { name: 'Needs you (403)', exact: true }).click()
+    await page.getByRole('button', { name: /^Needs you\s*\(\s*403\s*\)$/ }).click()
     await page.getByRole('button', { name: /Approval needed.*Decision 1 Reviewer/ }).click()
     await page.getByRole('button', { name: 'Approve & create worktree', exact: true }).waitFor()
     assert.deepEqual(forbidden, [])

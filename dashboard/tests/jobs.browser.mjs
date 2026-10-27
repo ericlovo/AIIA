@@ -65,6 +65,7 @@ try {
         status = failTasks ? 503 : 200
         body = failTasks ? { detail: 'System task source offline' } : [{ task_id: 'qa-task', name: 'QA system collector', description: 'Built-in fixture task, not project CI health.', interval_seconds: 3600, last_run: stamp(), next_run: stamp(), last_status: 'completed', run_count: 1, fail_count: 0, enabled: true }]
       } else if (path === '/api/assignments' && method === 'GET') body = { assignments }
+      else if (method === 'GET' && /^\/api\/assignments\/[^/]+$/.test(path)) body = { assignment: assignments.find(item => item.id === path.split('/')[3]) }
       else if (path === '/api/git-workspaces') body = { workspaces: [] }
       else if (path === '/api/git-writes') body = { writes: [] }
       else if (path === '/api/memory-inbox' && method === 'GET') body = { ideas: [], total: 0, offset: 0, counts: { unreviewed: 0, promoted: 0, dismissed: 0 } }
