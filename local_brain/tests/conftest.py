@@ -129,6 +129,8 @@ def isolated_aiia_dir(tmp_path, monkeypatch: pytest.MonkeyPatch) -> Iterator[str
 # those, and must not read or write the live ~/.aiia tree.
 _HOST_ENV_ISOLATE = (
     "AIIA_AIRGAP",
+    "AIIA_BD_CONFIG",
+    "AIIA_BD_DATABASE",
     "AIIA_DEFAULT_MODEL",
     "AIIA_DEPLOYMENT_RECEIPTS",
     "AIIA_LIVE_TESTS",
@@ -151,6 +153,7 @@ _HOST_ENV_ISOLATE = (
     "LOCAL_TASK_MODEL",
     "OBSIDIAN_VAULT_DIR",
     "OLLAMA_TIMEOUT",
+    "TYPESAFE_API_KEY",
     "XAI_API_KEY",
 )
 

@@ -35,6 +35,11 @@ class ReviewControl(BaseModel):
     status: Literal["human_review_required", "research_next", "watch", "dismissed"]
 
 
+class ScheduleControl(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    enabled: StrictBool
+
+
 class ShadowControl(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -135,6 +140,11 @@ def create_router(factory=None):
     @router.post("/kill-switch", dependencies=[Depends(same_origin)])
     async def kill(body: KillControl, current: BDService = Depends(ready)):
         current.set_kill_switch(body.enabled)
+        return current.snapshot()
+
+    @router.post("/schedule", dependencies=[Depends(same_origin)])
+    async def schedule(body: ScheduleControl, current: BDService = Depends(ready)):
+        current.set_schedule_enabled(body.enabled)
         return current.snapshot()
 
     @router.post("/packets/{job_id}/{index}/review", dependencies=[Depends(same_origin)])

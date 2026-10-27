@@ -5,7 +5,18 @@ import logging
 import uuid
 from contextlib import suppress
 from datetime import datetime, timezone
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
+from .bd_cadence import (
+    cadence_interval,
+    cadence_open,
+    eligible_bots,
+    next_cadence_timestamp,
+    next_query_for,
+    rotate_bot,
+    slot_index,
+    status_banner,
+)
 from .bd_conductor import BDConductor, LeaseLost
 
 logger = logging.getLogger(__name__)
@@ -79,6 +90,7 @@ class BDService:
         self._active = None
         self._worker = None
         self.last_error = None
+        self._qwen_ready_at = 0.0
 
     async def start(self):
         if self._worker is None or self._worker.done():
@@ -91,22 +103,41 @@ class BDService:
                 await self._worker
             self._worker = None
 
+    def _standing(self):
+        return bool(self.store.config.get("cadence")) and self.store.schedule_enabled()
+
+    def _scheduled_bots(self, *, shadow=False):
+        return eligible_bots(
+            self.store.bots.values(), shadow=shadow, standing=self._standing() and not shadow
+        )
+
     def enqueue_cycle(self, *, shadow=False):
         mode = self.store.config["mode"]
         if shadow and mode != "replay":
             raise ValueError("Shadow runs require a separate replay database and configuration")
         if self.store.snapshot()["kill_switch"]:
             raise ValueError("Conductor is stopped; resume before queuing work")
-        queued = []
         now = self.store.clock()
-        for bot in self.store.bots.values():
-            if not bot["enabled"] or (
-                not shadow and not bot.get("schedule", {}).get("enabled", False)
-            ):
+        cadence = self.store.config.get("cadence")
+        bots = self._scheduled_bots(shadow=shadow)
+        if not shadow and cadence:
+            if not self.store.schedule_enabled() or not cadence_open(cadence, now):
+                return []
+            slot = slot_index(cadence, now)
+            chosen = rotate_bot(bots, slot)
+            bots = [chosen] if chosen else []
+        queued = []
+        for bot in bots:
+            if not shadow and not cadence and not bot.get("schedule", {}).get("enabled", False):
                 continue
-            interval = bot.get("schedule", {}).get("interval_seconds", 3600)
+            interval = (
+                cadence_interval(cadence, now)
+                if cadence and not shadow
+                else bot.get("schedule", {}).get("interval_seconds", 3600)
+            )
+            slot = int(now // interval)
             # A deterministic window makes repeated clicks and scheduler restarts idempotent.
-            entity = f"{bot['id']}:{int(now // interval)}"
+            entity = f"{bot['id']}:{slot}"
             queued.append(
                 self.store.enqueue(
                     bot["id"],
@@ -201,13 +232,29 @@ class BDService:
         if enabled and self._active:
             self._active.cancel()
 
+    def set_schedule_enabled(self, enabled):
+        self.store.set_schedule_enabled(enabled)
+
+    async def _ensure_qwen_ready(self):
+        now = self.store.clock()
+        if now - self._qwen_ready_at < 60:
+            return
+        from .bd_pipeline import ensure_qwen_loaded
+
+        await ensure_qwen_loaded()
+        self._qwen_ready_at = now
+
     async def loop(self):
         while True:
             try:
-                if (
-                    self.store.config["schedule_enabled"]
-                    and not self.store.snapshot()["kill_switch"]
-                ):
+                raw = self.store.snapshot()
+                if raw["schedule_enabled"] and not raw["kill_switch"]:
+                    if raw["mode"] == "live":
+                        try:
+                            await self._ensure_qwen_ready()
+                        except Exception as exc:
+                            self.last_error = type(exc).__name__
+                            logger.warning("BD qwen warmup unavailable: %s", self.last_error)
                     self.enqueue_cycle()
                 await self.run_once()
                 self.last_error = None
@@ -219,8 +266,9 @@ class BDService:
             await asyncio.sleep(0.5)
 
     def _schedule_projection(self, raw):
-        """Display external-guard metadata; this does not activate or stop scheduling."""
-        window = self.store.config.get("schedule_window")
+        """Standing cadence drives execution; a one-off window is display-only."""
+        cadence = self.store.config.get("cadence")
+        window = None if cadence else self.store.config.get("schedule_window")
         start = (
             datetime.fromisoformat(window["start_at"].replace("Z", "+00:00")).timestamp()
             if window
@@ -232,21 +280,40 @@ class BDService:
             else None
         )
         now = raw["timestamp"]
-        bots = [
-            bot for bot in self.store.bots.values() if bot["enabled"] and bot["schedule"]["enabled"]
-        ]
+        bots = self._scheduled_bots()
         projection = {
             "state": "scheduled",
             "next_run_at": None,
             "start_at": iso(start),
             "stop_at": iso(end),
-            "timezone": window["timezone"] if window else "UTC",
-            "display_only": True,
+            "timezone": (
+                cadence["timezone"]
+                if cadence
+                else window["timezone"]
+                if window
+                else "America/Chicago"
+            ),
+            "display_only": not bool(cadence),
         }
+        if cadence:
+            if not raw["schedule_enabled"] or not bots:
+                projection["state"] = "disabled"
+                return projection
+            if raw["kill_switch"]:
+                projection["state"] = "paused"
+                return projection
+            existing = {(job["tenant_id"], job["entity_id"], job["task"]) for job in raw["jobs"]}
+            nxt = next_cadence_timestamp(cadence, now, existing, bots)
+            if nxt is not None:
+                projection["next_run_at"] = iso(nxt)
+                if not cadence_open(cadence, now):
+                    projection["state"] = "waiting"
+                    projection["start_at"] = iso(nxt)
+            return projection
         if end is not None and now >= end:
             projection["state"] = "expired"
             return projection
-        if not self.store.config["schedule_enabled"] or not bots:
+        if not raw["schedule_enabled"] or not bots:
             projection["state"] = "disabled"
             return projection
         if start is not None and now < start:
@@ -268,6 +335,68 @@ class BDService:
         if candidates:
             projection["next_run_at"] = iso(min(candidates))
         return projection
+
+    def _daily_summary(self, raw, jobs, packets):
+        zone_name = (raw.get("cadence") or self.store.config.get("cadence") or {}).get(
+            "timezone", "America/Chicago"
+        )
+        try:
+            zone = ZoneInfo(zone_name)
+        except ZoneInfoNotFoundError:
+            zone = timezone.utc
+            zone_name = "UTC"
+
+        def local_day(value):
+            if value is None:
+                return None
+            if isinstance(value, str):
+                try:
+                    parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+                except ValueError:
+                    return None
+                if parsed.tzinfo is None:
+                    parsed = parsed.replace(tzinfo=timezone.utc)
+                return parsed.astimezone(zone).date().isoformat()
+            return datetime.fromtimestamp(value, timezone.utc).astimezone(zone).date().isoformat()
+
+        today = (
+            datetime.fromtimestamp(raw["timestamp"], timezone.utc)
+            .astimezone(zone)
+            .date()
+            .isoformat()
+        )
+        today_jobs = [
+            job
+            for job in raw["jobs"]
+            if local_day(job.get("finished_at") or job.get("created_at")) == today
+        ]
+        public_today = {
+            job["id"]: job
+            for job in jobs
+            if local_day(job.get("finished_at") or job.get("created_at")) == today
+        }
+        proposed = sum(
+            1 for job in public_today.values() if job.get("research_outcome") == "supported"
+        )
+        inconclusive = sum(
+            1 for job in public_today.values() if job.get("research_outcome") == "inconclusive"
+        )
+        failed = sum(1 for job in today_jobs if job["state"] == "failed")
+        awaiting = sum(
+            1
+            for packet in packets
+            if packet.get("candidate_status") == "supported"
+            and packet.get("review_status") == "human_review_required"
+            and local_day(packet.get("created_at")) == today
+        )
+        return {
+            "day": today,
+            "timezone": zone_name,
+            "candidates_proposed": proposed,
+            "inconclusive": inconclusive,
+            "failed": failed,
+            "awaiting_human_review": awaiting,
+        }
 
     def snapshot(self):
         raw = self.store.snapshot()
@@ -352,6 +481,13 @@ class BDService:
                     else "inconclusive"
                 )
                 public["result_reason"] = reason
+                public["next_query"] = result.get("next_query") or (
+                    next_query_for(reason)
+                    if public["research_outcome"] in {"inconclusive", "rejected"}
+                    else None
+                )
+            elif job["state"] == "failed":
+                public["next_query"] = next_query_for(job.get("error") or "")
             jobs.append(public)
         for job in [job for job in raw["jobs"] if job["state"] == "completed"][:200]:
             result = job.get("result") or {}
@@ -492,6 +628,8 @@ class BDService:
             "mode": raw["mode"],
             "schedule_enabled": raw["schedule_enabled"],
             "schedule": self._schedule_projection(raw),
+            "status_banner": status_banner(raw["kill_switch"], raw["schedule_enabled"]),
+            "daily_summary": self._daily_summary(raw, jobs, packets),
             "kill_switch": raw["kill_switch"],
             "bots": bots,
             "jobs": jobs,
@@ -547,6 +685,7 @@ class BDService:
         return {
             "candidate_status": status,
             "candidate_reason": reason,
+            "next_query": next_query_for(reason) if status == "inconclusive" else None,
             "id": packet.get("id", f"{job['id']}:{index}"),
             "job_id": job["id"],
             "bot_id": job["bot_id"],

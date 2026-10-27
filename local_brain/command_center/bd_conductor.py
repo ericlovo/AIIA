@@ -18,6 +18,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
+from .bd_cadence import validate_cadence
+
 CONFIG_PATH = Path(__file__).with_name("config") / "bd_roster.v1.json"
 ACTIVE = {"leased", "running"}
 TERMINAL = {"completed", "failed", "cancelled"}
@@ -66,6 +68,8 @@ class BDConductor:
             raise ValueError("Version 1 and explicit replay or live mode are required")
         if not isinstance(cfg.get("schedule_enabled"), bool):
             raise ValueError("schedule_enabled must be boolean")
+        if "cadence" in cfg:
+            validate_cadence(cfg["cadence"])
         if "schedule_window" in cfg:
             window = cfg["schedule_window"]
             if not isinstance(window, dict) or set(window) != {"start_at", "end_at", "timezone"}:
@@ -508,6 +512,26 @@ class BDConductor:
                     self._event(db, "job_cancelled", job, reason="kill_switch")
             self._event(db, "kill_switch_changed", enabled=enabled)
 
+    def schedule_enabled(self):
+        with self._transaction() as db:
+            return self._schedule_enabled(db)
+
+    def _schedule_enabled(self, db):
+        row = db.execute("SELECT value FROM bd_controls WHERE key='schedule_enabled'").fetchone()
+        if row is not None:
+            return bool(row[0])
+        return bool(self.config["schedule_enabled"])
+
+    def set_schedule_enabled(self, enabled):
+        if not isinstance(enabled, bool):
+            raise ValueError("enabled must be boolean")
+        with self._transaction() as db:
+            db.execute(
+                "INSERT INTO bd_controls VALUES('schedule_enabled',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+                (int(enabled),),
+            )
+            self._event(db, "schedule_enabled_changed", enabled=enabled)
+
     def evidence_keys(self, bot_id, tenant_id):
         bot = self.bots.get(bot_id)
         if not bot or bot["tenant_id"] != tenant_id:
@@ -607,7 +631,8 @@ class BDConductor:
             return dict(
                 mode=self.config["mode"],
                 replay_only=self.config["mode"] == "replay",
-                schedule_enabled=self.config["schedule_enabled"],
+                schedule_enabled=self._schedule_enabled(db),
+                cadence=self.config.get("cadence"),
                 kill_switch=self._killed(db),
                 bots=bots,
                 jobs=jobs,

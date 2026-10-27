@@ -2,6 +2,19 @@
   "version": 1,
   "schedule_enabled": false,
   "mode": "replay",
+  "cadence": {
+    "timezone": "America/Chicago",
+    "weekday": {
+      "start_hour": 8,
+      "end_hour": 18,
+      "interval_seconds": 1800
+    },
+    "weekend": {
+      "start_hour": 9,
+      "end_hour": 17,
+      "interval_seconds": 3600
+    }
+  },
   "lease_seconds": 30,
   "max_attempts": 3,
   "retry_backoff_seconds": 5,

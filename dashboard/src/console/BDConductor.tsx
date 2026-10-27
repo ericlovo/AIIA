@@ -1,7 +1,7 @@
 import { studioFetch, studioJSON } from '../lib/connection'
 import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { packetOutcome, outcomeLabel, researchReason, plannedWaiting, providerStatus, scheduleQueueText, ageLabel, heartbeatFresh, publicSource, type BDSnapshot, type Budget } from './bdModel'
+import { packetOutcome, outcomeLabel, researchReason, plannedWaiting, providerStatus, scheduleQueueText, ageLabel, heartbeatFresh, publicSource, statusBanner, type BDSnapshot, type Budget } from './bdModel'
 import { BDScheduleStrip } from './BDScheduleStrip'
 import { BDResearchHistory } from './BDResearchHistory'
 import { BDActivityBoard } from './BDActivityBoard'
@@ -90,20 +90,34 @@ export function BDConductor() {
         <div><a className="bd-back" href="#/note">Morning note</a><p className="bd-eyebrow">AIIA / BUSINESS DEVELOPMENT</p><h1>The research desk.</h1><p className="bd-intro">Review completed research below, inspect the queue, and follow the planned schedule.</p></div>
         <div className="bd-actions">
           <span className={`bd-stream ${stream === 'Live' ? 'is-live' : ''}`} role="status"><i aria-hidden="true" />{stream}</span>
+          <button className="bd-activate" disabled={!data || action.isPending || query.isError} onClick={() => action.mutate({ path: 'schedule', body: { enabled: !data?.schedule_enabled } })}>{data?.schedule_enabled ? 'Pause daily schedule' : 'Activate daily research'}</button>
           <button className="bd-primary" disabled={!data || data.mode !== 'replay' || data.kill_switch || action.isPending || query.isError} onClick={() => action.mutate({ path: 'shadow', body: {} })}>{action.isPending && action.variables?.path === 'shadow' ? 'Starting replay…' : 'Run shadow batch'}</button>
           <button className="bd-stop" disabled={!data || action.isPending || query.isError} onClick={() => action.mutate({ path: 'kill-switch', body: { enabled: !data?.kill_switch } })}>{data?.kill_switch ? 'Release kill switch' : 'Stop conductor'}</button>
         </div>
       </header>
       {action.isError && <p className="bd-error" role="alert">Action failed: {action.error.message}</p>}
-      {action.isSuccess && <p className="bd-notice" role="status">{action.variables.path === 'shadow' ? 'Shadow batch accepted. Follow its progress below.' : action.variables.path === 'kill-switch' ? 'Kill-switch change accepted.' : 'Local research triage saved.'}</p>}
+      {action.isSuccess && <p className="bd-notice" role="status">{action.variables.path === 'shadow' ? 'Shadow batch accepted. Follow its progress below.' : action.variables.path === 'kill-switch' ? 'Kill-switch change accepted.' : action.variables.path === 'schedule' ? (action.variables.body && typeof action.variables.body === 'object' && 'enabled' in action.variables.body && action.variables.body.enabled ? 'Daily research schedule is on. The worker will rotate enabled bots during Chicago working hours.' : 'Daily research schedule is paused. Existing jobs stay queued.') : 'Local research triage saved.'}</p>}
       {query.isError && <div className="bd-error" role="alert">data_unavailable: {query.error.message} {data && 'Showing the last received snapshot; controls are disabled.'}<button onClick={() => query.refetch()}>Retry connection</button></div>}
       {!data && query.isLoading && <p className="bd-empty" role="status">Connecting to the conductor…</p>}
       {data && <>
+        <section className={`bd-status-banner is-${statusBanner(data).state}`} role="status" aria-label="Conductor status">
+          <strong>{statusBanner(data).label}</strong>
+          <span>{statusBanner(data).state === 'running' ? 'Standing Chicago cadence is armed. Quiet time still means the worker is on.' : statusBanner(data).state === 'paused_kill_switch' ? 'No jobs will lease until the kill switch is released.' : 'One labelled action turns the standing schedule on. Nothing runs until you do.'}</span>
+        </section>
         <section className="bd-mode" aria-label="Operating mode">
           <div><strong>{data.mode === 'replay' ? 'Shadow · replay only' : data.mode}</strong><span>{data.mode === 'replay' ? 'Recorded judgments and synthetic candidates. No outreach.' : 'Public-source research. Human review before outreach.'}</span></div>
           <div><strong>Schedule {data.schedule_enabled ? 'enabled' : 'disabled'}</strong><span>{plannedWaiting(data.schedule, now) ? 'Waiting for planned start' : data.kill_switch ? 'Kill switch engaged · work paused' : 'Kill switch released'}</span></div>
           <div><strong>Research → proposal → human</strong><span>Packets are evidence for review, not qualified leads.</span></div>
         </section>
+        {data.daily_summary && <section className="bd-daily-summary" aria-label="Daily research summary">
+          <div><span className="bd-machine-label">TODAY · {data.daily_summary.timezone}</span><strong>{data.daily_summary.day}</strong></div>
+          <dl>
+            <div><dt>Candidates proposed</dt><dd>{metric(data.daily_summary.candidates_proposed)}</dd></div>
+            <div><dt>Inconclusive</dt><dd>{metric(data.daily_summary.inconclusive)}</dd></div>
+            <div><dt>Failed</dt><dd>{metric(data.daily_summary.failed)}</dd></div>
+            <div><dt>Awaiting human review</dt><dd>{metric(data.daily_summary.awaiting_human_review)}</dd></div>
+          </dl>
+        </section>}
         <BDScheduleStrip data={data} now={now} />
         <div className="bd-view-controls"><span>Research flow</span><label>Show <select value={lane} onChange={event => setLane(event.target.value)}><option value="all">All segments & clients</option>{data.bots.map(bot => <option key={bot.id} value={bot.id}>{bot.name}</option>)}</select></label></div>
         <BDActivityBoard data={data} now={now} lane={lane} onReview={reviewPacket} />
@@ -137,7 +151,7 @@ export function BDConductor() {
               {packets.length === 0 && <p className="bd-empty">No packets in this view yet. Completed research will appear here.</p>}
               <div className="bd-packets">{packets.map(packet => <article key={packet.id} id={`bd-packet-${packet.id}`} tabIndex={-1} className="bd-packet">
                 <div className="bd-packet-meta"><span>{packet.tenant_id} / {packet.segment}</span><span>{ageLabel(packet.created_at, now)} ago</span></div>
-                <h3>{packet.organization || 'Unnamed research result'}</h3><p className="bd-outcome-label">{outcomeLabel(packetOutcome(packet))}</p><p>{researchReason(packet.candidate_reason ?? (packetOutcome(packet) === 'supported' ? 'source_supported_candidate' : undefined))}</p><p>{packet.summary}</p>
+                <h3>{packet.organization || 'Unnamed research result'}</h3><p className="bd-outcome-label">{outcomeLabel(packetOutcome(packet))}</p><p>{researchReason(packet.candidate_reason ?? (packetOutcome(packet) === 'supported' ? 'source_supported_candidate' : undefined))}</p>{packet.next_query && packetOutcome(packet) === 'inconclusive' && <p className="bd-next-query">Next query: {packet.next_query}</p>}<p>{packet.summary}</p>
                 <div className="bd-tags"><span>{packet.mode}</span><span>{packet.review_status.replaceAll('_', ' ')}</span><span>{botName(packet.bot_id)}</span></div>
                 <details open={!!expanded[packet.id]} onToggle={event => { const open = event.currentTarget.open; setExpanded(current => current[packet.id] === open ? current : { ...current, [packet.id]: open }) }}><summary>Review evidence & contacts</summary><div className="bd-evidence">
                   {publicSource(packet.source_url) ? <a href={publicSource(packet.source_url)!} target="_blank" rel="noopener noreferrer">Open source evidence ↗</a> : <p>Source evidence unavailable</p>}

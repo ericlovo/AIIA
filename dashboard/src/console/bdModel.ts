@@ -8,12 +8,13 @@ export interface BDJob {
   id: string; bot_id: string; tenant_id: string; segment: string
   state: 'queued' | 'leased' | 'running' | 'completed' | 'failed' | 'cancelled'
   mode?: string; research_outcome?: ResearchOutcome; result_reason?: string
+  next_query?: string | null
   finished_at?: string | null; error?: string | null; attempts?: number
   step: string; created_at: string; started_at: string | null; heartbeat_at: string | null
 }
 export interface BDEvent { provider?: string; model?: string; latency_ms?: number | null; mode?: string; primitive?: string; id: string | number; kind: string; message: string; created_at: string; bot_id: string; job_id: string }
 export interface BDPacket {
-  candidate_status?: ResearchOutcome; candidate_reason?: string
+  candidate_status?: ResearchOutcome; candidate_reason?: string; next_query?: string | null
   id: string; index: number; contact_policy?: string; disposition?: string; source_quote?: string; job_id: string; bot_id: string; tenant_id: string; segment: string; created_at: string
   mode: string; review_status: string; organization: string; source_url: string
   emails: string[]; phones: string[]; signals: string[]; insights: string[]; summary: string
@@ -33,8 +34,18 @@ export interface ProviderHealth {
   status: 'available' | 'data_unavailable' | 'replay' | 'stale'
   detail: string; observed_at?: string | null; last_status?: string
 }
+export interface StatusBanner {
+  state: 'paused_kill_switch' | 'paused_schedule_off' | 'running'
+  label: 'Paused: kill switch on' | 'Paused: schedule off' | 'Running'
+}
+export interface DailySummary {
+  day: string; timezone: string
+  candidates_proposed: number; inconclusive: number; failed: number; awaiting_human_review: number
+}
 export interface BDSnapshot {
   schedule?: BDSchedule
+  status_banner?: StatusBanner
+  daily_summary?: DailySummary
   model_activity?: Partial<Record<'qwen' | 'jev', ModelActivity>>
   job_counts?: Record<BDJob['state'], number>
   job_window?: { limit: number; total: number; returned: number; truncated: boolean; queue_total: number; queue_returned: number }
@@ -96,6 +107,11 @@ export function providerStatus(health: ProviderHealth | undefined): string {
   if (health?.status === 'data_unavailable') return health.observed_at ? 'Last call failed' : 'Unverified'
   if (health?.status === 'replay') return 'Recorded replay'
   return health?.status === 'available' ? 'Idle' : 'Unverified'
+}
+export function statusBanner(data: Pick<BDSnapshot, 'kill_switch' | 'schedule_enabled' | 'status_banner'>): StatusBanner {
+  if (data.kill_switch) return { state: 'paused_kill_switch', label: 'Paused: kill switch on' }
+  if (!data.schedule_enabled) return { state: 'paused_schedule_off', label: 'Paused: schedule off' }
+  return { state: 'running', label: 'Running' }
 }
 export function scheduleIdleText(data: BDSnapshot, now: number): string {
   if (plannedWaiting(data.schedule, now)) return 'Waiting for planned start'
