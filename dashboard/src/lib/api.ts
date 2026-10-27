@@ -531,6 +531,9 @@ export type AssignmentTrigger = 'manual' | 'interval' | 'handoff' | 'revision';
 export type AssignmentSource = 'manual' | 'memory_capture' | 'loop_schedule' | 'agent_handoff' | 'revision' | 'loop_check';
 
 export interface Assignment {
+  summary?: boolean;
+  has_result?: boolean;
+  group_scope?: string;
   revision_of?: string;
   revision_ids?: string[];
   recovery_pending?: boolean;
@@ -823,6 +826,8 @@ export const api = {
   reviewHealth: (days = 14, project = '') =>
     get<ReviewHealth>(`/api/memory-inbox/review-health?days=${days}${project ? `&project=${encodeURIComponent(project)}` : ''}`),
   slackCaptureStatus: () => get<SlackCaptureStatus>('/api/integrations/slack/status'),
+  assignmentSummaries: () => get<{ assignments: Assignment[] }>('/api/assignments?summary=true'),
+  assignment: (id: string) => get<{ assignment: Assignment }>(`/api/assignments/${encodeURIComponent(id)}`),
   assignments: () => get<{ assignments: Assignment[] }>('/api/assignments'),
   /** All or nothing; each item carries the review version the person saw. Never records a verdict. */
   dismissAssignments: (items: { id: string; expected_version: string }[], note: string) =>

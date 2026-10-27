@@ -31,7 +31,6 @@ _COLLAPSED = re.compile(
 )
 
 ASSIGNMENT_DATA_FILE = Path(__file__).parent / "assignment_data.json"
-MAX_ASSIGNMENTS = 250
 MAX_PENDING_LOOP_REVIEWS = 3
 MAX_BULK_DISMISS = 250
 MAX_HANDOFFS = 250
@@ -174,7 +173,6 @@ class AssignmentRegistry:
             raise ValueError("invalid_assignment_source")
         if len(context) > MAX_CONTEXT_LENGTH:
             raise ValueError("assignment_context_too_long")
-        self._make_assignment_room()
         now = _now()
         assignment = {
             "id": assignment_id or f"asg_{uuid.uuid4().hex[:12]}",
@@ -312,31 +310,6 @@ class AssignmentRegistry:
         assignment["occurrences"] = 1
         assignment["last_failed_at"] = now
         return assignment, True
-
-    def _make_assignment_room(self) -> None:
-        while len(self.assignments) >= MAX_ASSIGNMENTS:
-            # Only work a person has closed (reviewed or dismissed) is evicted. Output
-            # awaiting review and unacknowledged failures are never dropped silently;
-            # a full registry raises instead, so the backlog becomes visible.
-            disposable = next(
-                (
-                    assignment
-                    for assignment in reversed(self.assignments)
-                    if assignment["status"] in {"completed", "failed"}
-                    and (
-                        assignment.get("dismissed_at")
-                        or assignment.get("review_status", "unreviewed") != "unreviewed"
-                    )
-                    and not assignment.get("source_handoff_id")
-                    and not assignment.get("revision_of")
-                    and not assignment.get("revision_ids")
-                    and not self.assignment_has_handoffs(assignment["id"])
-                ),
-                None,
-            )
-            if disposable is None:
-                raise ValueError("assignment_capacity_reached")
-            self.assignments.remove(disposable)
 
     @_durable_mutation
     def set_running(self, assignment_id: str) -> dict[str, Any] | None:

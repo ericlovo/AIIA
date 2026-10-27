@@ -218,23 +218,24 @@ def test_one_observed_state_yields_one_item(tmp_path):
     assert other["id"] != first["id"]
 
 
-async def test_full_registry_is_reported_not_silently_evicted(tmp_path, monkeypatch):
-    from local_brain.command_center import assignment_registry as module
-
+async def test_large_backlog_preserves_records_when_scheduled_work_is_created(
+    tmp_path, monkeypatch
+):
     cc, agents, assignments, _events, fake = _studio(tmp_path, monkeypatch, content="Report.")
-    monkeypatch.setattr(module, "MAX_ASSIGNMENTS", 2)
-    for index in range(2):
-        item = assignments.create_assignment(title=f"t{index}", objective="o", agent_id="agt")
-        assignments.set_running(item["id"])
-        assignments.finish_assignment(item["id"], result="awaiting a person")
+    seed = assignments.create_assignment(title="Older work", objective="o", agent_id="old-agent")
+    assignments.finish_assignment(seed["id"], result="awaiting a person")
+    for index in range(300):
+        assignments.assignments.append({**seed, "id": f"old-{index}"})
+    assignments.save()
+    before = [dict(item) for item in assignments.list_assignments()]
     agent = _create_agent(agents, loop_enabled=True, loop_task="Think.")
 
-    result = await cc._run_scheduled_agent(agent)
+    await cc._run_scheduled_agent(agent)
 
-    assert result["reason"] == "assignment_capacity_reached"
-    assert len(assignments.list_assignments()) == 2  # both unreviewed items kept
-    assert fake.posts == []
-    assert agents.get(agent["id"])["loop_skip_reason"] == "assignment_capacity_reached"
+    assert len(assignments.list_assignments()) == 302
+    for item in before:
+        assert assignments.get_assignment(item["id"]) == item
+    assert len(fake.posts) == 1
 
 
 @pytest.fixture()

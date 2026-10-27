@@ -71,9 +71,9 @@ export function WorkBoard({
   const inspectorRef = useRef<HTMLElement>(null)
   const newWorkRef = useRef<HTMLButtonElement>(null)
   const qc = useQueryClient()
-  const { data: assignmentData, isLoading: assignmentsLoading } = useQuery({
-    queryKey: ['assignments'],
-    queryFn: api.assignments,
+  const { data: assignmentData, isLoading: assignmentsLoading, isError: assignmentsError } = useQuery({
+    queryKey: view === 'assignments' ? ['assignments', 'summary'] : ['assignments'],
+    queryFn: view === 'assignments' ? api.assignmentSummaries : api.assignments,
     refetchInterval: 5_000,
   })
   const { data: handoffData, isLoading: handoffsLoading } = useQuery({
@@ -100,6 +100,7 @@ export function WorkBoard({
   const workspaces = workspaceData?.workspaces ?? EMPTY_WORKSPACES
   const writes = writeData?.writes ?? EMPTY_WRITES
   const repos = resourceData?.repos ?? EMPTY_REPOS
+  const [visibleGroups, setVisibleGroups] = useState(50)
   const [lane, setLane] = useState<WorkLane>('needs-you')
   const [selectedAssignmentId, setSelectedAssignmentId] = useState<string | null>(initialAssignmentId || null)
   const [creatingAssignment, setCreatingAssignment] = useState(Boolean(initialAgentId) && !initialAssignmentId)
@@ -122,7 +123,14 @@ export function WorkBoard({
     source_assignment_id: initialHandoffSourceId,
     to_agent_id: initialHandoffTargetId,
   }))
-  const selectedAssignment = assignments.find(item => item.id === selectedAssignmentId) ?? null
+  const selectedRow = assignments.find(item => item.id === selectedAssignmentId)
+  const detail = useQuery({
+    queryKey: ['assignments', 'detail', selectedAssignmentId],
+    queryFn: () => api.assignment(selectedAssignmentId!),
+    enabled: Boolean(selectedAssignmentId && (!selectedRow || selectedRow.summary)),
+    refetchInterval: 5_000,
+  })
+  const selectedAssignment = selectedRow && !selectedRow.summary ? selectedRow : detail.data?.assignment ?? null
   const selectedHandoff = handoffs.find(item => item.id === selectedHandoffId) ?? null
   const inspectedAssignmentId = selectedAssignment?.id
   useEffect(() => {
@@ -195,7 +203,7 @@ export function WorkBoard({
     onSettled: () => qc.invalidateQueries({ queryKey: ['git-writes'] }),
   })
 
-  const completedAssignments = assignments.filter(item => item.status === 'completed' && item.result)
+  const completedAssignments = assignments.filter(item => item.status === 'completed' && (item.has_result ?? Boolean(item.result)))
   const runningCount = assignments.filter(item => item.status === 'running').length
   const manualStartCount = assignments.filter(item => item.status === 'queued').length
 
@@ -261,8 +269,9 @@ export function WorkBoard({
               </button>
             </div>
 
+            {assignmentsError && <p role="alert" className="py-6 text-sm text-red-300">Could not refresh the backlog. Counts may be stale; refresh before deciding.</p>}
             {loading && <p role="status" className="py-6 text-sm text-neutral-400">Loading work...</p>}
-            {!loading && items.length === 0 && (
+            {!loading && !assignmentsError && items.length === 0 && (
               <button
                 onClick={() => view === 'assignments' ? openNewWork() : setSelectedHandoffId(null)}
                 className="min-h-48 w-full border border-dashed border-neutral-700 p-6 text-left hover:border-cyan-500/50"
@@ -273,20 +282,21 @@ export function WorkBoard({
             )}
 
             {view === 'assignments' && <nav aria-label="Work views" className="mb-5 flex flex-wrap gap-2">
-              {([['needs-you', 'Needs you'], ['working', 'Working'], ['history', 'History']] as const).map(([value, label]) => <button key={value} aria-pressed={lane === value} onClick={() => setLane(value)} className={`border px-3 py-2 text-sm ${lane === value ? 'border-cyan-400 text-cyan-200' : 'border-neutral-700 text-neutral-300'}`}>
+              {([['needs-you', 'Needs you'], ['working', 'Working'], ['history', 'History']] as const).map(([value, label]) => <button key={value} aria-pressed={lane === value} onClick={() => { setLane(value); setVisibleGroups(50) }} className={`border px-3 py-2 text-sm ${lane === value ? 'border-cyan-400 text-cyan-200' : 'border-neutral-700 text-neutral-300'}`}>
                 {label} ({assignments.filter(item => workLane(item, pendingApprovalIds.has(item.id)) === value).length})
               </button>)}
             </nav>}
             {view === 'assignments' ? (
               <div className="space-y-3">
-                {!loading && laneItems.length === 0 && <p role="status" className="text-sm text-neutral-400">{lane === 'needs-you' ? 'Nothing needs your decision. Working and History remain available.' : 'No work in this view.'}</p>}
-                {groups.map(group => <section key={group[0].id} className="border border-neutral-800">
+                {!loading && !assignmentsError && laneItems.length === 0 && <p role="status" className="text-sm text-neutral-400">{lane === 'needs-you' ? 'Nothing needs your decision. Working and History remain available.' : 'No work in this view.'}</p>}
+                {groups.slice(0, visibleGroups).map(group => <section key={group[0].id} className="border border-neutral-800">
                   <AssignmentCard approvalPending={group.some(item => pendingApprovalIds.has(item.id))} assignment={group[0]} agentName={agentName(group[0].agent_id)} selected={selectedAssignmentId === group[0].id} onSelect={() => openAssignment(group[0].id)} />
                   {group.length > 1 && <details className="px-4 pb-3 text-sm text-neutral-300"><summary className="cursor-pointer">{group.length} matching records · Review each separately</summary>
                     <p className="py-2 text-xs text-neutral-400">Matching task text. Owners, sources, evidence and decisions remain separate for each run.</p>
                     {group.map(item => <button key={item.id} onClick={() => openAssignment(item.id)} className="block w-full border-t border-neutral-800 py-2 text-left">Open {new Date(item.updated_at).toLocaleString()} · {item.id} · {agentName(item.agent_id)} · {reviewLabel(item)}</button>)}
                   </details>}
                 </section>)}
+                {groups.length > visibleGroups && <button className="border border-neutral-700 px-4 py-2 text-sm text-neutral-200" onClick={() => setVisibleGroups(count => count + 50)}>Show more groups ({groups.length - visibleGroups} remaining)</button>}
               </div>
             ) : (
               <div className="space-y-3">
@@ -348,7 +358,7 @@ export function WorkBoard({
               onClose={closeNewWork}
             />
           ) : (
-            <p role="status" className="p-6 text-sm text-neutral-400">{assignmentsLoading ? 'Loading assignment...' : 'This assignment is not available.'}</p>
+            <p role="status" className="p-6 text-sm text-neutral-400">{assignmentsLoading || detail.isLoading ? 'Loading assignment...' : detail.isError ? 'Could not load evidence. Refresh to try again.' : 'This assignment is not available.'}</p>
           )
         ) : selectedHandoff ? (
           <HandoffDetails

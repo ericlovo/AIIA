@@ -42,3 +42,15 @@ test('matching manual tasks across historical agents and run references group wi
   assert.equal(workLane(records[1]), 'history')
   assert.equal(groupWork(records).length, 2)
 })
+
+test('compact backlog rows classify output and group full scope without evidence payloads', () => {
+  const rows = Array.from({ length: 600 }, (_, i) => work(String(i), {
+    summary: true, has_result: true, result: '', group_scope: 'full-scope-digest',
+  }))
+  assert.equal(rows.filter(row => workLane(row) === 'needs-you').length, 600)
+  assert.equal(groupWork(rows)[0].length, 600)
+  assert.equal(workLane({ ...rows[0], review_status: 'accepted' }), 'history')
+  assert.equal(workLane({ ...rows[0], has_result: false, review_status: 'accepted' }), 'needs-you')
+  assert.equal(workLane({ ...rows[0], review_status: 'accepted' }, true), 'needs-you')
+  assert.equal(groupWork([rows[0], { ...rows[1], group_scope: 'different-full-context' }]).length, 2)
+})

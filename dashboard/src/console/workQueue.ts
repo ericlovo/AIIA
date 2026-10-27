@@ -11,7 +11,7 @@ export function workLane(item: Assignment, approvalPending = false): WorkLane {
   if (approvalPending) return 'needs-you'
   if (isTestFixture(item) || item.dismissed_at) return 'history'
   if (item.status === 'running') return 'working'
-  if (item.recovery_pending || item.status === 'queued' || item.status === 'failed' || (item.status === 'completed' && !item.result.trim())) return 'needs-you'
+  if (item.recovery_pending || item.status === 'queued' || item.status === 'failed' || (item.status === 'completed' && !(item.has_result ?? Boolean(item.result.trim())))) return 'needs-you'
   return !item.review_status || item.review_status === 'unreviewed' || item.review_status === 'rejected' ? 'needs-you' : 'history'
 }
 
@@ -20,7 +20,7 @@ export function groupWork(items: Assignment[]): Assignment[][] {
   for (const item of items) {
     // Manual source references identify individual runs, not distinct task scope.
     // This is display grouping only; every record still requires its own decision.
-    const key = JSON.stringify([item.source_kind === 'manual' ? '' : item.agent_id, item.priority, item.schedule_key, item.source_kind, item.source_kind === 'manual' ? '' : item.source_ref, item.source_handoff_id, item.title, item.objective, item.context, item.success_criteria, item.status, item.review_status, Boolean(item.dismissed_at), item.revision_of, Boolean(item.recovery_pending)])
+    const key = JSON.stringify([item.source_kind === 'manual' ? '' : item.agent_id, item.priority, item.schedule_key, item.source_kind, item.source_kind === 'manual' ? '' : item.source_ref, item.source_handoff_id, item.title, item.group_scope ?? JSON.stringify([item.objective, item.context, item.success_criteria]), item.status, item.review_status, Boolean(item.dismissed_at), item.revision_of, Boolean(item.recovery_pending)])
     const group = groups.get(key) ?? []
     group.push(item)
     groups.set(key, group)
