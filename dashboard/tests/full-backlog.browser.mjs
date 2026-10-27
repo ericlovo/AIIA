@@ -44,7 +44,7 @@ try {
       else if (path === '/api/git-workspaces') body = { workspaces: [{ id: 'pending', assignment_id: 'old-1', agent_id: 'reviewer', status: 'pending', events: [] }] }
       else if (path === '/api/git-writes') body = { writes: [] }
       else if (path === '/api/handoffs') body = { handoffs: [] }
-      else if (path === '/api/agents/resources') body = { repos: [] }
+      else if (path === '/api/agents/resources') body = { repos: [], github: { status: 'disconnected' } }
       else if (path === '/api/tasks') body = []
       await route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) })
     })

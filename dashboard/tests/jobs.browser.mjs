@@ -239,6 +239,9 @@ try {
     await inspector.getByText('QA evidence only', { exact: true }).waitFor()
     assert.equal(await page.getByText('QA archived work 131', { exact: true }).count(), 0)
     await page.getByRole('button', { name: /^History \(/ }).click()
+    while (await page.getByRole('button', { name: /^Show more/ }).count()) {
+      await page.getByRole('button', { name: /^Show more/ }).click()
+    }
     await page.getByText('QA archived work 131', { exact: true }).waitFor({ state: 'attached' })
     await inspector.scrollIntoViewIfNeeded()
     const box = await inspector.boundingBox()
