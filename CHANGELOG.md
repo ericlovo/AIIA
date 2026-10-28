@@ -104,6 +104,14 @@ All notable changes to AIIA are documented here. This project adheres to
 
 ### Fixed
 
+- **Scheduled Test Runner hermeticity for TypeSafe + Sanction.** Isolating
+  `AIIA_AIRGAP` without isolating `SANCTION_API_URL` / `SANCTION_API_KEY`
+  unmasked hybrid fail-closed on the Mini, so thirteen TypeSafe advisor
+  tests failed only on that host. The suite now scrubs Sanction credentials
+  too, scopes the TypeSafe httpx mock to the advisor module, and re-runs
+  those modules under a Mini-like launchd environment so a future leak
+  fails on CI.
+
 - Bound Daily Brief generation and forward output limits to the local model; surface
   explicit timeout failures. Scheduled test failures now retain their report and
   mark the task failed, with required asyncio plugin checks and an optional test

@@ -127,6 +127,12 @@ def isolated_aiia_dir(tmp_path, monkeypatch: pytest.MonkeyPatch) -> Iterator[str
 # Launchd on the Mini exports production flags into the scheduled test
 # runner. Tests that assert default-off / isolated behavior must not see
 # those, and must not read or write the live ~/.aiia tree.
+#
+# SANCTION_* is required for the same reason as AIIA_AIRGAP: scrubbing
+# airgap without scrubbing Sanction unmasks hybrid fail-closed. Vanilla
+# OSS (CI) has no Sanction, so authorize_egress allows; the Mini has
+# both AIIA_AIRGAP=1 and a real SANCTION_API_URL/KEY. After airgap is
+# deleted, those tests consult Sanction and fail closed.
 _HOST_ENV_ISOLATE = (
     "AIIA_AIRGAP",
     "AIIA_BD_CONFIG",
@@ -148,11 +154,15 @@ _HOST_ENV_ISOLATE = (
     "AIIA_SLACK_TEAM_ID",
     "AIIA_TEST_PYTHON",
     "AIIA_TYPESAFE_ENABLED",
+    "AIRGAP_ALLOWED_EGRESS",
     "COMMAND_CENTER_HOST",
     "LOCAL_ROUTING_MODEL",
     "LOCAL_TASK_MODEL",
     "OBSIDIAN_VAULT_DIR",
     "OLLAMA_TIMEOUT",
+    "SANCTION_API_KEY",
+    "SANCTION_API_URL",
+    "SANCTION_WALLET_ID",
     "TYPESAFE_API_KEY",
     "XAI_API_KEY",
 )
@@ -165,9 +175,8 @@ def _isolate_host_environment(
     """Keep the suite hermetic on a Mini that has real state and launchd env.
 
     The scheduled test runner inherits AIIA_AIRGAP, Slack/Typesafe opt-ins,
-    the live default model, and HOME → ~/.aiia. Those are production
-    settings, not test fixtures; leaking them made four assertions fail
-    only on that host.
+    Sanction control-plane credentials, the live default model, and HOME →
+    ~/.aiia. Those are production settings, not test fixtures.
     """
     from local_brain import config as config_mod
 
