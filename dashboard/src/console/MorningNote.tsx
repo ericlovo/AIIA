@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api, type Agent } from '../lib/api'
 import {
@@ -10,11 +10,13 @@ import {
   morningLede,
   pickAgentForAsk,
   STATE_LABEL,
-  type MorningDecision,
   type MorningLine,
   type MorningNotePayload,
 } from './morningNoteModel'
 import './MorningNote.css'
+import { useDecisionQueue } from './useDecisionQueue'
+import { assignmentNextAction } from './assignmentReview'
+import { formatRoute } from './studioRoute'
 
 const EMPTY_NOTE: MorningNotePayload = {
   date: '',
@@ -30,49 +32,16 @@ export function MorningNote({ agents, onDetails }: { agents: Agent[]; onDetails:
   const note = useQuery({ queryKey: ['morning-note'], queryFn: api.morningNote, refetchInterval: 60_000 })
   const data = { ...EMPTY_NOTE, ...(note.data ?? {}) }
   const [now, setNow] = useState(() => new Date())
-  const [openId, setOpenId] = useState<string | null>(null)
   const [ask, setAsk] = useState('')
   const [taken, setTaken] = useState<Array<{ id: string; agent: string; text: string; why: string; at: string }>>([])
   const [askError, setAskError] = useState('')
-  const [gone, setGone] = useState<Set<string>>(new Set())
+  const queue = useDecisionQueue()
 
   useEffect(() => {
     const tick = window.setInterval(() => setNow(new Date()), 30_000)
     return () => window.clearInterval(tick)
   }, [])
 
-  const remaining = useMemo(
-    () => data.decisions.filter(item => !gone.has(`${item.kind}:${item.id}`)),
-    [data.decisions, gone],
-  )
-  const shown = remaining.slice(0, 5)
-  const more = Math.max(data.needs_you_total - gone.size - shown.length, remaining.length - shown.length)
-  const needCount = Math.max(data.needs_you_total - gone.size, remaining.length)
-
-  const approve = useMutation({
-    mutationFn: async (item: MorningDecision) => {
-      if (item.kind === 'review') await api.reviewAssignment(item.id, 'accepted', item.expected_version || '', '')
-      else await api.promoteIdea(item.id, 'decisions', '', { postToSlack: false })
-    },
-    onSuccess: (_result, item) => {
-      setGone(prev => new Set(prev).add(`${item.kind}:${item.id}`))
-      void qc.invalidateQueries({ queryKey: ['morning-note'] })
-      void qc.invalidateQueries({ queryKey: ['assignments'] })
-      void qc.invalidateQueries({ queryKey: ['memory-inbox'] })
-    },
-  })
-  const later = useMutation({
-    mutationFn: async (item: MorningDecision) => {
-      if (item.kind === 'review') await api.dismissAssignment(item.id, true, item.expected_version || '', 'Not now')
-      else await api.dismissIdea(item.id, 'Not now')
-    },
-    onSuccess: (_result, item) => {
-      setGone(prev => new Set(prev).add(`${item.kind}:${item.id}`))
-      void qc.invalidateQueries({ queryKey: ['morning-note'] })
-      void qc.invalidateQueries({ queryKey: ['assignments'] })
-      void qc.invalidateQueries({ queryKey: ['memory-inbox'] })
-    },
-  })
   const create = useMutation({
     mutationFn: async (text: string) => {
       const picked = pickAgentForAsk(text, agents)
@@ -96,7 +65,6 @@ export function MorningNote({ agents, onDetails }: { agents: Agent[]; onDetails:
     onError: (error: Error) => setAskError(error.message),
   })
 
-  const busy = approve.isPending || later.isPending
 
   return (
     <main className="morning-note" aria-labelledby="greet">
@@ -109,7 +77,7 @@ export function MorningNote({ agents, onDetails }: { agents: Agent[]; onDetails:
         <header>
           <h1 id="greet">{greeting(now)}.</h1>
           <p className="date">{formatLongDate(now)}</p>
-          <p className="lede">{note.isPending ? 'Reading where things stand…' : morningLede(data.products, data.customers, needCount, now)}</p>
+          <p className="lede">{note.isPending || queue.loading ? 'Reading where things stand…' : queue.error ? 'The decision queue is unavailable. Refresh before deciding.' : morningLede(data.products, data.customers, queue.total, now)}</p>
         </header>
 
         {note.isError && <p className="err" role="alert">Could not load today’s note. You can still open Review work.</p>}
@@ -124,29 +92,25 @@ export function MorningNote({ agents, onDetails }: { agents: Agent[]; onDetails:
         </section>
 
         <section aria-labelledby="h-decide">
-          <h2 id="h-decide">Needs you {needCount > 0 && <span className="count">{needCount}</span>}</h2>
-          {shown.length === 0 && !note.isPending && <p className="empty">Nothing needs you right now. Enjoy the quiet.</p>}
+          <h2 id="h-decide">Needs you <span className="count">{queue.error ? 'Unavailable' : queue.loading ? 'Loading' : queue.total}</span></h2>
+          <p className="ask-hint">The same decision queue as Work. Open the evidence before deciding; reviewing output never grants Git permissions.</p>
+          {queue.error && <p className="err" role="alert">Could not refresh all decisions. Counts may be stale; no all-clear is available.</p>}
+          {!queue.loading && !queue.error && queue.total === 0 && <p className="empty">Nothing needs you right now.</p>}
           <ol className="cards">
-            {shown.map(item => {
-              const key = `${item.kind}:${item.id}`
-              const opened = openId === key
-              return (
-                <li key={key} className="card">
-                  {item.product && <p className="card-product">{item.product}</p>}
-                  <h3 className="card-title">{item.title}</h3>
-                  {item.why && <p className="card-why">{item.why}</p>}
-                  {opened && item.more && <div className="card-more"><p>{item.more}</p></div>}
-                  <div className="card-actions">
-                    <button type="button" className="btn btn-primary" disabled={busy} onClick={() => approve.mutate(item)}>Approve</button>
-                    <button type="button" className="btn" disabled={busy} onClick={() => later.mutate(item)}>Not now</button>
-                    <button type="button" className="btn btn-quiet" aria-expanded={opened} onClick={() => setOpenId(opened ? null : key)}>{opened ? 'Close' : 'Open'}</button>
-                  </div>
-                </li>
-              )
+            {queue.groups.slice(0, 5).map(group => {
+              const item = group[0]
+              const approval = group.some(record => queue.pendingApprovalIds.has(record.id))
+              return <li key={item.id} className="card">
+                <h3 className="card-title">{item.title}</h3>
+                <p className="card-why">{approval ? 'Permission approval needed. Review each request separately.' : assignmentNextAction(item)}</p>
+                {group.length > 1 && <p>{group.length} matching records; each original is preserved.</p>}
+                <a className="btn btn-primary" href={formatRoute({ view: 'assignments', assignmentId: approval ? group.find(record => queue.pendingApprovalIds.has(record.id))!.id : item.id })}>Review decision and evidence</a>
+              </li>
             })}
           </ol>
-          {more > 0 && <p className="more-line">{more === 1 ? 'Plus 1 more waiting' : `Plus ${more} more waiting`}</p>}
-          {(approve.error || later.error) && <p className="err" role="alert">{(approve.error ?? later.error)?.message}</p>}
+          {queue.savedIdeas > 0 && <p><a className="btn" href={formatRoute({ view: 'inbox', source: 'all' })}>Review saved ideas ({queue.savedIdeas})</a> Decide what to keep as memory. This does not approve execution.</p>}
+          {queue.missingApprovalIds.length > 0 && <p className="err" role="alert">{queue.missingApprovalIds.length} permission requests reference unavailable work. These approvals remain pending; inspect Work before proceeding.</p>}
+          <button type="button" className="btn" onClick={onDetails}>Open full decision queue</button>
         </section>
 
         <section aria-labelledby="h-ask">

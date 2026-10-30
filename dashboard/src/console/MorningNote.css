@@ -35,7 +35,7 @@
 .morning-note .w-waiting { color: var(--amber); }
 .morning-note .w-countdown { color: var(--blue); }
 .morning-note .w-unmapped, .morning-note .w-unmounted { color: var(--muted); }
-.morning-note .btn { min-height: 44px; padding: 0 16px; border-radius: 999px; border: 1px solid var(--rule); background: #fff; cursor: pointer; font-size: 15px; font-weight: 500; }
+.morning-note .btn { display: inline-flex; align-items: center; justify-content: center; text-decoration: none; min-height: 44px; padding: 0 16px; border-radius: 999px; border: 1px solid var(--rule); background: #fff; cursor: pointer; font-size: 15px; font-weight: 500; }
 .morning-note .btn-primary { background: var(--ink); border-color: var(--ink); color: #fff; }
 .morning-note .btn-quiet { border-color: transparent; background: transparent; color: var(--ink-2); text-decoration: underline; text-underline-offset: 3px; }
 .morning-note .linkish { background: none; border: 0; padding: 0 2px; min-height: 44px; color: var(--ink-2); text-decoration: underline; text-underline-offset: 3px; cursor: pointer; font-size: inherit; }
