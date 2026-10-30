@@ -1,3 +1,4 @@
+import { assignmentNextAction } from '../src/console/assignmentReview.ts'
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import type { Assignment } from '../src/lib/api.ts'
@@ -60,4 +61,16 @@ test('attention acknowledgement does not hide approvals or failures', () => {
   assert.equal(workLane(work('same', { attention_seen: true }), true), 'needs-you')
   assert.equal(workLane(work('failure', { attention_seen: true, status: 'failed' })), 'needs-you')
   assert.equal(workLane(work('changed', { attention_seen: false })), 'needs-you')
+})
+
+test('history guidance stops repeated review without hiding approvals', () => {
+  const archived = work('old', { dismissed_at: '2026-10-28' })
+  assert.match(assignmentNextAction(archived), /No decision is requested/)
+  assert.match(assignmentNextAction(archived, true), /workspace request/)
+  assert.match(assignmentNextAction(archived, false, 1), /pending Git writes/)
+  const seen = work('seen', { attention_seen: true })
+  assert.match(assignmentNextAction(seen), /No repeat review/)
+  assert.match(assignmentNextAction(seen, true), /workspace request/)
+  assert.match(assignmentNextAction(work('new')), /accept or reject/)
+  assert.match(assignmentNextAction(work('queued', { status: 'queued' })), /will not start automatically/)
 })

@@ -20,7 +20,7 @@ import {
   type RepositoryResource,
 } from '../lib/api'
 import { AgentPicker } from './AgentPicker'
-import { assignmentLabel, assignmentOrigin, reviewLabel } from './assignmentReview'
+import { assignmentLabel, assignmentOrigin, assignmentNextAction, reviewLabel } from './assignmentReview'
 import { formatRoute, type StudioView } from './studioRoute'
 import { PageHeader } from './PageHeader'
 import { replaceRoute } from './useStudioRoute'
@@ -276,6 +276,7 @@ export function WorkBoard({
               </button>
             </div>
 
+            {view === 'assignments' && <p className="mt-4 text-sm leading-relaxed text-neutral-300">Start with Needs you. Open a record to see the decision and its evidence. Reviewing output never grants Git permissions. History keeps completed reviews and dismissed records.</p>}
             {view === 'assignments' && <section className="my-4 space-y-3 border border-neutral-800 p-3 text-sm">
               <button onClick={() => setPreviewOpen(!previewOpen)} aria-expanded={previewOpen}>Preview suspected test records</button>
               {previewOpen && <div className="space-y-3">
@@ -345,7 +346,7 @@ export function WorkBoard({
       </section>
 
       {inspectorOpen && <aside ref={inspectorRef} tabIndex={-1} aria-label={view === 'assignments' ? creatingAssignment ? 'New work' : 'Selected work' : 'Handoff details'} className="min-h-0 min-w-0 bg-neutral-950 outline-none lg:overflow-y-auto">
-        {view === 'assignments' && selectedAssignment?.attention_key && <section aria-label="Attention decision" className="m-4 space-y-3 border border-neutral-700 p-4 text-sm">
+        {view === 'assignments' && selectedAssignment?.attention_key && !selectedAssignment.dismissed_at && <section aria-label="Attention decision" className="m-4 space-y-3 border border-neutral-700 p-4 text-sm">
           <h3>{selectedAssignment.attention_seen ? 'Acknowledged repeat' : 'Attention decision'}</h3>
           <p>{matchingEvidence.length} record(s) have identical evidence and scope from the same agent. Acknowledgement moves these and future exact repeats to History. It does not accept output, start work, or approve permissions. Changed evidence returns to Needs you.</p>
           {matchingEvidence.some(item => pendingApprovalIds.has(item.id)) && <p>Pending approval must be decided separately. Acknowledgement is blocked.</p>}
@@ -547,13 +548,15 @@ function AssignmentDetails({ assignment, agent, agentName, workspace, writes, re
       </div>
       <section aria-label="Next action" className="space-y-2 border-l-2 border-cyan-600 pl-3">
         <h3 className="text-xs font-semibold text-cyan-200">Next action</h3>
-        <p className="text-sm leading-relaxed text-neutral-300">{workspace?.status === 'pending' ? 'Review the Git workspace request below. Accepting output does not approve this request.' : pendingWriteCount ? 'Review the pending Git writes below. Each write needs its own approval.' : isTestFixture(assignment) ? 'Reference exercise. No decision is required unless an approval request is pending. Evidence and optional review remain available here.' : assignmentNextAction(assignment)}</p>
+        <p className="text-sm leading-relaxed text-neutral-300">{assignmentNextAction(assignment, workspace?.status === 'pending', pendingWriteCount, isTestFixture(assignment))}</p>
       </section>
       {error && <ErrorNotice error={error} />}
-      {runnable && <button disabled={isRunning} onClick={onRun} className="min-h-11 w-full bg-white px-3 py-2.5 text-sm font-medium text-neutral-950 disabled:cursor-not-allowed disabled:opacity-40">{isRunning ? 'Mini is working…' : assignment.status === 'failed' ? 'Retry assignment' : 'Run assignment'}</button>}
+      {runnable && !assignment.dismissed_at && <button disabled={isRunning} onClick={onRun} className="min-h-11 w-full bg-white px-3 py-2.5 text-sm font-medium text-neutral-950 disabled:cursor-not-allowed disabled:opacity-40">{isRunning ? 'Mini is working…' : assignment.status === 'failed' ? 'Retry assignment' : 'Run assignment'}</button>}
       {assignment.error && <section aria-label="Failure evidence" className="border-l-2 border-red-500 bg-red-950/20 p-3 text-sm text-red-200"><h3 className="font-medium">What went wrong</h3><p className="mt-2 whitespace-pre-wrap break-words">{assignment.error}</p></section>}
       {assignment.result && <TextBlock label="Work product" value={assignment.result} />}
-      {assignment.status === 'completed' && assignment.result.trim() && <ArtifactReview key={assignment.id} assignment={assignment} />}
+      {assignment.status === 'completed' && assignment.result.trim() && (assignment.dismissed_at || assignment.attention_seen
+        ? <Disclosure key={`optional-review-${assignment.id}`} title="Output verdict and optional review"><ArtifactReview key={assignment.id} assignment={assignment} /></Disclosure>
+        : <ArtifactReview key={assignment.id} assignment={assignment} />)}
       <Disclosure key={`brief-${assignment.id}`} title="Assignment brief" initiallyOpen>
         <TextBlock label="Objective" value={assignment.objective} />
         {assignment.success_criteria && <TextBlock label="Success criteria" value={assignment.success_criteria} />}
@@ -832,16 +835,6 @@ function workStatus(status: AssignmentStatus) {
   return status === 'queued' ? 'Awaiting manual start' : status === 'running' ? 'Running' : status === 'failed' ? 'Failed' : 'Completed'
 }
 
-function assignmentNextAction(assignment: Assignment) {
-  if (assignment.status === 'queued') return 'Run assignment to start work on the Mini. This assignment will not start automatically.'
-  if (assignment.status === 'running') return 'Work is running on the Mini. Wait for the result before reviewing.'
-  if (assignment.recovery_pending) return 'Recover saved output before deciding whether another run is needed.'
-  if (assignment.status === 'failed') return 'Inspect the failure evidence before retrying, or dismiss it without changing its outcome.'
-  if (!assignment.result.trim()) return 'No output is available to review. Inspect the attempt history before dismissing.'
-  if (assignment.review_status === 'rejected') return 'Review the feedback and request a linked revision. The original output is preserved.'
-  if (assignment.review_status === 'accepted') return 'Output accepted. No further review is needed unless you reopen it.'
-  return 'Inspect the work product against the assignment brief, then accept or reject the output.'
-}
 
 function ErrorNotice({ error }: { error: Error }) {
   return <div role="alert" className="border border-red-900/60 bg-red-950/30 p-3 text-xs text-red-300">{error.message}</div>
