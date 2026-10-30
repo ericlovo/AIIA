@@ -44,6 +44,38 @@ class ShadowControl(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+class SteerControl(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    action: Literal[
+        "pause",
+        "resume",
+        "pause_bot",
+        "resume_bot",
+        "focus",
+        "clear_focus",
+        "bump",
+        "queue",
+        "set_cadence",
+        "set_budget",
+        "kill_switch",
+        "cancel",
+    ]
+    bot_id: str | None = Field(default=None, min_length=1, max_length=100)
+    job_id: str | None = Field(default=None, min_length=1, max_length=64)
+    segment: str | None = Field(default=None, min_length=1, max_length=100)
+    query: str | None = Field(default=None, min_length=1, max_length=200)
+    target: str | None = Field(default=None, min_length=1, max_length=200)
+    enabled: StrictBool | None = None
+    overnight_enabled: StrictBool | None = None
+    around_the_clock: StrictBool | None = None
+    weekday_interval_seconds: int | None = Field(default=None, ge=60, le=86400)
+    weekend_interval_seconds: int | None = Field(default=None, ge=60, le=86400)
+    overnight_interval_seconds: int | None = Field(default=None, ge=60, le=86400)
+    tokens: int | None = Field(default=None, gt=0)
+    calls: int | None = Field(default=None, gt=0)
+    seconds: int | None = Field(default=None, gt=0)
+
+
 def same_origin(request: Request):
     origin = request.headers.get("origin")
     if request.headers.get("sec-fetch-site") == "cross-site":
@@ -146,6 +178,67 @@ def create_router(factory=None):
     async def schedule(body: ScheduleControl, current: BDService = Depends(ready)):
         current.set_schedule_enabled(body.enabled)
         return current.snapshot()
+
+    @router.post("/steer", dependencies=[Depends(same_origin)])
+    async def steer(body: SteerControl, current: BDService = Depends(ready)):
+        payload = body.model_dump()
+        action = payload.pop("action")
+        present = {key for key, value in payload.items() if value is not None}
+        allowed = {
+            "pause": set(),
+            "resume": set(),
+            "pause_bot": {"bot_id"},
+            "resume_bot": {"bot_id"},
+            "focus": {"bot_id", "segment"},
+            "clear_focus": set(),
+            "bump": {"job_id"},
+            "queue": {"bot_id", "query", "target"},
+            "set_cadence": {
+                "bot_id",
+                "overnight_enabled",
+                "around_the_clock",
+                "weekday_interval_seconds",
+                "weekend_interval_seconds",
+                "overnight_interval_seconds",
+            },
+            "set_budget": {"bot_id", "tokens", "calls", "seconds"},
+            "kill_switch": {"enabled"},
+            "cancel": {"job_id"},
+        }
+        extra = present - allowed.get(action, set())
+        if extra:
+            raise HTTPException(422, "unexpected_steer_field")
+        required = {
+            "pause_bot": ("bot_id",),
+            "resume_bot": ("bot_id",),
+            "bump": ("job_id",),
+            "queue": ("bot_id",),
+            "kill_switch": ("enabled",),
+            "cancel": ("job_id",),
+        }
+        for field in required.get(action, ()):
+            if payload.get(field) is None:
+                raise HTTPException(422, f"{field}_required")
+        if action == "focus" and (payload.get("bot_id") is None) == (
+            payload.get("segment") is None
+        ):
+            raise HTTPException(422, "focus_requires_bot_or_segment")
+        if action == "queue" and payload.get("query") is None and payload.get("target") is None:
+            raise HTTPException(422, "queue_requires_query_or_target")
+        if (
+            action == "set_cadence"
+            and payload.get("around_the_clock") is not None
+            and payload.get("bot_id") is None
+        ):
+            raise HTTPException(422, "bot_id_required")
+        if action == "kill_switch" and payload.get("enabled") is None:
+            raise HTTPException(422, "enabled_required")
+        try:
+            return current.steer(action, **payload)
+        except KeyError as exc:
+            raise HTTPException(404, str(exc) or "not_found") from exc
+        except ValueError as exc:
+            raise HTTPException(409, str(exc)) from exc
 
     @router.post("/packets/{job_id}/{index}/review", dependencies=[Depends(same_origin)])
     async def review(

@@ -13,6 +13,10 @@
       "start_hour": 9,
       "end_hour": 17,
       "interval_seconds": 3600
+    },
+    "overnight": {
+      "enabled": false,
+      "interval_seconds": 3600
     }
   },
   "lease_seconds": 30,
@@ -81,7 +85,26 @@
       "kind": "client",
       "schedule": {
         "enabled": false,
-        "interval_seconds": 3600
+        "interval_seconds": 3600,
+        "around_the_clock": false
+      },
+      "sources": [
+        "market_news",
+        "lead_signals"
+      ]
+    },
+    {
+      "id": "comcast",
+      "name": "Comcast Business leads",
+      "segment": "client-bd",
+      "tenant_id": "synthetic-comcast",
+      "enabled": true,
+      "kind": "client",
+      "research_segment": "commercial-fit-out",
+      "schedule": {
+        "enabled": false,
+        "interval_seconds": 3600,
+        "around_the_clock": false
       },
       "sources": [
         "market_news",

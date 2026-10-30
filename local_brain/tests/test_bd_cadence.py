@@ -6,6 +6,7 @@ import pytest
 from local_brain.command_center.bd_cadence import (
     cadence_interval,
     cadence_open,
+    cadence_window,
     eligible_bots,
     next_cadence_timestamp,
     next_open_timestamp,
@@ -21,6 +22,10 @@ CADENCE = {
     "timezone": "America/Chicago",
     "weekday": {"start_hour": 8, "end_hour": 18, "interval_seconds": 1800},
     "weekend": {"start_hour": 9, "end_hour": 17, "interval_seconds": 3600},
+}
+AROUND = {
+    **CADENCE,
+    "overnight": {"enabled": True, "interval_seconds": 3600},
 }
 
 
@@ -134,13 +139,13 @@ def test_client_bots_need_a_bd_contract():
         "tenant_id": "synthetic-srg",
         "schedule": {"enabled": True},
     }
-    contracted = {
+    contracted = {**srg, "research_segment": "healthcare"}
+    comcast = {
         **srg,
-        "research_segment": "healthcare",
-        "managed_leads": {
-            "base_url": "https://managed-leads.vercel.app",
-            "workspace_id": "synthetic-srg",
-        },
+        "id": "comcast",
+        "tenant_id": "synthetic-comcast",
+        "research_segment": "commercial-fit-out",
+        "schedule": {"enabled": False, "around_the_clock": True},
     }
     healthcare = {
         "id": "healthcare",
@@ -154,10 +159,28 @@ def test_client_bots_need_a_bd_contract():
         "healthcare",
         "srg",
     ]
+    assert [bot["id"] for bot in eligible_bots([healthcare, comcast], standing=True)] == [
+        "healthcare",
+        "comcast",
+    ]
     assert [bot["id"] for bot in eligible_bots([healthcare, srg], shadow=True)] == [
         "healthcare",
         "srg",
     ]
+    assert [
+        bot["id"] for bot in eligible_bots([healthcare, comcast], standing=True, overnight=True)
+    ] == ["comcast"]
+    assert [
+        bot["id"] for bot in eligible_bots([healthcare, comcast], standing=True, paused={"comcast"})
+    ] == ["healthcare"]
+    assert [
+        bot["id"]
+        for bot in eligible_bots(
+            [healthcare, comcast],
+            standing=True,
+            focus={"kind": "bot", "id": "comcast"},
+        )
+    ] == ["comcast"]
 
 
 def test_banner_states_are_explicit():
@@ -179,4 +202,37 @@ def test_banner_states_are_explicit():
 def test_next_query_explains_inconclusive_reasons():
     assert "named" in next_query_for("healthcare_entity_or_event_unconfirmed").lower()
     assert "qwen3:8b" in next_query_for("qwen_unavailable")
+    assert "permit" in next_query_for("permit_fields_not_in_source").lower()
     assert next_query_for("") != ""
+
+
+def test_overnight_is_off_by_default_and_uses_a_slower_interval():
+    late = at(2026, 10, 27, 22)
+    assert cadence_open(CADENCE, late) is False
+    assert cadence_window(CADENCE, late) is None
+    assert cadence_open(AROUND, late) is True
+    assert cadence_window(AROUND, late) == "overnight"
+    assert cadence_interval(AROUND, late) == 3600
+    assert cadence_window(AROUND, at(2026, 10, 27, 10)) == "weekday"
+    assert cadence_interval(AROUND, at(2026, 10, 27, 10)) == 1800
+    nxt = next_cadence_timestamp(AROUND, late, set(), [])
+    assert nxt == at(2026, 10, 28, 8)
+    comcast = {
+        "id": "comcast",
+        "tenant_id": "synthetic-comcast",
+        "enabled": True,
+        "segment": "client-bd",
+        "research_segment": "commercial-fit-out",
+        "schedule": {"enabled": False, "around_the_clock": True},
+    }
+    overnight_slot = next_cadence_timestamp(AROUND, late, set(), [comcast])
+    assert overnight_slot == late
+
+
+def test_invalid_overnight_fails_closed():
+    with pytest.raises(ValueError):
+        validate_cadence({**CADENCE, "overnight": {"enabled": True}})
+    with pytest.raises(ValueError):
+        validate_cadence({**CADENCE, "overnight": {"enabled": 1, "interval_seconds": 3600}})
+    with pytest.raises(ValueError):
+        validate_cadence({**CADENCE, "overnight": {"enabled": True, "interval_seconds": 30}})

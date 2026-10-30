@@ -1,15 +1,24 @@
 """Standing BD research cadence. Importing this module starts no work.
 
-Working hours and weekday/weekend intervals live in versioned roster config.
-The worker only enqueues during open local hours; the kill switch and
-schedule_enabled flag still gate execution.
+Working hours, weekend intervals, and an opt-in overnight window live in
+versioned roster config. Overnight is off by default; only bots marked
+around_the_clock run in that window, at a lower rate. The worker only
+enqueues during an open window; the kill switch and schedule_enabled flag
+still gate execution.
 """
 
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-RESEARCH_SEGMENTS = {"healthcare", "pe-technical-diligence", "alumni-associations"}
+RESEARCH_SEGMENTS = {
+    "healthcare",
+    "pe-technical-diligence",
+    "alumni-associations",
+    "commercial-fit-out",
+}
 WEEKDAY_KEYS = {"start_hour", "end_hour", "interval_seconds"}
+CADENCE_REQUIRED = {"timezone", "weekday", "weekend"}
+OVERNIGHT_KEYS = {"enabled", "interval_seconds"}
 NEXT_QUERY = {
     "no_new_evidence": (
         "Retry with a named-operator query or a narrower event window for this segment"
@@ -20,6 +29,9 @@ NEXT_QUERY = {
     ),
     "generic_healthcare_reference": "Require a named hospital, clinic, or health system",
     "generic_segment_reference": "Require a named firm, fund, or association, not a generic theme",
+    "generic_permit_reference": (
+        "Require a named business or property on a Minneapolis commercial permit, not a generic theme"
+    ),
     "no_operational_event": "Look for expansion, acquisition, hiring, or platform-change language",
     "organization_not_grounded_in_article_quote": (
         "Use a source where the organization name appears in the supporting excerpt"
@@ -30,6 +42,9 @@ NEXT_QUERY = {
     "segment_entity_or_event_unconfirmed": (
         "Find a named in-segment operator and a confirmed relevant event"
     ),
+    "permit_fields_not_in_source": (
+        "Find a Minneapolis building permit with number, address, project title, and status"
+    ),
     "qwen_unavailable": "Warm qwen3:8b and retry this source after the model is resident",
     "source_evidence_missing": "Retain the source quote and URL before treating this as a candidate",
     "source_evidence_unverified": "Re-check grounding: named organization, quote, and supported claim",
@@ -37,10 +52,22 @@ NEXT_QUERY = {
 }
 
 
+def _interval(value, name):
+    if (
+        isinstance(value, bool)
+        or not isinstance(value, (int, float))
+        or value < 60
+        or value != int(value)
+    ):
+        raise ValueError(f"{name} must be an integer of at least 60")
+    return int(value)
+
+
 def validate_cadence(cadence):
     if not isinstance(cadence, dict):
         raise ValueError("cadence must be an object")
-    if set(cadence) != {"timezone", "weekday", "weekend"}:
+    extra = set(cadence) - CADENCE_REQUIRED - {"overnight"}
+    if extra or not set(cadence) >= CADENCE_REQUIRED:
         raise ValueError("cadence requires timezone, weekday and weekend")
     try:
         ZoneInfo(cadence["timezone"])
@@ -58,14 +85,14 @@ def validate_cadence(cadence):
                 raise ValueError(f"cadence.{name}.{key} must be an integer hour 0-24")
         if part["end_hour"] <= part["start_hour"]:
             raise ValueError(f"cadence.{name} end_hour must be after start_hour")
-        interval = part["interval_seconds"]
-        if (
-            isinstance(interval, bool)
-            or not isinstance(interval, (int, float))
-            or interval < 60
-            or interval != int(interval)
-        ):
-            raise ValueError(f"cadence.{name}.interval_seconds must be an integer of at least 60")
+        _interval(part["interval_seconds"], f"cadence.{name}.interval_seconds")
+    overnight = cadence.get("overnight")
+    if overnight is not None:
+        if not isinstance(overnight, dict) or set(overnight) != OVERNIGHT_KEYS:
+            raise ValueError("cadence.overnight requires enabled and interval_seconds")
+        if not isinstance(overnight["enabled"], bool):
+            raise ValueError("cadence.overnight.enabled must be boolean")
+        _interval(overnight["interval_seconds"], "cadence.overnight.interval_seconds")
 
 
 def local_now(timestamp, zone):
@@ -77,13 +104,34 @@ def daypart(cadence, timestamp):
     return cadence["weekend"] if local.weekday() >= 5 else cadence["weekday"]
 
 
-def cadence_open(cadence, timestamp):
+def working_hours(cadence, timestamp):
     local = local_now(timestamp, cadence["timezone"])
     part = daypart(cadence, timestamp)
     return part["start_hour"] <= local.hour < part["end_hour"]
 
 
+def overnight_enabled(cadence):
+    overnight = cadence.get("overnight") if isinstance(cadence, dict) else None
+    return bool(isinstance(overnight, dict) and overnight.get("enabled") is True)
+
+
+def cadence_window(cadence, timestamp):
+    if working_hours(cadence, timestamp):
+        local = local_now(timestamp, cadence["timezone"])
+        return "weekend" if local.weekday() >= 5 else "weekday"
+    if overnight_enabled(cadence):
+        return "overnight"
+    return None
+
+
+def cadence_open(cadence, timestamp):
+    return cadence_window(cadence, timestamp) is not None
+
+
 def cadence_interval(cadence, timestamp):
+    window = cadence_window(cadence, timestamp)
+    if window == "overnight":
+        return int(cadence["overnight"]["interval_seconds"])
     return int(daypart(cadence, timestamp)["interval_seconds"])
 
 
@@ -108,19 +156,30 @@ def slot_index(cadence, timestamp):
 def has_research_contract(bot):
     segment = bot.get("segment")
     if segment == "client-bd" or bot.get("kind") == "client":
-        managed = bot.get("managed_leads")
-        return (
-            bot.get("research_segment") in RESEARCH_SEGMENTS
-            and isinstance(managed, dict)
-            and managed
-        )
+        return bot.get("research_segment") in RESEARCH_SEGMENTS
     return segment in RESEARCH_SEGMENTS
 
 
-def eligible_bots(bots, *, shadow=False, standing=False):
+def around_the_clock(bot):
+    schedule = bot.get("schedule") if isinstance(bot, dict) else None
+    return bool(isinstance(schedule, dict) and schedule.get("around_the_clock") is True)
+
+
+def eligible_bots(
+    bots,
+    *,
+    shadow=False,
+    standing=False,
+    paused=(),
+    overnight=False,
+    focus=None,
+):
+    paused = set(paused or ())
     chosen = []
     for bot in bots:
         if not bot.get("enabled"):
+            continue
+        if bot.get("id") in paused:
             continue
         if shadow:
             chosen.append(bot)
@@ -128,7 +187,20 @@ def eligible_bots(bots, *, shadow=False, standing=False):
         if not has_research_contract(bot):
             continue
         if standing or bot.get("schedule", {}).get("enabled"):
+            if overnight and not around_the_clock(bot):
+                continue
             chosen.append(bot)
+    if focus and chosen:
+        kind = focus.get("kind")
+        ident = focus.get("id")
+        if kind == "bot":
+            chosen = [bot for bot in chosen if bot.get("id") == ident]
+        elif kind == "segment":
+            chosen = [
+                bot
+                for bot in chosen
+                if bot.get("segment") == ident or bot.get("research_segment") == ident
+            ]
     return chosen
 
 
@@ -138,21 +210,42 @@ def rotate_bot(eligible, slot):
     return eligible[slot % len(eligible)]
 
 
-def next_cadence_timestamp(cadence, timestamp, existing, eligible):
-    if not eligible:
-        return None
+def next_cadence_timestamp(cadence, timestamp, existing, eligible, *, overnight_eligible=None):
+    if overnight_eligible is None:
+        overnight_eligible = [bot for bot in eligible if around_the_clock(bot)]
     cursor = timestamp
     deadline = timestamp + 8 * 86400
     while cursor < deadline:
-        if not cadence_open(cadence, cursor):
+        window = cadence_window(cadence, cursor)
+        if window is None:
             opened = next_open_timestamp(cadence, cursor)
             if opened is None:
                 return None
             cursor = opened
             continue
+        pool = overnight_eligible if window == "overnight" else eligible
+        if not pool:
+            if window == "overnight":
+                opened = next_open_timestamp(
+                    {
+                        **cadence,
+                        "overnight": {**(cadence.get("overnight") or {}), "enabled": False},
+                    },
+                    cursor,
+                )
+                if opened is None or opened <= cursor:
+                    return None
+                cursor = opened
+                continue
+            if not eligible:
+                return cursor
+            cursor = (int(cursor // cadence_interval(cadence, cursor)) + 1) * cadence_interval(
+                cadence, cursor
+            )
+            continue
         interval = cadence_interval(cadence, cursor)
         slot = int(cursor // interval)
-        bot = rotate_bot(eligible, slot)
+        bot = rotate_bot(pool, slot)
         key = (bot["tenant_id"], f"{bot['id']}:{slot}", "public-research")
         if key not in existing:
             return cursor

@@ -407,7 +407,7 @@ def test_evidence_keys_ignore_uncompleted_jobs(runtime):
 
 def test_managed_leads_optional_configuration_scoped(tmp_path):
     config = json.loads(CONFIG_PATH.read_text())
-    bot = config["bots"][-1]
+    bot = next(item for item in config["bots"] if item["id"] == "srg")
     bot["research_segment"] = "healthcare"
     bot["managed_leads"] = {
         "base_url": "https://managed-leads.vercel.app",
@@ -428,10 +428,10 @@ def test_managed_leads_optional_configuration_scoped(tmp_path):
         {**bot["managed_leads"], "client_id_env": 5},
     ):
         modified = copy.deepcopy(config)
-        modified["bots"][-1]["managed_leads"] = invalid
+        next(item for item in modified["bots"] if item["id"] == "srg")["managed_leads"] = invalid
         with pytest.raises(ValueError):
             BDConductor(tmp_path / "invalid-managed.sqlite", config=modified)
-    config["bots"][-1]["research_segment"] = "client-bd"
+    next(item for item in config["bots"] if item["id"] == "srg")["research_segment"] = "client-bd"
     with pytest.raises(ValueError):
         BDConductor(tmp_path / "invalid-segment.sqlite", config=config)
 

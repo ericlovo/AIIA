@@ -2,6 +2,17 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { ageLabel, publicSource, heartbeatFresh } from '../src/console/bdModel.ts'
 
+test('unreachable metrics stay data_unavailable and never render as zero', async () => {
+  const { unavailableCount, jobStage } = await import('../src/console/bdModel.ts')
+  assert.equal(unavailableCount(null), 'data_unavailable')
+  assert.equal(unavailableCount(undefined), 'data_unavailable')
+  assert.equal(unavailableCount(0), '0')
+  assert.equal(jobStage({ state: 'running', step: 'qwen_called' }), 'extract')
+  assert.equal(jobStage({ state: 'running', step: 'jev_called' }), 'judge')
+  assert.equal(jobStage({ state: 'queued', step: 'queued' }), 'queued')
+  assert.equal(jobStage({ state: 'completed', step: 'completed' }), 'awaiting_human')
+})
+
 test('missing and malformed telemetry stays unavailable; future times do not turn negative', () => {
   const now = Date.parse('2026-10-23T12:00:00Z')
   assert.equal(ageLabel(null, now), 'unavailable')
@@ -93,11 +104,19 @@ test('candidate display requires current projection; old dispositions and manual
   assert.equal(packet.candidate_status, undefined, 'classification does not rewrite history')
 })
 test('status banner never treats a quiet system as working', async () => {
-  const { statusBanner } = await import('../src/console/bdModel.ts')
+  const { statusBanner, leadBanner, laneProfile, jobLabel, cadencePhrase, orderedBots } = await import('../src/console/bdModel.ts')
   assert.deepEqual(statusBanner({ kill_switch: true, schedule_enabled: true }), { state: 'paused_kill_switch', label: 'Paused: kill switch on' })
   assert.deepEqual(statusBanner({ kill_switch: false, schedule_enabled: false }), { state: 'paused_schedule_off', label: 'Paused: schedule off' })
   assert.deepEqual(statusBanner({ kill_switch: false, schedule_enabled: true }), { state: 'running', label: 'Running' })
   assert.equal(statusBanner({ kill_switch: false, schedule_enabled: false, status_banner: { state: 'running', label: 'Running' } }).label, 'Paused: schedule off')
+  const now = Date.parse('2026-10-23T12:00:00Z')
+  assert.equal(leadBanner({ kill_switch: true, schedule_enabled: true, events: [] }, now).mode, 'stopped')
+  assert.equal(leadBanner({ kill_switch: false, schedule_enabled: false, events: [] }, now).label, 'Paused by you')
+  assert.equal(leadBanner({ kill_switch: false, schedule_enabled: true, steering: { overnight_enabled: true, paused_bots: [], focus: null, around_the_clock: {}, audit: [] }, events: [] }, now).label, 'Running 24/7')
+  assert.equal(laneProfile({ id: 'comcast', name: 'Comcast Business leads', kind: 'client' }).title, 'Comcast · Minneapolis permits')
+  assert.equal(jobLabel({ id: 'j1', segment: 'client-bd', operator_query: 'Uptown restaurant build-outs' }, []), 'Uptown restaurant build-outs')
+  assert.equal(cadencePhrase(1800), 'every 30 min')
+  assert.deepEqual(orderedBots([{ id: 'healthcare' }, { id: 'comcast' }, { id: 'srg' }] as import('../src/console/bdModel.ts').BDBot[]).map(bot => bot.id), ['comcast', 'srg', 'healthcare'])
 })
 
 test('withheld outcomes explain absent evidence instead of implying provider failure', async () => {

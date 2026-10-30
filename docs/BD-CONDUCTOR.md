@@ -1,6 +1,17 @@
 # Business-development conductor
 
-Studio's **BD conductor** (`#/bd`, also Morning note → Details) is a research desk with durable jobs, segment lanes, streaming activity, sourced proposals and local human triage. It never sends outreach, modifies a CRM, approves a prospect, or distributes a handoff.
+Studio's **Lead finding** view (`#/bd`, also Morning note → Details) is the
+BD conductor: durable jobs, five bot lanes, streaming activity, sourced
+proposals and local human triage. It never sends outreach, modifies a CRM,
+approves a prospect, or distributes a handoff. The page follows the calm
+prototype: a Running / Paused / Stopped banner, Extract (Qwen) → Judge (Jev)
+→ Awaiting you on each lane, a Jev and Qwen panel, one-to-two-tap steering
+with Undo, a What changed log, and a Leads for you inbox. Approve / Reject /
+Fix record a human decision only. Phone lanes collapse to stage counts;
+steering is a bottom sheet; model names, traces, budgets, and history stay
+behind Details. Costs, `qwen2.5-14b-instruct`, and sped-up demo times from
+the prototype are not shown — the snapshot and event stream supply live
+values (`qwen3:8b` locally).
 
 ## Run an isolated preview
 
@@ -10,7 +21,14 @@ Build the dashboard (`cd dashboard && npm ci && npm run build`), then from the r
 python -m local_brain.scripts.bd_preview --database /tmp/aiia-bd-preview/conductor.sqlite3 --port 8231
 ```
 
-Open `http://127.0.0.1:8231/#/bd`. **Run shadow batch** queues four synthetic research jobs. Repeated clicks in the same configured interval reuse those jobs. Recorded Qwen extraction and Jev judgments are explicitly replay-only; no source retrieval, inference API, tenant API, or outreach occurs. Replay delays make state transitions visible; they are not performance measurements. The isolated preview deliberately does not start the legacy Brain, agent loops, or integrations. Legacy shell health may therefore show unavailable.
+Open `http://127.0.0.1:8231/#/bd`. **Details → Run shadow batch** queues five
+synthetic research jobs (healthcare, PE, alumni, SRG, Comcast). Repeated
+clicks in the same configured interval reuse those jobs. Recorded Qwen
+extraction and Jev judgments are explicitly replay-only; no source
+retrieval, inference API, tenant API, or outreach occurs. Replay delays make
+state transitions visible; they are not performance measurements. The
+isolated preview deliberately does not start the legacy Brain, agent loops,
+or integrations. Legacy shell health may therefore show unavailable.
 
 The normal Command Center mounts the same router and starts one worker during application lifespan, independent of an open browser. The worker is stopped cleanly on shutdown. A crashed attempt retains its lease and is recovered after expiry on restart.
 
@@ -18,14 +36,20 @@ The normal Command Center mounts the same router and starts one worker during ap
 
 `local_brain/command_center/config/bd_roster.v1.json` is the versioned roster:
 
-- Healthcare, PE technical diligence, alumni/associations, and a synthetic SRG client lane.
+- Healthcare, PE technical diligence, alumni/associations, a synthetic SRG
+  client lane, and a synthetic Comcast client lane (`synthetic-comcast`) with
+  a `commercial-fit-out` research profile. Comcast's real Managed Leads
+  workspace is operator-owned live config, not the repo default.
 - `mode: replay`, `schedule_enabled: false` (the one activation flag), and a
   standing `cadence` in America/Chicago: weekdays 08:00–18:00 every 30 minutes,
-  weekends 09:00–17:00 hourly. The worker rotates one eligible bot per slot.
-  Client bots join rotation only when they have a BD contract
-  (`research_segment` plus `managed_leads`). SRG stays on `synthetic-srg` until
-  an approved tenant binding exists. Studio **Activate daily research** persists
-  the flag; the default roster stays off.
+  weekends 09:00–17:00 hourly. Overnight 24/7 is a separate opt-in window
+  (hourly by default) for bots marked `around_the_clock`. The worker rotates
+  one eligible bot per slot. Client bots join rotation when they have a
+  `research_segment`. SRG stays out until that is set; Comcast ships with
+  `commercial-fit-out`. Studio **Resume all** persists the
+  schedule flag; overnight and per-bot 24/7 stay off. Live steering
+  (`POST /api/bd/steer`) pauses/resumes bots, focuses the next slots, bumps
+  a job, queues a query, and changes cadence or budget on the next tick.
 - Exact configured tenant per bot. API requests cannot override tenant or inference mode.
 - One concurrent job across worker processes to protect the M4.
 - Global daily, per-bot daily, and per-attempt caps for tokens, calls, and wall time.
@@ -46,7 +70,7 @@ Exact source spans establish any extracted email or phone. An exact quote is nec
 
 Qwen selects the index of a verbatim source span instead of generating quote text. The ordered spans preserve the complete source without normalization; local code resolves the selected index to its original text. Runtime validation still rejects invalid selections and unsupported organization names, and Jev still checks semantic support. Selection avoids copying long quotes into the capped model response or repeating source text in a schema enum. It does not prove the chosen span supports the proposed signal or establish live model quality. The complete request still counts toward the existing token reservation; budgets and retries are unchanged.
 
-Packets retain evidence, provenance, source hash, observed time, model labels, usage, and typed judgments in SQLite. Studio shows source quote/URL, contact hold, signals, hypotheses, and local review status. **Research next / Watch / Dismiss / Restore** only update local review metadata; they grant no approval to contact anyone. All contacts remain held until tenant opt-outs and requested dates can be checked.
+Packets retain evidence, provenance, source hash, observed time, model labels, usage, and typed judgments in SQLite. Studio's **Leads for you** inbox shows supported candidates with **Approve / Reject / Fix**. Those actions only update local review metadata (`research_next` / `dismissed` / a session-local display fix); they grant no approval to contact anyone and write nothing to a CRM. All contacts remain held until tenant opt-outs and requested dates can be checked. Rejected and inconclusive history stays behind Details.
 
 The live feed is newest-first and bounded to the latest 200 events. Jev statistics describe that same recent event window. Successful provider observations become stale after two minutes; they are not continuous health probes. SSE pushes changes with fallback polling in the dashboard. Only selected evidence quotes are exposed; raw provider responses, credentials, and lease tokens do not enter the public snapshot.
 
@@ -63,7 +87,7 @@ Autonomous primary-page crawling is not implemented: the existing fetcher does n
 
 ## Verification
 
-Run the repository backend tests, Ruff and its backlog ratchet, dashboard lint/unit/build/browser suites. New focused suites are `test_bd_conductor.py`, `test_bd_service.py`, `test_bd_routes.py`, `test_bd_pipeline.py`, and `test_bd_cadence.py`. The dashboard has fixture tests plus `dashboard/tests/bd-live.mjs` for the real isolated backend (hard-bound to loopback port 8231 and synthetic replay).
+Run the repository backend tests, Ruff and its backlog ratchet, dashboard lint/unit/build/browser suites. New focused suites are `test_bd_conductor.py`, `test_bd_service.py`, `test_bd_routes.py`, `test_bd_pipeline.py`, `test_bd_cadence.py`, and `test_bd_steering.py`. The dashboard has fixture tests plus `dashboard/tests/bd-live.mjs` for the real isolated backend (hard-bound to loopback port 8231 and synthetic replay).
 
 Tests cover durable state, concurrent dedup/leases, retry limits, deadline/heartbeat fencing, restart recovery, global/per-bot caps, kill/resume, schedule validation, strict tenant binding, same-origin mutations, evidence validation, provider denial, triage persistence, and no fake packet for a successful empty source result. Browser checks cover SSE running/completion, source evidence, triage, filters, error states, and phone layouts. Real local Qwen extraction was separately exercised on synthetic text; live cloud retrieval/Jev and authenticated tenant API access remain unverified because their activation boundaries are closed.
 

@@ -167,6 +167,46 @@ async def test_client_replay_and_live_missing_tenant_api():
 
 
 @async_test
+async def test_comcast_replay_extracts_permit_shape_and_only_proposes():
+    result = await pipeline.run_pipeline(
+        job(
+            segment="client-bd",
+            research_segment="commercial-fit-out",
+            tenant_id="synthetic-comcast",
+            payload={"replay_step_delay": 0},
+        )
+    )
+    packet = result["packets"][0]
+    assert packet["organization"] == "Synthetic North Loop Tenant"
+    assert packet["permit"]["number"] == "BLDC-2026-0100"
+    assert packet["permit"]["address"] == "100 Synthetic Avenue"
+    assert packet["permit"]["project_title"] == "Ground-floor retail TI"
+    assert packet["permit"]["permit_status"] == "Issued"
+    assert packet["outreach_allowed"] is False
+    assert packet["approved"] is False
+    assert packet["contact_policy"] == "hold_pending_tenant_restriction_check"
+
+
+def test_permit_profile_is_data_unavailable_without_source_spans():
+    profile = pipeline.permit_profile(
+        {"title": "A city published a generic notice.", "url": "https://example.org/x"}
+    )
+    assert profile["status"] == "data_unavailable"
+    assert profile["number"] is None
+    assert profile["address"] is None
+
+
+def test_operator_query_rejects_urls_and_injection():
+    with pytest.raises(pipeline.DataUnavailable, match="invalid_operator_query"):
+        pipeline.operator_search_text("https://evil.example/steal")
+    with pytest.raises(pipeline.DataUnavailable, match="invalid_operator_query"):
+        pipeline.operator_search_text("permits; DROP TABLE")
+    assert pipeline.operator_search_text("Minneapolis commercial permits") == (
+        "Minneapolis commercial permits"
+    )
+
+
+@async_test
 async def test_no_observations_never_yields_human_packet(monkeypatch):
     async def empty(segment):
         return []
@@ -364,7 +404,7 @@ async def test_imported_live_skips_discovery_and_preserves_guarded_judgment(monk
     async def forbidden(segment):
         raise AssertionError("No news fetch for imported source")
 
-    async def local(source):
+    async def local(source, emit=None, segment=None):
         assert "608-555-0100" in pipeline.source_text(source)
         return {
             "organization": "Orchard Clinic",
@@ -538,7 +578,7 @@ async def test_seen_sources_are_skipped_before_qwen(monkeypatch):
     async def retrieve(segment):
         return [first, second]
 
-    async def local(source):
+    async def local(source, emit=None, segment=None):
         called.append(source)
         return extraction, 10
 
@@ -858,7 +898,7 @@ async def test_healthcare_deterministic_withhold_skips_jev(
     async def retrieve(segment):
         return [source]
 
-    async def local(source):
+    async def local(source, emit=None, segment=None):
         return extraction, 10
 
     async def forbidden(*args):
@@ -920,7 +960,7 @@ async def test_healthcare_semantic_gate_and_positive_provider(monkeypatch, failu
     async def retrieve(segment):
         return [source]
 
-    async def local(source):
+    async def local(source, emit=None, segment=None):
         return extraction, 10
 
     async def judge(source, extracted, segment):
@@ -1022,7 +1062,7 @@ async def test_segment_prospect_gate(monkeypatch, segment, article, organization
     async def retrieve(segment):
         return [source]
 
-    async def local(source):
+    async def local(source, emit=None, segment=None):
         return extraction, 10
 
     async def judge(source, result, segment):
@@ -1083,7 +1123,7 @@ async def test_named_but_irrelevant_segment_evidence_is_withheld(
     async def retrieve(segment):
         return [source]
 
-    async def local(source):
+    async def local(source, emit=None, segment=None):
         return extraction, 10
 
     async def judge(source, result, segment):
@@ -1185,7 +1225,7 @@ async def test_qwen_retries_once_after_unavailable_then_succeeds(monkeypatch):
     async def fake_ensure():
         return {"ok": True}
 
-    async def fake_extract(current):
+    async def fake_extract(current, segment=None):
         extracts.append(current)
         if len(extracts) == 1:
             raise httpx.ConnectError("cold")
@@ -1209,7 +1249,7 @@ async def test_qwen_does_not_retry_invalid_quote_selection(monkeypatch):
     async def fake_ensure():
         return {}
 
-    async def fake_extract(source):
+    async def fake_extract(source, segment=None):
         extracts.append(source)
         raise pipeline.DataUnavailable("invalid_source_quote_index")
 
