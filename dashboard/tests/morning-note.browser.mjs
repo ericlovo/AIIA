@@ -23,6 +23,12 @@ const decisions = [
   { id: 'd6', kind: 'inbox', product: 'Morrow', title: 'Turn on the editorial look', why: 'Ready in preview.', more: 'Beta testers only.', expected_version: '' },
   { id: 'd7', kind: 'inbox', product: 'TRS', title: 'Change the weekly TRS summary to Mondays', why: 'Client asked.', more: 'Moves Friday to Monday.', expected_version: '' },
 ]
+const assignments = Array.from({ length: 7 }, (_, index) => ({
+  id: `work-${index}`, title: `Review evidence ${index}`, objective: 'Inspect the synthetic report',
+  agent_id: 'ci', status: 'completed', result: 'Evidence', priority: 'normal', context: '',
+  success_criteria: '', error: '', created_at: '2026-10-30', updated_at: '2026-10-30',
+  review_status: 'unreviewed',
+}))
 const note = {
   date: '2026-10-08',
   products: [
@@ -48,6 +54,7 @@ async function open(width, height) {
   page.setDefaultTimeout(12000)
   const pageErrors = []
   const writes = []
+  let permissionsUnavailable = false
   page.on('pageerror', error => pageErrors.push(error.message))
   await page.routeWebSocket('**/ws', ws => ws.onMessage(() => {}))
   if (studioDist) {
@@ -64,9 +71,10 @@ async function open(width, height) {
     const request = route.request()
     const path = new URL(request.url()).pathname
     if (request.method() !== 'GET') writes.push({ method: request.method(), path, body: request.postDataJSON() })
+    if (path === '/api/git-writes' && permissionsUnavailable) return route.fulfill({ status: 503, json: { detail: 'Synthetic permissions unavailable' } })
     if (path === '/api/studio/morning-note') return route.fulfill({ json: note })
     if (path === '/api/agents') return route.fulfill({ json: { agents } })
-    if (path === '/api/assignments' && request.method() === 'GET') return route.fulfill({ json: { assignments: [] } })
+    if (path === '/api/assignments' && request.method() === 'GET') return route.fulfill({ json: { assignments } })
     if (path === '/api/assignments' && request.method() === 'POST') {
       return route.fulfill({ json: { assignment: { id: 'asg-ask', title: request.postDataJSON().title, agent_id: request.postDataJSON().agent_id, status: 'queued' } } })
     }
@@ -79,7 +87,7 @@ async function open(width, height) {
       '/api/handoffs': { handoffs: [] },
       '/api/git-workspaces': { workspaces: [] },
       '/api/git-writes': { writes: [] },
-      '/api/memory-inbox': { ideas: [], total: 0, offset: 0, counts: { unreviewed: 0, promoted: 0, dismissed: 0 } },
+      '/api/memory-inbox': { ideas: [], total: 6, offset: 0, counts: { unreviewed: 6, promoted: 0, dismissed: 0 } },
       '/api/health': { aiia: { status: 'online' }, ollama: { status: 'online' } },
       '/api/monitor': { services: {} },
       '/api/voice/status': { status: 'not_configured', configured: false, reason: 'missing_xai_api_key', tools: [] },
@@ -88,14 +96,13 @@ async function open(width, height) {
     await route.fulfill({ json: bodies[path] ?? {} })
   })
   await page.goto(`${base}#/note`)
-  return { context, page, pageErrors, writes }
+  return { context, page, pageErrors, writes, failPermissions: () => { permissionsUnavailable = true } }
 }
 
-const forbidden = /\b(runs?|loops?|inbox|sources?)\b/i
 
 try {
   for (const [width, height, label] of [[1280, 800, 'desktop'], [390, 844, 'phone']]) {
-    const { context, page, pageErrors, writes } = await open(width, height)
+    const { context, page, pageErrors, writes, failPermissions } = await open(width, height)
     await page.getByRole('heading', { level: 1, name: /Good (morning|afternoon|evening)\.$/ }).waitFor()
     await page.getByRole('heading', { name: 'Where things stand', exact: true }).waitFor()
     await page.getByRole('heading', { name: /Needs you/ }).waitFor()
@@ -103,10 +110,10 @@ try {
     assert.equal(await page.getByRole('navigation', { name: 'Studio' }).count(), 0)
     const cards = page.locator('.card')
     assert.equal(await cards.count(), 5)
-    await page.getByText('Plus 2 more waiting', { exact: true }).waitFor()
+    await page.getByRole('heading', { name: 'Needs you 13', exact: true }).waitFor()
+    await page.getByRole('link', { name: 'Review saved ideas (6)', exact: true }).waitFor()
     await page.getByText('Alumni Nations', { exact: true }).first().waitFor()
     const copy = await page.locator('main.morning-note').innerText()
-    assert.equal(forbidden.test(copy), false, `forbidden word on ${label}: ${copy.match(forbidden)}`)
     assert.ok(copy.includes('verified deployed #127'))
     assert.ok(copy.includes('merged #128; deployment not verified'))
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth > innerWidth + 1)
@@ -114,12 +121,10 @@ try {
 
     await page.screenshot({ path: join(output, `morning-note-${label}.png`), fullPage: true, animations: 'disabled' })
 
-    await page.getByRole('button', { name: 'Approve', exact: true }).first().click()
-    await page.waitForFunction(() => document.querySelectorAll('.card').length === 5)
-    assert.equal(writes.some(item => item.path.includes('/promote') || item.path.includes('/review')), true)
-    await page.getByRole('button', { name: 'Not now', exact: true }).first().click()
-    await page.getByRole('button', { name: 'Open', exact: true }).first().click()
-    await page.getByText('Ships the shorter morning note.').or(page.getByText('Mostly small fixes.')).or(page.getByText('Rename one setting.')).waitFor()
+    assert.equal(await page.getByRole('button', { name: 'Approve', exact: true }).count(), 0)
+    assert.equal(await page.getByRole('button', { name: 'Not now', exact: true }).count(), 0)
+    assert.equal(await page.getByRole('link', { name: 'Review decision and evidence' }).first().getAttribute('href'), '#/assignments/work-0')
+    assert.equal(writes.length, 0, 'preview does not accept, dismiss, promote or execute')
 
     await page.getByLabel('What do you need done?').fill('have someone look at why Sanction CI is red')
     await page.getByRole('button', { name: 'Ask', exact: true }).click()
@@ -130,6 +135,14 @@ try {
     await page.getByRole('button', { name: 'Review work', exact: true }).first().click()
     await page.getByRole('heading', { name: 'Work', exact: true }).waitFor()
     assert.equal(await page.evaluate(() => window.location.hash), '#/assignments')
+    await page.getByRole('button', { name: 'Needs you (13)', exact: true }).waitFor()
+    await page.getByRole('link', { name: 'Review saved ideas (6)', exact: true }).waitFor()
+    failPermissions()
+    await page.reload()
+    await page.getByRole('button', { name: 'Needs you (Unavailable)', exact: true }).waitFor()
+    await page.goto(`${base}#/note`)
+    await page.getByRole('heading', { name: 'Needs you Unavailable', exact: true }).waitFor()
+    assert.equal(await page.getByText('Nothing needs you right now.', { exact: true }).count(), 0)
     assert.deepEqual(pageErrors, [])
     console.log(`${width}x${height}: morning note, decisions, ask, and Review work passed`)
     await context.close()

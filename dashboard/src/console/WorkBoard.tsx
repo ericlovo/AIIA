@@ -1,3 +1,4 @@
+import { useDecisionQueue } from './useDecisionQueue'
 import { useEffect, useRef, useState } from 'react'
 import { ChevronDown, Plus, RotateCcw, X } from 'lucide-react'
 import { groupWork, isTestFixture, workLane, type WorkLane } from './workQueue'
@@ -71,6 +72,7 @@ export function WorkBoard({
   const inspectorRef = useRef<HTMLElement>(null)
   const newWorkRef = useRef<HTMLButtonElement>(null)
   const qc = useQueryClient()
+  const decisionQueue = useDecisionQueue()
   const { data: assignmentData, isLoading: assignmentsLoading, isError: assignmentsError } = useQuery({
     queryKey: view === 'assignments' ? ['assignments', 'summary'] : ['assignments'],
     queryFn: view === 'assignments' ? api.assignmentSummaries : api.assignments,
@@ -240,10 +242,10 @@ export function WorkBoard({
     setSelectedAssignmentId(id)
   }
 
-  const pendingApprovalIds = new Set([...workspaces.filter(workspace => workspace.status === 'pending' || writes.some(write => write.workspace_id === workspace.id && write.status === 'pending')).map(workspace => workspace.assignment_id), ...writes.filter(write => write.status === 'pending').map(write => write.assignment_id)])
+  const pendingApprovalIds = decisionQueue.pendingApprovalIds
   const matchingEvidence = selectedAssignment?.attention_key ? assignments.filter(item => item.attention_key === selectedAssignment.attention_key) : []
   const laneItems = assignments.filter(item => workLane(item, pendingApprovalIds.has(item.id)) === lane)
-  const groups = groupWork(laneItems)
+  const groups = view === 'assignments' && lane === 'needs-you' ? decisionQueue.groups : groupWork(laneItems)
 
   const loading = view === 'assignments' ? assignmentsLoading : handoffsLoading
   const items = view === 'assignments' ? assignments : handoffs
@@ -294,6 +296,7 @@ export function WorkBoard({
               </div>}
             </section>}
 
+            {view === 'assignments' && decisionQueue.error && <p role="alert" className="py-3 text-sm text-red-300">Could not refresh all decisions or permissions. Counts may be stale; no all-clear is available.</p>}
             {assignmentsError && <p role="alert" className="py-6 text-sm text-red-300">Could not refresh the backlog. Counts may be stale; refresh before deciding.</p>}
             {loading && <p role="status" className="py-6 text-sm text-neutral-400">Loading work...</p>}
             {!loading && !assignmentsError && items.length === 0 && (
@@ -308,12 +311,14 @@ export function WorkBoard({
 
             {view === 'assignments' && <nav aria-label="Work views" className="mb-5 flex flex-wrap gap-2">
               {([['needs-you', 'Needs you'], ['working', 'Working'], ['history', 'History']] as const).map(([value, label]) => <button key={value} aria-pressed={lane === value} onClick={() => { setLane(value); setVisibleGroups(50) }} className={`border px-3 py-2 text-sm ${lane === value ? 'border-cyan-400 text-cyan-200' : 'border-neutral-700 text-neutral-300'}`}>
-                {label} ({assignments.filter(item => workLane(item, pendingApprovalIds.has(item.id)) === value).length})
+                {label} ({value === 'needs-you' ? decisionQueue.error ? 'Unavailable' : decisionQueue.loading ? 'Loading' : decisionQueue.total : assignments.filter(item => workLane(item, pendingApprovalIds.has(item.id)) === value).length})
               </button>)}
             </nav>}
+            {view === 'assignments' && lane === 'needs-you' && decisionQueue.savedIdeas > 0 && <p className="mb-4 text-sm text-neutral-300"><a className="inline-flex min-h-11 items-center text-cyan-200 underline" href={formatRoute({ view: 'inbox', source: 'all' })}>Review saved ideas ({decisionQueue.savedIdeas})</a> · Decide what to keep as memory. This does not approve execution.</p>}
+            {view === 'assignments' && lane === 'needs-you' && decisionQueue.missingApprovalIds.length > 0 && <p role="alert" className="mb-4 text-sm text-amber-200">Permission requests reference unavailable work: {decisionQueue.missingApprovalIds.join(', ')}. These approvals remain pending; do not proceed until their records are available.</p>}
             {view === 'assignments' ? (
               <div className="space-y-3">
-                {!loading && !assignmentsError && laneItems.length === 0 && <p role="status" className="text-sm text-neutral-400">{lane === 'needs-you' ? 'Nothing needs your decision. Working and History remain available.' : 'No work in this view.'}</p>}
+                {!loading && !assignmentsError && !decisionQueue.error && !decisionQueue.loading && laneItems.length === 0 && (lane !== 'needs-you' || decisionQueue.total === 0) && <p role="status" className="text-sm text-neutral-400">{lane === 'needs-you' ? 'Nothing needs your decision. Working and History remain available.' : 'No work in this view.'}</p>}
                 {groups.slice(0, visibleGroups).map(group => <section key={group[0].id} className="border border-neutral-800">
                   <AssignmentCard approvalPending={group.some(item => pendingApprovalIds.has(item.id))} assignment={group[0]} agentName={agentName(group[0].agent_id)} selected={selectedAssignmentId === group[0].id} onSelect={() => openAssignment(group[0].id)} />
                   {group.length > 1 && <details className="px-4 pb-3 text-sm text-neutral-300"><summary className="cursor-pointer">{group.length} matching records · Review each separately</summary>
@@ -596,7 +601,7 @@ function AssignmentDetails({ assignment, agent, agentName, workspace, writes, re
         {assignment.status === 'completed' && <button onClick={onHandoff} className="w-full border border-cyan-700 px-3 py-2.5 text-sm font-medium text-cyan-200">Hand off work</button>}
         <button disabled={isRemoving || assignment.status === 'running' || hasHandoff} onClick={onRemove} title={hasHandoff ? 'Unlink the handoff before deleting connected work' : undefined} className="w-full px-3 py-2 text-xs text-neutral-400 hover:text-red-300 disabled:opacity-30">Delete assignment</button>
       </Disclosure>
-      <a href={formatRoute({ view: 'switchboard', attention: true })} className="inline-flex min-h-11 items-center text-sm text-cyan-200 underline">Back to attention queue</a>
+      <a href={formatRoute({ view: 'assignments' })} className="inline-flex min-h-11 items-center text-sm text-cyan-200 underline">Back to decision queue</a>
     </Panel>
   )
 }

@@ -92,7 +92,7 @@ export function assignmentNextAction(assignment: Assignment, workspacePending = 
   if (assignment.status === 'running') return 'Work is running on the Mini. Wait for the result before reviewing.'
   if (assignment.recovery_pending) return 'Recover saved output before deciding whether another run is needed.'
   if (assignment.status === 'failed') return 'Inspect the failure evidence before retrying, or dismiss it without changing its outcome.'
-  if (!assignment.result.trim()) return 'No output is available to review. Inspect the attempt history before dismissing.'
+  if (!(assignment.has_result ?? Boolean(assignment.result.trim()))) return 'No output is available to review. Inspect the attempt history before dismissing.'
   if (assignment.review_status === 'rejected') return 'Review the feedback and request a linked revision. The original output is preserved.'
   if (assignment.review_status === 'accepted') return 'Output accepted. No further review is needed unless you reopen it.'
   return 'Inspect the work product against the assignment brief, then accept or reject the output.'
