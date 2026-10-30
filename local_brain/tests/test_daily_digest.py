@@ -372,7 +372,8 @@ def test_digest_task_files_one_row_and_one_post_per_day(tmp_path, monkeypatch):
         and "inbox row new" in summary
     )
     assert "Needs a decision" in body
-    assert "a finding" in body
+    assert "a finding" not in body
+    assert inbox.list(attention="verification")["total"] == 1
     assert any(line.startswith("AIIA:") for line in body.splitlines())
     assert "CI on main" in body
     assert "Agents:" in body

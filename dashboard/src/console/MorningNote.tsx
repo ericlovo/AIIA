@@ -93,7 +93,7 @@ export function MorningNote({ agents, onDetails }: { agents: Agent[]; onDetails:
 
         <section aria-labelledby="h-decide">
           <h2 id="h-decide">Needs you <span className="count">{queue.error ? 'Unavailable' : queue.loading ? 'Loading' : queue.total}</span></h2>
-          <p className="ask-hint">The same decision queue as Work. Open the evidence before deciding; reviewing output never grants Git permissions.</p>
+          <p className="ask-hint">The same decision queue as Work. Automated findings and activity have separate lanes. Open the evidence before deciding; reviewing output never grants Git permissions.</p>
           {queue.error && <p className="err" role="alert">Could not refresh all decisions. Counts may be stale; no all-clear is available.</p>}
           {!queue.loading && !queue.error && queue.total === 0 && <p className="empty">Nothing needs you right now.</p>}
           <ol className="cards">
@@ -110,6 +110,7 @@ export function MorningNote({ agents, onDetails }: { agents: Agent[]; onDetails:
           </ol>
           {queue.savedIdeas > 0 && <p><a className="btn" href={formatRoute({ view: 'inbox', source: 'all' })}>Review saved ideas ({queue.savedIdeas})</a> Decide what to keep as memory. This does not approve execution.</p>}
           {queue.missingApprovalIds.length > 0 && <p className="err" role="alert">{queue.missingApprovalIds.length} permission requests reference unavailable work. These approvals remain pending; inspect Work before proceeding.</p>}
+          <p>Needs verification: {queue.error ? 'Unavailable' : queue.loading ? 'Loading' : queue.verification} · Activity: {queue.error ? 'Unavailable' : queue.loading ? 'Loading' : queue.activity}</p>
           <button type="button" className="btn" onClick={onDetails}>Open full decision queue</button>
         </section>
 
