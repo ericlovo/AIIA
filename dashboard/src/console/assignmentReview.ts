@@ -81,3 +81,19 @@ export function bulkDismissError(message: string, titleOf: (id: string) => strin
   }
   return `Nothing was dismissed. ${reasons[code] ?? message}`
 }
+
+export function assignmentNextAction(assignment: Assignment, workspacePending = false, pendingWrites = 0, fixture = false) {
+  if (workspacePending) return 'Review the Git workspace request below. Accepting output does not approve this request.'
+  if (pendingWrites) return 'Review the pending Git writes below. Each write needs its own approval.'
+  if (assignment.dismissed_at) return 'Saved in History. No decision is requested. The original evidence and verdict are preserved; restore to attention if it needs another look.'
+  if (fixture) return 'Reference exercise. No decision is required. Evidence and optional review remain available here.'
+  if (assignment.attention_seen) return 'Identical evidence already acknowledged. No repeat review is requested. Changed evidence returns to Needs you; Git permissions still require separate approval.'
+  if (assignment.status === 'queued') return 'Run assignment to start work on the Mini. This assignment will not start automatically.'
+  if (assignment.status === 'running') return 'Work is running on the Mini. Wait for the result before reviewing.'
+  if (assignment.recovery_pending) return 'Recover saved output before deciding whether another run is needed.'
+  if (assignment.status === 'failed') return 'Inspect the failure evidence before retrying, or dismiss it without changing its outcome.'
+  if (!assignment.result.trim()) return 'No output is available to review. Inspect the attempt history before dismissing.'
+  if (assignment.review_status === 'rejected') return 'Review the feedback and request a linked revision. The original output is preserved.'
+  if (assignment.review_status === 'accepted') return 'Output accepted. No further review is needed unless you reopen it.'
+  return 'Inspect the work product against the assignment brief, then accept or reject the output.'
+}

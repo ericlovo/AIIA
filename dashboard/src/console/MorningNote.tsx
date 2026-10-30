@@ -103,16 +103,16 @@ export function MorningNote({ agents, onDetails }: { agents: Agent[]; onDetails:
       <div className="wrap">
         <div className="top">
           <span className="mark" aria-label="AIIA">AIIA</span>
-          <button type="button" className="linkish" onClick={onDetails}>Details</button>
+          <button type="button" className="linkish" onClick={onDetails}>Review work</button>
         </div>
 
         <header>
-          <h1 id="greet">{greeting(now)}, Eric.</h1>
+          <h1 id="greet">{greeting(now)}.</h1>
           <p className="date">{formatLongDate(now)}</p>
           <p className="lede">{note.isPending ? 'Reading where things stand…' : morningLede(data.products, data.customers, needCount, now)}</p>
         </header>
 
-        {note.isError && <p className="err" role="alert">Could not load today’s note. Details still works.</p>}
+        {note.isError && <p className="err" role="alert">Could not load today’s note. You can still open Review work.</p>}
 
         <section aria-labelledby="h-status">
           <h2 id="h-status">Where things stand</h2>
@@ -171,7 +171,7 @@ export function MorningNote({ agents, onDetails }: { agents: Agent[]; onDetails:
 
         <footer>
           <span>AIIA</span>
-          <button type="button" className="linkish" onClick={onDetails}>Details: who’s working on what</button>
+          <button type="button" className="linkish" onClick={onDetails}>Review work and decisions</button>
         </footer>
       </div>
     </main>
