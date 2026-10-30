@@ -120,7 +120,7 @@ try {
     // History keeps the verdict behind an optional review disclosure.
     await page.getByRole('region', { name: 'Next action' }).getByText(/No decision is requested/).waitFor()
     assert.equal(await review.count(), 0)
-    await page.getByRole('button', { name: 'Output verdict and optional review', exact: true }).click()
+    await page.locator('summary').filter({ hasText: 'Output verdict and optional review' }).click()
     await review.getByText('Rejected output', { exact: true }).waitFor()
     assert.equal(assignments.find(a => a.id === 'rejected-1').review_status, 'rejected')
     assert.equal(assignments.find(a => a.id === 'rejected-1').review_note, 'Truncated and invented a helper.')
