@@ -96,7 +96,7 @@ const forbidden = /\b(runs?|loops?|inbox|sources?)\b/i
 try {
   for (const [width, height, label] of [[1280, 800, 'desktop'], [390, 844, 'phone']]) {
     const { context, page, pageErrors, writes } = await open(width, height)
-    await page.getByRole('heading', { level: 1, name: /Eric\.$/ }).waitFor()
+    await page.getByRole('heading', { level: 1, name: /Good (morning|afternoon|evening)\.$/ }).waitFor()
     await page.getByRole('heading', { name: 'Where things stand', exact: true }).waitFor()
     await page.getByRole('heading', { name: /Needs you/ }).waitFor()
     await page.getByRole('heading', { name: 'Ask for anything', exact: true }).waitFor()
@@ -127,11 +127,11 @@ try {
     const created = writes.find(item => item.method === 'POST' && item.path === '/api/assignments')
     assert.equal(created?.body.agent_id, 'ci')
 
-    await page.getByRole('button', { name: 'Details', exact: true }).first().click()
-    await page.getByRole('heading', { name: 'The research desk.', exact: true }).waitFor()
-    assert.equal(await page.evaluate(() => window.location.hash), '#/bd')
+    await page.getByRole('button', { name: 'Review work', exact: true }).first().click()
+    await page.getByRole('heading', { name: 'Work', exact: true }).waitFor()
+    assert.equal(await page.evaluate(() => window.location.hash), '#/assignments')
     assert.deepEqual(pageErrors, [])
-    console.log(`${width}x${height}: morning note, decisions, ask, and Details passed`)
+    console.log(`${width}x${height}: morning note, decisions, ask, and Review work passed`)
     await context.close()
   }
 } finally {
