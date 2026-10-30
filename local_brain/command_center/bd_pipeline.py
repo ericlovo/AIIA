@@ -29,7 +29,18 @@ SEGMENTS = {
     "healthcare": "(healthcare OR hospital OR clinic) (expansion OR acquisition OR hiring)",
     "pe-technical-diligence": '"private equity" (acquisition OR technology OR diligence)',
     "alumni-associations": "(alumni OR association) (membership OR engagement OR platform)",
+    "commercial-fit-out": (
+        '(Minneapolis) ("building permit" OR "tenant improvement" OR "commercial fit-out" '
+        'OR "commercial fit out" OR "interior renovation") (commercial OR retail OR office)'
+    ),
 }
+OPERATOR_QUERY = re.compile(r"[A-Za-z0-9][A-Za-z0-9 .,'#()&+-]{0,199}")
+PERMIT_NUMBER = re.compile(r"\b(?:BLDC|COM|TI)[A-Z]*-?\d{2,4}-?\d{3,8}\b", re.I)
+PERMIT_ADDRESS = re.compile(
+    r"\bat\s+(\d{1,5}\s+[A-Za-z0-9 .'-]+(?:Avenue|Ave|Street|St|Boulevard|Blvd|"
+    r"Road|Rd|Parkway|Pkwy|Drive|Dr|Lane|Ln|Way))\b",
+    re.I,
+)
 EMAIL = re.compile(r"(?<![\w.+-])[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}(?![\w.-])")
 PHONE = re.compile(r"(?<!\d)(?:\+1[ .-]?)?\(?[2-9]\d{2}\)?[ .-]\d{3}[ .-]\d{4}(?!\d)")
 QUESTIONS = {
@@ -99,6 +110,26 @@ SEGMENT_ENTITIES = {
             },
         },
     ),
+    "commercial-fit-out": (
+        "commercial_operator",
+        {
+            "type": "choice",
+            "instructions": (
+                "Identify the named business, contractor, or property owner on a Minneapolis "
+                "commercial fit-out or tenant-improvement permit. The city, a publisher, or a "
+                "generic permit theme is not the prospect. Judge article content, not attribution."
+            ),
+            "criteria": {
+                "commercial_operator": (
+                    "Named business, contractor, or property owner pursuing a new commercial "
+                    "fit-out or tenant improvement in Minneapolis, with a permit-backed event."
+                ),
+                "publisher": "Reporting outlet, byline, or city bulletin publisher rather than the permit applicant.",
+                "other": "City agency, residential permit, person, or generic construction news without a named commercial occupant.",
+                "uncertain": "Permit applicant or commercial fit-out event is not established by the source.",
+            },
+        },
+    ),
 }
 
 
@@ -146,7 +177,19 @@ def entity_gap(source, extraction, segment):
         "nurses",
     }:
         return "generic_healthcare_reference"
-    if segment != "healthcare" and normalized in {
+    if segment == "commercial-fit-out" and normalized in {
+        "minneapolis",
+        "city of minneapolis",
+        "building permit",
+        "building permits",
+        "tenant improvement",
+        "commercial fit out",
+        "commercial fit-out",
+        "permit",
+        "permits",
+    }:
+        return "generic_permit_reference"
+    if segment not in {"healthcare", "commercial-fit-out"} and normalized in {
         "private equity",
         "private equity firms",
         "company",
@@ -425,7 +468,51 @@ def readiness():
     }
 
 
-async def retrieve_sources(segment):
+def operator_search_text(*parts):
+    pieces = []
+    for part in parts:
+        if part is None or part == "":
+            continue
+        if not isinstance(part, str) or not OPERATOR_QUERY.fullmatch(part.strip()):
+            raise DataUnavailable("invalid_operator_query")
+        pieces.append(part.strip())
+    if not pieces:
+        return None
+    combined = " ".join(pieces)
+    if len(combined) > 200:
+        raise DataUnavailable("invalid_operator_query")
+    return combined
+
+
+def permit_profile(source):
+    text = source_text(source)
+    number = PERMIT_NUMBER.search(text)
+    address = PERMIT_ADDRESS.search(text)
+    title = re.search(r"Project title:\s*([^.]{3,120})", text, re.I)
+    status = re.search(r"Status:\s*([A-Za-z][A-Za-z ]{1,40})", text, re.I)
+    fields = {
+        "number": number.group(0) if number else None,
+        "address": address.group(1).strip() if address else None,
+        "project_title": title.group(1).strip() if title else None,
+        "permit_status": status.group(1).strip() if status else None,
+    }
+    if not any(fields.values()):
+        return {
+            "status": "data_unavailable",
+            "reason": "permit_fields_not_in_source",
+            "number": None,
+            "address": None,
+            "project_title": None,
+            "permit_status": None,
+        }
+    return {
+        "status": "parsed_from_source",
+        "verification": "verbatim_source_span_only",
+        **fields,
+    }
+
+
+async def retrieve_sources(segment, query=None):
     if segment not in SEGMENTS:
         raise ValueError("unknown_segment")
     if os.getenv("AIIA_NEWS_ENABLED") != "1":
@@ -435,12 +522,14 @@ async def retrieve_sources(segment):
         raise DataUnavailable("public_retrieval_egress_denied")
     from .public_signals import MAX_BYTES, parse_feed
 
-    query = urlencode(
-        {"q": SEGMENTS[segment] + " when:14d", "hl": "en-US", "gl": "US", "ceid": "US:en"}
-    )
+    search = SEGMENTS[segment]
+    extra = operator_search_text(query) if query else None
+    if extra:
+        search = f"({search}) ({extra})"
+    encoded = urlencode({"q": search + " when:14d", "hl": "en-US", "gl": "US", "ceid": "US:en"})
     async with (
         httpx.AsyncClient(timeout=15, follow_redirects=False, trust_env=False) as client,
-        client.stream("GET", f"https://news.google.com/rss/search?{query}") as response,
+        client.stream("GET", f"https://news.google.com/rss/search?{encoded}") as response,
     ):
         response.raise_for_status()
         body = bytearray()
@@ -474,12 +563,20 @@ def quote_candidates(source):
     return candidates
 
 
-def qwen_payload(source):
+def qwen_payload(source, segment=None):
     candidates = quote_candidates(source)
     schema = QwenSelection.model_json_schema()
     schema["properties"]["quote_index"]["enum"] = [
         index for index, candidate in enumerate(candidates) if candidate.strip()
     ]
+    extra = ""
+    if segment == "commercial-fit-out":
+        extra = (
+            " For commercial fit-out research, the organization is the named business, contractor, "
+            "or property owner on the permit, not the city or publisher. The signal is the "
+            "fit-out or tenant-improvement event including permit number, address, project title, "
+            "and status when those appear verbatim."
+        )
     return {
         "model": QWEN_MODEL,
         "stream": False,
@@ -497,7 +594,7 @@ def qwen_payload(source):
                     "organizations; leave organization empty when none is named. Select quote_index of the span supporting that signal; code copies its "
                     "verbatim quote. Empty strings for missing organization, signal, or consumer insight. "
                     "Consumer insight is an unverified hypothesis, never a claim about an individual. "
-                    "Do not invent contacts or buying intent."
+                    "Do not invent contacts or buying intent." + extra
                 ),
             },
             {
@@ -544,8 +641,8 @@ async def ensure_qwen_loaded():
     return response.json()
 
 
-async def extract_local(source):
-    payload = qwen_payload(source)
+async def extract_local(source, segment=None):
+    payload = qwen_payload(source, segment)
     async with httpx.AsyncClient(timeout=90, trust_env=False) as client:
         response = await client.post(QWEN_ENDPOINT, json=payload)
         response.raise_for_status()
@@ -564,7 +661,7 @@ async def extract_local(source):
     return validate_extraction(source, extraction), sum(counts)
 
 
-async def extract_ready(source, emit=None):
+async def extract_ready(source, emit=None, segment=None):
     """Warm qwen3:8b, extract once, then retry once on a cold-start failure."""
     try:
         await ensure_qwen_loaded()
@@ -579,8 +676,14 @@ async def extract_ready(source, emit=None):
                 await result
     except (httpx.HTTPError, TimeoutError, asyncio.TimeoutError, ValueError):
         pass
+
+    async def extract():
+        if segment is None:
+            return await extract_local(source)
+        return await extract_local(source, segment)
+
     try:
-        return await extract_local(source)
+        return await extract()
     except Exception as exc:
         if not qwen_retryable(exc):
             raise
@@ -593,7 +696,7 @@ async def extract_ready(source, emit=None):
             )
             if inspect.isawaitable(result):
                 await result
-        return await extract_local(source)
+        return await extract()
 
 
 def validate_extraction(source, extraction):
@@ -697,13 +800,26 @@ def synthetic_fixture(segment):
         "healthcare": "a new outpatient clinic",
         "pe-technical-diligence": "a private equity acquisition requiring technology integration",
         "alumni-associations": "an alumni membership platform",
+        "commercial-fit-out": (
+            "a commercial tenant improvement at 100 Synthetic Avenue. "
+            "Project title: Ground-floor retail TI. Status: Issued"
+        ),
         "client-bd": "an unspecified business expansion for a synthetic client",
     }[segment]
     organization = {
         "pe-technical-diligence": "Synthetic Orchard Capital",
         "alumni-associations": "Synthetic Orchard Alumni Association",
+        "commercial-fit-out": "Synthetic North Loop Tenant",
     }.get(segment, "Synthetic Orchard")
-    title = f"{organization} announces {topic}. Public contact: research@example.org, 608-555-0100."
+    if segment == "commercial-fit-out":
+        title = (
+            f"{organization} files Minneapolis building permit BLDC-2026-0100 for {topic}. "
+            "Public contact: research@example.org, 608-555-0100."
+        )
+    else:
+        title = (
+            f"{organization} announces {topic}. Public contact: research@example.org, 608-555-0100."
+        )
     source = {
         "title": title,
         "url": "https://example.org/synthetic-bd",
@@ -821,6 +937,9 @@ def proposal_packet(job, source, extraction, judgments, usage):
         },
         "contact_policy": "hold_pending_tenant_restriction_check",
         "usage": usage,
+        "permit": permit_profile(source)
+        if (job.get("research_segment") or job.get("segment")) == "commercial-fit-out"
+        else None,
     }
 
 
@@ -858,10 +977,13 @@ async def run_pipeline(job, emit=None):
     started = time.monotonic()
     research_segment = job["segment"]
     managed = None
-    if mode == "live" and job["segment"] == "client-bd":
-        research_segment = job.get("research_segment")
-        if research_segment not in SEGMENTS:
+    if job["segment"] == "client-bd":
+        configured = job.get("research_segment")
+        if configured in SEGMENTS:
+            research_segment = configured
+        elif mode == "live":
             raise DataUnavailable("client_research_segment_unconfigured")
+    if mode == "live" and job["segment"] == "client-bd" and job.get("managed_leads"):
         await event("step", step="managed_leads_read", reserve_calls=1)
         managed = await ManagedLeadsReadOnly(job.get("managed_leads")).read(job["tenant_id"])
         await event(
@@ -885,8 +1007,17 @@ async def run_pipeline(job, emit=None):
         mode=mode,
         reserve_calls=1 if mode == "live" and imported is None else 0,
     )
+    fixture_segment = (
+        research_segment if research_segment in {*SEGMENTS, "client-bd"} else job["segment"]
+    )
+    payload = job.get("payload") or {}
+    operator_query = None
+    if payload.get("operator_query") or payload.get("operator_target"):
+        operator_query = operator_search_text(
+            payload.get("operator_query"), payload.get("operator_target")
+        )
     if mode == "replay":
-        source, extraction, judgments = synthetic_fixture(job["segment"])
+        source, extraction, judgments = synthetic_fixture(fixture_segment)
         await event("qwen_replayed", provider="qwen", model="replay:saved-qwen", mode="replay-only")
         validate_extraction(source, extraction)
         validate_judgments(judgments, questions_for(research_segment))
@@ -901,7 +1032,12 @@ async def run_pipeline(job, emit=None):
                 message="Human-supplied excerpt; not independently fetched",
             )
         else:
-            sources = await observed("sources", retrieve_sources(research_segment))
+            retrieve = (
+                retrieve_sources(research_segment, query=operator_query)
+                if operator_query
+                else retrieve_sources(research_segment)
+            )
+            sources = await observed("sources", retrieve)
         seen = job.get("seen_evidence", [])
         if not isinstance(seen, (list, set, tuple)) or any(
             not isinstance(key, str) for key in seen
@@ -933,10 +1069,10 @@ async def run_pipeline(job, emit=None):
             provider="qwen",
             model="qwen3:8b",
             reserve_calls=1,
-            reserve_tokens=token_reservation(qwen_payload(source), 512),
+            reserve_tokens=token_reservation(qwen_payload(source, research_segment), 512),
         )
         qwen_started = time.monotonic()
-        extraction, tokens = await observed("qwen", extract_ready(source))
+        extraction, tokens = await observed("qwen", extract_ready(source, segment=research_segment))
         await event(
             "qwen_completed",
             provider="qwen",

@@ -1,6 +1,7 @@
 """Background BD worker and public activity projection, isolated from legacy jobs."""
 
 import asyncio
+import hashlib
 import logging
 import uuid
 from contextlib import suppress
@@ -8,8 +9,12 @@ from datetime import datetime, timezone
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from .bd_cadence import (
+    around_the_clock as bot_around_the_clock,
+)
+from .bd_cadence import (
     cadence_interval,
     cadence_open,
+    cadence_window,
     eligible_bots,
     next_cadence_timestamp,
     next_query_for,
@@ -24,6 +29,26 @@ logger = logging.getLogger(__name__)
 
 def iso(value):
     return datetime.fromtimestamp(value, timezone.utc).isoformat() if value is not None else None
+
+
+def _verdict_label(packet):
+    answers = packet.get("judgments") if isinstance(packet.get("judgments"), dict) else {}
+    disposition = answers.get("disposition") if isinstance(answers.get("disposition"), dict) else {}
+    kind = str(disposition.get("type") or "").strip().lower()
+    return {"choice": "Choice", "score": "Score", "noul": "Noul"}.get(kind)
+
+
+def _evidence_score(packet):
+    answers = packet.get("judgments") if isinstance(packet.get("judgments"), dict) else {}
+    evidence = (
+        answers.get("evidence_strength")
+        if isinstance(answers.get("evidence_strength"), dict)
+        else {}
+    )
+    score = evidence.get("score")
+    if type(score) in (int, float) and 0 <= score <= 2:
+        return score
+    return None
 
 
 def candidate_assessment(packet, segment):
@@ -106,9 +131,29 @@ class BDService:
     def _standing(self):
         return bool(self.store.config.get("cadence")) and self.store.schedule_enabled()
 
-    def _scheduled_bots(self, *, shadow=False):
+    def _cadence(self):
+        return self.store.effective_cadence() or self.store.config.get("cadence")
+
+    def _steering(self):
+        return self.store.steering_state()
+
+    def _scheduled_bots(self, *, shadow=False, overnight=False, focus=None, paused=()):
+        clock = self._steering().get("around_the_clock") or {}
+        bots = []
+        for bot in self.store.bots.values():
+            item = dict(bot)
+            schedule = dict(item.get("schedule") or {})
+            if item["id"] in clock:
+                schedule["around_the_clock"] = clock[item["id"]]
+            item["schedule"] = schedule
+            bots.append(item)
         return eligible_bots(
-            self.store.bots.values(), shadow=shadow, standing=self._standing() and not shadow
+            bots,
+            shadow=shadow,
+            standing=self._standing() and not shadow,
+            paused=paused,
+            overnight=overnight,
+            focus=None if shadow else focus,
         )
 
     def enqueue_cycle(self, *, shadow=False):
@@ -118,8 +163,15 @@ class BDService:
         if self.store.snapshot()["kill_switch"]:
             raise ValueError("Conductor is stopped; resume before queuing work")
         now = self.store.clock()
-        cadence = self.store.config.get("cadence")
-        bots = self._scheduled_bots(shadow=shadow)
+        cadence = self._cadence()
+        steering = self._steering()
+        window = cadence_window(cadence, now) if cadence and not shadow else None
+        bots = self._scheduled_bots(
+            shadow=shadow,
+            overnight=window == "overnight",
+            focus=steering.get("focus"),
+            paused=steering.get("paused_bots") or (),
+        )
         if not shadow and cadence:
             if not self.store.schedule_enabled() or not cadence_open(cadence, now):
                 return []
@@ -147,11 +199,108 @@ class BDService:
                     payload={
                         "segment": bot["segment"],
                         "source_job": bot.get("source_job", "lead_signals"),
+                        "research_segment": bot.get("research_segment"),
                     },
                     mode=mode,
                 )["id"]
             )
         return queued
+
+    def queue_target(self, bot_id, *, query=None, target=None):
+        from .bd_pipeline import DataUnavailable, operator_search_text
+
+        bot = self.store.bots.get(bot_id)
+        if not bot or not bot["enabled"]:
+            raise KeyError("enabled_bot_not_found")
+        if self.store.snapshot()["kill_switch"]:
+            raise ValueError("Conductor is stopped; resume before queuing work")
+        try:
+            text = operator_search_text(query, target)
+        except DataUnavailable as exc:
+            raise ValueError(exc.code) from exc
+        if not text:
+            raise ValueError("queue requires a query or target")
+        entity = "operator-queue:" + hashlib.sha256(text.encode()).hexdigest()[:24]
+        job = self.store.enqueue(
+            bot["id"],
+            bot["tenant_id"],
+            entity,
+            "public-research",
+            payload={
+                "segment": bot["segment"],
+                "source_job": bot.get("source_job", "lead_signals"),
+                "research_segment": bot.get("research_segment"),
+                "operator_query": query,
+                "operator_target": target,
+            },
+        )
+        if job["state"] == "queued":
+            self.store.bump_job(job["id"])
+        with self.store._transaction() as db:
+            self.store._audit(
+                db, "queue", bot_id=bot_id, query=query, target=target, job_id=job["id"]
+            )
+        return job
+
+    def steer(self, action, **fields):
+        if action == "pause":
+            self.set_schedule_enabled(False)
+        elif action == "resume":
+            self.set_schedule_enabled(True)
+        elif action == "pause_bot":
+            self.store.pause_bot(fields["bot_id"], True)
+        elif action == "resume_bot":
+            self.store.pause_bot(fields["bot_id"], False)
+        elif action == "focus":
+            self.store.set_focus(bot_id=fields.get("bot_id"), segment=fields.get("segment"))
+        elif action == "clear_focus":
+            self.store.clear_focus()
+        elif action == "bump":
+            self.store.bump_job(fields["job_id"])
+        elif action == "queue":
+            self.queue_target(
+                fields["bot_id"], query=fields.get("query"), target=fields.get("target")
+            )
+        elif action == "set_cadence":
+            if fields.get("overnight_enabled") is not None:
+                self.store.set_overnight(fields["overnight_enabled"])
+            if fields.get("around_the_clock") is not None:
+                self.store.set_around_the_clock(fields["bot_id"], fields["around_the_clock"])
+            intervals = {
+                key: fields[key]
+                for key in (
+                    "weekday_interval_seconds",
+                    "weekend_interval_seconds",
+                    "overnight_interval_seconds",
+                )
+                if fields.get(key) is not None
+            }
+            if intervals:
+                self.store.set_cadence_intervals(**intervals)
+            if (
+                fields.get("overnight_enabled") is None
+                and fields.get("around_the_clock") is None
+                and not intervals
+            ):
+                raise ValueError("cadence overlay requires known interval fields")
+        elif action == "set_budget":
+            self.store.set_budget_overlay(
+                bot_id=fields.get("bot_id"),
+                tokens=fields.get("tokens"),
+                calls=fields.get("calls"),
+                seconds=fields.get("seconds"),
+            )
+        elif action == "kill_switch":
+            self.set_kill_switch(fields["enabled"])
+        elif action == "cancel":
+            job = self.store.cancel(fields["job_id"])
+            if job["state"] != "cancelled":
+                raise ValueError("job_not_cancellable")
+            with self.store._transaction() as db:
+                self.store._audit(db, "cancel", job_id=job["id"], bot_id=job.get("bot_id"))
+        else:
+            raise ValueError("unknown_steer_action")
+        return self.snapshot()
 
     async def run_once(self):
         job = self.store.lease(self.worker_id)
@@ -267,7 +416,7 @@ class BDService:
 
     def _schedule_projection(self, raw):
         """Standing cadence drives execution; a one-off window is display-only."""
-        cadence = self.store.config.get("cadence")
+        cadence = self._cadence()
         window = None if cadence else self.store.config.get("schedule_window")
         start = (
             datetime.fromisoformat(window["start_at"].replace("Z", "+00:00")).timestamp()
@@ -280,7 +429,11 @@ class BDService:
             else None
         )
         now = raw["timestamp"]
-        bots = self._scheduled_bots()
+        steering = raw.get("steering") or self._steering()
+        bots = self._scheduled_bots(
+            focus=steering.get("focus"),
+            paused=steering.get("paused_bots") or (),
+        )
         projection = {
             "state": "scheduled",
             "next_run_at": None,
@@ -303,7 +456,16 @@ class BDService:
                 projection["state"] = "paused"
                 return projection
             existing = {(job["tenant_id"], job["entity_id"], job["task"]) for job in raw["jobs"]}
-            nxt = next_cadence_timestamp(cadence, now, existing, bots)
+            overnight_bots = [
+                bot
+                for bot in bots
+                if (steering.get("around_the_clock") or {}).get(
+                    bot["id"], bot_around_the_clock(bot)
+                )
+            ]
+            nxt = next_cadence_timestamp(
+                cadence, now, existing, bots, overnight_eligible=overnight_bots
+            )
             if nxt is not None:
                 projection["next_run_at"] = iso(nxt)
                 if not cadence_open(cadence, now):
@@ -413,6 +575,7 @@ class BDService:
                 key: {"used": rows.get(key, 0), "limit": limit} for key, limit in limits.items()
             }
 
+        steering = raw.get("steering") or self._steering()
         bots = []
         for bot in raw["bots"]:
             jobs = [j for j in raw["jobs"] if j["bot_id"] == bot["id"]]
@@ -420,15 +583,44 @@ class BDService:
                 {
                     **{
                         key: bot.get(key)
-                        for key in ("id", "name", "segment", "tenant_id", "enabled", "kind")
+                        for key in (
+                            "id",
+                            "name",
+                            "segment",
+                            "tenant_id",
+                            "enabled",
+                            "kind",
+                            "research_segment",
+                        )
                     },
+                    "paused": bot["id"] in (steering.get("paused_bots") or []),
+                    "around_the_clock": bool(
+                        (steering.get("around_the_clock") or {}).get(bot["id"])
+                    ),
+                    "focused": bool(
+                        steering.get("focus")
+                        and (
+                            (
+                                steering["focus"].get("kind") == "bot"
+                                and steering["focus"].get("id") == bot["id"]
+                            )
+                            or (
+                                steering["focus"].get("kind") == "segment"
+                                and steering["focus"].get("id")
+                                in {bot.get("segment"), bot.get("research_segment")}
+                            )
+                        )
+                    ),
                     "counts": {
                         "queued": sum(j["state"] == "queued" for j in jobs),
                         "running": sum(j["state"] in ("leased", "running") for j in jobs),
                         "completed": sum(j["state"] == "completed" for j in jobs),
                         "failed": sum(j["state"] == "failed" for j in jobs),
                     },
-                    "budgets": budget("bot:" + bot["id"], self.store.config["bot_daily_budget"]),
+                    "budgets": budget(
+                        "bot:" + bot["id"],
+                        self.store.effective_budget("bot_daily_budget", bot_id=bot["id"]),
+                    ),
                 }
             )
         jobs = []
@@ -449,8 +641,21 @@ class BDService:
         for job in selected_jobs:
             public = {
                 key: job.get(key)
-                for key in ("id", "bot_id", "tenant_id", "state", "step", "attempts", "error")
+                for key in (
+                    "id",
+                    "bot_id",
+                    "tenant_id",
+                    "state",
+                    "step",
+                    "attempts",
+                    "error",
+                    "priority",
+                )
             }
+            payload = job.get("payload") or {}
+            public["operator_query"] = payload.get("operator_query")
+            public["operator_target"] = payload.get("operator_target")
+            public["stage"] = self._job_stage(job)
             public["segment"] = self.store.bots.get(job["bot_id"], {}).get("segment", "unknown")
             public.update(
                 {
@@ -627,6 +832,7 @@ class BDService:
         return {
             "mode": raw["mode"],
             "schedule_enabled": raw["schedule_enabled"],
+            "cadence": raw.get("cadence"),
             "schedule": self._schedule_projection(raw),
             "status_banner": status_banner(raw["kill_switch"], raw["schedule_enabled"]),
             "daily_summary": self._daily_summary(raw, jobs, packets),
@@ -650,7 +856,7 @@ class BDService:
             "packets": packets,
             "health": health,
             "model_activity": model_activity,
-            "budget": budget("global", self.store.config["global_daily_budget"]),
+            "budget": budget("global", self.store.effective_budget("global_daily_budget")),
             "budget_policy": raw["budget_policy"],
             "budget_day_timezone": "UTC",
             "jev": {
@@ -670,6 +876,34 @@ class BDService:
             },
             "worker_error": self.last_error,
             "metrics_scope": "latest_200_events",
+            "steering": {
+                **steering,
+                "audit": [
+                    {
+                        "id": item["id"],
+                        "action": item["action"],
+                        "created_at": iso(item["timestamp"]),
+                        **{
+                            key: item.get(key)
+                            for key in (
+                                "bot_id",
+                                "job_id",
+                                "kind",
+                                "focus_id",
+                                "query",
+                                "target",
+                                "enabled",
+                                "overnight_enabled",
+                                "around_the_clock",
+                                "priority",
+                            )
+                            if item.get(key) is not None
+                        },
+                    }
+                    for item in self.store.audit_log()
+                ],
+            },
+            "assignments": self._assignments(raw, jobs, packets, events, now),
         }
 
     def _packet(self, job, packet, index):
@@ -715,4 +949,102 @@ class BDService:
             "signals": strings("signals"),
             "insights": strings("insights"),
             "summary": packet.get("summary", ""),
+            "permit": packet.get("permit"),
+            "verdict": _verdict_label(packet),
+            "evidence_score": _evidence_score(packet),
+            "extraction_model": packet.get("extraction_model"),
+            "judgment_model": packet.get("judgment_model"),
+        }
+
+    def _job_stage(self, job):
+        step = str(job.get("step") or "")
+        if job["state"] in {"queued", "leased"}:
+            return "queued"
+        if job["state"] == "running":
+            if "jev" in step:
+                return "judge"
+            return "extract"
+        if job["state"] == "completed":
+            return "awaiting_human"
+        return job["state"]
+
+    def _assignments(self, raw, jobs, packets, events, _now=None):
+        replay = raw["mode"] == "replay"
+
+        def provider_block(name, assigned, waiting):
+            kinds = {
+                f"{name}_called",
+                f"{name}_completed",
+                f"{name}_error",
+                f"{name}_replayed",
+            }
+            recent = [event for event in events if event["kind"] in kinds]
+            live = [event for event in recent if event.get("mode") == "live"]
+            completed = [event for event in live if event["kind"] == f"{name}_completed"]
+            measured = [
+                event["latency_ms"]
+                for event in completed
+                if type(event.get("latency_ms")) in (int, float)
+            ]
+            errors = sum(event["kind"] == f"{name}_error" for event in live)
+            observed = bool(live) or replay
+            return {
+                "assigned": assigned,
+                "queue": waiting,
+                "recent": [
+                    {
+                        "id": event["id"],
+                        "kind": event["kind"],
+                        "job_id": event.get("job_id"),
+                        "bot_id": event.get("bot_id"),
+                        "created_at": iso(event["timestamp"]),
+                        "latency_ms": event.get("latency_ms")
+                        if type(event.get("latency_ms")) in (int, float)
+                        else None,
+                    }
+                    for event in reversed(recent[-8:])
+                ],
+                "status": (
+                    "running"
+                    if assigned
+                    else "replay"
+                    if replay
+                    else "idle"
+                    if completed
+                    else "data_unavailable"
+                ),
+                "calls": len(live) if observed else None,
+                "errors": errors if observed else None,
+                "latency_ms": (sum(measured) / len(measured)) if measured else None,
+            }
+
+        extract = [job["id"] for job in jobs if job.get("stage") == "extract"]
+        judge = [job["id"] for job in jobs if job.get("stage") == "judge"]
+        queued = [job["id"] for job in jobs if job.get("stage") == "queued"]
+        awaiting = [
+            packet["id"]
+            for packet in packets
+            if packet.get("candidate_status") == "supported"
+            and packet.get("review_status") == "human_review_required"
+        ]
+        verdicts = [event for event in events if event["kind"] == "jev_verdict"]
+        mix = (
+            {
+                key: sum(event.get("primitive", "").lower() == key.lower() for event in verdicts)
+                for key in ("Choice", "Score", "Noul")
+            }
+            if verdicts or replay
+            else None
+        )
+        jev = provider_block("jev", judge, [])
+        jev["verdict_mix"] = mix
+        jev["queue"] = [
+            job["id"] for job in jobs if job.get("stage") == "extract" and job["state"] == "running"
+        ]
+        return {
+            "qwen": provider_block("qwen", extract, queued),
+            "jev": jev,
+            "pipeline": [{"id": job_id, "stage": "extract"} for job_id in extract]
+            + [{"id": job_id, "stage": "judge"} for job_id in judge]
+            + [{"id": packet_id, "stage": "awaiting_human"} for packet_id in awaiting[:20]],
         }

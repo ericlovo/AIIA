@@ -8,12 +8,29 @@ All notable changes to AIIA are documented here. This project adheres to
 
 ### Added
 
+- **Comcast BD client bot, 24/7 cadence, live steering, and Lead finding
+  Studio.** Versioned roster adds a `comcast` client bot on
+  `synthetic-comcast` with a `commercial-fit-out` research profile
+  (Minneapolis commercial permits). Overnight cadence is opt-in and
+  slower. Studio's BD view matches the Lead finding prototype: a Running /
+  Paused / Stopped banner, one lane per bot with Extract → Judge →
+  Awaiting you, a Jev and Qwen panel, one-to-two-tap steering with toast
+  Undo and a What changed log, and a Leads for you inbox
+  (Approve / Reject / Fix records a local decision only). Phone lanes
+  collapse to counts; steering lives in a bottom sheet; internals stay
+  behind Details. Snapshot numbers, `qwen3:8b`, and event-stream traces
+  replace the prototype's placeholder costs and model name. Live Mini
+  operator configs (`mode: live`, `research-*` tenant ids, separate live
+  DB, healthcare / PE / alumni on the standing cadence) stay valid. All
+  of this stays off in the repo roster until an operator flips it. See
+  [Live BD activation](docs/BD-LIVE-ACTIVATION.md).
+
 - **Standing BD research cadence.** The conductor now has a versioned
   America/Chicago weekday/weekend schedule, per-slot bot rotation, Qwen
   `keep_alive` warmup with one retry, inconclusive next-query suggestions, and
-  a daily summary. Studio shows an explicit `Paused: kill switch on` /
-  `Paused: schedule off` / `Running` banner and an **Activate daily research**
-  control. The default roster stays off.
+  a daily summary. Studio's Lead finding banner shows `Paused: kill switch
+  on` / `Paused: schedule off` / `Running` / `Running 24/7`, with **Pause
+  all** / **Resume all**. The default roster stays off.
 
 - **Synthetic research shadow preparation.** Added an opt-in, replay-only backend
   with tenant-scoped leases, bounded jobs, review receipts and mocked staging.

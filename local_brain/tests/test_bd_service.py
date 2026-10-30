@@ -19,9 +19,9 @@ def service(tmp_path):
 
 def test_shadow_manual_ignores_disabled_schedule_and_dedups(service):
     first = service.enqueue_cycle(shadow=True)
-    assert len(first) == 4
+    assert len(first) == 5
     assert first == service.enqueue_cycle(shadow=True)
-    assert len(service.store.snapshot()["jobs"]) == 4
+    assert len(service.store.snapshot()["jobs"]) == 5
     assert all(j["tenant_id"].startswith("synthetic-") for j in service.store.snapshot()["jobs"])
 
 
@@ -615,7 +615,9 @@ def test_standing_cadence_skips_srg_until_a_contract_exists(service):
         service.now[0] += 1800
         queued.update(service.enqueue_cycle())
     bots = {job["bot_id"] for job in service.store.snapshot()["jobs"]}
-    assert bots == {"healthcare", "pe-diligence", "alumni-associations"}
+    assert "srg" not in bots
+    assert "comcast" in bots
+    assert {"healthcare", "pe-diligence", "alumni-associations"} <= bots
     assert all(
         job["tenant_id"].startswith("synthetic-") for job in service.store.snapshot()["jobs"]
     )

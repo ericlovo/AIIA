@@ -22,15 +22,58 @@ exists in config. Inconclusive jobs record a reason and a next-query
 suggestion. The snapshot includes a daily summary and a status banner:
 `Paused: kill switch on`, `Paused: schedule off`, or `Running`.
 
-`schedule_enabled` defaults to `false`. Studio **Activate daily research**
-persists that flag. This change does not flip it on any host.
+`schedule_enabled` defaults to `false`. Studio **Resume all** on the Lead
+finding banner persists that flag. This change does not flip it on any host.
 
 Live Qwen calls warm `qwen3:8b` with a tiny `keep_alive` ping (same approach as
 the Daily Brief) and retry once on `qwen_unavailable`.
 
+## What you must switch on to go live
+
+Nothing in this change starts work on the Mini. To run live Comcast / 24/7
+research you still own every gate below. Do them in order; skip any line and
+the conductor stays a research desk that only proposes.
+
+1. Merge this draft through normal branch protections. Approve the Mini
+   deploy/restart yourself. This PR does not deploy or restart anything.
+2. Copy `local_brain/command_center/config/bd_roster.v1.json` to an
+   operator-owned live file. Point `AIIA_BD_CONFIG` and a **separate**
+   `AIIA_BD_DATABASE` at that live pair. Keep the repo roster in `replay`.
+3. In that live file set `mode: "live"`. Leave `schedule_enabled: false`,
+   `cadence.overnight.enabled: false`, and every bot
+   `schedule.around_the_clock: false` until you are watching.
+4. Bind Comcast's tenant only in that live file if you want live Comcast
+   research: set `tenant_id` to the approved workspace
+   `bec83090-fa8a-4b55-97c8-e90a54c7f663` and keep
+   `research_segment: "commercial-fit-out"`. Do not add `managed_leads`
+   unless a separately approved CRM read exists; without it Comcast still
+   researches public Minneapolis permits and holds every contact. Do not
+   put that workspace id in the repo roster. SRG stays `synthetic-srg`
+   until it has its own approved binding. The Mini's existing live file
+   (`research-healthcare`, `research-pe`, `research-alumni`, standing
+   cadence, separate live DB) does not need to be rewritten.
+5. Keep `AIIA_AIRGAP=1`. Enable the existing narrow flags only:
+   `AIIA_NEWS_ENABLED=1` and `AIIA_SIGNALS_ENABLED=1`. Do not edit
+   `AIRGAP_ALLOWED_EGRESS`, install another model, or add a paid key.
+   Client CRM reads still need a separately approved `web.fetch` exception;
+   without it Comcast still researches public permit sources and holds every
+   contact.
+6. Release the kill switch, then click **Resume all** on the Lead finding
+   banner (or set `schedule_enabled: true`). Optional, still off until you
+   choose them: Studio **Overnight 24/7** (select the bot first), **Focus**
+   a lane, or lower the daily token / job ceiling in Steer. Each steer
+   applies on the next tick, shows a toast with Undo, and is written to
+   What changed.
+7. Confirm `/api/bd/snapshot` says `live`, kill switch off, Comcast still
+   `synthetic-comcast` unless you completed step 4, and unreachable
+   providers say `data_unavailable` rather than zero.
+
+Overnight does not raise budgets. The same per-bot daily reservation still
+caps the day (about six 8,000-token attempts on repo defaults).
+
 ## First live activation (operator-owned, still off until you flip it)
 
-Use an operator-owned configuration copied from `local_brain/command_center/config/bd_roster.v1.json`. Keep the repository default roster in replay mode. Use a **separate live database**; do not change a replay database into a live database.
+Use an operator-owned configuration copied from `local_brain/command_center/config/bd_roster.v1.json`. Keep the repository default roster in replay mode. Use a **separate live database**; do not change a replay database into a live database. The Mini's standing live file (healthcare / PE / alumni enabled, `research-*` tenant ids, `mode: live`) remains compatible: live mode accepts those tenant ids, and this PR does not rewrite that operator database or require synthetic tenants when `mode` is `live`.
 
 Set these variables in the environment consumed by the service launcher, then restart the service through its existing operating procedure. The paths below are placeholders for operator-selected absolute paths, not literal defaults:
 
@@ -57,8 +100,12 @@ Apply these changes to the copied roster:
 | `bot_daily_budget` | Keep repo defaults (`50000` / `50` / `1800`) |
 | Segment bots `enabled` | `true` for healthcare, PE, and alumni |
 | SRG `enabled` | `true` only if you want it visible; it still will not rotate without a BD contract |
-| Healthcare `tenant_id` | An explicit internal research scope, such as `research-healthcare`; this is not a Managed Leads client tenant |
+| Comcast `enabled` | `true` to research Minneapolis commercial fit-outs; still synthetic until you bind the live workspace |
+| Healthcare `tenant_id` | An explicit internal research scope, such as `research-healthcare`; this is not a Managed Leads client tenant. Live Mini already uses `research-*` ids for healthcare, PE, and alumni — keep those in the operator file, not the repo roster |
 | SRG `tenant_id` | `synthetic-srg` unless a real, approved tenant binding exists |
+| Comcast `tenant_id` | `synthetic-comcast` unless you bind `bec83090-fa8a-4b55-97c8-e90a54c7f663` in live config |
+| `cadence.overnight.enabled` | Leave `false` until you want the slower 24/7 window |
+| Comcast `around_the_clock` | Leave `false` until overnight should include this bot |
 
 Retain the existing lease duration and retry-backoff fields. The standing cadence is the schedule; an expired `schedule_window` is ignored when `cadence` is present. After news/signals flags and a live database are in place: release the kill switch, then click **Activate daily research**. There is no general “run one live discovery cycle” HTTP endpoint; `/api/bd/shadow` is replay-only.
 

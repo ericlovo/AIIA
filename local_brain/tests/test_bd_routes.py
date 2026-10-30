@@ -35,12 +35,17 @@ def test_shadow_dedup_snapshot_and_kill_resume(route_app):
     with TestClient(app) as client:
         first = client.post("/api/bd/shadow", json={})
         assert first.status_code == 200
-        assert len(first.json()["job_ids"]) == 4
+        assert len(first.json()["job_ids"]) == 5
         assert client.post("/api/bd/shadow", json={}).json() == first.json()
         snapshot = client.get("/api/bd/snapshot").json()
         assert snapshot["mode"] == "replay"
         assert snapshot["schedule_enabled"] is False
-        assert len(snapshot["bots"]) == 4
+        assert len(snapshot["bots"]) == 5
+        assert {bot["id"] for bot in snapshot["bots"]} >= {"healthcare", "comcast", "srg"}
+        comcast = next(bot for bot in snapshot["bots"] if bot["id"] == "comcast")
+        assert comcast["tenant_id"] == "synthetic-comcast"
+        assert comcast["kind"] == "client"
+        assert comcast["research_segment"] == "commercial-fit-out"
         assert "lease_token" not in json.dumps(snapshot)
         assert client.post("/api/bd/kill-switch", json={"enabled": True}).json()["kill_switch"]
         assert client.post("/api/bd/shadow", json={}).status_code == 409
