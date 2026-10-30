@@ -144,7 +144,7 @@ try {
     await nav(page).locator('summary[aria-label="Studio tools"]').click()
     const links = await nav(page).getByRole('link').evaluateAll(items => items.map(item => [item.textContent, item.getAttribute('href'), item.getAttribute('aria-current')]))
     assert.deepEqual(links, [
-      ['Research', '#/bd', 'page'], ['Bots', '#/bots', null], ['Work', '#/assignments', null], ['Today', '#/today', null], ['Inbox', '#/inbox', null], ['Jobs', '#/jobs', null], ['Projects', '#/projects', null],
+      ['Research', '#/bd', null], ['Bots', '#/bots', null], ['Work', '#/assignments', 'page'], ['Today', '#/today', null], ['Inbox', '#/inbox', null], ['Jobs', '#/jobs', null], ['Projects', '#/projects', null],
       ['Activity history', '#/history', null], ['Overview', '#/overview', null], ['Agents', '#/agents', null],
       ['Signals', '#/signals', null],
       ['Handoffs', '#/handoffs', null], ['Memory', '#/memory', null], ['Map', '#/map', null],
