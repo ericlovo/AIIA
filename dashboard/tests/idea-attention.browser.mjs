@@ -25,9 +25,13 @@ try {
       } else if (path === '/api/memory-inbox') body = { ideas: [], total: 174, attention_counts: { needs_you: 174, verification: 2, activity: 1 }, counts: { unreviewed: 177 } }
       else if (path === '/api/assignments') body = { assignments: [] }
       else if (path === '/api/agents') body = { agents: [] }
+      else if (path === '/api/health') body = { aiia: { status: 'online' }, ollama: { status: 'online' } }
+      else if (path === '/api/agents/resources') body = { repos: [], github: { status: 'disconnected' } }
+      else if (path === '/api/studio/morning-note') body = { products: [], customers: [], decisions: [] }
       else if (path === '/api/git-workspaces') body = { workspaces: [] }
       else if (path === '/api/git-writes') body = { writes: [] }
       else if (path === '/api/tasks') body = []
+      else if (path === '/api/handoffs') body = { handoffs: [] }
       await route.fulfill({ json: body })
     })
     await page.goto('http://studio.test/#/assignments')
