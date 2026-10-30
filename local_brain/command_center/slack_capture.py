@@ -125,7 +125,10 @@ def list_ideas(
     outcome: str = "",
     priority: str = "",
     sort: str = "newest",
+    attention: str = "",
 ):
+    if attention not in ("", "needs_you", "verification", "activity"):
+        raise HTTPException(status_code=422, detail="invalid_attention_lane")
     if offset < 0 or offset > 1_000_000 or len(query) > 500 or len(source) > 40:
         raise HTTPException(status_code=422, detail="invalid_inbox_query")
     if outcome and outcome not in (*REVIEW_OUTCOMES, UNCLASSIFIED, "open"):
@@ -144,6 +147,7 @@ def list_ideas(
             status=status,
             priority=priority,
             sort=sort,
+            attention=attention,
         )
     except (OSError, sqlite3.Error) as exc:
         raise HTTPException(status_code=503, detail="memory_inbox_unavailable") from exc
@@ -644,3 +648,13 @@ async def capture_command(request: Request):
         "response_type": "ephemeral",
         "text": f"Saved idea {idea['id'][:8]} to the Performance Labs memory inbox for review.",
     }
+
+
+@router.get("/api/memory-inbox/attention-preview")
+def attention_preview(offset: int = 0):
+    if offset < 0 or offset > 1_000_000:
+        raise HTTPException(status_code=422, detail="invalid_inbox_query")
+    try:
+        return inbox().attention_preview(offset)
+    except (OSError, sqlite3.Error) as exc:
+        raise HTTPException(status_code=503, detail="memory_inbox_unavailable") from exc

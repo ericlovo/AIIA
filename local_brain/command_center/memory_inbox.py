@@ -7,6 +7,8 @@ from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+from .idea_attention import ATTENTION_LANES, ATTENTION_SQL, classify_idea, new_idea_lane
+
 IDEA_STATUSES = ("unreviewed", "promoted", "dismissed")
 # Highest first; list sorting and memory post delivery both use this order. The rank
 # expression is formatted only with literal column names, never caller input.
@@ -80,6 +82,7 @@ IDEA_REVIEW_COLUMNS = (
     "review_outcome",
 )
 IDEA_POST_COLUMNS = {
+    "attention_lane": "TEXT NOT NULL DEFAULT 'legacy'",
     "priority": "TEXT NOT NULL DEFAULT 'normal'",
     "post_requested": "INTEGER NOT NULL DEFAULT 0",
     # The assignment a human routed this capture to, so one capture queues work once.
@@ -158,7 +161,7 @@ class MemoryInbox:
         with self.connect() as db:
             db.execute(
                 """INSERT INTO ideas (id,source_key,text,source,project,workspace_id,
-                channel_id,author_id,created_at) VALUES (?,?,?,?,?,?,?,?,?)
+                channel_id,author_id,created_at,attention_lane) VALUES (?,?,?,?,?,?,?,?,?,?)
                 ON CONFLICT(source_key) DO NOTHING""",
                 (
                     uuid.uuid4().hex,
@@ -170,6 +173,7 @@ class MemoryInbox:
                     channel_id,
                     author_id,
                     _now(),
+                    new_idea_lane(source, author_id, workspace_id),
                 ),
             )
             idea = dict(
@@ -413,9 +417,17 @@ class MemoryInbox:
         with self.connect() as db:
             cursor = db.execute(
                 """INSERT INTO ideas (id,source_key,text,source,project,workspace_id,
-                channel_id,author_id,created_at) VALUES (?,?,?,?,?,'','','',?)
+                channel_id,author_id,created_at,attention_lane) VALUES (?,?,?,?,?,'','','',?,?)
                 ON CONFLICT(source_key) DO NOTHING""",
-                (uuid.uuid4().hex, source_key, text, source, project, _now()),
+                (
+                    uuid.uuid4().hex,
+                    source_key,
+                    text,
+                    source,
+                    project,
+                    _now(),
+                    new_idea_lane(source),
+                ),
             )
             created = cursor.rowcount == 1
             idea = dict(
@@ -780,6 +792,7 @@ class MemoryInbox:
         outcome: str = "",
         priority: str = "",
         sort: str = "newest",
+        attention: str = "",
     ) -> dict:
         if status and status not in IDEA_STATUSES:
             raise ValueError("invalid_idea_status")
@@ -787,7 +800,12 @@ class MemoryInbox:
             raise ValueError("invalid_review_outcome")
         if (priority and priority not in PRIORITIES) or sort not in IDEA_SORTS:
             raise ValueError("invalid_idea_query")
+        if attention and attention not in ATTENTION_LANES:
+            raise ValueError("invalid_attention_lane")
         clauses, args = [], []
+        if attention:
+            clauses.append("(" + ATTENTION_SQL + ")=?")
+            args.append(attention)
         if project:
             clauses.append("ideas.project=?")
             args.append(project)
@@ -842,4 +860,33 @@ class MemoryInbox:
                 "total": total,
                 "offset": offset,
                 "counts": counts,
+                "attention_counts": dict(
+                    db.execute(
+                        # Fixed internal CASE expression; no request values.
+                        "SELECT " + ATTENTION_SQL + ",count(*) FROM ideas "  # nosec B608
+                        "WHERE status='unreviewed' GROUP BY 1"
+                    ).fetchall()
+                ),
             }
+
+    def attention_preview(self, offset=0):
+        with self.connect() as db:
+            rows = [
+                dict(row)
+                for row in db.execute(
+                    "SELECT * FROM ideas WHERE status='unreviewed' ORDER BY created_at DESC,id DESC"
+                )
+            ]
+        counts = {lane: 0 for lane in (*ATTENTION_LANES, "linked_work")}
+        preview = []
+        for row in rows:
+            lane, reason = classify_idea(row)
+            counts[lane] += 1
+            preview.append({**row, "proposed_lane": lane, "reason": reason})
+        return {
+            "total": len(rows),
+            "offset": offset,
+            "counts": counts,
+            "ideas": preview[offset : offset + 50],
+            "preview_only": True,
+        }

@@ -1590,7 +1590,7 @@ async def studio_morning_note():
         for source in (*LOCAL_PROPOSAL_SOURCES, "slack"):
             if source == "digest":
                 continue
-            page = inbox.list(status="unreviewed", source=source)
+            page = inbox.list(status="unreviewed", source=source, attention="needs_you")
             inbox_items.extend(page.get("ideas") or [])
             total = page.get("total") or 0
             if total:

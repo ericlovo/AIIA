@@ -391,7 +391,11 @@ export interface CaptureFile {
   chars: number;
 }
 
+export type IdeaLane = 'needs_you' | 'verification' | 'activity'
+export interface IdeaPreview { total: number; offset: number; preview_only: boolean; counts: Record<string, number>; ideas: Array<MemoryIdea & { proposed_lane: string; reason: string }> }
+
 export interface MemoryInboxPage {
+  attention_counts?: Partial<Record<IdeaLane, number>>;
   ideas: MemoryIdea[];
   total: number;
   offset: number;
@@ -799,8 +803,10 @@ export const api = {
   runAgent: (id: string, task: string) =>
     post<{ agent: Agent; model: string; latency_ms: number }>(`/api/agents/${id}/run`, { task }),
 
-  memoryInbox: (params: { project?: string; source?: string; query?: string; status?: MemoryIdeaStatus | ''; outcome?: ReviewBucket | ''; offset?: number; priority?: MemoryPriority | ''; sort?: MemoryInboxSort } = {}) => {
+  ideaAttentionPreview: (offset = 0) => get<IdeaPreview>(`/api/memory-inbox/attention-preview?offset=${offset}`),
+  memoryInbox: (params: { attention?: IdeaLane; project?: string; source?: string; query?: string; status?: MemoryIdeaStatus | ''; outcome?: ReviewBucket | ''; offset?: number; priority?: MemoryPriority | ''; sort?: MemoryInboxSort } = {}) => {
     const search = new URLSearchParams();
+    if (params.attention) search.set('attention', params.attention);
     if (params.project) search.set('project', params.project);
     if (params.source) search.set('source', params.source);
     if (params.query) search.set('query', params.query);

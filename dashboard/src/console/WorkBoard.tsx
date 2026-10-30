@@ -1,3 +1,4 @@
+import { IdeaAttention } from './IdeaAttention'
 import { useDecisionQueue } from './useDecisionQueue'
 import { useEffect, useRef, useState } from 'react'
 import { ChevronDown, Plus, RotateCcw, X } from 'lucide-react'
@@ -309,6 +310,7 @@ export function WorkBoard({
               </button>
             )}
 
+            {view === 'assignments' && <IdeaAttention />}
             {view === 'assignments' && <nav aria-label="Work views" className="mb-5 flex flex-wrap gap-2">
               {([['needs-you', 'Needs you'], ['working', 'Working'], ['history', 'History']] as const).map(([value, label]) => <button key={value} aria-pressed={lane === value} onClick={() => { setLane(value); setVisibleGroups(50) }} className={`border px-3 py-2 text-sm ${lane === value ? 'border-cyan-400 text-cyan-200' : 'border-neutral-700 text-neutral-300'}`}>
                 {label} ({value === 'needs-you' ? decisionQueue.error ? 'Unavailable' : decisionQueue.loading ? 'Loading' : decisionQueue.total : assignments.filter(item => workLane(item, pendingApprovalIds.has(item.id)) === value).length})
