@@ -109,6 +109,7 @@ try {
       else if (url.pathname === '/api/health') body = { aiia: { status: 'online' }, ollama: { status: 'online' } }
       else if (url.pathname === '/api/monitor') body = { services: {} }
       else if (url.pathname === '/api/assignments') body = { assignments: [] }
+      else if (url.pathname === '/api/memory-inbox') body = { ideas: [], total: 0, counts: { unreviewed: 0 } }
       else if (url.pathname === '/api/handoffs') body = { handoffs: [] }
       else if (url.pathname === '/api/git-workspaces') body = { workspaces: [] }
       else if (url.pathname === '/api/git-writes') body = { writes: [] }
