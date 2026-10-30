@@ -862,7 +862,8 @@ class MemoryInbox:
                 "counts": counts,
                 "attention_counts": dict(
                     db.execute(
-                        "SELECT " + ATTENTION_SQL + ",count(*) FROM ideas "
+                        # Fixed internal CASE expression; no request values.
+                        "SELECT " + ATTENTION_SQL + ",count(*) FROM ideas "  # nosec B608
                         "WHERE status='unreviewed' GROUP BY 1"
                     ).fetchall()
                 ),
