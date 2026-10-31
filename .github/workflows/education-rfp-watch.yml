@@ -1,0 +1,59 @@
+name: Education RFP watch
+
+on:
+  workflow_dispatch:
+  schedule:
+    # Daily 13:00 UTC: 08:00 Central daylight / 07:00 Central standard time.
+    - cron: '0 13 * * *'
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: education-rfp-watch
+  cancel-in-progress: false
+
+jobs:
+  daily:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: education-alerts
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.11'
+      - name: Install isolated worker dependency
+        run: python -m pip install httpx==0.28.1
+      - name: Restore previous delivery ledger
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python scripts/education_watch_restore.py
+      - name: Collect, screen and deliver
+        env:
+          TYPESAFE_API_KEY: ${{ secrets.TYPESAFE_API_KEY }}
+          AIIA_SLACK_BOT_TOKEN: ${{ secrets.AIIA_SLACK_BOT_TOKEN }}
+          AIIA_SLACK_CHANNEL_ID: ${{ secrets.AIIA_SLACK_CHANNEL_ID }}
+          AIIA_SLACK_TEAM_ID: ${{ secrets.AIIA_SLACK_TEAM_ID }}
+        run: >-
+          python -m scripts.education_rfp_watch
+          --config config/education-rfp-sources.json
+          --state-file education-watch/state.json
+          --output-dir education-watch
+          --send
+      - name: Preserve delivery ledger and run evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: education-watch-state
+          path: education-watch/
+          if-no-files-found: error
+          retention-days: 90
+      - name: Publish run summary
+        if: always()
+        run: |
+          if test -f education-watch/summary.md; then
+            cat education-watch/summary.md >> "$GITHUB_STEP_SUMMARY"
+          fi
