@@ -60,7 +60,7 @@ def test_schedule_toggle_is_the_activation_flag(route_app):
         assert snapshot["status_banner"]["label"] == "Paused: schedule off"
         enabled = client.post("/api/bd/schedule", json={"enabled": True}).json()
         assert enabled["schedule_enabled"] is True
-        assert enabled["status_banner"]["label"] == "Running"
+        assert enabled["status_banner"]["label"] == "Waiting for next run"
         assert service.store.schedule_enabled() is True
         paused = client.post("/api/bd/schedule", json={"enabled": False}).json()
         assert paused["status_banner"]["label"] == "Paused: schedule off"
