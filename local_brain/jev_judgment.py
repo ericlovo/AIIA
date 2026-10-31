@@ -9,9 +9,9 @@ import hashlib
 import json
 import math
 import re
+from collections.abc import Mapping
 from dataclasses import asdict, dataclass
 from datetime import datetime
-from typing import Mapping
 
 JUDGMENTS = (
     "evidence_support",
