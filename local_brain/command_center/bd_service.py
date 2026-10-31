@@ -378,7 +378,9 @@ class BDService:
             "timezone": zone_name,
             "candidates_proposed": proposed,
             "inconclusive": inconclusive,
-            "rejected": sum(job.get("research_outcome") == "rejected" for job in public_today.values()),
+            "rejected": sum(
+                job.get("research_outcome") == "rejected" for job in public_today.values()
+            ),
             "failed": failed,
             "awaiting_human_review": awaiting,
         }
@@ -613,7 +615,9 @@ class BDService:
             "mode": raw["mode"],
             "schedule_enabled": raw["schedule_enabled"],
             "schedule": self._schedule_projection(raw),
-            "status_banner": status_banner(raw["kill_switch"], raw["schedule_enabled"], job_counts["running"] > 0),
+            "status_banner": status_banner(
+                raw["kill_switch"], raw["schedule_enabled"], job_counts["running"] > 0
+            ),
             "daily_summary": self._daily_summary(raw, jobs, packets),
             "kill_switch": raw["kill_switch"],
             "bots": bots,

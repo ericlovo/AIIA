@@ -103,7 +103,7 @@ export function scheduleTime(at: string | null | undefined, timezone = 'America/
   } catch { return 'Time unavailable' }
 }
 export function providerStatus(health: ProviderHealth | undefined): string {
-  if (health?.status === 'stale') return 'Unverified now'
+  if (health?.status === 'stale') return 'Last run succeeded'
   if (health?.status === 'data_unavailable') return health.observed_at ? 'Last call failed' : 'Unverified'
   if (health?.status === 'replay') return 'Recorded replay'
   return health?.status === 'available' ? 'Idle' : 'Unverified'

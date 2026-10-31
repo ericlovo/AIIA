@@ -1149,3 +1149,35 @@ async def test_qwen_single_reserved_call_without_hidden_warmup_or_retry(monkeypa
         await pipeline.extract_ready({"title": "Clinic opens ward"})
     assert len(calls) == 1
     assert pipeline.qwen_payload({"title": "Clinic opens ward"})["options"]["num_ctx"] == 8192
+
+
+@async_test
+async def test_jev_http_failure_keeps_status_without_response_body(monkeypatch):
+    events = []
+
+    async def local(source):
+        return {
+            "organization": "Orchard Clinic",
+            "signal": "new clinic",
+            "quote": source["text"].splitlines()[0],
+            "consumer_insight": "",
+        }, 150
+
+    async def unavailable(*args):
+        request = httpx.Request("POST", "https://api.typesafe.ai/v1/systemone")
+        response = httpx.Response(429, request=request, text="private body")
+        response.raise_for_status()
+
+    monkeypatch.setattr(pipeline, "extract_ready", local)
+    monkeypatch.setattr(pipeline, "judge", unavailable)
+    with pytest.raises(pipeline.DataUnavailable, match="jev_http_429"):
+        await pipeline.run_pipeline(
+            job(
+                mode="live",
+                payload={"public_source": public_excerpt()},
+                source_allowlist=["example.org"],
+            ),
+            lambda kind, data: events.append((kind, data)),
+        )
+    assert events[-1][1]["message"] == "jev_http_429"
+    assert "private body" not in str(events)
