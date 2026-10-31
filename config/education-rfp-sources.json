@@ -1,0 +1,84 @@
+{
+  "target_states": [
+    "AL",
+    "AK",
+    "AZ",
+    "AR",
+    "CA",
+    "CO",
+    "CT",
+    "DE",
+    "FL",
+    "GA",
+    "HI",
+    "ID",
+    "IL",
+    "IN",
+    "IA",
+    "KS",
+    "KY",
+    "LA",
+    "ME",
+    "MD",
+    "MA",
+    "MI",
+    "MN",
+    "MS",
+    "MO",
+    "MT",
+    "NE",
+    "NV",
+    "NH",
+    "NJ",
+    "NM",
+    "NY",
+    "NC",
+    "ND",
+    "OH",
+    "OK",
+    "OR",
+    "PA",
+    "RI",
+    "SC",
+    "SD",
+    "TN",
+    "TX",
+    "UT",
+    "VT",
+    "VA",
+    "WA",
+    "WV",
+    "WI",
+    "WY"
+  ],
+  "coverage_notes": [
+    "Partial initial registry: four state education agency pages and the Delaware statewide feed; target_states expresses intended 50-state scope, not verified coverage.",
+    "State agency listings do not provide complete school district procurement coverage.",
+    "Listings may include grants, closed or withdrawn notices, non-K12 work, and non-RFP/RFI opportunities; each notice requires qualification.",
+    "NY and ID have exhibited TLS/access failures during verification; report fetch failures explicitly and never treat them as no opportunities.",
+    "Delaware uses official agency mappings and explicit RFP/RFI types only; null types without RFP/RFI in the title and same-day deadlines are withheld. Feed includes some school districts, not complete district coverage."
+  ],
+  "sources": [
+    {
+      "state": "WA",
+      "url": "https://ospi.k12.wa.us/about-ospi/contracting-ospi/competitive-procurements"
+    },
+    {
+      "state": "CT",
+      "url": "https://portal.ct.gov/sde/rfp/request-for-proposals/2026-rfps"
+    },
+    {
+      "state": "NY",
+      "url": "https://www.nysed.gov/funding-opportunities/competitive-service-contract-procurements"
+    },
+    {
+      "state": "ID",
+      "url": "https://www.sde.idaho.gov/contracting-opportunities/"
+    },
+    {
+      "state": "DE",
+      "url": "https://mmp.delaware.gov/Bids/",
+      "adapter": "delaware"
+    }
+  ]
+}
