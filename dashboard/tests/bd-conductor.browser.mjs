@@ -171,7 +171,7 @@ try {
     await page.locator('.bd-page').evaluate(el => { el.scrollTop = 0 })
     await page.screenshot({ path: join(output, `bd-waiting-${width}.png`), animations: 'disabled' })
     await schedulePanel.screenshot({ path: join(output, `bd-schedule-${width}.png`), animations: 'disabled' })
-    await page.locator('.bd-model-qwen').getByText('Unverified now', { exact: true }).waitFor()
+    await page.locator('.bd-model-qwen').getByText('Last run succeeded', { exact: true }).waitFor()
     await page.locator('.bd-model-jev').getByText('Last call failed', { exact: true }).waitFor()
     assert.equal(await page.locator('.bd-model-working').count(), 0)
     await page.locator('.bd-model-stack').evaluate(el => el.scrollIntoView({ block: 'start' }))

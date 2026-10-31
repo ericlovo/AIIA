@@ -35,11 +35,11 @@ export interface ProviderHealth {
   detail: string; observed_at?: string | null; last_status?: string
 }
 export interface StatusBanner {
-  state: 'paused_kill_switch' | 'paused_schedule_off' | 'running'
-  label: 'Paused: kill switch on' | 'Paused: schedule off' | 'Running'
+  state: 'paused_kill_switch' | 'paused_schedule_off' | 'running' | 'waiting'
+  label: 'Paused: kill switch on' | 'Paused: schedule off' | 'Running' | 'Waiting for next run'
 }
 export interface DailySummary {
-  day: string; timezone: string
+  day: string; timezone: string; rejected?: number
   candidates_proposed: number; inconclusive: number; failed: number; awaiting_human_review: number
 }
 export interface BDSnapshot {
@@ -103,15 +103,16 @@ export function scheduleTime(at: string | null | undefined, timezone = 'America/
   } catch { return 'Time unavailable' }
 }
 export function providerStatus(health: ProviderHealth | undefined): string {
-  if (health?.status === 'stale') return 'Unverified now'
+  if (health?.status === 'stale') return 'Last run succeeded'
   if (health?.status === 'data_unavailable') return health.observed_at ? 'Last call failed' : 'Unverified'
   if (health?.status === 'replay') return 'Recorded replay'
   return health?.status === 'available' ? 'Idle' : 'Unverified'
 }
-export function statusBanner(data: Pick<BDSnapshot, 'kill_switch' | 'schedule_enabled' | 'status_banner'>): StatusBanner {
+export function statusBanner(data: Pick<BDSnapshot, 'kill_switch' | 'schedule_enabled' | 'status_banner'> & Partial<Pick<BDSnapshot, 'job_counts' | 'jobs'>>): StatusBanner {
   if (data.kill_switch) return { state: 'paused_kill_switch', label: 'Paused: kill switch on' }
   if (!data.schedule_enabled) return { state: 'paused_schedule_off', label: 'Paused: schedule off' }
-  return { state: 'running', label: 'Running' }
+  if ((data.job_counts?.running ?? data.jobs?.filter(job => job.state === 'running').length ?? 0) > 0) return { state: 'running', label: 'Running' }
+  return { state: 'waiting', label: 'Waiting for next run' }
 }
 export function scheduleIdleText(data: BDSnapshot, now: number): string {
   if (plannedWaiting(data.schedule, now)) return 'Waiting for planned start'

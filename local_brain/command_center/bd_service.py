@@ -90,7 +90,6 @@ class BDService:
         self._active = None
         self._worker = None
         self.last_error = None
-        self._qwen_ready_at = 0.0
 
     async def start(self):
         if self._worker is None or self._worker.done():
@@ -235,26 +234,11 @@ class BDService:
     def set_schedule_enabled(self, enabled):
         self.store.set_schedule_enabled(enabled)
 
-    async def _ensure_qwen_ready(self):
-        now = self.store.clock()
-        if now - self._qwen_ready_at < 60:
-            return
-        from .bd_pipeline import ensure_qwen_loaded
-
-        await ensure_qwen_loaded()
-        self._qwen_ready_at = now
-
     async def loop(self):
         while True:
             try:
                 raw = self.store.snapshot()
                 if raw["schedule_enabled"] and not raw["kill_switch"]:
-                    if raw["mode"] == "live":
-                        try:
-                            await self._ensure_qwen_ready()
-                        except Exception as exc:
-                            self.last_error = type(exc).__name__
-                            logger.warning("BD qwen warmup unavailable: %s", self.last_error)
                     self.enqueue_cycle()
                 await self.run_once()
                 self.last_error = None
@@ -394,6 +378,9 @@ class BDService:
             "timezone": zone_name,
             "candidates_proposed": proposed,
             "inconclusive": inconclusive,
+            "rejected": sum(
+                job.get("research_outcome") == "rejected" for job in public_today.values()
+            ),
             "failed": failed,
             "awaiting_human_review": awaiting,
         }
@@ -628,7 +615,9 @@ class BDService:
             "mode": raw["mode"],
             "schedule_enabled": raw["schedule_enabled"],
             "schedule": self._schedule_projection(raw),
-            "status_banner": status_banner(raw["kill_switch"], raw["schedule_enabled"]),
+            "status_banner": status_banner(
+                raw["kill_switch"], raw["schedule_enabled"], job_counts["running"] > 0
+            ),
             "daily_summary": self._daily_summary(raw, jobs, packets),
             "kill_switch": raw["kill_switch"],
             "bots": bots,

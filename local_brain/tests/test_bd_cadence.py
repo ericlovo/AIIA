@@ -173,7 +173,8 @@ def test_banner_states_are_explicit():
         "state": "paused_schedule_off",
         "label": "Paused: schedule off",
     }
-    assert status_banner(False, True) == {"state": "running", "label": "Running"}
+    assert status_banner(False, True) == {"state": "waiting", "label": "Waiting for next run"}
+    assert status_banner(False, True, True) == {"state": "running", "label": "Running"}
 
 
 def test_next_query_explains_inconclusive_reasons():

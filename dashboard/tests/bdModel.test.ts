@@ -72,7 +72,7 @@ test('schedule times use the configured timezone and DST, independent of browser
 
 test('stale success is unverified, a real failed observation remains a failure', async () => {
   const { providerStatus } = await import('../src/console/bdModel.ts')
-  assert.equal(providerStatus({ status: 'stale', detail: 'old success', observed_at: '2026-10-23T12:00:00Z' }), 'Unverified now')
+  assert.equal(providerStatus({ status: 'stale', detail: 'old success', observed_at: '2026-10-23T12:00:00Z' }), 'Last run succeeded')
   assert.equal(providerStatus({ status: 'data_unavailable', detail: 'provider failed', observed_at: '2026-10-23T12:00:00Z' }), 'Last call failed')
   assert.equal(providerStatus({ status: 'data_unavailable', detail: 'not observed' }), 'Unverified')
   assert.equal(providerStatus(undefined), 'Unverified')
@@ -96,7 +96,7 @@ test('status banner never treats a quiet system as working', async () => {
   const { statusBanner } = await import('../src/console/bdModel.ts')
   assert.deepEqual(statusBanner({ kill_switch: true, schedule_enabled: true }), { state: 'paused_kill_switch', label: 'Paused: kill switch on' })
   assert.deepEqual(statusBanner({ kill_switch: false, schedule_enabled: false }), { state: 'paused_schedule_off', label: 'Paused: schedule off' })
-  assert.deepEqual(statusBanner({ kill_switch: false, schedule_enabled: true }), { state: 'running', label: 'Running' })
+  assert.deepEqual(statusBanner({ kill_switch: false, schedule_enabled: true }), { state: 'waiting', label: 'Waiting for next run' })
   assert.equal(statusBanner({ kill_switch: false, schedule_enabled: false, status_banner: { state: 'running', label: 'Running' } }).label, 'Paused: schedule off')
 })
 

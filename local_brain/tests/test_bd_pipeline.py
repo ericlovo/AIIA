@@ -1137,84 +1137,47 @@ def test_persisted_invalid_answers_fail_closed(answers):
 
 
 @async_test
-async def test_qwen_warmup_sends_tiny_keep_alive_before_extract(monkeypatch):
-    import json
+async def test_qwen_single_reserved_call_without_hidden_warmup_or_retry(monkeypatch):
+    calls = []
 
-    source, extraction, _ = pipeline.synthetic_fixture("healthcare")
-    payloads = []
+    async def fail(source):
+        calls.append(source)
+        raise httpx.ConnectError("offline")
 
-    def handle(request):
-        body = json.loads(request.content)
-        payloads.append(body)
-        if "format" not in body:
-            assert body["model"] == "qwen3:8b"
-            assert body["keep_alive"] == "30m"
-            assert body["options"]["num_ctx"] == 512
-            return httpx.Response(200, json={"message": {"content": "ok"}})
-        return httpx.Response(
-            200,
-            json={
-                "message": {"content": json.dumps(selection(extraction))},
-                "prompt_eval_count": 40,
-                "eval_count": 10,
-            },
-        )
-
-    client = httpx.AsyncClient
-    monkeypatch.setattr(
-        pipeline.httpx,
-        "AsyncClient",
-        lambda **kw: client(transport=httpx.MockTransport(handle), **kw),
-    )
-    result, tokens = await pipeline.extract_ready(source)
-    assert result == extraction
-    assert tokens == 50
-    assert payloads[0]["keep_alive"] == "30m"
-    assert "format" not in payloads[0]
-    assert payloads[1]["keep_alive"] == "30m"
-    assert "format" in payloads[1]
+    monkeypatch.setattr(pipeline, "extract_local", fail)
+    with pytest.raises(httpx.ConnectError):
+        await pipeline.extract_ready({"title": "Clinic opens ward"})
+    assert len(calls) == 1
+    assert pipeline.qwen_payload({"title": "Clinic opens ward"})["options"]["num_ctx"] == 8192
 
 
 @async_test
-async def test_qwen_retries_once_after_unavailable_then_succeeds(monkeypatch):
-    import json
-
-    source, extraction, _ = pipeline.synthetic_fixture("healthcare")
-    extracts = []
-
-    async def fake_ensure():
-        return {"ok": True}
-
-    async def fake_extract(current):
-        extracts.append(current)
-        if len(extracts) == 1:
-            raise httpx.ConnectError("cold")
-        return extraction, 12
-
+async def test_jev_http_failure_keeps_status_without_response_body(monkeypatch):
     events = []
-    monkeypatch.setattr(pipeline, "ensure_qwen_loaded", fake_ensure)
-    monkeypatch.setattr(pipeline, "extract_local", fake_extract)
-    result, tokens = await pipeline.extract_ready(
-        source, emit=lambda kind, **data: events.append(kind)
-    )
-    assert (result, tokens) == (extraction, 12)
-    assert len(extracts) == 2
-    assert "qwen_retry" in events
 
+    async def local(source):
+        return {
+            "organization": "Orchard Clinic",
+            "signal": "new clinic",
+            "quote": source["text"].splitlines()[0],
+            "consumer_insight": "",
+        }, 150
 
-@async_test
-async def test_qwen_does_not_retry_invalid_quote_selection(monkeypatch):
-    extracts = []
+    async def unavailable(*args):
+        request = httpx.Request("POST", "https://api.typesafe.ai/v1/systemone")
+        response = httpx.Response(429, request=request, text="private body")
+        response.raise_for_status()
 
-    async def fake_ensure():
-        return {}
-
-    async def fake_extract(source):
-        extracts.append(source)
-        raise pipeline.DataUnavailable("invalid_source_quote_index")
-
-    monkeypatch.setattr(pipeline, "ensure_qwen_loaded", fake_ensure)
-    monkeypatch.setattr(pipeline, "extract_local", fake_extract)
-    with pytest.raises(pipeline.DataUnavailable, match="invalid_source_quote_index"):
-        await pipeline.extract_ready({"title": "Clinic opens a ward."})
-    assert len(extracts) == 1
+    monkeypatch.setattr(pipeline, "extract_ready", local)
+    monkeypatch.setattr(pipeline, "judge", unavailable)
+    with pytest.raises(pipeline.DataUnavailable, match="jev_http_429"):
+        await pipeline.run_pipeline(
+            job(
+                mode="live",
+                payload={"public_source": public_excerpt()},
+                source_allowlist=["example.org"],
+            ),
+            lambda kind, data: events.append((kind, data)),
+        )
+    assert events[-1][1]["message"] == "jev_http_429"
+    assert "private body" not in str(events)

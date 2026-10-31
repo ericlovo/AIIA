@@ -30,7 +30,7 @@
 .bd-status-banner.is-running { background:#e5f0e6; border-color:#9cbc9d; color:#215534}
 .bd-daily-summary { display:grid; grid-template-columns:.7fr 2.3fr; gap:16px; padding:16px 20px; margin:12px 0 0; border:1px solid #ded9cf; border-radius:9px; background:#fff}
 .bd-daily-summary strong { display:block; font-size:16px; margin-top:4px}
-.bd-daily-summary dl { display:grid; grid-template-columns:repeat(4,1fr); gap:12px}
+.bd-daily-summary dl { display:grid; grid-template-columns:repeat(5,1fr); gap:12px}
 .bd-daily-summary dt { font-size:11px; color:#6b665d}
 .bd-daily-summary dd { font-size:22px; font-variant-numeric:tabular-nums; margin-top:3px}
 .bd-next-query { background:#f3efe4; border-radius:6px; padding:8px 10px; color:#5a5344}
