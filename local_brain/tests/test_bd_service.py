@@ -619,7 +619,7 @@ def test_standing_cadence_skips_srg_until_a_contract_exists(service):
     assert all(
         job["tenant_id"].startswith("synthetic-") for job in service.store.snapshot()["jobs"]
     )
-    assert service.snapshot()["status_banner"]["label"] == "Running"
+    assert service.snapshot()["status_banner"]["label"] == "Waiting for next run"
 
 
 def test_schedule_control_persists_and_overrides_config(service):
@@ -690,3 +690,15 @@ def test_weekend_cadence_uses_the_slower_interval(service):
     assert service.enqueue_cycle() == first
     service.now[0] += 1800
     assert service.enqueue_cycle() != first
+
+
+def test_rejected_work_is_visible_in_daily_summary(service):
+    chicago_open(service)
+
+    async def pipeline(job, emit):
+        return {"packets": [], "research_outcome": "rejected", "reason": "segment_rejected"}
+
+    service.pipeline = pipeline
+    service.store.enqueue("healthcare", "synthetic-healthcare", "rejected-today", "research")
+    asyncio.run(service.run_once())
+    assert service.snapshot()["daily_summary"]["rejected"] == 1

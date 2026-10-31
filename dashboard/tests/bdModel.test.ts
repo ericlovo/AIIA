@@ -96,7 +96,7 @@ test('status banner never treats a quiet system as working', async () => {
   const { statusBanner } = await import('../src/console/bdModel.ts')
   assert.deepEqual(statusBanner({ kill_switch: true, schedule_enabled: true }), { state: 'paused_kill_switch', label: 'Paused: kill switch on' })
   assert.deepEqual(statusBanner({ kill_switch: false, schedule_enabled: false }), { state: 'paused_schedule_off', label: 'Paused: schedule off' })
-  assert.deepEqual(statusBanner({ kill_switch: false, schedule_enabled: true }), { state: 'running', label: 'Running' })
+  assert.deepEqual(statusBanner({ kill_switch: false, schedule_enabled: true }), { state: 'waiting', label: 'Waiting for next run' })
   assert.equal(statusBanner({ kill_switch: false, schedule_enabled: false, status_banner: { state: 'running', label: 'Running' } }).label, 'Paused: schedule off')
 })
 

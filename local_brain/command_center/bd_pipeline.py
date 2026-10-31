@@ -486,7 +486,7 @@ def qwen_payload(source):
         "think": False,
         "keep_alive": QWEN_KEEP_ALIVE,
         "format": schema,
-        "options": {"num_predict": 512, "temperature": 0},
+        "options": {"num_predict": 512, "temperature": 0, "num_ctx": 8192},
         "messages": [
             {
                 "role": "system",
@@ -522,28 +522,6 @@ def token_reservation(payload, output_tokens):
     return len(json.dumps(payload, ensure_ascii=False).encode("utf-8")) + output_tokens + 256
 
 
-def qwen_retryable(exc):
-    if isinstance(exc, DataUnavailable) and exc.code == "qwen_unavailable":
-        return True
-    return isinstance(exc, (httpx.HTTPError, TimeoutError, asyncio.TimeoutError))
-
-
-async def ensure_qwen_loaded():
-    """Load qwen3:8b with a tiny keep-alive ping so a later extract is not a cold start."""
-    payload = {
-        "model": QWEN_MODEL,
-        "messages": [{"role": "user", "content": "ok"}],
-        "stream": False,
-        "keep_alive": QWEN_KEEP_ALIVE,
-        "think": False,
-        "options": {"temperature": 0, "num_predict": 1, "num_ctx": 512},
-    }
-    async with httpx.AsyncClient(timeout=90, trust_env=False) as client:
-        response = await client.post(QWEN_ENDPOINT, json=payload)
-        response.raise_for_status()
-    return response.json()
-
-
 async def extract_local(source):
     payload = qwen_payload(source)
     async with httpx.AsyncClient(timeout=90, trust_env=False) as client:
@@ -565,35 +543,8 @@ async def extract_local(source):
 
 
 async def extract_ready(source, emit=None):
-    """Warm qwen3:8b, extract once, then retry once on a cold-start failure."""
-    try:
-        await ensure_qwen_loaded()
-        if emit:
-            result = emit(
-                "qwen_warmup",
-                provider="qwen",
-                model=QWEN_MODEL,
-                message="qwen3:8b loaded with keep_alive",
-            )
-            if inspect.isawaitable(result):
-                await result
-    except (httpx.HTTPError, TimeoutError, asyncio.TimeoutError, ValueError):
-        pass
-    try:
-        return await extract_local(source)
-    except Exception as exc:
-        if not qwen_retryable(exc):
-            raise
-        if emit:
-            result = emit(
-                "qwen_retry",
-                provider="qwen",
-                model=QWEN_MODEL,
-                message="Retrying local extraction after qwen_unavailable",
-            )
-            if inspect.isawaitable(result):
-                await result
-        return await extract_local(source)
+    # The conductor owns retries and reserves each attempt before inference.
+    return await extract_local(source)
 
 
 def validate_extraction(source, extraction):
@@ -840,6 +791,12 @@ async def run_pipeline(job, emit=None):
             return await operation
         except (ValueError, KeyError, TypeError, httpx.HTTPError) as exc:
             code = exc.code if isinstance(exc, DataUnavailable) else provider + "_unavailable"
+            if isinstance(exc, httpx.HTTPStatusError):
+                code = f"{provider}_http_{exc.response.status_code}"
+            elif isinstance(exc, httpx.TimeoutException):
+                code = f"{provider}_timeout"
+            elif isinstance(exc, httpx.ConnectError):
+                code = f"{provider}_connection_failed"
             await event(
                 "provider_health",
                 provider=provider,

@@ -102,7 +102,7 @@ export function BDConductor() {
       {data && <>
         <section className={`bd-status-banner is-${statusBanner(data).state}`} role="status" aria-label="Conductor status">
           <strong>{statusBanner(data).label}</strong>
-          <span>{statusBanner(data).state === 'running' ? 'Standing Chicago cadence is armed. Quiet time still means the worker is on.' : statusBanner(data).state === 'paused_kill_switch' ? 'No jobs will lease until the kill switch is released.' : 'One labelled action turns the standing schedule on. Nothing runs until you do.'}</span>
+          <span>{statusBanner(data).state === 'running' ? 'Research is executing. Follow the current job and provider steps below.' : statusBanner(data).state === 'waiting' ? 'Schedule enabled. No research job is executing right now.' : statusBanner(data).state === 'paused_kill_switch' ? 'No jobs will lease until the kill switch is released.' : 'One labelled action turns the standing schedule on. Nothing runs until you do.'}</span>
         </section>
         <section className="bd-mode" aria-label="Operating mode">
           <div><strong>{data.mode === 'replay' ? 'Shadow · replay only' : data.mode}</strong><span>{data.mode === 'replay' ? 'Recorded judgments and synthetic candidates. No outreach.' : 'Public-source research. Human review before outreach.'}</span></div>
@@ -113,6 +113,7 @@ export function BDConductor() {
           <div><span className="bd-machine-label">TODAY · {data.daily_summary.timezone}</span><strong>{data.daily_summary.day}</strong></div>
           <dl>
             <div><dt>Candidates proposed</dt><dd>{metric(data.daily_summary.candidates_proposed)}</dd></div>
+            <div><dt>Rejected</dt><dd>{metric(data.daily_summary.rejected ?? 0)}</dd></div>
             <div><dt>Inconclusive</dt><dd>{metric(data.daily_summary.inconclusive)}</dd></div>
             <div><dt>Failed</dt><dd>{metric(data.daily_summary.failed)}</dd></div>
             <div><dt>Awaiting human review</dt><dd>{metric(data.daily_summary.awaiting_human_review)}</dd></div>

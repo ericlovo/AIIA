@@ -166,9 +166,11 @@ def next_query_for(reason):
     return NEXT_QUERY.get(reason, reason.replace("_", " "))
 
 
-def status_banner(kill_switch, schedule_enabled):
+def status_banner(kill_switch, schedule_enabled, running=False):
     if kill_switch:
         return {"state": "paused_kill_switch", "label": "Paused: kill switch on"}
     if not schedule_enabled:
         return {"state": "paused_schedule_off", "label": "Paused: schedule off"}
-    return {"state": "running", "label": "Running"}
+    if running:
+        return {"state": "running", "label": "Running"}
+    return {"state": "waiting", "label": "Waiting for next run"}
