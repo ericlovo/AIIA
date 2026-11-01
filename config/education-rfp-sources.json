@@ -52,16 +52,18 @@
     "WY"
   ],
   "coverage_notes": [
-    "Partial initial registry: four state education agency pages and the Delaware statewide feed; target_states expresses intended 50-state scope, not verified coverage.",
-    "State agency listings do not provide complete school district procurement coverage.",
-    "Listings may include grants, closed or withdrawn notices, non-K12 work, and non-RFP/RFI opportunities; each notice requires qualification.",
-    "NY and ID have exhibited TLS/access failures during verification; report fetch failures explicitly and never treat them as no opportunities.",
-    "Delaware uses official agency mappings and explicit RFP/RFI types only; null types without RFP/RFI in the title and same-day deadlines are withheld. Feed includes some school districts, not complete district coverage."
+    "Partial nationwide rollout. target_states expresses requested scope; only parsed listings count as working sources. Not all 50 are operational.",
+    "Include state education agencies and participating K12 district buyers, labeled by source. No source provides exhaustive district coverage.",
+    "NYSED uses verified missing-intermediate chain repair, preserving existing root trust and hostname verification. NYC DOE remains a separately labeled district supplement.",
+    "Unverified directory pages, blocked portals, grants, higher education, closed notices and unknown deadlines are not positive evidence.",
+    "USAC E-rate research is not enabled: national technology records require document qualification and cannot substitute for broad RFP/RFI coverage."
   ],
   "sources": [
     {
       "state": "WA",
-      "url": "https://ospi.k12.wa.us/about-ospi/contracting-ospi/competitive-procurements"
+      "url": "https://pr-webs-vendor.des.wa.gov/BidCalendar.aspx",
+      "adapter": "washington",
+      "coverage_scope": "OSPI public WEBS solicitations only"
     },
     {
       "state": "CT",
@@ -69,16 +71,134 @@
     },
     {
       "state": "NY",
-      "url": "https://www.nysed.gov/funding-opportunities/competitive-service-contract-procurements"
+      "url": "https://www.nysed.gov/funding-opportunities/competitive-service-contract-procurements",
+      "adapter": "nysed",
+      "coverage_scope": "NYSED main-host HTML state agency procurements; off-host and document-only notices excluded"
     },
     {
       "state": "ID",
-      "url": "https://www.sde.idaho.gov/contracting-opportunities/"
+      "url": "https://www.sde.idaho.gov/contracting-opportunities/",
+      "adapter": "idaho",
+      "coverage_scope": "Idaho Department of Education current opportunities only"
     },
     {
       "state": "DE",
       "url": "https://mmp.delaware.gov/Bids/",
       "adapter": "delaware"
+    },
+    {
+      "state": "AL",
+      "url": "https://www.alabamaachieves.org/communication/legal/request-for-proposal/",
+      "adapter": "agency",
+      "coverage_scope": "Alabama State Department of Education"
+    },
+    {
+      "state": "CA",
+      "url": "https://ccee-ca.org/request-for-proposal-collection/",
+      "adapter": "agency",
+      "coverage_scope": "California Collaborative for Educational Excellence only"
+    },
+    {
+      "state": "NY",
+      "url": "https://infohub.nyced.org/in-our-schools/working-with-the-doe/contracts-and-purchasing/open-doe-solicitations/request-for-proposals",
+      "adapter": "newyork",
+      "coverage_scope": "New York City Department of Education only"
+    },
+    {
+      "state": "NJ",
+      "url": "https://www.njstart.gov/bso/view/search/external/advancedSearchBid.xhtml?openBids=true",
+      "adapter": "periscope",
+      "coverage_scope": "Participating state and district portal buyers only"
+    },
+    {
+      "state": "NV",
+      "url": "https://nevadaepro.com/bso/view/search/external/advancedSearchBid.xhtml?openBids=true",
+      "adapter": "periscope",
+      "coverage_scope": "Participating state and district portal buyers only"
+    },
+    {
+      "state": "OR",
+      "url": "https://oregonbuys.gov/bso/view/search/external/advancedSearchBid.xhtml?openBids=true",
+      "adapter": "periscope",
+      "coverage_scope": "Participating state and district portal buyers only"
+    },
+    {
+      "state": "MT",
+      "url": "https://bids.sciquest.com/apps/Router/PublicEvent?CustomerOrg=StateOfMontana&tab=PHX_NAV_SourcingOpenForBid",
+      "adapter": "jaggaer",
+      "coverage_scope": "State central procurement portal only"
+    },
+    {
+      "state": "NM",
+      "url": "https://bids.sciquest.com/apps/Router/PublicEvent?CustomerOrg=StateOfNewMexico&tab=PHX_NAV_SourcingOpenForBid",
+      "adapter": "jaggaer",
+      "coverage_scope": "State central procurement portal only"
+    },
+    {
+      "state": "HI",
+      "url": "https://alohaebuys.hawaii.gov/bso/view/search/external/advancedSearchBid.xhtml?openBids=true",
+      "adapter": "periscope",
+      "coverage_scope": "Participating portal buyers only; submission deadline verification required"
+    },
+    {
+      "state": "IL",
+      "url": "https://www.bidbuy.illinois.gov/bso/view/search/external/advancedSearchBid.xhtml?openBids=true",
+      "adapter": "periscope",
+      "coverage_scope": "Participating portal buyers only; submission deadline verification required"
+    },
+    {
+      "state": "TX",
+      "url": "https://www.txsmartbuy.gov/esbd",
+      "adapter": "texas",
+      "coverage_scope": "Participating ESBD education buyers only"
+    },
+    {
+      "state": "PA",
+      "url": "https://www.emarketplace.state.pa.us/Search.aspx",
+      "adapter": "pennsylvania",
+      "coverage_scope": "Pennsylvania Department of Education only"
+    },
+    {
+      "state": "VT",
+      "url": "https://www.vermontbusinessregistry.com/bidsearch.aspx?type=5",
+      "adapter": "northeast",
+      "coverage_scope": "Vermont Agency of Education state bids only"
+    },
+    {
+      "state": "LA",
+      "url": "https://co.apps.laregents.edu/",
+      "adapter": "southeast",
+      "coverage_scope": "Regents DOE-funded notification-board subset only"
+    },
+    {
+      "state": "WV",
+      "url": "https://wvde.us/about-us/purchasing/bids",
+      "adapter": "westvirginia",
+      "coverage_scope": "WVDE public bid cards only"
+    },
+    {
+      "state": "IA",
+      "url": "https://bidopportunities.iowa.gov/",
+      "adapter": "additional",
+      "coverage_scope": "Iowa Department of Education only"
+    },
+    {
+      "state": "IN",
+      "url": "https://www.in.gov/idoa/procurement/current-business-opportunities/",
+      "adapter": "additional",
+      "coverage_scope": "Indiana Department of Education only"
+    },
+    {
+      "state": "NE",
+      "url": "https://das.nebraska.gov/materiel/bid-opportunities.html",
+      "adapter": "midwest",
+      "coverage_scope": "DAS NDE rows only; K12 relevance and submission deadline require verification"
+    },
+    {
+      "state": "MA",
+      "url": "https://www.commbuys.com/bso/view/search/external/advancedSearchBid.xhtml?openBids=true",
+      "adapter": "periscope",
+      "coverage_scope": "Complete bounded COMMBUYS listing; title-only discovery, pending document verification"
     }
   ]
 }

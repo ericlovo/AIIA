@@ -14,17 +14,65 @@ import os
 import re
 import socket
 import tempfile
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from html.parser import HTMLParser
 from pathlib import Path
 from urllib.parse import urljoin, urlsplit, urlunsplit
 
 import httpx
 
+from scripts.education_additional import fetch as fetch_additional
+from scripts.education_agency_pages import fetch as fetch_agency
 from scripts.education_delaware import fetch as fetch_delaware
+from scripts.education_idaho import fetch as fetch_idaho
+from scripts.education_jaggaer import fetch as fetch_jaggaer
+from scripts.education_midwest import fetch as fetch_midwest
+from scripts.education_newyork import fetch as fetch_newyork
+from scripts.education_northeast import fetch as fetch_northeast
+from scripts.education_nysed import fetch as fetch_nysed
+from scripts.education_pennsylvania import fetch as fetch_pennsylvania
+from scripts.education_periscope import fetch as fetch_periscope
+from scripts.education_southeast import fetch as fetch_southeast
+from scripts.education_texas import fetch as fetch_texas
+from scripts.education_washington import fetch as fetch_washington
+from scripts.education_westvirginia import fetch as fetch_westvirginia
+
+ADAPTERS = {
+    "idaho": fetch_idaho,
+    "additional": fetch_additional,
+    "midwest": fetch_midwest,
+    "westvirginia": fetch_westvirginia,
+    "southeast": fetch_southeast,
+    "nysed": fetch_nysed,
+    "northeast": fetch_northeast,
+    "pennsylvania": fetch_pennsylvania,
+    "texas": fetch_texas,
+    "jaggaer": fetch_jaggaer,
+    "washington": fetch_washington,
+    "delaware": fetch_delaware,
+    "agency": fetch_agency,
+    "newyork": fetch_newyork,
+    "periscope": fetch_periscope,
+}
 
 MODEL = "jev-1.13.0"
-POLICY = "k12-procurement-review-v1"
+POLICY = "k12-procurement-review-v2"
+DEADLINE_ADAPTERS = frozenset(
+    {
+        "idaho",
+        "additional",
+        "agency",
+        "newyork",
+        "washington",
+        "jaggaer",
+        "texas",
+        "pennsylvania",
+        "northeast",
+        "nysed",
+        "southeast",
+        "westvirginia",
+    }
+)
 MAX_CALLS = 20
 MAX_BYTES = 1_000_000
 STATE_NAMES = dict(
@@ -356,6 +404,19 @@ def candidates(source, body, final_url, hosts):
     return list(found.values())[:20]
 
 
+def verified_freshness(item, today):
+    proof = item.get("freshness_verification", {})
+    try:
+        return (
+            proof.get("adapter") in DEADLINE_ADAPTERS
+            and proof.get("checked_on") == today
+            and proof.get("source_url") == item["source_url"]
+            and date.fromisoformat(item["deadline_date"]) > date.fromisoformat(today)
+        )
+    except (KeyError, TypeError, ValueError):
+        return False
+
+
 def judge(client, item, token, today):
     payload = {
         "model": MODEL,
@@ -395,12 +456,18 @@ def judge(client, item, token, today):
         type(usage.get(k)) is not int or usage[k] < 0 for k in ("input_tokens", "output_tokens")
     ):
         raise ValueError("usage_invalid")
+    fresh = verified_freshness(item, today)
+    selected = all(v >= 0.8 for k, v in scores.items() if k != "currently_open") and (
+        fresh or scores["currently_open"] >= 0.8
+    )
     return {
         "candidate_hash": item["hash"],
         "model": MODEL,
         "date": today,
         "scores": scores,
-        "selected": all(v >= 0.8 for v in scores.values()),
+        "selected": selected,
+        "selection_policy": POLICY,
+        "freshness_basis": "verified_adapter_deadline" if fresh else "jev_evidence_judgment",
         "usage": {k: usage[k] for k in ("input_tokens", "output_tokens")},
     }
 
@@ -449,8 +516,9 @@ def preflight(client, token, channel):
 def message(today, notices, coverage, failures, deferred):
     lines = [
         f"AIIA K12 procurement review — {today}",
-        f"Source coverage: {coverage}/50 states retrieved; {len(failures)} unavailable sources.",
-        "Coverage means source pages retrieved, not exhaustive state or district coverage.",
+        f"New review matches: {len(notices)}",
+        f"Source coverage: {coverage}/50 states with parsed listings; {len(failures)} unavailable sources.",
+        "Coverage is limited to the named buyers and portals, not exhaustive state or district coverage.",
     ]
     if not notices:
         lines.append(
@@ -461,8 +529,12 @@ def message(today, notices, coverage, failures, deferred):
             [
                 f"Review notice — {item['state']}: {item['title']}",
                 item["url"],
-                "Source quote: " + item["quote"][:700],
-                "Deadline: unknown/unverified — check official notice. Jev classification is not verification.",
+                (
+                    f"Proposal due date: {item['deadline_date']} — verify cutoff time in official notice."
+                    if item.get("deadline_date")
+                    else "Deadline: unknown/unverified — check official notice. Jev classification is not verification."
+                ),
+                "Scope: " + item.get("coverage_scope", "Named source only"),
             ]
         )
     if failures:
@@ -483,6 +555,7 @@ def run(config, state_path, output_dir, send=False, *, client=None, today=None, 
         if not isinstance(source["state"], str) or len(source["state"]) > 40:
             raise ValueError("invalid_state")
     sources = [{**source, "state": state_name(source["state"])} for source in sources]
+    codes = {name: code for code, name in STATE_NAMES.items()}
     state_path = Path(state_path)
     state = (
         json.loads(state_path.read_text())
@@ -507,29 +580,58 @@ def run(config, state_path, output_dir, send=False, *, client=None, today=None, 
         source_counts = []
         for source in sources:
             try:
-                if source.get("adapter") == "delaware":
+                adapter = source.get("adapter")
+                if adapter:
+                    if adapter not in ADAPTERS:
+                        raise ValueError("unknown_source_adapter")
                     resolve(urlsplit(source["url"]).hostname)
-                    group = fetch_delaware(client, source, today)
+                    group = ADAPTERS[adapter](
+                        client, {**source, "state": codes[source["state"]]}, today
+                    )
                     for item in group:
                         item["state"] = source["state"]
-                        item["notice_id"] = digest({"state": item["state"], "url": item["url"]})
+                        identity = {"state": item["state"], "url": item["url"]}
+                        # Shared listing pages can contain multiple distinct notices.
+                        # Keep legacy Delaware identities stable across deployment.
+                        if item.get("notice_number") and adapter != "delaware":
+                            identity["notice_number"] = item["notice_number"]
+                        item.pop("freshness_verification", None)
+                        if adapter in DEADLINE_ADAPTERS:
+                            item["freshness_verification"] = {
+                                "adapter": adapter,
+                                "checked_on": today,
+                                "source_url": item["source_url"],
+                            }
+                            if not verified_freshness(item, today):
+                                item.pop("freshness_verification")
+                                item["alert_eligible"] = False
+                        item["notice_id"] = digest(identity)
+                        item.pop("hash", None)
                         item["hash"] = digest({"policy": POLICY, **item})
-                elif source.get("adapter"):
-                    raise ValueError("unknown_source_adapter")
                 else:
                     body, final_url = fetch(client, source["url"], hosts, resolve)
                     group = candidates(source, body, final_url, hosts)
+                verified_listing = bool(adapter or group)
                 groups.append(group)
                 source_counts.append(
                     {
                         "state": source["state"],
                         "url": source["url"],
                         "candidates": len(group),
-                        "status": "retrieved",
+                        "status": "listing_parsed"
+                        if verified_listing
+                        else "page_retrieved_unverified",
+                        "scope": source.get("coverage_scope", "Named source only"),
                     }
                 )
-                coverage.add(source["state"])
-            except (httpx.HTTPError, ValueError, OSError):
+                if verified_listing:
+                    coverage.add(source["state"])
+            except (httpx.HTTPError, ValueError, OSError) as exc:
+                reason = (
+                    str(exc)
+                    if isinstance(exc, ValueError) and re.fullmatch(r"[a-z_]{1,80}", str(exc))
+                    else type(exc).__name__
+                )
                 failures.append(source["state"])
                 source_counts.append(
                     {
@@ -537,12 +639,21 @@ def run(config, state_path, output_dir, send=False, *, client=None, today=None, 
                         "url": source["url"],
                         "candidates": None,
                         "status": "unavailable",
+                        "reason": reason,
                     }
                 )
         # Round robin prevents a large first-state directory consuming the budget.
-        ordered = [group[i] for i in range(20) for group in groups if len(group) > i]
+        ordered = [
+            group[i]
+            for i in range(max(map(len, groups), default=0))
+            for group in groups
+            if len(group) > i
+        ]
+        ordered = list({item["notice_id"]: item for item in ordered}.values())
         notices, deferred, unavailable, evaluated = [], 0, 0, 0
         for item in ordered:
+            if item.get("alert_eligible") is False:
+                continue
             if item["notice_id"] in state["deliveries"]:
                 continue
             cached = state["cache"].get(item["hash"])
@@ -570,22 +681,39 @@ def run(config, state_path, output_dir, send=False, *, client=None, today=None, 
                 evaluated += 1
             if (
                 cached.get("selected")
+                and (
+                    cached.get("freshness_basis") != "verified_adapter_deadline"
+                    or verified_freshness(item, today)
+                )
                 and cached.get("candidate_hash") == item["hash"]
                 and item["notice_id"] not in state["deliveries"]
             ):
                 notices.append(item)
-        deferred += max(0, len(notices) - 10)
+        notices.sort(
+            key=lambda item: (item.get("deadline_date", "9999-12-31"), item["state"], item["title"])
+        )
+        matches_held = max(0, len(notices) - 10)
         notices = notices[:10]
         text = message(today, notices, len(coverage), failures, deferred)
+        if matches_held:
+            text += f"\nAdditional qualified matches retained for a later digest: {matches_held}."
         checked = sorted(coverage)
         not_onboarded = sorted(set(STATE_NAMES.values()) - {s["state"] for s in sources})
         text += "\nStates checked: " + (", ".join(checked) or "none")
-        text += "\nNot onboarded: " + (", ".join(not_onboarded) or "none")
-        text += f"\nCandidate links found: {len(ordered)}; evaluated: {evaluated}."
-        text += "\nCandidate links by source: " + "; ".join(
-            f"{row['state']}: {row['candidates'] if row['candidates'] is not None else 'unavailable'}"
-            for row in source_counts
+        text += f"\nNot onboarded: {len(not_onboarded)} states; details in run summary."
+        unverified = sorted(
+            {r["state"] for r in source_counts if r["status"] == "page_retrieved_unverified"}
         )
+        if unverified:
+            text += "\nPage loaded but listing not verified: " + ", ".join(unverified)
+        pending_review = sum(i.get("alert_eligible") is False for i in ordered)
+        text += f"\nCandidate notices found: {len(ordered)}; evaluated: {evaluated}; awaiting document verification: {pending_review}."
+        run_id = os.environ.get("GITHUB_RUN_ID", "")
+        repository = os.environ.get("GITHUB_REPOSITORY", "")
+        if run_id.isdigit() and re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", repository):
+            text += (
+                f"\nEvidence and coverage: https://github.com/{repository}/actions/runs/{run_id}"
+            )
         if unavailable:
             text += f"\nJudgment unavailable/uncertain: {unavailable}."
         summary = {
@@ -594,17 +722,21 @@ def run(config, state_path, output_dir, send=False, *, client=None, today=None, 
             "total_states": 50,
             "states_checked": checked,
             "states_not_onboarded": not_onboarded,
+            "states_listing_unverified": unverified,
             "source_candidate_counts": source_counts,
             "candidate_count": len(ordered),
+            "pending_document_review": sum(i.get("alert_eligible") is False for i in ordered),
             "evaluated_candidate_count": evaluated,
             "unavailable_sources": failures,
             "review_matches": len(notices),
             "deferred": deferred,
+            "matches_held_for_next_digest": matches_held,
             "judgment_unavailable": unavailable,
             "daily_usage": day.copy(),
             "cost_usd": None,
             "delivery": "dry-run",
         }
+        save(Path(output_dir) / "candidates.json", ordered)
         artifacts(output_dir, summary, text)
         if send:
             if any(

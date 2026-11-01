@@ -11,8 +11,10 @@ The target is all 50 U.S. states, K–12 only, RFPs and RFIs for purchasing good
 or services. Grants-only funding, higher-education-only notices and directory
 navigation are excluded by separate judgments. Source onboarding is incomplete;
 `config/education-rfp-sources.json` is the actual registry, not a claim of all-state
-coverage. Digests explicitly report retrieved states, unavailable sources and
-coverage gaps. State education agency pages do not cover every district.
+coverage. Digests report states with parsed listings, unavailable sources, pages whose
+listing structure is unverified, and coverage gaps. A directory returning HTTP 200
+does not count as working coverage. The 50-state inventory is
+`docs/education-state-coverage.json`; many entries still need adapters. State education agency pages do not cover every district.
 
 Generic HTML extraction is deliberately conservative. It requires a specific
 RFP/RFI link and nearby source evidence. PDFs, dynamic portals and inaccessible
@@ -32,8 +34,13 @@ The `education-alerts` GitHub environment allows only `main`. Its encrypted secr
 identity is checked against the expected workspace and posts use only the fixed
 channel. Missing channel-read scope does not trigger a request for broader access.
 
-Jev model: `jev-1.13.0`. Four separate probabilities must reach 0.8: K–12,
-RFP/RFI, goods/services procurement and evidence of being open. At most 20 provider
+Jev model: `jev-1.13.0`; selection policy `k12-procurement-review-v2`. K–12,
+RFP/RFI and goods/services probabilities must each reach 0.8. Current status
+requires either a fourth Jev score of at least 0.8 or a supported adapter
+verifying an open listing with an explicit future submission deadline. The
+adapter proof is source-bound, dated and checked again before delivery; unknown
+or same-day cutoffs are withheld. All four scores and the selection basis are
+retained. Bid-opening dates alone do not qualify. At most 20 provider
 attempts per UTC day; requests count before dispatch. Actual token usage is
 recorded; dollar cost is unknown unless independently reconciled with billing.
 
@@ -68,3 +75,69 @@ The provider contract also passed a separate labeled synthetic connectivity
 check; that synthetic item was never sent to Slack as a real notice. Unit tests
 cover delivery uncertainty, previous-run recovery, duplicate identities, closed
 sections, grant exclusion, blocked sources and the Delaware adapter.
+
+## Nationwide expansion validation — November 1, 2026 UTC
+
+The first integrated expansion dry run parsed listings in 14 states and produced
+seven review matches: Washington OSPI, Alabama, California CCEE, NYC DOE and three
+Texas school-buyer notices. It evaluated eight candidates using 8,979 input and
+632 output tokens. Four Periscope candidates remained pending submission-deadline
+verification. One Connecticut grant candidate was rejected. These are dry-run
+results, not evidence of cloud delivery or complete national coverage.
+
+Washington now uses the official public WEBS OSPI filter, with verified filter
+application. Texas uses the official ESBD public search API and validates all
+pages, buyer identity and response deadlines against detail pages. Alabama and
+California use source-specific active sections; NYC DOE is district-only.
+Montana and New Mexico use bounded Jaggaer pagination. Hawaii, Illinois, New
+Jersey, Nevada and Oregon use complete Periscope pagination but notices without
+verified submission cutoffs remain pending. Pennsylvania searches the Department
+of Education's current RFP and RFI listings; its initial live run returned zero.
+Idaho's page loaded without verified notice structure and does not count as
+working coverage. NYSED's missing intermediate is supplied to an isolated TLS client only after
+its pinned certificate verifies against the existing certifi roots. Hostname
+verification remains on and partial-chain trust remains off. No root store or
+Mini setting changes. Certificate rotation or missing OpenSSL fails the source
+explicitly. Its 40 main-host HTML notices were checked successfully; zero
+qualified. Off-host ACCES and document-only notices remain outside this scope.
+
+The USAC E-rate collector is research-only and is not registered in the daily
+worker. Its 50-state dataset covers school technology, not general procurement;
+Form 470 allowable-contract dates are not submission deadlines. Records remain
+ineligible until document qualification is implemented. Do not advertise this
+as all-state RFP/RFI monitoring.
+
+`candidates.json` preserves public evidence and notice identities alongside each
+run's judgment cache. Distinct notices sharing a listing URL include their notice
+number in the delivery identity. Existing Delaware delivery identities remain
+unchanged. Incomplete pagination, mismatched detail records and changed schemas
+are source failures, never silent zero results.
+
+A subsequent integrated dry run parsed 18 states, selected ten review matches,
+and had no unavailable sources; Idaho remained an unverified listing. Three
+additional collectors were independently integrated and live-checked: Iowa and
+Indiana had zero current qualifying DOE notices; Nebraska had one pending record
+whose K–12 relevance and submission deadline remain unverified. Vermont supplied
+three dated candidates and Louisiana a DOE-funded assessment RFP from the
+Regents notification subset. Every scope is labeled; these results still do not
+mean all 50 states work or that all procurements within a state are covered.
+
+Selected matches are ordered by verified deadline before the ten-item digest
+limit. Overflow matches are reported separately from notices not evaluated due
+to the provider-call budget, and stay undelivered in the ledger for a later run.
+
+Massachusetts COMMBUYS was subsequently checked end-to-end: 851 distinct records
+across 35 listing pages in 169 seconds. Its three school RFP titles remain pending
+document verification, with zero detail fetches and no alert eligibility. MA is
+bounded to 1,000 rows/40 pages; other Periscope states retain 200/10 limits.
+Combined local validations cover parsed listings in 22 states. Idaho remains
+unverified; 27 states have no enabled collector. See the 50-state inventory and
+regional evidence files for the remaining access and implementation dependencies.
+These counts do not imply every district or procurement category is covered.
+
+Idaho was subsequently repaired with row-bound current-opportunities extraction.
+The official table supplies the title that the generic RFI document link omitted.
+Its K–3 Literacy Coaching Services RFI is due November 11, 2026 at 4 pm MT.
+A submission-materials context is required; question dates cannot qualify. This
+brings locally parsed, explicitly scoped sources to 23 states, with 27 states
+still lacking enabled adapters.

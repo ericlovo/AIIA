@@ -1,0 +1,648 @@
+{
+  "observed_on": "2026-11-01",
+  "warning": "All 50 states are inventoried, NOT all 50 working. Local checks parsed listings in 23 states; 27 states have no enabled adapter. These are named-source subsets, not exhaustive state or district coverage. Cloud delivery requires a successful workflow receipt.",
+  "states": [
+    {
+      "state": "AK",
+      "name": "Alaska",
+      "discovery_url": "https://aws.state.ak.us/OnlinePublicNotices/",
+      "discovery_observation": "No DEED solicitation record verified; education funding RFA is a grant and excluded.",
+      "probe_status": "not performed; primary search index evidence only",
+      "configured_sources": [],
+      "onboarding_status": "adapter_not_enabled",
+      "additional_evidence": "evidence-additional.md"
+    },
+    {
+      "state": "AL",
+      "name": "Alabama",
+      "discovery_url": "https://www.alabamaachieves.org/communication/legal/request-for-proposal/",
+      "discovery_observation": "Agency only; STAARS remains authoritative for amendments.",
+      "probe_status": "200 verified via public HTTPS with certificate validation; no authentication; 2026-10-31",
+      "configured_sources": [
+        {
+          "url": "https://www.alabamaachieves.org/communication/legal/request-for-proposal/",
+          "adapter": "agency",
+          "scope": "Alabama State Department of Education",
+          "local_validation_status": "listing_parsed"
+        }
+      ],
+      "onboarding_status": "listing_parsed_locally"
+    },
+    {
+      "state": "AR",
+      "name": "Arkansas",
+      "discovery_url": "https://arbuy.arkansas.gov/bso/",
+      "discovery_observation": "Official ARBuy page announces July 2026 SAP Ariba migration; legacy portal is not complete current coverage.",
+      "probe_status": "not performed; primary search index evidence only",
+      "configured_sources": [],
+      "onboarding_status": "adapter_not_enabled",
+      "additional_evidence": "evidence-additional.md"
+    },
+    {
+      "state": "AZ",
+      "name": "Arizona",
+      "discovery_url": "https://cms.azed.gov/adeinfo/about-ade/about-department/accounting-procurement",
+      "discovery_observation": "ADE page routes to APP; no actual public education notice verified.",
+      "probe_status": "not performed; primary search index evidence only",
+      "configured_sources": [],
+      "onboarding_status": "adapter_not_enabled",
+      "additional_evidence": "evidence-additional.md"
+    },
+    {
+      "state": "CA",
+      "name": "California",
+      "discovery_url": "https://ccee-ca.org/request-for-proposal-collection/",
+      "discovery_observation": "CCEE only, not all California districts; ACTIVE listing includes older deadlines, so detail dates are required.",
+      "probe_status": "200 verified via public HTTPS with certificate validation; no authentication; 2026-10-31",
+      "configured_sources": [
+        {
+          "url": "https://ccee-ca.org/request-for-proposal-collection/",
+          "adapter": "agency",
+          "scope": "California Collaborative for Educational Excellence only",
+          "local_validation_status": "listing_parsed"
+        }
+      ],
+      "onboarding_status": "listing_parsed_locally"
+    },
+    {
+      "state": "CO",
+      "name": "Colorado",
+      "discovery_url": "https://www.bidscolorado.com/co/portal.nsf/xpRegistration.xsp",
+      "discovery_observation": "Registration retired; historic Colorado BIDS is not current full coverage. No CDE record verified.",
+      "probe_status": "not performed; primary search index evidence only",
+      "configured_sources": [],
+      "onboarding_status": "adapter_not_enabled",
+      "additional_evidence": "evidence-additional.md"
+    },
+    {
+      "state": "CT",
+      "name": "Connecticut",
+      "discovery_url": null,
+      "discovery_observation": "Existing pilot source; consult current run evidence.",
+      "probe_status": "see_run_evidence",
+      "configured_sources": [
+        {
+          "url": "https://portal.ct.gov/sde/rfp/request-for-proposals/2026-rfps",
+          "adapter": "generic",
+          "scope": "Named agency source only",
+          "local_validation_status": "listing_parsed"
+        }
+      ],
+      "onboarding_status": "listing_parsed_locally"
+    },
+    {
+      "state": "DE",
+      "name": "Delaware",
+      "discovery_url": null,
+      "discovery_observation": "Existing pilot source; consult current run evidence.",
+      "probe_status": "see_run_evidence",
+      "configured_sources": [
+        {
+          "url": "https://mmp.delaware.gov/Bids/",
+          "adapter": "delaware",
+          "scope": "Named agency source only",
+          "local_validation_status": "listing_parsed"
+        }
+      ],
+      "onboarding_status": "listing_parsed_locally"
+    },
+    {
+      "state": "FL",
+      "name": "Florida",
+      "discovery_url": "https://www.fldoe.org/finance/contracts-grants-procurement/purchasing/",
+      "discovery_observation": "No primary notice or direct HTTP verification completed; candidate URL not onboardable.",
+      "probe_status": "not performed; primary search index evidence only",
+      "configured_sources": [],
+      "onboarding_status": "adapter_not_enabled",
+      "additional_evidence": "evidence-additional.md"
+    },
+    {
+      "state": "GA",
+      "name": "Georgia",
+      "discovery_url": "https://pur.doas.ga.gov/gpr/eventDetails?eSourceNumber=PE-55689-NONST-2027-000000004&sourceSystemType=gpr20",
+      "discovery_observation": "Historical closed record verifies schema, not current opportunity. Government type K-12 is explicit.",
+      "probe_status": "not performed; primary search index evidence only",
+      "configured_sources": [],
+      "onboarding_status": "adapter_not_enabled",
+      "additional_evidence": "evidence-southeast.md"
+    },
+    {
+      "state": "HI",
+      "name": "Hawaii",
+      "discovery_url": "https://alohaebuys.hawaii.gov/bso/external/bidDetail.sda?docId=B-27-DAGS-00000505&external=true&parentUrl=close",
+      "discovery_observation": "Bid Type OPEN is method, not current open status; historic date must exclude this notice.",
+      "probe_status": "not performed; primary search index evidence only",
+      "configured_sources": [
+        {
+          "url": "https://alohaebuys.hawaii.gov/bso/view/search/external/advancedSearchBid.xhtml?openBids=true",
+          "adapter": "periscope",
+          "scope": "Participating portal buyers only; submission deadline verification required",
+          "local_validation_status": "listing_parsed"
+        }
+      ],
+      "onboarding_status": "listing_parsed_locally"
+    },
+    {
+      "state": "IA",
+      "name": "Iowa",
+      "discovery_url": "https://educate.iowa.gov/bid-opportunities",
+      "discovery_observation": "Directory itself is not notice coverage; document deadline/open status not verified.",
+      "probe_status": "not performed; primary search index evidence only",
+      "configured_sources": [
+        {
+          "url": "https://bidopportunities.iowa.gov/",
+          "adapter": "additional",
+          "scope": "Iowa Department of Education only",
+          "local_validation_status": "listing_parsed"
+        }
+      ],
+      "onboarding_status": "listing_parsed_locally",
+      "additional_evidence": "evidence-additional.md"
+    },
+    {
+      "state": "ID",
+      "name": "Idaho",
+      "discovery_url": "https://purchasing.idaho.gov/open-and-future-solicitations/",
+      "discovery_observation": "Dedicated current-table parser found K-3 literacy RFI due November 11, 2026; generic link-only extraction missed its title.",
+      "probe_status": "not performed; primary search index evidence only",
+      "configured_sources": [
+        {
+          "url": "https://www.sde.idaho.gov/contracting-opportunities/",
+          "adapter": "idaho",
+          "scope": "Idaho Department of Education current opportunities only",
+          "local_validation_status": "listing_parsed"
+        }
+      ],
+      "onboarding_status": "listing_parsed_locally"
+    },
+    {
+      "state": "IL",
+      "name": "Illinois",
+      "discovery_url": "https://www.isbe.net/Pages/Doing-Business-ISBE.aspx",
+      "discovery_observation": "ISBE says all opportunities published on BidBuy; directory alone not coverage.",
+      "probe_status": "not performed; primary search index evidence only",
+      "configured_sources": [
+        {
+          "url": "https://www.bidbuy.illinois.gov/bso/view/search/external/advancedSearchBid.xhtml?openBids=true",
+          "adapter": "periscope",
+          "scope": "Participating portal buyers only; submission deadline verification required",
+          "local_validation_status": "listing_parsed"
+        }
+      ],
+      "onboarding_status": "listing_parsed_locally"
+    },
+    {
+      "state": "IN",
+      "name": "Indiana",
+      "discovery_url": "https://www.in.gov/idoa/procurement/current-business-opportunities/index.html",
+      "discovery_observation": "Historical expired notice; page time fields conflict, do not infer deadline time.",
+      "probe_status": "not performed; primary search index evidence only",
+      "configured_sources": [
+        {
+          "url": "https://www.in.gov/idoa/procurement/current-business-opportunities/",
+          "adapter": "additional",
+          "scope": "Indiana Department of Education only",
+          "local_validation_status": "listing_parsed"
+        }
+      ],
+      "onboarding_status": "listing_parsed_locally",
+      "additional_evidence": "evidence-additional.md"
+    },
+    {
+      "state": "KS",
+      "name": "Kansas",
+      "discovery_url": "https://admin.ks.gov/offices/procurement-contracts/bidding--contracts",
+      "discovery_observation": "No actual K12 solicitation verified; board authorization for reading/math licensing is not an open notice.",
+      "probe_status": "not performed; primary search index evidence only",
+      "configured_sources": [],
+      "onboarding_status": "adapter_not_enabled",
+      "additional_evidence": "evidence-midwest.md"
+    },
+    {
+      "state": "KY",
+      "name": "Kentucky",
+      "discovery_url": "https://www.education.ky.gov/districts/business/Pages/default.aspx",
+      "discovery_observation": "Education procurement page directs to Finance VSS; includes grant information; no actual procurement notice verified.",
+      "probe_status": "not performed; primary search index evidence only",
+      "configured_sources": [],
+      "onboarding_status": "adapter_not_enabled",
+      "additional_evidence": "evidence-additional.md"
+    },
+    {
+      "state": "LA",
+      "name": "Louisiana",
+      "discovery_url": "https://co.apps.laregents.edu/",
+      "discovery_observation": "Official Regents-hosted listing includes DOE procurement, but deadline/current status not verified.",
+      "probe_status": "not performed; primary search index evidence only",
+      "configured_sources": [
+        {
+          "url": "https://co.apps.laregents.edu/",
+          "adapter": "southeast",
+          "scope": "Regents DOE-funded notification-board subset only",
+          "local_validation_status": "listing_parsed"
+        }
+      ],
+      "onboarding_status": "listing_parsed_locally",
+      "additional_evidence": "evidence-southeast.md"
+    },
+    {
+      "state": "MA",
+      "name": "Massachusetts",
+      "discovery_url": "https://www.mass.gov/how-to/search-for-procurements-in-commbuys",
+      "discovery_observation": "Official guide confirms public search without registration; no actual DESE notice verified.",
+      "probe_status": "not performed; primary search index evidence only",
+      "configured_sources": [
+        {
+          "url": "https://www.commbuys.com/bso/view/search/external/advancedSearchBid.xhtml?openBids=true",
+          "adapter": "periscope",
+          "scope": "Complete bounded COMMBUYS listing; title-only discovery, pending document verification",
+          "local_validation_status": "listing_parsed"
+        }
+      ],
+      "onboarding_status": "listing_parsed_locally"
+    },
+    {
+      "state": "MD",
+      "name": "Maryland",
+      "discovery_url": "https://emma.maryland.gov/page.aspx/en/rfp/request_browse_public",
+      "discovery_observation": "HTTP200 browser-check interstitial; no records. Ivalua public listing needs supported browser/session collection.",
+      "probe_status": "blocked",
+      "configured_sources": [],
+      "onboarding_status": "adapter_not_enabled"
+    },
+    {
+      "state": "ME",
+      "name": "Maine",
+      "discovery_url": "https://www.maine.gov/portal/business/vendors.html",
+      "discovery_observation": "CloudFront HTTP403; no records observed.",
+      "probe_status": "blocked",
+      "configured_sources": [],
+      "onboarding_status": "adapter_not_enabled",
+      "additional_evidence": "evidence-northeast.md"
+    },
+    {
+      "state": "MI",
+      "name": "Michigan",
+      "discovery_url": "https://www.michigan.gov/en/dtmb/procurement/contractconnect",
+      "discovery_observation": "HTTP403 Access Denied on official Contract Connect; SIGMA VSS needs separate adapter.",
+      "probe_status": "blocked",
+      "configured_sources": [],
+      "onboarding_status": "adapter_not_enabled",
+      "additional_evidence": "evidence-midwest.md"
+    },
+    {
+      "state": "MN",
+      "name": "Minnesota",
+      "discovery_url": "https://mn.gov/admin/osp/vendors/solicitations-and-contract-opportunities/professional-and-technical-solicitation-postings/index.jsp",
+      "discovery_observation": "Professional/technical listing returns Radware CAPTCHA HTTP200; no records.",
+      "probe_status": "blocked",
+      "configured_sources": [],
+      "onboarding_status": "adapter_not_enabled",
+      "additional_evidence": "evidence-midwest.md"
+    },
+    {
+      "state": "MO",
+      "name": "Missouri",
+      "discovery_url": "https://missouribuys.mo.gov/bid-board/movers",
+      "discovery_observation": "MOVERS current board is an embedded listing not present in fetched HTML. WebProcure board is explicitly pre-September-18-2024 only.",
+      "probe_status": "directory_or_unhydrated_listing",
+      "configured_sources": [],
+      "onboarding_status": "adapter_not_enabled"
+    },
+    {
+      "state": "MS",
+      "name": "Mississippi",
+      "discovery_url": "https://www.ms.gov/dfa/contract_bid_search/bid",
+      "discovery_observation": "Statewide search form returns column headings and agency options but no rows. Education agency alternative HTTP403.",
+      "probe_status": "directory_or_unhydrated_listing",
+      "configured_sources": [],
+      "onboarding_status": "adapter_not_enabled",
+      "additional_evidence": "evidence-southeast.md"
+    },
+    {
+      "state": "MT",
+      "name": "Montana",
+      "discovery_url": "https://bids.sciquest.com/apps/Router/PublicEvent?CustomerOrg=StateOfMontana",
+      "discovery_observation": "Jaggaer public page returns 20 of29 open records; pagination must be implemented; universities included; no K12 notice established.",
+      "probe_status": "records",
+      "configured_sources": [
+        {
+          "url": "https://bids.sciquest.com/apps/Router/PublicEvent?CustomerOrg=StateOfMontana&tab=PHX_NAV_SourcingOpenForBid",
+          "adapter": "jaggaer",
+          "scope": "State central procurement portal only",
+          "local_validation_status": "listing_parsed"
+        }
+      ],
+      "onboarding_status": "listing_parsed_locally"
+    },
+    {
+      "state": "NC",
+      "name": "North Carolina",
+      "discovery_url": "https://evp.nc.gov/solicitations/",
+      "discovery_observation": "PowerPages HTML has department options but no hydrated records; no-records/error placeholders must not be interpreted as healthy empty.",
+      "probe_status": "directory_or_unhydrated_listing",
+      "configured_sources": [],
+      "onboarding_status": "adapter_not_enabled"
+    },
+    {
+      "state": "ND",
+      "name": "North Dakota",
+      "discovery_url": "https://www.omb.nd.gov/doing-business-state/bidders/bidding-opportunities-and-resources/suppliers-viewing-and-responding",
+      "discovery_observation": "Official guide only; NDBuys collection endpoint still requires discovery.",
+      "probe_status": "directory_or_unhydrated_listing",
+      "configured_sources": [],
+      "onboarding_status": "adapter_not_enabled",
+      "additional_evidence": "evidence-midwest.md"
+    },
+    {
+      "state": "NE",
+      "name": "Nebraska",
+      "discovery_url": "https://das.nebraska.gov/materiel/bid-opportunities.html",
+      "discovery_observation": "HTML includes Current, In Process, and Awarded sections. Parse only Current and enforce future deadlines; Supported Employment Services NDERFP260915 from Nebraska Department of Education due11/13/26 observed; K12 applicability needs detail.",
+      "probe_status": "records",
+      "configured_sources": [
+        {
+          "url": "https://das.nebraska.gov/materiel/bid-opportunities.html",
+          "adapter": "midwest",
+          "scope": "DAS NDE rows only; K12 relevance and submission deadline require verification",
+          "local_validation_status": "listing_parsed"
+        }
+      ],
+      "onboarding_status": "listing_parsed_locally",
+      "additional_evidence": "evidence-midwest.md"
+    },
+    {
+      "state": "NH",
+      "name": "New Hampshire",
+      "discovery_url": "https://apps.das.nh.gov/bidscontracts/bids.aspx",
+      "discovery_observation": "HTTP403; no records observed.",
+      "probe_status": "blocked",
+      "configured_sources": [],
+      "onboarding_status": "adapter_not_enabled",
+      "additional_evidence": "evidence-northeast.md"
+    },
+    {
+      "state": "NJ",
+      "name": "New Jersey",
+      "discovery_url": "https://www.njstart.gov/bso/view/search/external/advancedSearchBid.xhtml?openBids=true",
+      "discovery_observation": "Periscope open-bids page returns24of24 records; exact agency/title/deadline rows and detail links verified.",
+      "probe_status": "records",
+      "configured_sources": [
+        {
+          "url": "https://www.njstart.gov/bso/view/search/external/advancedSearchBid.xhtml?openBids=true",
+          "adapter": "periscope",
+          "scope": "Participating state and district portal buyers only",
+          "local_validation_status": "listing_parsed"
+        }
+      ],
+      "onboarding_status": "listing_parsed_locally"
+    },
+    {
+      "state": "NM",
+      "name": "New Mexico",
+      "discovery_url": "https://bids.sciquest.com/apps/Router/PublicEvent?CustomerOrg=StateOfNewMexico&tab=PHX_NAV_SourcingOpenForBid",
+      "discovery_observation": "Jaggaer returns9of9 open records, shared path with MT verified. No K12 notice established.",
+      "probe_status": "records",
+      "configured_sources": [
+        {
+          "url": "https://bids.sciquest.com/apps/Router/PublicEvent?CustomerOrg=StateOfNewMexico&tab=PHX_NAV_SourcingOpenForBid",
+          "adapter": "jaggaer",
+          "scope": "State central procurement portal only",
+          "local_validation_status": "listing_parsed"
+        }
+      ],
+      "onboarding_status": "listing_parsed_locally"
+    },
+    {
+      "state": "NV",
+      "name": "Nevada",
+      "discovery_url": "https://nevadaepro.com/bso/view/search/external/advancedSearchBid.xhtml?openBids=true",
+      "discovery_observation": "Periscope returns24of24 records; State Public Charter School Authority notices observed. Detail31PCSA-S4046 explicitly formal RFP due11/16/2026.",
+      "probe_status": "records",
+      "configured_sources": [
+        {
+          "url": "https://nevadaepro.com/bso/view/search/external/advancedSearchBid.xhtml?openBids=true",
+          "adapter": "periscope",
+          "scope": "Participating state and district portal buyers only",
+          "local_validation_status": "listing_parsed"
+        }
+      ],
+      "onboarding_status": "listing_parsed_locally"
+    },
+    {
+      "state": "NY",
+      "name": "New York",
+      "discovery_url": null,
+      "discovery_observation": "Existing pilot source; consult current run evidence.",
+      "probe_status": "see_run_evidence",
+      "configured_sources": [
+        {
+          "url": "https://www.nysed.gov/funding-opportunities/competitive-service-contract-procurements",
+          "adapter": "nysed",
+          "scope": "NYSED main-host HTML state agency procurements; off-host and document-only notices excluded",
+          "local_validation_status": "listing_parsed"
+        },
+        {
+          "url": "https://infohub.nyced.org/in-our-schools/working-with-the-doe/contracts-and-purchasing/open-doe-solicitations/request-for-proposals",
+          "adapter": "newyork",
+          "scope": "New York City Department of Education only",
+          "local_validation_status": "listing_parsed"
+        }
+      ],
+      "onboarding_status": "listing_parsed_locally",
+      "additional_evidence": "evidence-newyork.md"
+    },
+    {
+      "state": "OH",
+      "name": "Ohio",
+      "discovery_url": "https://ohiobuys.ohio.gov/page.aspx/en/rfp/request_browse_public",
+      "discovery_observation": "HTTP200 browser-check interstitial on Ivalua public listing; no records.",
+      "probe_status": "blocked",
+      "configured_sources": [],
+      "onboarding_status": "adapter_not_enabled"
+    },
+    {
+      "state": "OK",
+      "name": "Oklahoma",
+      "discovery_url": "https://www.ok.gov/dcs/solicit/app/admin/index.php",
+      "discovery_observation": "Legacy page explicitly says new notices moved to Oklahoma Supplier Portal. Do not collect old search as current.",
+      "probe_status": "directory_or_unhydrated_listing",
+      "configured_sources": [],
+      "onboarding_status": "adapter_not_enabled"
+    },
+    {
+      "state": "OR",
+      "name": "Oregon",
+      "discovery_url": "https://oregonbuys.gov/bso/view/search/external/advancedSearchBid.xhtml?openBids=true",
+      "discovery_observation": "Periscope returns25of160 first page; must paginate or fail incomplete. Parkrose School District RFP verified in detail.",
+      "probe_status": "records",
+      "configured_sources": [
+        {
+          "url": "https://oregonbuys.gov/bso/view/search/external/advancedSearchBid.xhtml?openBids=true",
+          "adapter": "periscope",
+          "scope": "Participating state and district portal buyers only",
+          "local_validation_status": "listing_parsed"
+        }
+      ],
+      "onboarding_status": "listing_parsed_locally"
+    },
+    {
+      "state": "PA",
+      "name": "Pennsylvania",
+      "discovery_url": "https://www.emarketplace.state.pa.us/Search.aspx",
+      "discovery_observation": "ASP.NET Search.aspx returns10 records and pagination. Mix includes IFB and Created; require RFP/RFI, open, future deadline and verified K12 buyer.",
+      "probe_status": "records",
+      "configured_sources": [
+        {
+          "url": "https://www.emarketplace.state.pa.us/Search.aspx",
+          "adapter": "pennsylvania",
+          "scope": "Pennsylvania Department of Education only",
+          "local_validation_status": "listing_parsed"
+        }
+      ],
+      "onboarding_status": "listing_parsed_locally"
+    },
+    {
+      "state": "RI",
+      "name": "Rhode Island",
+      "discovery_url": "https://ridop.ri.gov/ocean-state-procures-osp",
+      "discovery_observation": "HTTP403 Request blocked on official OSP directory.",
+      "probe_status": "blocked",
+      "configured_sources": [],
+      "onboarding_status": "adapter_not_enabled",
+      "additional_evidence": "evidence-northeast.md"
+    },
+    {
+      "state": "SC",
+      "name": "South Carolina",
+      "discovery_url": "https://scbo.sc.gov/search",
+      "discovery_observation": "Search form and organization list only; requires form submission/listing adapter.",
+      "probe_status": "directory_or_unhydrated_listing",
+      "configured_sources": [],
+      "onboarding_status": "adapter_not_enabled"
+    },
+    {
+      "state": "SD",
+      "name": "South Dakota",
+      "discovery_url": "https://www.sd.gov/bhra?id=cs_kb_article_view&spa=1&sys_kb_id=a9c554f787aecf14a086bae9cebb356d&sysparm_article=KB0044779",
+      "discovery_observation": "ServiceNow shell only; no notice records in HTTP body.",
+      "probe_status": "directory_or_unhydrated_listing",
+      "configured_sources": [],
+      "onboarding_status": "adapter_not_enabled",
+      "additional_evidence": "evidence-midwest.md"
+    },
+    {
+      "state": "TN",
+      "name": "Tennessee",
+      "discovery_url": "https://www.tn.gov/generalservices/procurement/central-procurement-office--cpo-/supplier-information/request-for-proposals--rfp--opportunities1.html",
+      "discovery_observation": "Bounded25second fetch failed (timeout with empty message); no notices observed.",
+      "probe_status": "blocked",
+      "configured_sources": [],
+      "onboarding_status": "adapter_not_enabled",
+      "additional_evidence": "evidence-southeast.md"
+    },
+    {
+      "state": "TX",
+      "name": "Texas",
+      "discovery_url": "https://www.txsmartbuy.gov/esbd",
+      "discovery_observation": "ESBD listing and actual Galveston ISD RFP detail server-rendered despite JavaScript warning. Mixed open/closed/awarded records; pagination and buyer qualification required.",
+      "probe_status": "records",
+      "configured_sources": [
+        {
+          "url": "https://www.txsmartbuy.gov/esbd",
+          "adapter": "texas",
+          "scope": "Participating ESBD education buyers only",
+          "local_validation_status": "listing_parsed"
+        }
+      ],
+      "onboarding_status": "listing_parsed_locally"
+    },
+    {
+      "state": "UT",
+      "name": "Utah",
+      "discovery_url": "https://utah.bonfirehub.com/portal",
+      "discovery_observation": "Official directory links Bonfire U3P. Portal returns school district choices but no actual records; needs Bonfire listing AJAX.",
+      "probe_status": "directory_or_unhydrated_listing",
+      "configured_sources": [],
+      "onboarding_status": "adapter_not_enabled"
+    },
+    {
+      "state": "VA",
+      "name": "Virginia",
+      "discovery_url": "https://dgs.virginia.gov/procurement/statewide-procurement/types-of-solicitations",
+      "discovery_observation": "Official guide directs to eVA; no records in page.",
+      "probe_status": "directory_or_unhydrated_listing",
+      "configured_sources": [],
+      "onboarding_status": "adapter_not_enabled"
+    },
+    {
+      "state": "VT",
+      "name": "Vermont",
+      "discovery_url": "https://vtbuysprocurement.vermont.gov/suppliers-bidders",
+      "discovery_observation": "Supplier directory/registration guidance only; VTBuys adapter required.",
+      "probe_status": "directory_or_unhydrated_listing",
+      "configured_sources": [
+        {
+          "url": "https://www.vermontbusinessregistry.com/bidsearch.aspx?type=5",
+          "adapter": "northeast",
+          "scope": "Vermont Agency of Education state bids only",
+          "local_validation_status": "listing_parsed"
+        }
+      ],
+      "onboarding_status": "listing_parsed_locally",
+      "additional_evidence": "evidence-northeast.md"
+    },
+    {
+      "state": "WA",
+      "name": "Washington",
+      "discovery_url": null,
+      "discovery_observation": "Existing pilot source; consult current run evidence.",
+      "probe_status": "see_run_evidence",
+      "configured_sources": [
+        {
+          "url": "https://pr-webs-vendor.des.wa.gov/BidCalendar.aspx",
+          "adapter": "washington",
+          "scope": "OSPI public WEBS solicitations only",
+          "local_validation_status": "listing_parsed"
+        }
+      ],
+      "onboarding_status": "listing_parsed_locally",
+      "additional_evidence": "evidence-washington.md"
+    },
+    {
+      "state": "WI",
+      "name": "Wisconsin",
+      "discovery_url": "https://doa.wi.gov/Pages/StateEmployees/SBOP-Vendors.aspx",
+      "discovery_observation": "Official supplier guide only; directs eSupplier and VendorNet. Municipal posting optional; not complete district coverage.",
+      "probe_status": "directory_or_unhydrated_listing",
+      "configured_sources": [],
+      "onboarding_status": "adapter_not_enabled",
+      "additional_evidence": "evidence-midwest.md"
+    },
+    {
+      "state": "WV",
+      "name": "West Virginia",
+      "discovery_url": "https://www.state.wv.us/admin/purchase/BusinesswiththeState.html",
+      "discovery_observation": "Official vendor guide only; wvOASIS adapter needed.",
+      "probe_status": "directory_or_unhydrated_listing",
+      "configured_sources": [
+        {
+          "url": "https://wvde.us/about-us/purchasing/bids",
+          "adapter": "westvirginia",
+          "scope": "WVDE public bid cards only",
+          "local_validation_status": "listing_parsed"
+        }
+      ],
+      "onboarding_status": "listing_parsed_locally"
+    },
+    {
+      "state": "WY",
+      "name": "Wyoming",
+      "discovery_url": "https://www.publicpurchase.com/gems/wyominggsd,wy/buyer/public/publicInfo",
+      "discovery_observation": "Public Purchase HTTP200 contains title/start/end table headers only; no real rows; cannot claim zero open notices.",
+      "probe_status": "directory_or_unhydrated_listing",
+      "configured_sources": [],
+      "onboarding_status": "adapter_not_enabled"
+    }
+  ]
+}
