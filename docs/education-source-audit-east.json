@@ -1,0 +1,632 @@
+{
+  "observed_at_utc": "2026-11-01T00:51:27.871824+00:00",
+  "method": "Official sources discovered via web search, bounded direct HTTP GET. HTTP200 alone never proves notice coverage. No accounts or authenticated provider calls. Examples prove retrieval, not relevance approval.",
+  "states": [
+    {
+      "state": "ME",
+      "primary_url": "https://www.maine.gov/portal/business/vendors.html",
+      "primary_evidence_url": "https://www.maine.gov/portal/business/vendors.html",
+      "probe": {
+        "method": "GET",
+        "timeout_seconds": 25,
+        "tls_verification": true,
+        "http_status": 403,
+        "final_url": "https://www.maine.gov/portal/business/vendors.html",
+        "error": null,
+        "result": "blocked"
+      },
+      "adapter_needed": "state_specific_listing",
+      "observation": "CloudFront HTTP403; no records observed.",
+      "observed_notice": null,
+      "coverage_status": "not_implemented",
+      "coverage_scope": "Source-specific state/local buyers only; not exhaustive school district coverage."
+    },
+    {
+      "state": "MD",
+      "primary_url": "https://emma.maryland.gov/page.aspx/en/rfp/request_browse_public",
+      "primary_evidence_url": "https://emma.maryland.gov/page.aspx/en/rfp/request_browse_public",
+      "probe": {
+        "method": "GET",
+        "timeout_seconds": 25,
+        "tls_verification": true,
+        "http_status": 200,
+        "final_url": "https://emma.maryland.gov/page.aspx/en/bas/browser_check",
+        "error": null,
+        "result": "blocked"
+      },
+      "adapter_needed": "state_specific_listing",
+      "observation": "HTTP200 browser-check interstitial; no records. Ivalua public listing needs supported browser/session collection.",
+      "observed_notice": null,
+      "coverage_status": "not_implemented",
+      "coverage_scope": "Source-specific state/local buyers only; not exhaustive school district coverage."
+    },
+    {
+      "state": "MI",
+      "primary_url": "https://www.michigan.gov/en/dtmb/procurement/contractconnect",
+      "primary_evidence_url": "https://www.michigan.gov/en/dtmb/procurement/contractconnect",
+      "probe": {
+        "method": "GET",
+        "timeout_seconds": 25,
+        "tls_verification": true,
+        "http_status": 403,
+        "final_url": "https://www.michigan.gov/en/dtmb/procurement/contractconnect",
+        "error": null,
+        "result": "blocked"
+      },
+      "adapter_needed": "state_specific_listing",
+      "observation": "HTTP403 Access Denied on official Contract Connect; SIGMA VSS needs separate adapter.",
+      "observed_notice": null,
+      "coverage_status": "not_implemented",
+      "coverage_scope": "Source-specific state/local buyers only; not exhaustive school district coverage."
+    },
+    {
+      "state": "MN",
+      "primary_url": "https://mn.gov/admin/osp/vendors/solicitations-and-contract-opportunities/professional-and-technical-solicitation-postings/index.jsp",
+      "primary_evidence_url": "https://mn.gov/admin/osp/vendors/solicitations-and-contract-opportunities/professional-and-technical-solicitation-postings/index.jsp",
+      "probe": {
+        "method": "GET",
+        "timeout_seconds": 25,
+        "tls_verification": true,
+        "http_status": 200,
+        "final_url": "http://validate.perfdrive.com/d5bd5333eafe8b0ccd6023ba818d1aa6/",
+        "error": null,
+        "result": "blocked"
+      },
+      "adapter_needed": "state_specific_listing",
+      "observation": "Professional/technical listing returns Radware CAPTCHA HTTP200; no records.",
+      "observed_notice": null,
+      "coverage_status": "not_implemented",
+      "coverage_scope": "Source-specific state/local buyers only; not exhaustive school district coverage."
+    },
+    {
+      "state": "MO",
+      "primary_url": "https://missouribuys.mo.gov/bid-board/movers",
+      "primary_evidence_url": "https://missouribuys.mo.gov/bid-board/movers",
+      "probe": {
+        "method": "GET",
+        "timeout_seconds": 25,
+        "tls_verification": true,
+        "http_status": 200,
+        "final_url": "https://missouribuys.mo.gov/bid-board/movers",
+        "error": null,
+        "result": "directory_or_unhydrated_listing"
+      },
+      "adapter_needed": "state_specific_listing",
+      "observation": "MOVERS current board is an embedded listing not present in fetched HTML. WebProcure board is explicitly pre-September-18-2024 only.",
+      "observed_notice": null,
+      "coverage_status": "not_implemented",
+      "coverage_scope": "Source-specific state/local buyers only; not exhaustive school district coverage."
+    },
+    {
+      "state": "MS",
+      "primary_url": "https://www.ms.gov/dfa/contract_bid_search/bid",
+      "primary_evidence_url": "https://www.ms.gov/dfa/contract_bid_search/bid",
+      "probe": {
+        "method": "GET",
+        "timeout_seconds": 25,
+        "tls_verification": true,
+        "http_status": 200,
+        "final_url": "https://www.ms.gov/dfa/contract_bid_search/bid",
+        "error": null,
+        "result": "directory_or_unhydrated_listing"
+      },
+      "adapter_needed": "state_specific_listing",
+      "observation": "Statewide search form returns column headings and agency options but no rows. Education agency alternative HTTP403.",
+      "observed_notice": null,
+      "coverage_status": "not_implemented",
+      "coverage_scope": "Source-specific state/local buyers only; not exhaustive school district coverage."
+    },
+    {
+      "state": "MT",
+      "primary_url": "https://bids.sciquest.com/apps/Router/PublicEvent?CustomerOrg=StateOfMontana",
+      "primary_evidence_url": "https://bids.sciquest.com/apps/Router/PublicEvent?CustomerOrg=StateOfMontana",
+      "probe": {
+        "method": "GET",
+        "timeout_seconds": 25,
+        "tls_verification": true,
+        "http_status": 200,
+        "final_url": "https://bids.sciquest.com/apps/Router/PublicEvent?CustomerOrg=StateOfMontana",
+        "error": null,
+        "result": "records"
+      },
+      "adapter_needed": "jaggaer_public",
+      "observation": "Jaggaer public page returns 20 of29 open records; pagination must be implemented; universities included; no K12 notice established.",
+      "observed_notice": {
+        "title": "Utilization Review (UR)",
+        "notice_number": "DPHHS-RFP-2027-0712AB",
+        "status": "Open",
+        "deadline": "2026-12-08",
+        "k12_verified": false
+      },
+      "coverage_status": "not_implemented",
+      "coverage_scope": "Source-specific state/local buyers only; not exhaustive school district coverage."
+    },
+    {
+      "state": "NC",
+      "primary_url": "https://evp.nc.gov/solicitations/",
+      "primary_evidence_url": "https://evp.nc.gov/solicitations/",
+      "probe": {
+        "method": "GET",
+        "timeout_seconds": 25,
+        "tls_verification": true,
+        "http_status": 200,
+        "final_url": "https://evp.nc.gov/solicitations/",
+        "error": null,
+        "result": "directory_or_unhydrated_listing"
+      },
+      "adapter_needed": "state_specific_listing",
+      "observation": "PowerPages HTML has department options but no hydrated records; no-records/error placeholders must not be interpreted as healthy empty.",
+      "observed_notice": null,
+      "coverage_status": "not_implemented",
+      "coverage_scope": "Source-specific state/local buyers only; not exhaustive school district coverage."
+    },
+    {
+      "state": "ND",
+      "primary_url": "https://www.omb.nd.gov/doing-business-state/bidders/bidding-opportunities-and-resources/suppliers-viewing-and-responding",
+      "primary_evidence_url": "https://www.omb.nd.gov/doing-business-state/bidders/bidding-opportunities-and-resources/suppliers-viewing-and-responding",
+      "probe": {
+        "method": "GET",
+        "timeout_seconds": 25,
+        "tls_verification": true,
+        "http_status": 200,
+        "final_url": "https://www.omb.nd.gov/doing-business-state/bidders/bidding-opportunities-and-resources/suppliers-viewing-and-responding",
+        "error": null,
+        "result": "directory_or_unhydrated_listing"
+      },
+      "adapter_needed": "state_specific_listing",
+      "observation": "Official guide only; NDBuys collection endpoint still requires discovery.",
+      "observed_notice": null,
+      "coverage_status": "not_implemented",
+      "coverage_scope": "Source-specific state/local buyers only; not exhaustive school district coverage."
+    },
+    {
+      "state": "NE",
+      "primary_url": "https://das.nebraska.gov/materiel/bid-opportunities.html",
+      "primary_evidence_url": "https://das.nebraska.gov/materiel/bid-opportunities.html",
+      "probe": {
+        "method": "GET",
+        "timeout_seconds": 25,
+        "tls_verification": true,
+        "http_status": 200,
+        "final_url": "https://das.nebraska.gov/materiel/bid-opportunities.html",
+        "error": null,
+        "result": "records"
+      },
+      "adapter_needed": "state_specific_listing",
+      "observation": "HTML includes Current, In Process, and Awarded sections. Parse only Current and enforce future deadlines; Supported Employment Services NDERFP260915 from Nebraska Department of Education due11/13/26 observed; K12 applicability needs detail.",
+      "observed_notice": {
+        "title": "Supported Employment Services",
+        "notice_number": "NDERFP260915",
+        "status": "Current Bid Opportunities",
+        "deadline": "2026-11-13",
+        "k12_verified": false
+      },
+      "coverage_status": "not_implemented",
+      "coverage_scope": "Source-specific state/local buyers only; not exhaustive school district coverage."
+    },
+    {
+      "state": "NH",
+      "primary_url": "https://apps.das.nh.gov/bidscontracts/bids.aspx",
+      "primary_evidence_url": "https://apps.das.nh.gov/bidscontracts/bids.aspx",
+      "probe": {
+        "method": "GET",
+        "timeout_seconds": 25,
+        "tls_verification": true,
+        "http_status": 403,
+        "final_url": "https://apps.das.nh.gov/bidscontracts/bids.aspx",
+        "error": null,
+        "result": "blocked"
+      },
+      "adapter_needed": "state_specific_listing",
+      "observation": "HTTP403; no records observed.",
+      "observed_notice": null,
+      "coverage_status": "not_implemented",
+      "coverage_scope": "Source-specific state/local buyers only; not exhaustive school district coverage."
+    },
+    {
+      "state": "NJ",
+      "primary_url": "https://www.njstart.gov/bso/view/search/external/advancedSearchBid.xhtml?openBids=true",
+      "primary_evidence_url": "https://www.njstart.gov/bso/view/search/external/advancedSearchBid.xhtml?openBids=true",
+      "probe": {
+        "method": "GET",
+        "timeout_seconds": 25,
+        "tls_verification": true,
+        "http_status": 200,
+        "final_url": "https://www.njstart.gov/bso/view/search/external/advancedSearchBid.xhtml?openBids=true",
+        "error": null,
+        "result": "records"
+      },
+      "adapter_needed": "periscope_jsf",
+      "observation": "Periscope open-bids page returns24of24 records; exact agency/title/deadline rows and detail links verified.",
+      "observed_notice": {
+        "title": "T3076- New Jersey Early Intervention Services (NJEIS)",
+        "notice_number": "26DPP01332",
+        "status": "Sent",
+        "deadline": "2026-12-09",
+        "k12_verified": false
+      },
+      "coverage_status": "adapter_implemented_live_verified",
+      "coverage_scope": "Source-specific state/local buyers only; not exhaustive school district coverage.",
+      "adapter": "periscope",
+      "live_probe": {
+        "date": "2026-10-31",
+        "fetched_all_pages": true,
+        "source_records": 24,
+        "qualified_candidates": 0,
+        "submission_deadline_caveat": "Bid Opening Date is labeled as opening only, not silently relabeled as submission deadline."
+      }
+    },
+    {
+      "state": "NM",
+      "primary_url": "https://bids.sciquest.com/apps/Router/PublicEvent?CustomerOrg=StateOfNewMexico&tab=PHX_NAV_SourcingOpenForBid",
+      "primary_evidence_url": "https://bids.sciquest.com/apps/Router/PublicEvent?CustomerOrg=StateOfNewMexico&tab=PHX_NAV_SourcingOpenForBid",
+      "probe": {
+        "method": "GET",
+        "timeout_seconds": 25,
+        "tls_verification": true,
+        "http_status": 200,
+        "final_url": "https://bids.sciquest.com/apps/Router/PublicEvent?CustomerOrg=StateOfNewMexico&tab=PHX_NAV_SourcingOpenForBid",
+        "error": null,
+        "result": "records"
+      },
+      "adapter_needed": "jaggaer_public",
+      "observation": "Jaggaer returns9of9 open records, shared path with MT verified. No K12 notice established.",
+      "observed_notice": {
+        "title": "STADIUM AND/OR RESIDENTIAL MIXED-USE ANCHOR DEVELOPER(S)",
+        "notice_number": "RFP # 26-003",
+        "status": "Open",
+        "deadline": "2026-11-25",
+        "k12_verified": false
+      },
+      "coverage_status": "not_implemented",
+      "coverage_scope": "Source-specific state/local buyers only; not exhaustive school district coverage."
+    },
+    {
+      "state": "NV",
+      "primary_url": "https://nevadaepro.com/bso/view/search/external/advancedSearchBid.xhtml?openBids=true",
+      "primary_evidence_url": "https://nevadaepro.com/bso/view/search/external/advancedSearchBid.xhtml?openBids=true",
+      "probe": {
+        "method": "GET",
+        "timeout_seconds": 25,
+        "tls_verification": true,
+        "http_status": 200,
+        "final_url": "https://nevadaepro.com/bso/view/search/external/advancedSearchBid.xhtml?openBids=true",
+        "error": null,
+        "result": "records"
+      },
+      "adapter_needed": "periscope_jsf",
+      "observation": "Periscope returns24of24 records; State Public Charter School Authority notices observed. Detail31PCSA-S4046 explicitly formal RFP due11/16/2026.",
+      "observed_notice": {
+        "title": "Document Draft, Consulting, and Project Management",
+        "notice_number": "31PCSA-S4046",
+        "status": "Sent; detail says formal RFP",
+        "deadline": "2026-11-16",
+        "k12_verified": true,
+        "url": "https://nevadaepro.com/bso/external/bidDetail.sda?docId=31PCSA-S4046&external=true&parentUrl=close"
+      },
+      "coverage_status": "adapter_implemented_live_verified",
+      "coverage_scope": "Source-specific state/local buyers only; not exhaustive school district coverage.",
+      "adapter": "periscope",
+      "live_probe": {
+        "date": "2026-10-31",
+        "fetched_all_pages": true,
+        "source_records": 24,
+        "qualified_candidates": 1,
+        "submission_deadline_caveat": "Bid Opening Date is labeled as opening only, not silently relabeled as submission deadline."
+      }
+    },
+    {
+      "state": "OH",
+      "primary_url": "https://ohiobuys.ohio.gov/page.aspx/en/rfp/request_browse_public",
+      "primary_evidence_url": "https://ohiobuys.ohio.gov/page.aspx/en/rfp/request_browse_public",
+      "probe": {
+        "method": "GET",
+        "timeout_seconds": 25,
+        "tls_verification": true,
+        "http_status": 200,
+        "final_url": "https://ohiobuys.ohio.gov/page.aspx/en/bas/browser_check",
+        "error": null,
+        "result": "blocked"
+      },
+      "adapter_needed": "state_specific_listing",
+      "observation": "HTTP200 browser-check interstitial on Ivalua public listing; no records.",
+      "observed_notice": null,
+      "coverage_status": "not_implemented",
+      "coverage_scope": "Source-specific state/local buyers only; not exhaustive school district coverage."
+    },
+    {
+      "state": "OK",
+      "primary_url": "https://www.ok.gov/dcs/solicit/app/admin/index.php",
+      "primary_evidence_url": "https://www.ok.gov/dcs/solicit/app/admin/index.php",
+      "probe": {
+        "method": "GET",
+        "timeout_seconds": 25,
+        "tls_verification": true,
+        "http_status": 200,
+        "final_url": "https://www.ok.gov/dcs/solicit/app/admin/index.php",
+        "error": null,
+        "result": "directory_or_unhydrated_listing"
+      },
+      "adapter_needed": "state_specific_listing",
+      "observation": "Legacy page explicitly says new notices moved to Oklahoma Supplier Portal. Do not collect old search as current.",
+      "observed_notice": null,
+      "coverage_status": "not_implemented",
+      "coverage_scope": "Source-specific state/local buyers only; not exhaustive school district coverage."
+    },
+    {
+      "state": "OR",
+      "primary_url": "https://oregonbuys.gov/bso/view/search/external/advancedSearchBid.xhtml?openBids=true",
+      "primary_evidence_url": "https://oregonbuys.gov/bso/view/search/external/advancedSearchBid.xhtml?openBids=true",
+      "probe": {
+        "method": "GET",
+        "timeout_seconds": 25,
+        "tls_verification": true,
+        "http_status": 200,
+        "final_url": "https://oregonbuys.gov/bso/view/search/external/advancedSearchBid.xhtml?openBids=true",
+        "error": null,
+        "result": "records"
+      },
+      "adapter_needed": "periscope_jsf",
+      "observation": "Periscope returns25of160 first page; must paginate or fail incomplete. Parkrose School District RFP verified in detail.",
+      "observed_notice": {
+        "title": "Parkrose S.D. CM/GC Russell ES & Shaver ES Geothermal RFP",
+        "notice_number": "S-P26603-00018306",
+        "status": "Sent",
+        "deadline": "2026-11-19",
+        "k12_verified": true,
+        "url": "https://oregonbuys.gov/bso/external/bidDetail.sda?docId=S-P26603-00018306&external=true&parentUrl=close"
+      },
+      "coverage_status": "adapter_implemented_live_verified",
+      "coverage_scope": "Source-specific state/local buyers only; not exhaustive school district coverage.",
+      "adapter": "periscope",
+      "live_probe": {
+        "date": "2026-10-31",
+        "fetched_all_pages": true,
+        "source_records": 160,
+        "qualified_candidates": 3,
+        "submission_deadline_caveat": "Bid Opening Date is labeled as opening only, not silently relabeled as submission deadline."
+      }
+    },
+    {
+      "state": "PA",
+      "primary_url": "https://www.emarketplace.state.pa.us/Search.aspx",
+      "primary_evidence_url": "https://www.emarketplace.state.pa.us/Search.aspx",
+      "probe": {
+        "method": "GET",
+        "timeout_seconds": 25,
+        "tls_verification": true,
+        "http_status": 200,
+        "final_url": "https://www.emarketplace.state.pa.us/Search.aspx",
+        "error": null,
+        "result": "records"
+      },
+      "adapter_needed": "state_specific_listing",
+      "observation": "ASP.NET Search.aspx returns10 records and pagination. Mix includes IFB and Created; require RFP/RFI, open, future deadline and verified K12 buyer.",
+      "observed_notice": {
+        "title": "Furniture Equipment Contract",
+        "notice_number": "6100066798",
+        "status": "Open IFB (not RFP/RFI)",
+        "deadline": "2026-12-17",
+        "k12_verified": false
+      },
+      "coverage_status": "not_implemented",
+      "coverage_scope": "Source-specific state/local buyers only; not exhaustive school district coverage."
+    },
+    {
+      "state": "RI",
+      "primary_url": "https://ridop.ri.gov/ocean-state-procures-osp",
+      "primary_evidence_url": "https://ridop.ri.gov/ocean-state-procures-osp",
+      "probe": {
+        "method": "GET",
+        "timeout_seconds": 25,
+        "tls_verification": true,
+        "http_status": 403,
+        "final_url": "https://ridop.ri.gov/ocean-state-procures-osp",
+        "error": null,
+        "result": "blocked"
+      },
+      "adapter_needed": "state_specific_listing",
+      "observation": "HTTP403 Request blocked on official OSP directory.",
+      "observed_notice": null,
+      "coverage_status": "not_implemented",
+      "coverage_scope": "Source-specific state/local buyers only; not exhaustive school district coverage."
+    },
+    {
+      "state": "SC",
+      "primary_url": "https://scbo.sc.gov/search",
+      "primary_evidence_url": "https://scbo.sc.gov/search",
+      "probe": {
+        "method": "GET",
+        "timeout_seconds": 25,
+        "tls_verification": true,
+        "http_status": 200,
+        "final_url": "https://scbo.sc.gov/search",
+        "error": null,
+        "result": "directory_or_unhydrated_listing"
+      },
+      "adapter_needed": "state_specific_listing",
+      "observation": "Search form and organization list only; requires form submission/listing adapter.",
+      "observed_notice": null,
+      "coverage_status": "not_implemented",
+      "coverage_scope": "Source-specific state/local buyers only; not exhaustive school district coverage."
+    },
+    {
+      "state": "SD",
+      "primary_url": "https://www.sd.gov/bhra?id=cs_kb_article_view&spa=1&sys_kb_id=a9c554f787aecf14a086bae9cebb356d&sysparm_article=KB0044779",
+      "primary_evidence_url": "https://www.sd.gov/bhra?id=cs_kb_article_view&spa=1&sys_kb_id=a9c554f787aecf14a086bae9cebb356d&sysparm_article=KB0044779",
+      "probe": {
+        "method": "GET",
+        "timeout_seconds": 25,
+        "tls_verification": true,
+        "http_status": 200,
+        "final_url": "https://www.sd.gov/bhra?id=cs_kb_article_view&spa=1&sys_kb_id=a9c554f787aecf14a086bae9cebb356d&sysparm_article=KB0044779",
+        "error": null,
+        "result": "directory_or_unhydrated_listing"
+      },
+      "adapter_needed": "state_specific_listing",
+      "observation": "ServiceNow shell only; no notice records in HTTP body.",
+      "observed_notice": null,
+      "coverage_status": "not_implemented",
+      "coverage_scope": "Source-specific state/local buyers only; not exhaustive school district coverage."
+    },
+    {
+      "state": "TN",
+      "primary_url": "https://www.tn.gov/generalservices/procurement/central-procurement-office--cpo-/supplier-information/request-for-proposals--rfp--opportunities1.html",
+      "primary_evidence_url": "https://www.tn.gov/generalservices/procurement/central-procurement-office--cpo-/supplier-information/request-for-proposals--rfp--opportunities1.html",
+      "probe": {
+        "method": "GET",
+        "timeout_seconds": 25,
+        "tls_verification": true,
+        "http_status": null,
+        "final_url": null,
+        "error": "",
+        "result": "blocked"
+      },
+      "adapter_needed": "state_specific_listing",
+      "observation": "Bounded25second fetch failed (timeout with empty message); no notices observed.",
+      "observed_notice": null,
+      "coverage_status": "not_implemented",
+      "coverage_scope": "Source-specific state/local buyers only; not exhaustive school district coverage."
+    },
+    {
+      "state": "TX",
+      "primary_url": "https://www.txsmartbuy.gov/esbd",
+      "primary_evidence_url": "https://www.txsmartbuy.gov/esbd",
+      "probe": {
+        "method": "GET",
+        "timeout_seconds": 25,
+        "tls_verification": true,
+        "http_status": 200,
+        "final_url": "https://www.txsmartbuy.gov/esbd",
+        "error": null,
+        "result": "records"
+      },
+      "adapter_needed": "state_specific_listing",
+      "observation": "ESBD listing and actual Galveston ISD RFP detail server-rendered despite JavaScript warning. Mixed open/closed/awarded records; pagination and buyer qualification required.",
+      "observed_notice": {
+        "title": "RFP 2026 27 001 DRIVING SCHOOL SERVICES PROGRAM FOR HIGH SCHOOL STUDENTS",
+        "notice_number": "RFP-2026-27-001",
+        "status": "Posted",
+        "deadline": "2026-11-05",
+        "k12_verified": true,
+        "url": "https://www.txsmartbuy.gov/esbd/RFP-2026-27-001"
+      },
+      "coverage_status": "not_implemented",
+      "coverage_scope": "Source-specific state/local buyers only; not exhaustive school district coverage."
+    },
+    {
+      "state": "UT",
+      "primary_url": "https://utah.bonfirehub.com/portal",
+      "primary_evidence_url": "https://utah.bonfirehub.com/portal",
+      "probe": {
+        "method": "GET",
+        "timeout_seconds": 25,
+        "tls_verification": true,
+        "http_status": 200,
+        "final_url": "https://utah.bonfirehub.com/portal",
+        "error": null,
+        "result": "directory_or_unhydrated_listing"
+      },
+      "adapter_needed": "state_specific_listing",
+      "observation": "Official directory links Bonfire U3P. Portal returns school district choices but no actual records; needs Bonfire listing AJAX.",
+      "observed_notice": null,
+      "coverage_status": "not_implemented",
+      "coverage_scope": "Source-specific state/local buyers only; not exhaustive school district coverage."
+    },
+    {
+      "state": "VA",
+      "primary_url": "https://dgs.virginia.gov/procurement/statewide-procurement/types-of-solicitations",
+      "primary_evidence_url": "https://dgs.virginia.gov/procurement/statewide-procurement/types-of-solicitations",
+      "probe": {
+        "method": "GET",
+        "timeout_seconds": 25,
+        "tls_verification": true,
+        "http_status": 200,
+        "final_url": "https://dgs.virginia.gov/procurement/statewide-procurement/types-of-solicitations",
+        "error": null,
+        "result": "directory_or_unhydrated_listing"
+      },
+      "adapter_needed": "state_specific_listing",
+      "observation": "Official guide directs to eVA; no records in page.",
+      "observed_notice": null,
+      "coverage_status": "not_implemented",
+      "coverage_scope": "Source-specific state/local buyers only; not exhaustive school district coverage."
+    },
+    {
+      "state": "VT",
+      "primary_url": "https://vtbuysprocurement.vermont.gov/suppliers-bidders",
+      "primary_evidence_url": "https://vtbuysprocurement.vermont.gov/suppliers-bidders",
+      "probe": {
+        "method": "GET",
+        "timeout_seconds": 25,
+        "tls_verification": true,
+        "http_status": 200,
+        "final_url": "https://vtbuysprocurement.vermont.gov/suppliers-bidders",
+        "error": null,
+        "result": "directory_or_unhydrated_listing"
+      },
+      "adapter_needed": "state_specific_listing",
+      "observation": "Supplier directory/registration guidance only; VTBuys adapter required.",
+      "observed_notice": null,
+      "coverage_status": "not_implemented",
+      "coverage_scope": "Source-specific state/local buyers only; not exhaustive school district coverage."
+    },
+    {
+      "state": "WI",
+      "primary_url": "https://doa.wi.gov/Pages/StateEmployees/SBOP-Vendors.aspx",
+      "primary_evidence_url": "https://doa.wi.gov/Pages/StateEmployees/SBOP-Vendors.aspx",
+      "probe": {
+        "method": "GET",
+        "timeout_seconds": 25,
+        "tls_verification": true,
+        "http_status": 200,
+        "final_url": "https://doa.wi.gov/Pages/StateEmployees/SBOP-Vendors.aspx",
+        "error": null,
+        "result": "directory_or_unhydrated_listing"
+      },
+      "adapter_needed": "state_specific_listing",
+      "observation": "Official supplier guide only; directs eSupplier and VendorNet. Municipal posting optional; not complete district coverage.",
+      "observed_notice": null,
+      "coverage_status": "not_implemented",
+      "coverage_scope": "Source-specific state/local buyers only; not exhaustive school district coverage."
+    },
+    {
+      "state": "WV",
+      "primary_url": "https://www.state.wv.us/admin/purchase/BusinesswiththeState.html",
+      "primary_evidence_url": "https://www.state.wv.us/admin/purchase/BusinesswiththeState.html",
+      "probe": {
+        "method": "GET",
+        "timeout_seconds": 25,
+        "tls_verification": true,
+        "http_status": 200,
+        "final_url": "https://www.state.wv.us/admin/purchase/BusinesswiththeState.html",
+        "error": null,
+        "result": "directory_or_unhydrated_listing"
+      },
+      "adapter_needed": "state_specific_listing",
+      "observation": "Official vendor guide only; wvOASIS adapter needed.",
+      "observed_notice": null,
+      "coverage_status": "not_implemented",
+      "coverage_scope": "Source-specific state/local buyers only; not exhaustive school district coverage."
+    },
+    {
+      "state": "WY",
+      "primary_url": "https://www.publicpurchase.com/gems/wyominggsd,wy/buyer/public/publicInfo",
+      "primary_evidence_url": "https://www.publicpurchase.com/gems/wyominggsd,wy/buyer/public/publicInfo",
+      "probe": {
+        "method": "GET",
+        "timeout_seconds": 25,
+        "tls_verification": true,
+        "http_status": 200,
+        "final_url": "https://www.publicpurchase.com/gems/wyominggsd,wy/buyer/public/publicInfo",
+        "error": null,
+        "result": "directory_or_unhydrated_listing"
+      },
+      "adapter_needed": "state_specific_listing",
+      "observation": "Public Purchase HTTP200 contains title/start/end table headers only; no real rows; cannot claim zero open notices.",
+      "observed_notice": null,
+      "coverage_status": "not_implemented",
+      "coverage_scope": "Source-specific state/local buyers only; not exhaustive school district coverage."
+    }
+  ]
+}

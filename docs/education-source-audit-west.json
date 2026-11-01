@@ -1,0 +1,183 @@
+{
+  "audit_date": "2026-10-31",
+  "scope": "17-state primary-source research. Directory discovery and historical records do not count as current monitored coverage. Live parser status documented separately.",
+  "states": [
+    {
+      "state": "AL",
+      "url": "https://www.alabamaachieves.org/communication/legal/request-for-proposal/",
+      "actual_status": "live_record_verified",
+      "adapter_needed": "education_agency_pages AL accordion adapter",
+      "observed_notice_example": "RFI 2026-05 Amended Grades K-5 Mathematics Assessment Systems; deadline 2026-11-02",
+      "blocking_reason": "Agency only; STAARS remains authoritative for amendments.",
+      "primary_evidence_url": "https://www.alabamaachieves.org/communication/legal/request-for-proposal/",
+      "http_probe": "200 verified via public HTTPS with certificate validation; no authentication; 2026-10-31"
+    },
+    {
+      "state": "AK",
+      "url": "https://aws.state.ak.us/OnlinePublicNotices/",
+      "actual_status": "official_portal_no_k12_record_verified",
+      "adapter_needed": "Online Public Notices agency search",
+      "observed_notice_example": null,
+      "blocking_reason": "No DEED solicitation record verified; education funding RFA is a grant and excluded.",
+      "primary_evidence_url": "https://aws.state.ak.us/OnlinePublicNotices/",
+      "http_probe": "not performed; primary search index evidence only"
+    },
+    {
+      "state": "AZ",
+      "url": "https://cms.azed.gov/adeinfo/about-ade/about-department/accounting-procurement",
+      "actual_status": "official_directory_only",
+      "adapter_needed": "Arizona Procurement Portal agency adapter",
+      "observed_notice_example": null,
+      "blocking_reason": "ADE page routes to APP; no actual public education notice verified.",
+      "primary_evidence_url": "https://cms.azed.gov/adeinfo/about-ade/about-department/accounting-procurement",
+      "http_probe": "not performed; primary search index evidence only"
+    },
+    {
+      "state": "AR",
+      "url": "https://arbuy.arkansas.gov/bso/",
+      "actual_status": "legacy_portal_transition",
+      "adapter_needed": "SAP Ariba current plus legacy BidBuy",
+      "observed_notice_example": null,
+      "blocking_reason": "Official ARBuy page announces July 2026 SAP Ariba migration; legacy portal is not complete current coverage.",
+      "primary_evidence_url": "https://arbuy.arkansas.gov/bso/",
+      "http_probe": "not performed; primary search index evidence only"
+    },
+    {
+      "state": "CA",
+      "url": "https://ccee-ca.org/request-for-proposal-collection/",
+      "actual_status": "live_record_verified",
+      "adapter_needed": "education_agency_pages CA active list plus bounded detail adapter",
+      "observed_notice_example": "21CSLA Cohort 3 external evaluation; proposals due 2026-11-05",
+      "blocking_reason": "CCEE only, not all California districts; ACTIVE listing includes older deadlines, so detail dates are required.",
+      "primary_evidence_url": "https://ccee-ca.org/request-for-proposal-collection/",
+      "http_probe": "200 verified via public HTTPS with certificate validation; no authentication; 2026-10-31"
+    },
+    {
+      "state": "CO",
+      "url": "https://www.bidscolorado.com/co/portal.nsf/xpRegistration.xsp",
+      "actual_status": "legacy_directory_only",
+      "adapter_needed": "ColoradoVSS agency adapter",
+      "observed_notice_example": null,
+      "blocking_reason": "Registration retired; historic Colorado BIDS is not current full coverage. No CDE record verified.",
+      "primary_evidence_url": "https://www.bidscolorado.com/co/portal.nsf/xpRegistration.xsp",
+      "http_probe": "not performed; primary search index evidence only"
+    },
+    {
+      "state": "FL",
+      "url": "https://www.fldoe.org/finance/contracts-grants-procurement/purchasing/",
+      "actual_status": "unverified_candidate_url",
+      "adapter_needed": "MyFloridaMarketPlace public bid adapter",
+      "observed_notice_example": null,
+      "blocking_reason": "No primary notice or direct HTTP verification completed; candidate URL not onboardable.",
+      "primary_evidence_url": "https://www.fldoe.org/finance/contracts-grants-procurement/purchasing/",
+      "http_probe": "not performed; primary search index evidence only"
+    },
+    {
+      "state": "GA",
+      "url": "https://pur.doas.ga.gov/gpr/eventDetails?eSourceNumber=PE-55689-NONST-2027-000000004&sourceSystemType=gpr20",
+      "actual_status": "primary_index_record_verified_historical",
+      "adapter_needed": "Georgia Procurement Registry public agency/status search",
+      "observed_notice_example": "Appling County Board of Education comprehensive custodial services PE-55689-NONST-2027-000000004; Oct9 deadline; Under Evaluation",
+      "blocking_reason": "Historical closed record verifies schema, not current opportunity. Government type K-12 is explicit.",
+      "primary_evidence_url": "https://pur.doas.ga.gov/gpr/eventDetails?eSourceNumber=PE-55689-NONST-2027-000000004&sourceSystemType=gpr20",
+      "http_probe": "not performed; primary search index evidence only"
+    },
+    {
+      "state": "HI",
+      "url": "https://alohaebuys.hawaii.gov/bso/external/bidDetail.sda?docId=B-27-DAGS-00000505&external=true&parentUrl=close",
+      "actual_status": "primary_index_record_verified_historical",
+      "adapter_needed": "BidBuy detail/search adapter",
+      "observed_notice_example": "B-27-DAGS-00000505 Kahakai Elementary cafeteria electrical service; September16 opening",
+      "blocking_reason": "Bid Type OPEN is method, not current open status; historic date must exclude this notice.",
+      "primary_evidence_url": "https://alohaebuys.hawaii.gov/bso/external/bidDetail.sda?docId=B-27-DAGS-00000505&external=true&parentUrl=close",
+      "http_probe": "not performed; primary search index evidence only"
+    },
+    {
+      "state": "IA",
+      "url": "https://educate.iowa.gov/bid-opportunities",
+      "actual_status": "official_directory_and_primary_document",
+      "adapter_needed": "Iowa bidopportunities agency/search plus document adapter",
+      "observed_notice_example": "Official statewide-use instructional rubric RFP document",
+      "blocking_reason": "Directory itself is not notice coverage; document deadline/open status not verified.",
+      "primary_evidence_url": "https://educate.iowa.gov/bid-opportunities",
+      "http_probe": "not performed; primary search index evidence only",
+      "additional_primary_evidence_url": "https://bidopportunities.iowa.gov/Home/GetBidOpportunityDocument/383f01e7-0dec-4a99-9454-63faad0e35c7"
+    },
+    {
+      "state": "ID",
+      "url": "https://purchasing.idaho.gov/open-and-future-solicitations/",
+      "actual_status": "official_directory_only",
+      "adapter_needed": "IPRO public events agency adapter",
+      "observed_notice_example": null,
+      "blocking_reason": "List includes planned, on-hold and completed projects; project status is not solicitation status; no K12 notice verified.",
+      "primary_evidence_url": "https://purchasing.idaho.gov/open-and-future-solicitations/",
+      "http_probe": "not performed; primary search index evidence only"
+    },
+    {
+      "state": "IL",
+      "url": "https://www.isbe.net/Pages/Doing-Business-ISBE.aspx",
+      "actual_status": "official_directory_only",
+      "adapter_needed": "BidBuy ISBE agency adapter",
+      "observed_notice_example": null,
+      "blocking_reason": "ISBE says all opportunities published on BidBuy; directory alone not coverage.",
+      "primary_evidence_url": "https://www.isbe.net/Pages/Doing-Business-ISBE.aspx",
+      "http_probe": "not performed; primary search index evidence only"
+    },
+    {
+      "state": "IN",
+      "url": "https://www.in.gov/idoa/procurement/current-business-opportunities/index.html",
+      "actual_status": "primary_index_record_verified_historical",
+      "adapter_needed": "IDOA notice-row adapter",
+      "observed_notice_example": "IDEA Dispute Resolution State Mediation and Facilitation Services; Indiana Department Education; Oct7 2026 deadline",
+      "blocking_reason": "Historical expired notice; page time fields conflict, do not infer deadline time.",
+      "primary_evidence_url": "https://www.in.gov/idoa/procurement/current-business-opportunities/index.html",
+      "http_probe": "not performed; primary search index evidence only"
+    },
+    {
+      "state": "KS",
+      "url": "https://admin.ks.gov/offices/procurement-contracts/bidding--contracts",
+      "actual_status": "official_directory_only",
+      "adapter_needed": "Kansas public bid search agency adapter",
+      "observed_notice_example": null,
+      "blocking_reason": "No actual K12 solicitation verified; board authorization for reading/math licensing is not an open notice.",
+      "primary_evidence_url": "https://admin.ks.gov/offices/procurement-contracts/bidding--contracts",
+      "http_probe": "not performed; primary search index evidence only"
+    },
+    {
+      "state": "KY",
+      "url": "https://www.education.ky.gov/districts/business/Pages/default.aspx",
+      "actual_status": "official_directory_only",
+      "adapter_needed": "Kentucky Vendor Self Service public search",
+      "observed_notice_example": null,
+      "blocking_reason": "Education procurement page directs to Finance VSS; includes grant information; no actual procurement notice verified.",
+      "primary_evidence_url": "https://www.education.ky.gov/districts/business/Pages/default.aspx",
+      "http_probe": "not performed; primary search index evidence only"
+    },
+    {
+      "state": "LA",
+      "url": "https://co.apps.laregents.edu/",
+      "actual_status": "primary_index_record_verified_status_unknown",
+      "adapter_needed": "Contract and RFP Notification System record adapter",
+      "observed_notice_example": "RFP for Statewide Student Assessments for DOE; posted September25 2026",
+      "blocking_reason": "Official Regents-hosted listing includes DOE procurement, but deadline/current status not verified.",
+      "primary_evidence_url": "https://co.apps.laregents.edu/",
+      "http_probe": "not performed; primary search index evidence only"
+    },
+    {
+      "state": "MA",
+      "url": "https://www.mass.gov/how-to/search-for-procurements-in-commbuys",
+      "actual_status": "official_directory_only",
+      "adapter_needed": "COMMBUYS BidBuy DESE agency adapter",
+      "observed_notice_example": null,
+      "blocking_reason": "Official guide confirms public search without registration; no actual DESE notice verified.",
+      "primary_evidence_url": "https://www.mass.gov/how-to/search-for-procurements-in-commbuys",
+      "http_probe": "not performed; primary search index evidence only"
+    }
+  ],
+  "national_scoped_feed": {
+    "url": "https://opendata.usac.org/E-Rate/E-Rate-Open-Competitive-Bidding-Basic-Information-/jp7a-89nd",
+    "primary_evidence_url": "https://www.usac.org/e-rate/resources/tools/",
+    "status": "official daily structured dataset identified; implementation owned by parent",
+    "scope_limit": "E-Rate internet, telecom and network procurement only; includes libraries. Cannot substitute for all K12 goods/services or claim every state has current notices."
+  }
+}

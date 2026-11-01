@@ -353,7 +353,7 @@ def test_legacy_delivered_state_requires_migration(tmp_path, monkeypatch):
 
 def test_delaware_adapter_integrates_stable_delivery_id(tmp_path, monkeypatch):
     def adapter(client, source, today):
-        assert source["state"] == "Delaware"
+        assert source["state"] == "DE"
         return [
             {
                 "state": "DE",
@@ -366,7 +366,7 @@ def test_delaware_adapter_integrates_stable_delivery_id(tmp_path, monkeypatch):
             }
         ]
 
-    monkeypatch.setattr(w, "fetch_delaware", adapter)
+    monkeypatch.setitem(w.ADAPTERS, "delaware", adapter)
     config = {
         "sources": [{"state": "DE", "url": "https://mmp.delaware.gov/Bids/", "adapter": "delaware"}]
     }
@@ -387,3 +387,124 @@ def test_delaware_adapter_integrates_stable_delivery_id(tmp_path, monkeypatch):
     assert request["state"]["notice"]["notice_id"] == w.digest(
         {"state": "Delaware", "url": "https://mmp.delaware.gov/Bids/Details/42"}
     )
+
+
+def test_directory_success_is_not_state_coverage(tmp_path):
+    client = httpx.Client(
+        transport=httpx.MockTransport(
+            lambda _: httpx.Response(
+                200, headers={"content-type": "text/html"}, text='<a href="/rfps">RFPs</a>'
+            )
+        )
+    )
+    result = execute(tmp_path, client)
+    assert result["coverage_states"] == 0
+    assert result["states_listing_unverified"] == ["Wisconsin"]
+    assert result["source_candidate_counts"][0]["status"] == "page_retrieved_unverified"
+
+
+def test_shared_page_distinct_notices_and_ineligible_withheld(tmp_path, monkeypatch):
+    def adapter(client, source, today):
+        assert source["state"] == "NY"
+        return [
+            {
+                "state": "NY",
+                "url": source["url"],
+                "source_url": source["url"],
+                "title": "RFP school support " + number,
+                "quote": "K12 school purchase currently open",
+                "notice_number": number,
+                "deadline_date": "2026-12-09",
+                "alert_eligible": number != "pending",
+            }
+            for number in ["R1000", "R2000", "pending"]
+        ]
+
+    monkeypatch.setitem(w.ADAPTERS, "newyork", adapter)
+    client, calls = client_for(monkeypatch)
+    config = {
+        "sources": [
+            {"state": "NY", "url": "https://education.example.org/notices", "adapter": "newyork"}
+        ]
+    }
+    result = execute(tmp_path, client, True, config)
+    assert result["review_matches"] == 2
+    assert result["daily_usage"]["calls"] == 2
+    state = json.loads((tmp_path / "state.json").read_text())
+    assert len(state["deliveries"]) == 2
+    assert "Proposal due date: 2026-12-09" in (tmp_path / "out/digest.txt").read_text()
+    execute(tmp_path, client, True, config)
+    assert sum(r.url.host == "api.typesafe.ai" for r in calls) == 2
+    assert sum(r.url.path.endswith("chat.postMessage") for r in calls) == 1
+
+
+def test_verified_deadline_gate_is_explicit_and_date_bound(monkeypatch):
+    monkeypatch.setenv("TYPESAFE_API_KEY", "test")
+    answers = {
+        k: {"type": "noul", "noul": 0.95 if k != "currently_open" else 0.65} for k in w.QUESTIONS
+    }
+    client = httpx.Client(
+        transport=httpx.MockTransport(
+            lambda _: httpx.Response(
+                200,
+                json={
+                    "model": w.MODEL,
+                    "answers": answers,
+                    "usage": {"input_tokens": 100, "output_tokens": 20},
+                },
+            )
+        )
+    )
+    item = {
+        "hash": "evidence",
+        "source_url": "https://official.example/notices",
+        "deadline_date": "2026-11-02",
+        "freshness_verification": {
+            "adapter": "agency",
+            "checked_on": "2026-11-01",
+            "source_url": "https://official.example/notices",
+        },
+    }
+    judgment = w.judge(client, item, "test", "2026-11-01")
+    assert judgment["selected"]
+    assert judgment["freshness_basis"] == "verified_adapter_deadline"
+    assert judgment["scores"]["currently_open"] == 0.65
+    assert not w.judge(client, item, "test", "2026-11-02")["selected"]
+    item["freshness_verification"]["adapter"] = "periscope"
+    assert not w.judge(client, item, "test", "2026-11-01")["selected"]
+    item["freshness_verification"]["adapter"] = "agency"
+    answers["procurement_of_goods_services"]["noul"] = 0.1
+    assert not w.judge(client, item, "test", "2026-11-01")["selected"]
+
+
+def test_digest_limit_prioritizes_deadlines_without_mislabeling_call_budget(tmp_path, monkeypatch):
+    def adapter(client, source, today):
+        return [
+            {
+                "state": "NY",
+                "source_url": source["url"],
+                "url": source["url"],
+                "title": f"School services RFP {day}",
+                "quote": "Open K12 services procurement",
+                "notice_number": f"R{day}",
+                "deadline_date": f"2026-11-{day:02d}",
+            }
+            for day in range(13, 1, -1)
+        ]
+
+    monkeypatch.setitem(w.ADAPTERS, "newyork", adapter)
+    client, _ = client_for(monkeypatch)
+    config = {
+        "sources": [
+            {"state": "NY", "url": "https://education.example.org/notices", "adapter": "newyork"}
+        ]
+    }
+    result = execute(tmp_path, client, True, config)
+    assert result["review_matches"] == 10
+    assert result["matches_held_for_next_digest"] == 2
+    assert result["deferred"] == 0
+    text = (tmp_path / "out/digest.txt").read_text()
+    assert "Proposal due date: 2026-11-02" in text
+    assert "Proposal due date: 2026-11-13" not in text
+    assert "due to daily call cap" not in text
+    assert "retained for a later digest: 2" in text
