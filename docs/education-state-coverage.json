@@ -1,6 +1,6 @@
 {
   "observed_on": "2026-11-01",
-  "warning": "All 50 states are inventoried, NOT all 50 working. Local checks parsed listings in 22 states; Idaho remains unverified and 27 states have no enabled adapter. These are named-source subsets, not exhaustive state or district coverage. Cloud delivery requires a successful workflow receipt.",
+  "warning": "All 50 states are inventoried, NOT all 50 working. Local checks parsed listings in 23 states; 27 states have no enabled adapter. These are named-source subsets, not exhaustive state or district coverage. Cloud delivery requires a successful workflow receipt.",
   "states": [
     {
       "state": "AK",
@@ -163,17 +163,17 @@
       "state": "ID",
       "name": "Idaho",
       "discovery_url": "https://purchasing.idaho.gov/open-and-future-solicitations/",
-      "discovery_observation": "List includes planned, on-hold and completed projects; project status is not solicitation status; no K12 notice verified.",
+      "discovery_observation": "Dedicated current-table parser found K-3 literacy RFI due November 11, 2026; generic link-only extraction missed its title.",
       "probe_status": "not performed; primary search index evidence only",
       "configured_sources": [
         {
           "url": "https://www.sde.idaho.gov/contracting-opportunities/",
-          "adapter": "generic",
-          "scope": "Named agency source only",
-          "local_validation_status": "page_retrieved_unverified"
+          "adapter": "idaho",
+          "scope": "Idaho Department of Education current opportunities only",
+          "local_validation_status": "listing_parsed"
         }
       ],
-      "onboarding_status": "listing_unverified"
+      "onboarding_status": "listing_parsed_locally"
     },
     {
       "state": "IL",

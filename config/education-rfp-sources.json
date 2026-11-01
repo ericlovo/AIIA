@@ -77,7 +77,9 @@
     },
     {
       "state": "ID",
-      "url": "https://www.sde.idaho.gov/contracting-opportunities/"
+      "url": "https://www.sde.idaho.gov/contracting-opportunities/",
+      "adapter": "idaho",
+      "coverage_scope": "Idaho Department of Education current opportunities only"
     },
     {
       "state": "DE",

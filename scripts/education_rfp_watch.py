@@ -24,6 +24,7 @@ import httpx
 from scripts.education_additional import fetch as fetch_additional
 from scripts.education_agency_pages import fetch as fetch_agency
 from scripts.education_delaware import fetch as fetch_delaware
+from scripts.education_idaho import fetch as fetch_idaho
 from scripts.education_jaggaer import fetch as fetch_jaggaer
 from scripts.education_midwest import fetch as fetch_midwest
 from scripts.education_newyork import fetch as fetch_newyork
@@ -37,6 +38,7 @@ from scripts.education_washington import fetch as fetch_washington
 from scripts.education_westvirginia import fetch as fetch_westvirginia
 
 ADAPTERS = {
+    "idaho": fetch_idaho,
     "additional": fetch_additional,
     "midwest": fetch_midwest,
     "westvirginia": fetch_westvirginia,
@@ -57,6 +59,7 @@ MODEL = "jev-1.13.0"
 POLICY = "k12-procurement-review-v2"
 DEADLINE_ADAPTERS = frozenset(
     {
+        "idaho",
         "additional",
         "agency",
         "newyork",

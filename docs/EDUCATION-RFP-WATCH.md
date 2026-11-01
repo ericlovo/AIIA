@@ -134,3 +134,10 @@ Combined local validations cover parsed listings in 22 states. Idaho remains
 unverified; 27 states have no enabled collector. See the 50-state inventory and
 regional evidence files for the remaining access and implementation dependencies.
 These counts do not imply every district or procurement category is covered.
+
+Idaho was subsequently repaired with row-bound current-opportunities extraction.
+The official table supplies the title that the generic RFI document link omitted.
+Its K–3 Literacy Coaching Services RFI is due November 11, 2026 at 4 pm MT.
+A submission-materials context is required; question dates cannot qualify. This
+brings locally parsed, explicitly scoped sources to 23 states, with 27 states
+still lacking enabled adapters.
