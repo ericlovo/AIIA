@@ -180,4 +180,6 @@ def test_banner_states_are_explicit():
 def test_next_query_explains_inconclusive_reasons():
     assert "named" in next_query_for("healthcare_entity_or_event_unconfirmed").lower()
     assert "qwen3:8b" in next_query_for("qwen_unavailable")
+    assert "qwen3:8b" in next_query_for("qwen_timeout")
+    assert "named organization" in next_query_for("headline_lacks_named_organization").lower()
     assert next_query_for("") != ""

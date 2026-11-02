@@ -4,7 +4,7 @@ import re
 from datetime import date, datetime
 from urllib.parse import urljoin, urlsplit
 
-from scripts.education_agency_pages import Tree
+from scripts.education_agency_pages import Tree, read_public_html
 
 SOURCE = "https://wvde.us/about-us/purchasing/bids"
 MAX_BYTES = 2_000_000
@@ -86,15 +86,5 @@ def parse(body, today):
 def fetch(client, source, today):
     if source.get("state") != "WV" or source.get("url") != SOURCE:
         raise ValueError("invalid_westvirginia_source")
-    with client.stream("GET", SOURCE, follow_redirects=False, timeout=20) as response:
-        if (
-            response.status_code != 200
-            or "html" not in response.headers.get("content-type", "").lower()
-        ):
-            raise ValueError("westvirginia_source_unavailable")
-        data = bytearray()
-        for chunk in response.iter_bytes():
-            data.extend(chunk)
-            if len(data) > MAX_BYTES:
-                raise ValueError("westvirginia_source_too_large")
-    return parse(data.decode("utf-8", errors="strict"), today)
+    body = read_public_html(client, SOURCE, max_bytes=MAX_BYTES, prefix="westvirginia_source_")
+    return parse(body, today)

@@ -54,8 +54,23 @@ def test_no_redirects_or_untrusted_sources():
                 lambda _: httpx.Response(302, headers={"location": "https://example.org"})
             )
         ) as client,
-        pytest.raises(ValueError),
+        pytest.raises(ValueError, match="westvirginia_source_redirect_blocked"),
     ):
         w.fetch(client, {"state": "WV", "url": w.SOURCE}, "2026-11-01")
     with pytest.raises(ValueError):
         w.fetch(None, {"state": "WV", "url": "https://example.org"}, "2026-11-01")
+
+
+def test_same_host_https_redirect_is_followed():
+    calls = []
+
+    def handler(request):
+        calls.append(request.url.path)
+        if len(calls) == 1:
+            return httpx.Response(301, headers={"location": "/about-us/purchasing/bids"})
+        return httpx.Response(200, headers={"content-type": "text/html"}, text=page())
+
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        found = w.fetch(client, {"state": "WV", "url": w.SOURCE}, "2026-11-01")
+    assert len(found) == 1
+    assert len(calls) == 2

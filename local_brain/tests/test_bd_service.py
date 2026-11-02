@@ -702,3 +702,59 @@ def test_rejected_work_is_visible_in_daily_summary(service):
     service.store.enqueue("healthcare", "synthetic-healthcare", "rejected-today", "research")
     asyncio.run(service.run_once())
     assert service.snapshot()["daily_summary"]["rejected"] == 1
+
+
+def test_query_yield_tracks_supported_inconclusive_and_terminal_failures(service):
+    chicago_open(service)
+    service.store.config["max_attempts"] = 1
+
+    async def inconclusive(job, emit):
+        return {
+            "packets": [],
+            "research_outcome": "inconclusive",
+            "reason": "segment_entity_or_event_unconfirmed",
+            "discovery_query": {"id": "hc-ehr-event", "segment": "healthcare"},
+        }
+
+    service.pipeline = inconclusive
+    service.store.enqueue("healthcare", "synthetic-healthcare", "yield-inconclusive", "research")
+    asyncio.run(service.run_once())
+
+    async def supported(job, emit):
+        from local_brain.command_center.bd_pipeline import proposal_packet, synthetic_fixture
+
+        source, extraction, judgments = synthetic_fixture("healthcare")
+        packet = proposal_packet(job, source, extraction, judgments, {"tokens": 0, "calls": 0})
+        return {
+            "packets": [packet],
+            "discovery_query": {"id": "hc-cio-hire", "segment": "healthcare"},
+        }
+
+    service.pipeline = supported
+    service.store.enqueue("healthcare", "synthetic-healthcare", "yield-supported", "research")
+    asyncio.run(service.run_once())
+
+    from local_brain.command_center.bd_pipeline import DataUnavailable
+
+    async def timeout(job, emit):
+        raise DataUnavailable("qwen_timeout")
+
+    service.pipeline = timeout
+    service.store.enqueue("healthcare", "synthetic-healthcare", "yield-timeout", "research")
+    asyncio.run(service.run_once())
+
+    snapshot = service.snapshot()
+    report = {row["segment"]: row for row in snapshot["yield_report"]["segments"]}
+    healthcare = report["healthcare"]
+    assert healthcare["jobs"] == 3
+    assert healthcare["supported"] == 1
+    assert healthcare["failed"] == 1
+    assert healthcare["inconclusive"]["segment_entity_or_event_unconfirmed"] == 1
+    queries = {item["id"]: item for item in healthcare["queries"]}
+    assert queries["hc-ehr-event"]["jobs"] == 1
+    assert queries["hc-cio-hire"]["supported"] == 1
+    daily = snapshot["daily_summary"]["yield"]
+    assert daily["segments"][0]["jobs"] == 3
+    assert any(
+        job.get("discovery_query_id") for job in snapshot["jobs"] if job["state"] == "completed"
+    )

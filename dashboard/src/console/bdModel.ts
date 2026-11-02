@@ -8,7 +8,7 @@ export interface BDJob {
   id: string; bot_id: string; tenant_id: string; segment: string
   state: 'queued' | 'leased' | 'running' | 'completed' | 'failed' | 'cancelled'
   mode?: string; research_outcome?: ResearchOutcome; result_reason?: string
-  next_query?: string | null
+  next_query?: string | null; discovery_query_id?: string | null
   finished_at?: string | null; error?: string | null; attempts?: number
   step: string; created_at: string; started_at: string | null; heartbeat_at: string | null
 }
@@ -38,14 +38,25 @@ export interface StatusBanner {
   state: 'paused_kill_switch' | 'paused_schedule_off' | 'running' | 'waiting'
   label: 'Paused: kill switch on' | 'Paused: schedule off' | 'Running' | 'Waiting for next run'
 }
+export interface YieldCounts {
+  segment: string; query_id?: string; id?: string
+  jobs: number; supported: number; rejected?: number; failed: number
+  inconclusive: Record<string, number>
+}
+export interface YieldReport {
+  scope?: string
+  segments: Array<YieldCounts & { queries?: YieldCounts[] }>
+}
 export interface DailySummary {
   day: string; timezone: string; rejected?: number
   candidates_proposed: number; inconclusive: number; failed: number; awaiting_human_review: number
+  yield?: { segments: YieldCounts[]; queries: YieldCounts[] }
 }
 export interface BDSnapshot {
   schedule?: BDSchedule
   status_banner?: StatusBanner
   daily_summary?: DailySummary
+  yield_report?: YieldReport
   model_activity?: Partial<Record<'qwen' | 'jev', ModelActivity>>
   job_counts?: Record<BDJob['state'], number>
   job_window?: { limit: number; total: number; returned: number; truncated: boolean; queue_total: number; queue_returned: number }
@@ -146,6 +157,8 @@ export function researchReason(reason: string | undefined): string {
     no_supported_prospect: 'The evidence did not support a prospect for this segment.',
     no_named_organization: 'No named organization was supported by the source.',
     no_new_evidence: 'No new evidence was found in this run.',
+    headline_lacks_named_organization: 'Headlines lacked a named organization, so extraction was skipped.',
+    qwen_timeout: 'Local extraction timed out; the model is warmed and the same source can be retried.',
     segment_entity_or_event_unconfirmed: 'The organization or market event was not confirmed for this segment.',
     healthcare_entity_or_event_unconfirmed: 'The healthcare organization or market event was not confirmed.',
     entity_not_grounded: 'The organization could not be grounded in the source.',

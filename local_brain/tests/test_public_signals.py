@@ -56,7 +56,19 @@ def feed(url="https://news.google.com/rss/articles/abc", date=None):
 
 
 def test_parse_feed():
-    assert len(signals.parse_feed(feed(), time.time())) == 1
+    items = signals.parse_feed(feed(), time.time())
+    assert len(items) == 1
+    assert "text" not in items[0]
+    dated = format_datetime(datetime.now(timezone.utc))
+    snippet_feed = (
+        "<rss><channel><item><title>Orchard Health expands</title>"
+        "<link>https://news.google.com/rss/articles/snippet</link>"
+        f"<pubDate>{dated}</pubDate><source>News</source>"
+        "<description>&lt;b&gt;Orchard Health&lt;/b&gt; will open a clinic.</description>"
+        "</item></channel></rss>"
+    ).encode()
+    snippet = signals.parse_feed(snippet_feed, time.time())
+    assert snippet[0]["text"] == "Orchard Health will open a clinic."
     assert signals.parse_feed(feed(date="bad date"), time.time()) == []
     assert signals.parse_feed(feed(date="Mon, 01 Jan 2024 00:00:00 GMT"), time.time()) == []
     for url in (

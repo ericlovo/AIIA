@@ -502,3 +502,17 @@ def test_withheld_evidence_is_durable_and_scoped(runtime):
     assert restarted.evidence_keys("srg", "synthetic-srg") == []
     restarted.bots["pe-diligence"]["tenant_id"] = "synthetic-healthcare"
     assert restarted.evidence_keys("pe-diligence", "synthetic-healthcare") == []
+
+
+def test_query_yield_persists_across_restart(runtime):
+    runtime.record_query_yield(
+        "healthcare", "hc-ehr-event", "inconclusive", "no_named_organization"
+    )
+    runtime.record_query_yield("healthcare", "hc-ehr-event", "supported")
+    runtime.record_query_yield("healthcare", "hc-ehr-event", "failed", "qwen_timeout")
+    restarted = BDConductor(runtime.path, clock=runtime.clock)
+    row = restarted.query_yield()[0]
+    assert row["jobs"] == 3
+    assert row["supported"] == 1
+    assert row["failed"] == 1
+    assert row["inconclusive"]["no_named_organization"] == 1

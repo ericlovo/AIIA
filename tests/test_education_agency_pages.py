@@ -121,6 +121,42 @@ class AgencyTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             a.fetch(None, {"state": "AL", "url": a.SOURCES["CA"]}, "2026-10-31")
 
+    def test_same_host_https_redirect_followed_and_cross_host_blocked(self):
+        calls = []
+
+        def handler(req):
+            calls.append(req)
+            if len(calls) == 1:
+                return httpx.Response(
+                    301,
+                    headers={"location": "/communication/legal/request-for-proposal/"},
+                )
+            return httpx.Response(200, headers={"content-type": "text/html"}, text=al())
+
+        with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+            rows = a.fetch(client, {"state": "AL", "url": a.SOURCES["AL"]}, "2026-10-31")
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(len(calls), 2)
+        self.assertIn("AIIA-K12-Procurement-Watch/1.0", calls[0].headers["user-agent"])
+
+        with (
+            httpx.Client(
+                transport=httpx.MockTransport(
+                    lambda _: httpx.Response(302, headers={"location": "https://evil.example/x"})
+                )
+            ) as client,
+            self.assertRaises(ValueError) as raised,
+        ):
+            a.fetch(client, {"state": "AL", "url": a.SOURCES["AL"]}, "2026-10-31")
+        self.assertEqual(str(raised.exception), "agency_source_redirect_blocked")
+
+        with (
+            httpx.Client(transport=httpx.MockTransport(lambda _: httpx.Response(403))) as client,
+            self.assertRaises(ValueError) as forbidden,
+        ):
+            a.fetch(client, {"state": "AL", "url": a.SOURCES["AL"]}, "2026-10-31")
+        self.assertEqual(str(forbidden.exception), "agency_source_http_forbidden")
+
     def test_structure_missing_not_empty_success(self):
         with self.assertRaises(ValueError):
             a.parse_alabama("<p>Welcome</p>", "2026-10-31")

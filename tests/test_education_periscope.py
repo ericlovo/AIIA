@@ -195,6 +195,27 @@ def test_state_specific_complete_pagination_limits(state, total, success):
             assert pages == [0]
 
 
+def test_bid_closing_date_qualifies_and_opening_date_does_not():
+    def handler(request):
+        if "bidDetail" in request.url.path:
+            return httpx.Response(
+                200,
+                headers={"content-type": "text/html"},
+                text=(
+                    "Bid Number: 1 Bulletin Desc: Request for Proposals for professional services. "
+                    "Bid Closing Date: 12/15/2026 Ship-to Address: Example School District"
+                ),
+            )
+        return httpx.Response(200, headers={"content-type": "text/html"}, text=listing([row(1)], 1))
+
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        found = fetch(client, {"state": "OR", "url": BASES["OR"] + PATH}, "2026-10-31")
+    assert found[0]["deadline_date"] == "2026-12-15"
+    assert found[0]["alert_eligible"] is True
+    assert json.loads(found[0]["quote"])["bid_opening_date"] == "2026-11-19"
+    assert found[0]["qualification_status"] == "verified_detail_closing_date"
+
+
 def test_massachusetts_state_education_buyer_remains_pending():
     def handler(request):
         assert "bidDetail" not in request.url.path

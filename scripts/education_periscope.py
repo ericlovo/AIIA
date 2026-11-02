@@ -21,6 +21,11 @@ PATH = "/bso/view/search/external/advancedSearchBid.xhtml?openBids=true"
 TABLE = "bidSearchResultsForm:bidResultId"
 MAX_BYTES = 2_000_000
 TYPE = re.compile(r"\b(?:RFP|RFI)\b|\bRequest for (?:Proposals?|Information)\b", re.I)
+CLOSING = re.compile(
+    r"\b(?:Bid Closing Date|Closing Date|End Date|Response Due(?: Date)?)\s*:?\s*"
+    r"(\d{1,2}/\d{1,2}/\d{4})",
+    re.I,
+)
 BUYER = re.compile(
     r"\bschools?\b|\b(?:department|board) of (?:elementary and secondary )?education\b", re.I
 )
@@ -210,6 +215,15 @@ def fetch(client, source, today):
             r"\b(?:cancelled|canceled|withdrawn)\b", type_evidence, re.I
         ):
             continue
+        deadline = None
+        closing_match = CLOSING.search(detail) if bulletin is not None else None
+        if closing_match:
+            try:
+                closing_date = datetime.strptime(closing_match.group(1), "%m/%d/%Y").date()
+            except ValueError:
+                closing_date = None
+            if closing_date is not None and closing_date > current:
+                deadline = closing_date.isoformat()
         quote = json.dumps(
             {
                 "title": title,
@@ -217,7 +231,7 @@ def fetch(client, source, today):
                 "notice_number": number,
                 "bid_opening_date": opening_date.isoformat(),
                 "bid_opening_time": opening,
-                "submission_deadline": "not separately verified; check official notice",
+                "submission_deadline": deadline or "not separately verified; check official notice",
                 "listing_status": status,
                 "bulletin": bulletin.group(1) if bulletin else "",
                 "as_of": today,
@@ -236,14 +250,20 @@ def fetch(client, source, today):
             "title": title,
             "quote": quote,
             "notice_number": number,
-            "alert_eligible": False,
+            "alert_eligible": bool(deadline),
             "qualification_status": (
                 "pending_document_review"
                 if state == "MA"
-                else "pending_submission_deadline_verification"
+                else (
+                    "verified_detail_closing_date"
+                    if deadline
+                    else "pending_submission_deadline_verification"
+                )
             ),
             "coverage_scope": "Participating portal buyers only; not exhaustive district coverage",
         }
+        if deadline:
+            item["deadline_date"] = deadline
         item["identity"] = _hash({"state": state, "url": url})
         item["hash"] = _hash(item)
         found.append(item)
