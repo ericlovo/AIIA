@@ -1,7 +1,9 @@
 """Combined pipeline using exclusively synthetic in-memory provider doubles."""
 
 import json
+import runpy
 from copy import deepcopy
+from types import SimpleNamespace
 from uuid import uuid4
 
 import pytest
@@ -9,13 +11,11 @@ import pytest
 from local_brain.jev_judgment import JUDGMENTS, InputError
 from local_brain.scripts.combined_synthetic_shadow import (
     MODEL,
-    REMOTE,
     SOURCE,
     CombinedError,
     bound_request,
     jev_payload,
     run,
-    run_mini_loopback,
 )
 
 AIRGAP = {"enabled": True, "egress": {"typesafe.signals": "disabled", "web.fetch": "disabled"}}
@@ -234,8 +234,6 @@ def test_saved_envelope_precedes_post_and_retry_is_exact(tmp_path):
 
 
 def test_remote_call_uses_stdin_fixed_script_and_quoted_paths(monkeypatch):
-    from types import SimpleNamespace
-
     from local_brain.scripts import combined_synthetic_shadow as combined
 
     seen = []
@@ -245,8 +243,6 @@ def test_remote_call_uses_stdin_fixed_script_and_quoted_paths(monkeypatch):
         assert argv[0] == "ssh" and "shell" not in kwargs
         assert "StrictHostKeyChecking=yes" in argv
         assert kwargs["timeout"] == 110
-        assert "http://127.0.0.1:11434/api/show" in kwargs["input"]
-        assert "get('format')!='gguf'" in kwargs["input"]
         return SimpleNamespace(returncode=0, stdout=json.dumps(AIRGAP))
 
     monkeypatch.setattr(combined.subprocess, "run", ssh)
@@ -297,11 +293,16 @@ def test_workstation_jev_transport_pinned_no_retry_or_redirect(
 
 
 @pytest.mark.parametrize(
-    "models,format_name,blocked",
-    [([], "gguf", False), ([{"name": "busy"}], "gguf", True), ([], "remote", True)],
+    "models,format_name,signals_policy,error",
+    [
+        ([], "gguf", "disabled", None),
+        ([{"name": "busy"}], "gguf", "disabled", "local_runtime_busy"),
+        ([], "remote", "disabled", "local_gguf_required"),
+        ([], "gguf", "allowlisted", "airgap_required"),
+    ],
 )
 def test_remote_loopback_request_bounded_and_no_contention(
-    monkeypatch, models, format_name, blocked
+    tmp_path, capsys, monkeypatch, models, format_name, signals_policy, error
 ):
     import httpx
 
@@ -313,7 +314,9 @@ def test_remote_loopback_request_bounded_and_no_contention(
         assert request.url.host == "127.0.0.1"
         path = request.url.path
         payloads = {
-            "/health": {"airgap": AIRGAP},
+            "/health": {
+                "airgap": {"enabled": True, "egress": {"typesafe.signals": signals_policy}}
+            },
             "/api/ps": {"models": models},
             "/api/show": {"details": {"format": format_name}},
         }
@@ -338,16 +341,25 @@ def test_remote_loopback_request_bounded_and_no_contention(
         return original(**kwargs, transport=httpx.MockTransport(handler))
 
     monkeypatch.setattr(httpx, "Client", client)
-    # SSH still sends the standalone REMOTE payload; tests call the equivalent function
-    # so Bandit does not see exec() of a code string.
-    assert "127.0.0.1:11434/api/chat" in REMOTE
-    assert "'think':False" in REMOTE.replace(" ", "")
-    if blocked:
-        with pytest.raises(ValueError):
-            run_mini_loopback("qwen3:8b", "qwen", SOURCE)
+    from local_brain.scripts import combined_synthetic_shadow as combined
+
+    def local_ssh(argv, *, input, **kwargs):
+        # Exercise the exact SSH stdin payload against the mocked loopback endpoints.
+        payload = tmp_path / "ssh_stdin.py"
+        payload.write_text(input, encoding="utf-8")
+        runpy.run_path(str(payload), run_name="__main__")
+        return SimpleNamespace(returncode=0, stdout=capsys.readouterr().out)
+
+    monkeypatch.setattr(combined.subprocess, "run", local_ssh)
+    args = ("synthetic-host", "/python", "/repo", "qwen3:8b", "qwen")
+    if error:
+        with pytest.raises(ValueError, match=error):
+            combined.remote_call(*args)
         assert not any(r.url.path == "/api/chat" for r in requests)
+        if error == "airgap_required":
+            assert [r.url.path for r in requests] == ["/health"]
     else:
-        result = run_mini_loopback("qwen3:8b", "qwen", SOURCE)
+        result = combined.remote_call(*args)
         assert result["extraction"] == EXTRACTION
 
 

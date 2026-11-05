@@ -318,93 +318,6 @@ def run(directory, workspace, binding, health, qwen, jev, runner):
             save(directory / "airgap-after.json", after)
 
 
-def run_mini_loopback(model, operation, prompt):
-    """Loopback-only Mini health/Qwen probe. Same contract as the SSH stdin script."""
-    with httpx.Client(timeout=90, trust_env=False, follow_redirects=False) as client:
-        response = client.get("http://127.0.0.1:8100/health", timeout=10)
-        response.raise_for_status()
-        airgap = response.json()["airgap"]
-        if (
-            airgap.get("enabled") is not True
-            or airgap.get("egress", {}).get("typesafe.signals") != "disabled"
-        ):
-            raise ValueError("airgap_required")
-        if operation == "health":
-            return airgap
-        response = client.get("http://127.0.0.1:11434/api/ps", timeout=10)
-        response.raise_for_status()
-        if response.json().get("models") != []:
-            raise ValueError("local_runtime_busy")
-        response = client.post("http://127.0.0.1:11434/api/show", json={"model": model}, timeout=10)
-        response.raise_for_status()
-        info = response.json()
-        if (
-            info.get("remote_host")
-            or info.get("remote_model")
-            or info.get("details", {}).get("format") != "gguf"
-        ):
-            raise ValueError("local_gguf_required")
-        response = client.post(
-            "http://127.0.0.1:11434/api/chat",
-            json={
-                "model": model,
-                "messages": [{"role": "user", "content": prompt}],
-                "format": "json",
-                "keep_alive": 0,
-                "stream": False,
-                "think": False,
-                "options": {"temperature": 0, "num_predict": 256, "num_ctx": 2048},
-            },
-        )
-        response.raise_for_status()
-        result = response.json()
-    if (
-        result.get("done") is not True
-        or result.get("done_reason") != "stop"
-        or result.get("model") != model
-    ):
-        raise ValueError("incomplete_local_generation")
-    return {
-        "extraction": json.loads(result["message"]["content"]),
-        "model": result["model"],
-        "eval_count": result.get("eval_count"),
-        "prompt_eval_count": result.get("prompt_eval_count"),
-        "total_duration": result.get("total_duration"),
-    }
-
-
-# Standalone Mini stdin script: json + httpx only, no local_brain import.
-# Keep this payload aligned with run_mini_loopback(); tests cover both.
-REMOTE = r"""
-import json,sys,httpx
-with httpx.Client(timeout=90,trust_env=False,follow_redirects=False) as client:
-    response=client.get('http://127.0.0.1:8100/health',timeout=10);response.raise_for_status()
-    airgap=response.json()['airgap']
-    if airgap.get('enabled') is not True or airgap.get('egress',{}).get('typesafe.signals')!='disabled':
-        raise ValueError('airgap_required')
-    if OPERATION=='health':
-        print(json.dumps(airgap));sys.exit(0)
-    response=client.get('http://127.0.0.1:11434/api/ps',timeout=10);response.raise_for_status()
-    if response.json().get('models') != []:
-        raise ValueError('local_runtime_busy')
-    response=client.post('http://127.0.0.1:11434/api/show',json={'model':MODEL},timeout=10);response.raise_for_status()
-    info=response.json()
-    if info.get('remote_host') or info.get('remote_model') or info.get('details',{}).get('format')!='gguf':
-        raise ValueError('local_gguf_required')
-    response=client.post('http://127.0.0.1:11434/api/chat',json={
-        'model':MODEL,'messages':[{'role':'user','content':PROMPT}],
-        'format':'json','keep_alive':0,'stream':False,'think':False,
-        'options':{'temperature':0,'num_predict':256,'num_ctx':2048}})
-    response.raise_for_status()
-    result=response.json()
-if result.get('done') is not True or result.get('done_reason')!='stop' or result.get('model')!=MODEL:
-    raise ValueError('incomplete_local_generation')
-print(json.dumps({'extraction':json.loads(result['message']['content']),
-    'model':result['model'],'eval_count':result.get('eval_count'),
-    'prompt_eval_count':result.get('prompt_eval_count'),'total_duration':result.get('total_duration')}))
-"""
-
-
 def remote_call(host, python, repo, model, operation):
     if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.@-]*", host) or not model.lower().startswith(
         "qwen"
@@ -416,18 +329,9 @@ def remote_call(host, python, repo, model, operation):
         "Extract organization, location, event (the exact action word), and quote (the entire source sentence). "
         "Return ONLY one JSON object with those four string keys. Source: " + SOURCE
     )
+    probe = Path(__file__).with_name("mini_synthetic_probe.py").read_text(encoding="utf-8")
     script = (
-        "\n".join(
-            f"{k}={v!r}"
-            for k, v in {
-                "REPO": repo,
-                "MODEL": model,
-                "OPERATION": operation,
-                "PROMPT": prompt,
-            }.items()
-        )
-        + "\n"
-        + REMOTE
+        probe + f"\nprint(json.dumps(run_mini_loopback({model!r}, {operation!r}, {prompt!r})))\n"
     )
     result = subprocess.run(
         [
