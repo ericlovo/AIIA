@@ -429,20 +429,21 @@ def test_shared_page_distinct_notices_and_ineligible_withheld(tmp_path, monkeypa
         ]
     }
     result = execute(tmp_path, client, True, config)
-    assert result["review_matches"] == 3
+    assert result["review_matches"] == 2
     assert result["daily_usage"]["calls"] == 3
     assert result["pending_document_review"] == 1
     assert result["already_reviewed"] == 0
     assert result["next_onboarding"][0]["state"] == "Florida"
     state = json.loads((tmp_path / "state.json").read_text())
-    assert len(state["deliveries"]) == 3
+    assert len(state["deliveries"]) == 2
     digest = (tmp_path / "out/digest.txt").read_text()
     assert "Proposal due date: 2026-12-09" in digest
+    assert "RFP school support pending" not in digest
     assert "Awaiting document verification: 1" in digest
     assert "Already reviewed in a prior run" not in digest
     second = execute(tmp_path, client, True, config)
-    assert second["already_reviewed"] == 3
-    assert "Already reviewed in a prior run: 3." in (tmp_path / "out/digest.txt").read_text()
+    assert second["already_reviewed"] == 2
+    assert "Already reviewed in a prior run: 2." in (tmp_path / "out/digest.txt").read_text()
     assert sum(r.url.host == "api.typesafe.ai" for r in calls) == 3
     assert sum(r.url.path.endswith("chat.postMessage") for r in calls) == 1
 

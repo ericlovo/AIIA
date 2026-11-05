@@ -597,7 +597,7 @@ def message(today, notices, coverage, failures, deferred, *, already_reviewed=0,
         lines.append(f"Already reviewed in a prior run: {already_reviewed}.")
     if pending_review:
         lines.append(
-            f"Awaiting document verification: {pending_review} (evaluated with listing evidence; not treated as verified deadlines)."
+            f"Awaiting document verification: {pending_review} (withheld from alerts until verified)."
         )
     if deferred:
         lines.append(f"Not evaluated due to daily call cap: {deferred}.")
@@ -710,6 +710,8 @@ def run(config, state_path, output_dir, send=False, *, client=None, today=None, 
             if len(group) > i
         ]
         ordered = list({item["notice_id"]: item for item in ordered}.values())
+        # Spend remaining calls on pending research after alertable notices.
+        ordered.sort(key=lambda item: item.get("alert_eligible") is False)
         notices, deferred, unavailable, evaluated = [], 0, 0, 0
         already_reviewed = 0
         for item in ordered:
@@ -740,7 +742,8 @@ def run(config, state_path, output_dir, send=False, *, client=None, today=None, 
             else:
                 evaluated += 1
             if (
-                cached.get("selected")
+                item.get("alert_eligible") is not False
+                and cached.get("selected")
                 and (
                     cached.get("freshness_basis") != "verified_adapter_deadline"
                     or verified_freshness(item, today)

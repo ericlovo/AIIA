@@ -41,10 +41,11 @@ verifying an open listing with an explicit future submission deadline. The
 adapter proof is source-bound, dated and checked again before delivery; unknown
 or same-day cutoffs are withheld. All four scores and the selection basis are
 retained. Bid-opening dates alone do not qualify. An explicit Bid Closing /
-End / Response Due date on an already-fetched Periscope detail can qualify;
+Proposal Due / Response Due date on an already-fetched Periscope detail can qualify;
 Massachusetts listings stay pending without detail fetches. At most 20 provider
 attempts per UTC day; requests count before dispatch. Pending document-review
-notices are evaluated with listing evidence inside that cap rather than skipped.
+notices can use remaining calls for evaluation. They stay out of the digest and
+delivery ledger until the collector verifies eligibility.
 Already-reviewed identities are counted and not re-judged. Actual token usage is
 recorded; dollar cost is unknown unless independently reconciled with billing.
 Unavailable sources report a coded reason (for example

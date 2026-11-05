@@ -21,11 +21,10 @@ PATH = "/bso/view/search/external/advancedSearchBid.xhtml?openBids=true"
 TABLE = "bidSearchResultsForm:bidResultId"
 MAX_BYTES = 2_000_000
 TYPE = re.compile(r"\b(?:RFP|RFI)\b|\bRequest for (?:Proposals?|Information)\b", re.I)
-CLOSING = re.compile(
-    r"\b(?:Bid Closing Date|Closing Date|End Date|Response Due(?: Date)?)\s*:?\s*"
-    r"(\d{1,2}/\d{1,2}/\d{4})",
-    re.I,
+CLOSING_LABEL = re.compile(
+    r"(?:Bid Closing Date|Proposal Due Date|Response Due(?: Date)?)\s*:?", re.I
 )
+CLOSING_VALUE = re.compile(r"(\d{1,2}/\d{1,2}/\d{4})(?:\s+\d{1,2}:\d{2}\s+[AP]M)?", re.I)
 BUYER = re.compile(
     r"\bschools?\b|\b(?:department|board) of (?:elementary and secondary )?education\b", re.I
 )
@@ -36,6 +35,7 @@ class Page(HTMLParser):
         super().__init__()
         self.rows, self.fields, self.text = [], {}, []
         self.cells, self.cell, self.link, self.form = [], None, "", False
+        self.closing_values = []
         self.skip = 0
 
     def handle_starttag(self, tag, attrs):
@@ -67,8 +67,12 @@ class Page(HTMLParser):
         if tag == "td" and self.cell is not None:
             self.cells.append(" ".join(" ".join(self.cell).split()))
             self.cell = None
-        if tag == "tr" and self.link:
-            self.rows.append((self.link, self.cells))
+        if tag == "tr":
+            if self.link:
+                self.rows.append((self.link, self.cells))
+            for label, value in zip(self.cells, self.cells[1:], strict=False):
+                if CLOSING_LABEL.fullmatch(label):
+                    self.closing_values.append(value)
 
     @property
     def plain(self):
@@ -205,25 +209,27 @@ def fetch(client, source, today):
         # MA is a larger statewide portal. Complete the listing, but leave
         # document/deadline review pending rather than fan out to 1000 details.
         bulletin = None
+        deadline = None
         if state != "MA":
-            detail = _parse(_read(client, "GET", url)).plain
+            detail_page = _parse(_read(client, "GET", url))
+            detail = detail_page.plain
             if f"Bid Number: {number}" not in detail:
                 raise ValueError("periscope_detail_unavailable")
             bulletin = re.search(r"Bulletin Desc:\s*(.*?)\s*Ship-to Address:", detail)
+            if len(set(detail_page.closing_values)) == 1:
+                closing = CLOSING_VALUE.fullmatch(detail_page.closing_values[0])
+                if closing:
+                    try:
+                        closing_date = datetime.strptime(closing.group(1), "%m/%d/%Y").date()
+                    except ValueError:
+                        closing_date = None
+                    if closing_date and closing_date > current:
+                        deadline = closing_date.isoformat()
         type_evidence = title + " " + (bulletin.group(1) if bulletin else "")
         if not TYPE.search(type_evidence) or re.search(
             r"\b(?:cancelled|canceled|withdrawn)\b", type_evidence, re.I
         ):
             continue
-        deadline = None
-        closing_match = CLOSING.search(detail) if bulletin is not None else None
-        if closing_match:
-            try:
-                closing_date = datetime.strptime(closing_match.group(1), "%m/%d/%Y").date()
-            except ValueError:
-                closing_date = None
-            if closing_date is not None and closing_date > current:
-                deadline = closing_date.isoformat()
         quote = json.dumps(
             {
                 "title": title,
