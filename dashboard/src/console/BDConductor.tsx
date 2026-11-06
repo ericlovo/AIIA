@@ -5,6 +5,7 @@ import { packetOutcome, outcomeLabel, researchReason, plannedWaiting, providerSt
 import { BDScheduleStrip } from './BDScheduleStrip'
 import { BDResearchHistory } from './BDResearchHistory'
 import { BDActivityBoard } from './BDActivityBoard'
+import { BDYieldReport } from './BDYieldReport'
 import './BDConductor.css'
 
 async function request(path: string, body?: unknown): Promise<BDSnapshot> {
@@ -119,6 +120,7 @@ export function BDConductor() {
             <div><dt>Awaiting human review</dt><dd>{metric(data.daily_summary.awaiting_human_review)}</dd></div>
           </dl>
         </section>}
+        <BDYieldReport report={data.yield_report} today={data.daily_summary?.yield} />
         <BDScheduleStrip data={data} now={now} />
         <div className="bd-view-controls"><span>Research flow</span><label>Show <select value={lane} onChange={event => setLane(event.target.value)}><option value="all">All segments & clients</option>{data.bots.map(bot => <option key={bot.id} value={bot.id}>{bot.name}</option>)}</select></label></div>
         <BDActivityBoard data={data} now={now} lane={lane} onReview={reviewPacket} />

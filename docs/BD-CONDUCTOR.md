@@ -38,9 +38,8 @@ Adapters reserve calls and conservative UTF-8 payload/output token envelopes bef
 
 ## Evidence and review
 
-Public-news discovery uses fixed segment-specific RSS queries through the existing `news.fetch` egress gate. Each cycle checks up to eight returned sources and selects the first unseen URL/content hash from the bot and tenant's durable completed-evidence history. Qwen runs only at the fixed local Ollama endpoint with JSON-schema output.
-Live extraction warms `qwen3:8b` with a tiny `keep_alive` ping and retries once
-on `qwen_unavailable`. Jev uses Choice, Score and Noul over a public-only projection through `typesafe.signals`. Tenant identities, private records, and contact restrictions never enter the Jev state.
+Public-news discovery uses per-segment query banks through the existing `news.fetch` egress gate. Queries target named buying events and rotate by stored yield; a query with four jobs and zero supported candidates is decayed, not deleted. Each cycle checks up to eight returned sources, attaches the RSS description when present, and skips Qwen/Jev when no headline names an organization. The first unseen URL/content hash from the bot and tenant's durable completed-evidence history is extracted. Qwen runs only at the fixed local Ollama endpoint with JSON-schema output.
+Live extraction warms `qwen3:8b` with a tiny `keep_alive` ping, bounds source text, and retries once on timeout without a new job reservation. Jev uses Choice, Score and Noul over a public-only projection through `typesafe.signals`. Tenant identities, private records, and contact restrictions never enter the Jev state. Studio shows a lifetime yield report (jobs, supported, inconclusive reasons) per segment and query.
 
 Exact source spans establish any extracted email or phone. An exact quote is necessary but not sufficient to support a market signal: Jev separately evaluates the proposed quote in context. Provider failures are `data_unavailable`, never an invented empty lead inventory. Consumer insights are unverified hypotheses, and public contacts have unverified identity. Discovery is not buying intent or qualification.
 
@@ -63,7 +62,7 @@ Autonomous primary-page crawling is not implemented: the existing fetcher does n
 
 ## Verification
 
-Run the repository backend tests, Ruff and its backlog ratchet, dashboard lint/unit/build/browser suites. New focused suites are `test_bd_conductor.py`, `test_bd_service.py`, `test_bd_routes.py`, `test_bd_pipeline.py`, and `test_bd_cadence.py`. The dashboard has fixture tests plus `dashboard/tests/bd-live.mjs` for the real isolated backend (hard-bound to loopback port 8231 and synthetic replay).
+Run the repository backend tests, Ruff and its backlog ratchet, dashboard lint/unit/build/browser suites. New focused suites are `test_bd_conductor.py`, `test_bd_service.py`, `test_bd_routes.py`, `test_bd_pipeline.py`, `test_bd_cadence.py`, and `test_bd_queries.py`. The dashboard has fixture tests plus `dashboard/tests/bd-live.mjs` for the real isolated backend (hard-bound to loopback port 8231 and synthetic replay).
 
 Tests cover durable state, concurrent dedup/leases, retry limits, deadline/heartbeat fencing, restart recovery, global/per-bot caps, kill/resume, schedule validation, strict tenant binding, same-origin mutations, evidence validation, provider denial, triage persistence, and no fake packet for a successful empty source result. Browser checks cover SSE running/completion, source evidence, triage, filters, error states, and phone layouts. Real local Qwen extraction was separately exercised on synthetic text; live cloud retrieval/Jev and authenticated tenant API access remain unverified because their activation boundaries are closed.
 

@@ -60,6 +60,13 @@ class BDConductor:
                     day TEXT NOT NULL, scope TEXT NOT NULL, resource TEXT NOT NULL,
                     reserved REAL NOT NULL, PRIMARY KEY(day, scope, resource)
                 );
+                CREATE TABLE IF NOT EXISTS bd_query_yield (
+                    segment TEXT NOT NULL, query_id TEXT NOT NULL,
+                    jobs INTEGER NOT NULL, supported INTEGER NOT NULL,
+                    rejected INTEGER NOT NULL, failed INTEGER NOT NULL,
+                    inconclusive TEXT NOT NULL,
+                    PRIMARY KEY(segment, query_id)
+                );
             """)
 
     def _validate_config(self):
@@ -608,6 +615,75 @@ class BDConductor:
                 dict(id=r[0], timestamp=r[1], kind=r[2], job_id=r[3], **json.loads(r[4]))
                 for r in rows
             ]
+
+    def query_yield(self):
+        from .bd_queries import parse_inconclusive
+
+        with self._transaction() as db:
+            rows = db.execute(
+                "SELECT segment, query_id, jobs, supported, rejected, failed, inconclusive "
+                "FROM bd_query_yield ORDER BY segment, query_id"
+            ).fetchall()
+        return [
+            {
+                "segment": row[0],
+                "query_id": row[1],
+                "jobs": row[2],
+                "supported": row[3],
+                "rejected": row[4],
+                "failed": row[5],
+                "inconclusive": parse_inconclusive(row[6]),
+            }
+            for row in rows
+        ]
+
+    def record_query_yield(self, segment, query_id, outcome, reason=None):
+        from .bd_queries import (
+            apply_yield,
+            empty_yield_row,
+            parse_inconclusive,
+            serialize_inconclusive,
+        )
+
+        if (
+            not isinstance(segment, str)
+            or not isinstance(query_id, str)
+            or not segment
+            or not query_id
+        ):
+            return None
+        with self._transaction() as db:
+            row = db.execute(
+                "SELECT jobs, supported, rejected, failed, inconclusive FROM bd_query_yield "
+                "WHERE segment=? AND query_id=?",
+                (segment, query_id),
+            ).fetchone()
+            current = empty_yield_row(segment, query_id)
+            if row:
+                current.update(
+                    jobs=row[0],
+                    supported=row[1],
+                    rejected=row[2],
+                    failed=row[3],
+                    inconclusive=parse_inconclusive(row[4]),
+                )
+            updated = apply_yield(current, outcome, reason)
+            db.execute(
+                "INSERT INTO bd_query_yield VALUES(?,?,?,?,?,?,?) "
+                "ON CONFLICT(segment, query_id) DO UPDATE SET "
+                "jobs=excluded.jobs, supported=excluded.supported, rejected=excluded.rejected, "
+                "failed=excluded.failed, inconclusive=excluded.inconclusive",
+                (
+                    segment,
+                    query_id,
+                    updated["jobs"],
+                    updated["supported"],
+                    updated["rejected"],
+                    updated["failed"],
+                    serialize_inconclusive(updated["inconclusive"]),
+                ),
+            )
+            return updated
 
     def snapshot(self):
         with self._transaction() as db:

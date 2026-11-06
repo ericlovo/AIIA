@@ -17,6 +17,11 @@ BUYERS = {
 }
 MAX_BYTES = 3_000_000
 MAX_PAGES = 7
+WATCH_UA = "AIIA-K12-Procurement-Watch/1.0 (+https://github.com/ericlovo/AIIA)"
+WATCH_HEADERS = {
+    "User-Agent": WATCH_UA,
+    "Accept": "text/html,application/xhtml+xml;q=0.9",
+}
 
 
 class Node:
@@ -211,31 +216,59 @@ def parse_california_detail(body, url, title, today):
     return _record("CA", url, title, sections[0].text(), today)
 
 
-def _get(client, url):
-    with client.stream(
-        "GET",
-        url,
-        follow_redirects=False,
-        timeout=20,
-        headers={"User-Agent": "AIIA-Education-Source-Audit/1.0"},
-    ) as response:
-        if (
-            response.status_code != 200
-            or "html" not in response.headers.get("content-type", "").lower()
+def http_status_reason(prefix, status):
+    if status == 403:
+        return prefix + "http_forbidden"
+    if status == 404:
+        return prefix + "http_not_found"
+    if status in (301, 302, 303, 307, 308):
+        return prefix + "redirect_blocked"
+    return prefix + "unavailable"
+
+
+def read_public_html(client, url, *, max_bytes, prefix, max_redirects=4):
+    """Same-host HTTPS redirects only; cross-host stays unavailable, never followed."""
+    original_host = urlsplit(url).hostname
+    for _ in range(max_redirects):
+        with client.stream(
+            "GET", url, follow_redirects=False, timeout=20, headers=WATCH_HEADERS
+        ) as response:
+            if response.status_code in (301, 302, 303, 307, 308):
+                target = urljoin(url, response.headers.get("location", ""))
+                parsed = urlsplit(target)
+                if (
+                    parsed.scheme != "https"
+                    or parsed.hostname != original_host
+                    or parsed.username
+                    or parsed.password
+                    or parsed.port not in (None, 443)
+                ):
+                    raise ValueError(prefix + "redirect_blocked")
+                url = target
+                continue
+            if response.status_code != 200:
+                raise ValueError(http_status_reason(prefix, response.status_code))
+            if "html" not in response.headers.get("content-type", "").lower():
+                raise ValueError(prefix + "unavailable")
+            data = bytearray()
+            for chunk in response.iter_bytes():
+                data.extend(chunk)
+                if len(data) > max_bytes:
+                    raise ValueError(prefix + "too_large")
+        body = data.decode("utf-8", errors="strict")
+        visible = Tree(body).root.text()
+        if re.search(
+            r"request rejected|access denied|verify you are human|captcha challenge",
+            visible,
+            re.I,
         ):
-            raise ValueError("agency_source_unavailable")
-        data = bytearray()
-        for chunk in response.iter_bytes():
-            data.extend(chunk)
-            if len(data) > MAX_BYTES:
-                raise ValueError("agency_source_too_large")
-    body = data.decode("utf-8", errors="strict")
-    visible = Tree(body).root.text()
-    if re.search(
-        r"request rejected|access denied|verify you are human|captcha challenge", visible, re.I
-    ):
-        raise ValueError("agency_source_challenge")
-    return body
+            raise ValueError(prefix + "challenge")
+        return body
+    raise ValueError(prefix + "redirect_blocked")
+
+
+def _get(client, url):
+    return read_public_html(client, url, max_bytes=MAX_BYTES, prefix="agency_source_")
 
 
 def fetch(client, source, today):

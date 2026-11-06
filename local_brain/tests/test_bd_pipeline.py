@@ -168,7 +168,7 @@ async def test_client_replay_and_live_missing_tenant_api():
 
 @async_test
 async def test_no_observations_never_yields_human_packet(monkeypatch):
-    async def empty(segment):
+    async def empty(segment, query=None):
         return []
 
     monkeypatch.setattr(pipeline, "retrieve_sources", empty)
@@ -276,7 +276,9 @@ async def test_public_retrieval_uses_segment_query_and_fixed_host(monkeypatch):
 
     def handle(request):
         assert request.url.host == "news.google.com"
-        assert "healthcare" in request.url.params["q"]
+        query = request.url.params["q"]
+        assert "hospital" in query or "health system" in query
+        assert "EHR" in query or "electronic health record" in query
         return httpx.Response(200, text=xml)
 
     client = httpx.AsyncClient
@@ -535,11 +537,11 @@ async def test_seen_sources_are_skipped_before_qwen(monkeypatch):
     }
     called = []
 
-    async def retrieve(segment):
+    async def retrieve(segment, query=None):
         return [first, second]
 
     async def local(source):
-        called.append(source)
+        called.append(pipeline.evidence_key(source))
         return extraction, 10
 
     async def judge(source, result, segment):
@@ -551,7 +553,7 @@ async def test_seen_sources_are_skipped_before_qwen(monkeypatch):
     result = await pipeline.run_pipeline(
         job(mode="live", seen_evidence=[pipeline.evidence_key(first)])
     )
-    assert called == [second]
+    assert called == [pipeline.evidence_key(second)]
     assert result["packets"][0]["evidence_key"] == pipeline.evidence_key(second)
     called.clear()
     result = await pipeline.run_pipeline(
@@ -798,36 +800,12 @@ def test_strict_resolved_quote_validation_remains_unchanged(bad_quote):
     "title,publisher,organization,quote,signal,reason",
     [
         (
-            "Keep politics out of hospital expansion - The Daily Star",
-            "The Daily Star",
-            "The Daily Star",
-            "Keep politics out of hospital expansion",
-            "hospital expansion",
-            "publisher_is_not_prospect",
-        ),
-        (
             "Marshall Islands eyes hiring Filipino doctors, nurses amid healthcare worker shortage - The Filipino Times",
             "The Filipino Times",
             "The Filipino Times",
             "Marshall Islands eyes hiring Filipino doctors, nurses amid healthcare worker shortage",
             "hiring",
             "publisher_is_not_prospect",
-        ),
-        (
-            "Hospital expands services",
-            "",
-            "Hospital",
-            "Hospital expands services",
-            "expands",
-            "generic_healthcare_reference",
-        ),
-        (
-            "Clinic opening reported",
-            "",
-            "",
-            "Clinic opening reported",
-            "opening",
-            "no_named_organization",
         ),
         (
             "Orchard Health mentioned. Another clinic expands.",
@@ -855,7 +833,7 @@ async def test_healthcare_deterministic_withhold_skips_jev(
     source.update(title=title, publisher=publisher)
     extraction.update(organization=organization, quote=quote, signal=signal)
 
-    async def retrieve(segment):
+    async def retrieve(segment, query=None):
         return [source]
 
     async def local(source):
@@ -917,7 +895,7 @@ async def test_healthcare_semantic_gate_and_positive_provider(monkeypatch, failu
     elif failure == "unsupported_claim":
         judgments["answers"]["claim_supported"]["noul"] = 0.79
 
-    async def retrieve(segment):
+    async def retrieve(segment, query=None):
         return [source]
 
     async def local(source):
@@ -1019,7 +997,7 @@ async def test_segment_prospect_gate(monkeypatch, segment, article, organization
         judgments["answers"]["claim_supported"]["noul"] = 0.1
     called = []
 
-    async def retrieve(segment):
+    async def retrieve(segment, query=None):
         return [source]
 
     async def local(source):
@@ -1080,7 +1058,7 @@ async def test_named_but_irrelevant_segment_evidence_is_withheld(
         probabilities={key: 0.9 if key == "other" else 1 / 30 for key in entity["probabilities"]},
     )
 
-    async def retrieve(segment):
+    async def retrieve(segment, query=None):
         return [source]
 
     async def local(source):
@@ -1140,7 +1118,7 @@ def test_persisted_invalid_answers_fail_closed(answers):
 async def test_qwen_single_reserved_call_without_hidden_warmup_or_retry(monkeypatch):
     calls = []
 
-    async def fail(source):
+    async def fail(source, *, timeout=70, num_ctx=8192):
         calls.append(source)
         raise httpx.ConnectError("offline")
 

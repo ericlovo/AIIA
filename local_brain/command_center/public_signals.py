@@ -2,9 +2,11 @@
 
 import asyncio
 import hashlib
+import html
 import json
 import math
 import os
+import re
 import sqlite3
 import time
 import uuid
@@ -90,15 +92,19 @@ def parse_feed(content: bytes, now: float) -> list[dict]:
         if key in seen:
             continue
         seen.add(key)
-        items.append(
-            {
-                "key": key,
-                "title": title,
-                "url": url,
-                "publisher": (item.findtext("source") or "Unknown")[:120],
-                "published_at": published.astimezone(timezone.utc).isoformat(),
-            }
-        )
+        snippet = " ".join(
+            html.unescape(re.sub(r"<[^>]+>", " ", item.findtext("description") or "")).split()
+        )[:800]
+        record = {
+            "key": key,
+            "title": title,
+            "url": url,
+            "publisher": (item.findtext("source") or "Unknown")[:120],
+            "published_at": published.astimezone(timezone.utc).isoformat(),
+        }
+        if snippet:
+            record["text"] = snippet
+        items.append(record)
     return sorted(items, key=lambda item: item["published_at"], reverse=True)
 
 

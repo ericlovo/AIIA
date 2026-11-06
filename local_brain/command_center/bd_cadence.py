@@ -31,6 +31,10 @@ NEXT_QUERY = {
         "Find a named in-segment operator and a confirmed relevant event"
     ),
     "qwen_unavailable": "Warm qwen3:8b and retry this source after the model is resident",
+    "qwen_timeout": "Warm qwen3:8b; retry the same source after the model is resident",
+    "headline_lacks_named_organization": (
+        "Skip generic industry headlines; require a named organization before extraction"
+    ),
     "source_evidence_missing": "Retain the source quote and URL before treating this as a candidate",
     "source_evidence_unverified": "Re-check grounding: named organization, quote, and supported claim",
     "segment_rejected": "Move to a different source; this segment judgment rejected the evidence",

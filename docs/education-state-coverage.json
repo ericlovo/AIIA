@@ -52,7 +52,7 @@
       "state": "CA",
       "name": "California",
       "discovery_url": "https://ccee-ca.org/request-for-proposal-collection/",
-      "discovery_observation": "CCEE only, not all California districts; ACTIVE listing includes older deadlines, so detail dates are required.",
+      "discovery_observation": "CCEE only, not all California districts; ACTIVE listing includes older deadlines, so detail dates are required. Cloud run 2026-11-02 reported the source unavailable; coded HTTP reasons and same-host redirects are now recorded. Unavailable is not a zero-result.",
       "probe_status": "200 verified via public HTTPS with certificate validation; no authentication; 2026-10-31",
       "configured_sources": [
         {
@@ -623,7 +623,7 @@
       "state": "WV",
       "name": "West Virginia",
       "discovery_url": "https://www.state.wv.us/admin/purchase/BusinesswiththeState.html",
-      "discovery_observation": "Official vendor guide only; wvOASIS adapter needed.",
+      "discovery_observation": "Official vendor guide only; wvOASIS adapter needed. Cloud run 2026-11-02 reported the WVDE bid page unavailable; coded HTTP reasons and same-host redirects are now recorded. Unavailable is not a zero-result.",
       "probe_status": "directory_or_unhydrated_listing",
       "configured_sources": [
         {

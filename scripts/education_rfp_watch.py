@@ -71,7 +71,61 @@ DEADLINE_ADAPTERS = frozenset(
         "nysed",
         "southeast",
         "westvirginia",
+        "periscope",
     }
+)
+
+# Ranked by NCES K-12 enrollment as a procurement-volume proxy. Blockers are
+# from the 50-state inventory; this list does not claim those sources work.
+NEXT_ONBOARDING = (
+    {
+        "state": "Florida",
+        "rank": 1,
+        "volume": "high",
+        "blocker": "FLDOE purchasing page returned Akamai 403; no permitted public listing adapter",
+    },
+    {
+        "state": "Georgia",
+        "rank": 2,
+        "volume": "high",
+        "blocker": "GPR event schema verified on a historical closed record only; current listing is not onboardable",
+    },
+    {
+        "state": "Ohio",
+        "rank": 3,
+        "volume": "high",
+        "blocker": "OhioBuys Ivalua public listing is a browser-check interstitial; no records",
+    },
+    {
+        "state": "North Carolina",
+        "rank": 4,
+        "volume": "high",
+        "blocker": "EVP PowerPages listing is unhydrated; empty placeholders are not zero results",
+    },
+    {
+        "state": "Michigan",
+        "rank": 5,
+        "volume": "high",
+        "blocker": "Contract Connect HTTP 403; SIGMA VSS needs a separate public adapter",
+    },
+    {
+        "state": "Virginia",
+        "rank": 6,
+        "volume": "high",
+        "blocker": "DGS page is a guide to eVA; no records in the fetched HTML",
+    },
+    {
+        "state": "Arizona",
+        "rank": 7,
+        "volume": "high",
+        "blocker": "ADE page is a Cloudflare challenge; APP feed is not yet permitted",
+    },
+    {
+        "state": "Tennessee",
+        "rank": 8,
+        "volume": "medium",
+        "blocker": "CPO opportunities page timed out empty; no notices observed",
+    },
 )
 MAX_CALLS = 20
 MAX_BYTES = 1_000_000
@@ -513,7 +567,7 @@ def preflight(client, token, channel):
         raise ValueError("channel_unavailable")
 
 
-def message(today, notices, coverage, failures, deferred):
+def message(today, notices, coverage, failures, deferred, *, already_reviewed=0, pending_review=0):
     lines = [
         f"AIIA K12 procurement review — {today}",
         f"New review matches: {len(notices)}",
@@ -538,7 +592,13 @@ def message(today, notices, coverage, failures, deferred):
             ]
         )
     if failures:
-        lines.append("Unavailable: " + ", ".join(sorted(set(failures))))
+        lines.append("Unavailable: " + ", ".join(failures))
+    if already_reviewed:
+        lines.append(f"Already reviewed in a prior run: {already_reviewed}.")
+    if pending_review:
+        lines.append(
+            f"Awaiting document verification: {pending_review} (withheld from alerts until verified)."
+        )
     if deferred:
         lines.append(f"Not evaluated due to daily call cap: {deferred}.")
     return html.escape("\n".join(lines), quote=False)[:35000]
@@ -650,11 +710,13 @@ def run(config, state_path, output_dir, send=False, *, client=None, today=None, 
             if len(group) > i
         ]
         ordered = list({item["notice_id"]: item for item in ordered}.values())
+        # Spend remaining calls on pending research after alertable notices.
+        ordered.sort(key=lambda item: item.get("alert_eligible") is False)
         notices, deferred, unavailable, evaluated = [], 0, 0, 0
+        already_reviewed = 0
         for item in ordered:
-            if item.get("alert_eligible") is False:
-                continue
             if item["notice_id"] in state["deliveries"]:
+                already_reviewed += 1
                 continue
             cached = state["cache"].get(item["hash"])
             if cached is not None and cached.get("date") != today:
@@ -680,7 +742,8 @@ def run(config, state_path, output_dir, send=False, *, client=None, today=None, 
             else:
                 evaluated += 1
             if (
-                cached.get("selected")
+                item.get("alert_eligible") is not False
+                and cached.get("selected")
                 and (
                     cached.get("freshness_basis") != "verified_adapter_deadline"
                     or verified_freshness(item, today)
@@ -694,7 +757,22 @@ def run(config, state_path, output_dir, send=False, *, client=None, today=None, 
         )
         matches_held = max(0, len(notices) - 10)
         notices = notices[:10]
-        text = message(today, notices, len(coverage), failures, deferred)
+        pending_review = sum(i.get("alert_eligible") is False for i in ordered)
+        failure_labels = []
+        for row in source_counts:
+            if row.get("status") != "unavailable":
+                continue
+            reason = row.get("reason")
+            failure_labels.append(f"{row['state']} ({reason})" if reason else row["state"])
+        text = message(
+            today,
+            notices,
+            len(coverage),
+            failure_labels,
+            deferred,
+            already_reviewed=already_reviewed,
+            pending_review=pending_review,
+        )
         if matches_held:
             text += f"\nAdditional qualified matches retained for a later digest: {matches_held}."
         checked = sorted(coverage)
@@ -706,8 +784,13 @@ def run(config, state_path, output_dir, send=False, *, client=None, today=None, 
         )
         if unverified:
             text += "\nPage loaded but listing not verified: " + ", ".join(unverified)
-        pending_review = sum(i.get("alert_eligible") is False for i in ordered)
         text += f"\nCandidate notices found: {len(ordered)}; evaluated: {evaluated}; awaiting document verification: {pending_review}."
+        if NEXT_ONBOARDING:
+            blocked = ", ".join(item["state"] for item in NEXT_ONBOARDING[:4])
+            text += (
+                f"\nHighest-volume states not yet onboarded: {blocked}. "
+                "Adapters remain blocked; unavailable sources are not zero results."
+            )
         run_id = os.environ.get("GITHUB_RUN_ID", "")
         repository = os.environ.get("GITHUB_REPOSITORY", "")
         if run_id.isdigit() and re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", repository):
@@ -725,9 +808,16 @@ def run(config, state_path, output_dir, send=False, *, client=None, today=None, 
             "states_listing_unverified": unverified,
             "source_candidate_counts": source_counts,
             "candidate_count": len(ordered),
-            "pending_document_review": sum(i.get("alert_eligible") is False for i in ordered),
+            "pending_document_review": pending_review,
             "evaluated_candidate_count": evaluated,
+            "already_reviewed": already_reviewed,
             "unavailable_sources": failures,
+            "unavailable_source_reasons": {
+                row["state"]: row.get("reason")
+                for row in source_counts
+                if row.get("status") == "unavailable"
+            },
+            "next_onboarding": list(NEXT_ONBOARDING),
             "review_matches": len(notices),
             "deferred": deferred,
             "matches_held_for_next_digest": matches_held,

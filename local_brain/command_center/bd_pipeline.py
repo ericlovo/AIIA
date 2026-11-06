@@ -19,17 +19,28 @@ from pydantic import BaseModel, ConfigDict, Field
 from local_brain.egress import airgap_status, authorize_egress
 
 from .bd_cadence import next_query_for
+from .bd_queries import (
+    QUERY_BANK,
+    attach_snippet,
+    default_query,
+    discovery_slot,
+    named_organization_present,
+    query_by_id,
+    select_discovery_query,
+)
 from .typesafe_advisor import Usage
 
 QWEN_MODEL = "qwen3:8b"
 QWEN_KEEP_ALIVE = "30m"
 QWEN_ENDPOINT = "http://127.0.0.1:11434/api/chat"
+QWEN_WARMUP_TIMEOUT = 25
+QWEN_EXTRACT_TIMEOUT = 70
+QWEN_RETRY_TIMEOUT = 40
+SOURCE_BYTE_LIMIT = 1800
+SOURCE_RETRY_BYTE_LIMIT = 1200
 
-SEGMENTS = {
-    "healthcare": "(healthcare OR hospital OR clinic) (expansion OR acquisition OR hiring)",
-    "pe-technical-diligence": '"private equity" (acquisition OR technology OR diligence)',
-    "alumni-associations": "(alumni OR association) (membership OR engagement OR platform)",
-}
+# Default RSS strings stay importable for tests and for PR #141's operator overlay.
+SEGMENTS = {segment: queries[0]["q"] for segment, queries in QUERY_BANK.items()}
 EMAIL = re.compile(r"(?<![\w.+-])[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}(?![\w.-])")
 PHONE = re.compile(r"(?<!\d)(?:\+1[ .-]?)?\(?[2-9]\d{2}\)?[ .-]\d{3}[ .-]\d{4}(?!\d)")
 QUESTIONS = {
@@ -251,7 +262,7 @@ def evidence_key(source):
 
 
 def source_text(source):
-    return source.get("text", source["title"])
+    return source.get("text") or source.get("title") or ""
 
 
 class ManagedLeadsReadOnly:
@@ -425,8 +436,19 @@ def readiness():
     }
 
 
-async def retrieve_sources(segment):
-    if segment not in SEGMENTS:
+def discovery_query_for(job, segment):
+    payload = job.get("payload") if isinstance(job.get("payload"), dict) else {}
+    requested = payload.get("query_id") or payload.get("discovery_query_id")
+    return select_discovery_query(
+        segment,
+        yield_stats=job.get("query_yield"),
+        query_id=requested if isinstance(requested, str) else None,
+        slot=discovery_slot(job.get("entity_id")),
+    )
+
+
+async def retrieve_sources(segment, query=None):
+    if segment not in QUERY_BANK:
         raise ValueError("unknown_segment")
     if os.getenv("AIIA_NEWS_ENABLED") != "1":
         raise DataUnavailable("public_retrieval_disabled")
@@ -435,12 +457,15 @@ async def retrieve_sources(segment):
         raise DataUnavailable("public_retrieval_egress_denied")
     from .public_signals import MAX_BYTES, parse_feed
 
-    query = urlencode(
-        {"q": SEGMENTS[segment] + " when:14d", "hl": "en-US", "gl": "US", "ceid": "US:en"}
-    )
+    if isinstance(query, str) and query.strip():
+        named = query_by_id(segment, query.strip())
+        search = named["q"] if named else query.strip()
+    else:
+        search = default_query(segment)["q"]
+    encoded = urlencode({"q": search + " when:14d", "hl": "en-US", "gl": "US", "ceid": "US:en"})
     async with (
         httpx.AsyncClient(timeout=15, follow_redirects=False, trust_env=False) as client,
-        client.stream("GET", f"https://news.google.com/rss/search?{query}") as response,
+        client.stream("GET", f"https://news.google.com/rss/search?{encoded}") as response,
     ):
         response.raise_for_status()
         body = bytearray()
@@ -474,7 +499,7 @@ def quote_candidates(source):
     return candidates
 
 
-def qwen_payload(source):
+def qwen_payload(source, num_ctx=8192):
     candidates = quote_candidates(source)
     schema = QwenSelection.model_json_schema()
     schema["properties"]["quote_index"]["enum"] = [
@@ -486,7 +511,7 @@ def qwen_payload(source):
         "think": False,
         "keep_alive": QWEN_KEEP_ALIVE,
         "format": schema,
-        "options": {"num_predict": 512, "temperature": 0, "num_ctx": 8192},
+        "options": {"num_predict": 512, "temperature": 0, "num_ctx": num_ctx},
         "messages": [
             {
                 "role": "system",
@@ -522,9 +547,30 @@ def token_reservation(payload, output_tokens):
     return len(json.dumps(payload, ensure_ascii=False).encode("utf-8")) + output_tokens + 256
 
 
-async def extract_local(source):
-    payload = qwen_payload(source)
-    async with httpx.AsyncClient(timeout=90, trust_env=False) as client:
+QWEN_WARMUP_PAYLOAD = {
+    "model": QWEN_MODEL,
+    "stream": False,
+    "think": False,
+    "keep_alive": QWEN_KEEP_ALIVE,
+    "messages": [{"role": "user", "content": "ok"}],
+    "options": {"temperature": 0, "num_predict": 1, "num_ctx": 512},
+}
+
+
+async def warm_qwen():
+    """Best-effort keep-alive ping. Failures do not consume the extract reservation."""
+    try:
+        async with httpx.AsyncClient(timeout=QWEN_WARMUP_TIMEOUT, trust_env=False) as client:
+            response = await client.post(QWEN_ENDPOINT, json=QWEN_WARMUP_PAYLOAD)
+            response.raise_for_status()
+        return True
+    except httpx.HTTPError:
+        return False
+
+
+async def extract_local(source, *, timeout=QWEN_EXTRACT_TIMEOUT, num_ctx=8192):
+    payload = qwen_payload(source, num_ctx=num_ctx)
+    async with httpx.AsyncClient(timeout=timeout, trust_env=False) as client:
         response = await client.post(QWEN_ENDPOINT, json=payload)
         response.raise_for_status()
     data = response.json()
@@ -542,9 +588,22 @@ async def extract_local(source):
     return validate_extraction(source, extraction), sum(counts)
 
 
-async def extract_ready(source, emit=None):
-    # The conductor owns retries and reserves each attempt before inference.
-    return await extract_local(source)
+async def extract_ready(source):
+    """Warm qwen3:8b, extract once, and retry once on timeout without a new job attempt."""
+    started = time.monotonic()
+    await warm_qwen()
+    try:
+        return await extract_local(source, timeout=QWEN_EXTRACT_TIMEOUT)
+    except httpx.TimeoutException:
+        leftover = 110 - (time.monotonic() - started)
+        if leftover < 20:
+            raise
+        retry_source = attach_snippet(source, limit=SOURCE_RETRY_BYTE_LIMIT)
+        return await extract_local(
+            retry_source,
+            timeout=min(QWEN_RETRY_TIMEOUT, leftover),
+            num_ctx=4096,
+        )
 
 
 def validate_extraction(source, extraction):
@@ -775,6 +834,16 @@ def proposal_packet(job, source, extraction, judgments, usage):
     }
 
 
+def with_discovery(result, discovery, segment):
+    if not isinstance(result, dict) or not isinstance(discovery, dict):
+        return result
+    result["discovery_query"] = {
+        "id": discovery.get("id"),
+        "segment": segment,
+    }
+    return result
+
+
 async def run_pipeline(job, emit=None):
     async def event(kind, **data):
         if emit:
@@ -814,6 +883,7 @@ async def run_pipeline(job, emit=None):
         raise ValueError("tenant_required")
     started = time.monotonic()
     research_segment = job["segment"]
+    discovery = None
     managed = None
     if mode == "live" and job["segment"] == "client-bd":
         research_segment = job.get("research_segment")
@@ -850,6 +920,7 @@ async def run_pipeline(job, emit=None):
         usage = {"tokens": 0, "calls": 0, "network_calls": 0, "kind": "replay-not-inference"}
         await event("jev_replayed", model=judgments["model"], latency_ms=0)
     else:
+        discovery = discovery_query_for(job, research_segment)
         if imported is not None:
             sources = [load_public_excerpt(imported, job.get("source_allowlist", []))]
             await event(
@@ -858,33 +929,78 @@ async def run_pipeline(job, emit=None):
                 message="Human-supplied excerpt; not independently fetched",
             )
         else:
-            sources = await observed("sources", retrieve_sources(research_segment))
+            sources = await observed(
+                "sources", retrieve_sources(research_segment, query=discovery["q"])
+            )
+            await event(
+                "discovery_query",
+                query_id=discovery["id"],
+                segment=research_segment,
+                message=discovery["id"],
+            )
         seen = job.get("seen_evidence", [])
         if not isinstance(seen, (list, set, tuple)) or any(
             not isinstance(key, str) for key in seen
         ):
             raise ValueError("invalid_seen_evidence")
-        sources = [source for source in sources if evidence_key(source) not in set(seen)]
+        sources = [
+            attach_snippet(source, limit=SOURCE_BYTE_LIMIT)
+            for source in sources
+            if evidence_key(source) not in set(seen)
+        ]
         if not sources:
             await event(
                 "no_new_evidence", message="No unseen evidence in this bounded source batch"
             )
-            return {
-                "reason": "no_new_evidence",
-                "next_query": next_query_for("no_new_evidence"),
-                "status": "no_observations",
-                "research_outcome": "inconclusive",
-                "packets": [],
-                "mode": "live",
-                "tenant_id": job["tenant_id"],
-                "usage": {
-                    "tokens": 0,
-                    "calls": (0 if imported is not None else 1) + int(managed is not None),
-                    "network_calls": (0 if imported is not None else 1) + int(managed is not None),
-                    "seconds": round(time.monotonic() - started, 3),
+            return with_discovery(
+                {
+                    "reason": "no_new_evidence",
+                    "next_query": next_query_for("no_new_evidence"),
+                    "status": "no_observations",
+                    "research_outcome": "inconclusive",
+                    "packets": [],
+                    "mode": "live",
+                    "tenant_id": job["tenant_id"],
+                    "usage": {
+                        "tokens": 0,
+                        "calls": (0 if imported is not None else 1) + int(managed is not None),
+                        "network_calls": (0 if imported is not None else 1)
+                        + int(managed is not None),
+                        "seconds": round(time.monotonic() - started, 3),
+                    },
                 },
-            }
-        source = sources[0]
+                discovery,
+                research_segment,
+            )
+        named = [source for source in sources if named_organization_present(source)]
+        if not named:
+            await event(
+                "candidate_withheld",
+                reason="headline_lacks_named_organization",
+                message="RSS headlines lacked a named organization; Qwen was not called",
+            )
+            return with_discovery(
+                {
+                    "reason": "headline_lacks_named_organization",
+                    "next_query": next_query_for("headline_lacks_named_organization"),
+                    "status": "no_supported_prospect",
+                    "research_outcome": "inconclusive",
+                    "packets": [],
+                    "reviewed_evidence": [evidence_key(source) for source in sources],
+                    "mode": "live",
+                    "tenant_id": job["tenant_id"],
+                    "usage": {
+                        "tokens": 0,
+                        "calls": (0 if imported is not None else 1) + int(managed is not None),
+                        "network_calls": (0 if imported is not None else 1)
+                        + int(managed is not None),
+                        "seconds": round(time.monotonic() - started, 3),
+                    },
+                },
+                discovery,
+                research_segment,
+            )
+        source = named[0]
         await event(
             "qwen_called",
             provider="qwen",
@@ -921,18 +1037,22 @@ async def run_pipeline(job, emit=None):
                     reason=gap,
                     message="Evidence did not identify a supported segment prospect",
                 )
-                return {
-                    "status": "no_supported_prospect",
-                    "reason": gap,
-                    "next_query": next_query_for(gap),
-                    "research_outcome": (
-                        "rejected" if gap == "publisher_is_not_prospect" else "inconclusive"
-                    ),
-                    "packets": [],
-                    "reviewed_evidence": [evidence_key(source)],
-                    "usage": usage,
-                    "mode": "live",
-                }
+                return with_discovery(
+                    {
+                        "status": "no_supported_prospect",
+                        "reason": gap,
+                        "next_query": next_query_for(gap),
+                        "research_outcome": (
+                            "rejected" if gap == "publisher_is_not_prospect" else "inconclusive"
+                        ),
+                        "packets": [],
+                        "reviewed_evidence": [evidence_key(source)],
+                        "usage": usage,
+                        "mode": "live",
+                    },
+                    discovery,
+                    research_segment,
+                )
         await event(
             "jev_called",
             model="jev-latest",
@@ -996,26 +1116,30 @@ async def run_pipeline(job, emit=None):
                 reason=reason,
                 message="No supported segment prospect in this evidence",
             )
-            return {
-                "status": "no_supported_prospect",
-                "reason": reason,
-                "next_query": next_query_for(reason),
-                "research_outcome": (
-                    "rejected"
-                    if (
-                        answers["disposition"]["choice"] == "reject"
-                        or (
-                            entity["choice"] in {"publisher", "other"}
-                            and entity["confidence"] >= 0.8
+            return with_discovery(
+                {
+                    "status": "no_supported_prospect",
+                    "reason": reason,
+                    "next_query": next_query_for(reason),
+                    "research_outcome": (
+                        "rejected"
+                        if (
+                            answers["disposition"]["choice"] == "reject"
+                            or (
+                                entity["choice"] in {"publisher", "other"}
+                                and entity["confidence"] >= 0.8
+                            )
                         )
-                    )
-                    else "inconclusive"
-                ),
-                "packets": [],
-                "reviewed_evidence": [evidence_key(source)],
-                "usage": usage,
-                "mode": "replay-only" if mode == "replay" else "live",
-            }
+                        else "inconclusive"
+                    ),
+                    "packets": [],
+                    "reviewed_evidence": [evidence_key(source)],
+                    "usage": usage,
+                    "mode": "replay-only" if mode == "replay" else "live",
+                },
+                discovery,
+                research_segment,
+            )
     packet = proposal_packet(job, source, extraction, judgments, usage)
     if managed is not None:
         packet["managed_leads"] = {
@@ -1027,4 +1151,8 @@ async def run_pipeline(job, emit=None):
         packet["research_segment"] = research_segment
     await event("candidate_proposed", organization=packet["organization"], segment=job["segment"])
     await event("packet_assembled", status=packet["status"])
-    return {"packets": [packet], "usage": usage, "mode": packet["mode"]}
+    return with_discovery(
+        {"packets": [packet], "usage": usage, "mode": packet["mode"]},
+        discovery,
+        research_segment,
+    )

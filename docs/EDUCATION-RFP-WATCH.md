@@ -40,9 +40,23 @@ requires either a fourth Jev score of at least 0.8 or a supported adapter
 verifying an open listing with an explicit future submission deadline. The
 adapter proof is source-bound, dated and checked again before delivery; unknown
 or same-day cutoffs are withheld. All four scores and the selection basis are
-retained. Bid-opening dates alone do not qualify. At most 20 provider
-attempts per UTC day; requests count before dispatch. Actual token usage is
+retained. Bid-opening dates alone do not qualify. An explicit Bid Closing /
+Proposal Due / Response Due date on an already-fetched Periscope detail can qualify;
+Massachusetts listings stay pending without detail fetches. At most 20 provider
+attempts per UTC day; requests count before dispatch. Pending document-review
+notices can use remaining calls for evaluation. They stay out of the digest and
+delivery ledger until the collector verifies eligibility.
+Already-reviewed identities are counted and not re-judged. Actual token usage is
 recorded; dollar cost is unknown unless independently reconciled with billing.
+Unavailable sources report a coded reason (for example
+`agency_source_http_forbidden` or `westvirginia_source_redirect_blocked`).
+Same-host HTTPS redirects are followed; cross-host redirects stay unavailable.
+The 2026-11-02 cloud run's California and West Virginia failures are source
+unavailability, not zero results.
+
+Highest-volume remaining states (Florida, Georgia, Ohio, North Carolina, then
+Michigan, Virginia, Arizona, Tennessee) are ranked in the run summary with the
+observed blocker. Those portals are not onboarded from this change.
 
 ## Delivery and recovery
 

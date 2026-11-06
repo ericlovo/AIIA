@@ -164,6 +164,17 @@ class BDService:
         job["managed_leads"] = dict(self.store.bots[job["bot_id"]].get("managed_leads", {}))
         job["research_segment"] = self.store.bots.get(job["bot_id"], {}).get("research_segment")
         job["seen_evidence"] = self.store.evidence_keys(job["bot_id"], job["tenant_id"])
+        job["query_yield"] = self.store.query_yield()
+        from .bd_queries import QUERY_BANK, discovery_slot, select_discovery_query
+
+        research = job["research_segment"] or job["segment"]
+        if research in QUERY_BANK:
+            payload = dict(job.get("payload") or {})
+            if not payload.get("query_id"):
+                payload["query_id"] = select_discovery_query(
+                    research, job["query_yield"], slot=discovery_slot(job.get("entity_id"))
+                )["id"]
+            job["payload"] = payload
 
         async def emit(kind, detail=None, **extra):
             data = {**(detail or {}), **extra}
@@ -205,8 +216,9 @@ class BDService:
                 raise TimeoutError("attempt_wall_time_exhausted")
             if work.cancelled():
                 raise LeaseLost("job_stopped")
-            result = work.result()
+            result = self._with_job_discovery(job, work.result())
             self.store.complete(job["id"], token, result)
+            self._record_job_yield(job, result)
         except asyncio.CancelledError:
             # A service restart leaves a durable lease; another worker recovers it.
             raise
@@ -217,8 +229,11 @@ class BDService:
             from .bd_pipeline import DataUnavailable
 
             reason = exc.code if isinstance(exc, DataUnavailable) else type(exc).__name__
+            failed = None
             with suppress(LeaseLost):
-                self.store.fail(job["id"], token, reason)
+                failed = self.store.fail(job["id"], token, reason)
+            if failed and failed.get("state") == "failed":
+                self._record_job_yield(job, None, failed_reason=reason)
         finally:
             for task in (work, heartbeat):
                 task.cancel()
@@ -320,6 +335,82 @@ class BDService:
             projection["next_run_at"] = iso(min(candidates))
         return projection
 
+    def _with_job_discovery(self, job, result):
+        if not isinstance(result, dict) or result.get("discovery_query"):
+            return result
+        payload = job.get("payload") if isinstance(job.get("payload"), dict) else {}
+        query_id = payload.get("query_id")
+        segment = job.get("research_segment") or job.get("segment")
+        if not query_id or not segment:
+            return result
+        return {**result, "discovery_query": {"id": query_id, "segment": segment}}
+
+    def _record_job_yield(self, job, result, failed_reason=None):
+        payload = job.get("payload") if isinstance(job.get("payload"), dict) else {}
+        discovery = (result or {}).get("discovery_query") or {}
+        query_id = discovery.get("id") or payload.get("query_id")
+        segment = discovery.get("segment") or job.get("research_segment") or job.get("segment")
+        if not query_id or not segment:
+            return
+        if failed_reason:
+            self.store.record_query_yield(segment, query_id, "failed", failed_reason)
+            return
+        result = result or {}
+        outcome = result.get("research_outcome")
+        reason = result.get("reason")
+        packets = result.get("packets") or []
+        if packets:
+            assessment = candidate_assessment(
+                packets[0], job.get("research_segment") or job.get("segment")
+            )
+            outcome, reason = assessment
+        if outcome not in {"supported", "rejected", "failed"}:
+            outcome = "inconclusive"
+        self.store.record_query_yield(segment, query_id, outcome, reason)
+
+    def _yield_report(self, jobs):
+        from .bd_queries import QUERY_BANK, empty_yield_row
+
+        lifetime = {
+            (row["segment"], row["query_id"]): dict(row) for row in self.store.query_yield()
+        }
+        segments = []
+        for segment, bank in QUERY_BANK.items():
+            queries = []
+            totals = empty_yield_row(segment, "")
+            totals.pop("query_id", None)
+            inconclusive = {}
+            for item in bank:
+                row = lifetime.get((segment, item["id"])) or empty_yield_row(segment, item["id"])
+                queries.append(
+                    {
+                        "id": item["id"],
+                        "jobs": row["jobs"],
+                        "supported": row["supported"],
+                        "rejected": row.get("rejected", 0),
+                        "failed": row["failed"],
+                        "inconclusive": dict(row.get("inconclusive") or {}),
+                    }
+                )
+                totals["jobs"] += row["jobs"]
+                totals["supported"] += row["supported"]
+                totals["rejected"] += row.get("rejected", 0)
+                totals["failed"] += row["failed"]
+                for key, count in (row.get("inconclusive") or {}).items():
+                    inconclusive[key] = inconclusive.get(key, 0) + count
+            segments.append(
+                {
+                    "segment": segment,
+                    "jobs": totals["jobs"],
+                    "supported": totals["supported"],
+                    "rejected": totals["rejected"],
+                    "failed": totals["failed"],
+                    "inconclusive": inconclusive,
+                    "queries": queries,
+                }
+            )
+        return {"scope": "lifetime_stored_runs", "segments": segments}
+
     def _daily_summary(self, raw, jobs, packets):
         zone_name = (raw.get("cadence") or self.store.config.get("cadence") or {}).get(
             "timezone", "America/Chicago"
@@ -373,6 +464,47 @@ class BDService:
             and packet.get("review_status") == "human_review_required"
             and local_day(packet.get("created_at")) == today
         )
+        by_segment = {}
+        by_query = {}
+        for job in public_today.values():
+            segment = job.get("segment") or "unknown"
+            query_id = job.get("discovery_query_id") or "unknown"
+            row = by_segment.setdefault(
+                segment,
+                {
+                    "segment": segment,
+                    "jobs": 0,
+                    "supported": 0,
+                    "rejected": 0,
+                    "failed": 0,
+                    "inconclusive": {},
+                },
+            )
+            query = by_query.setdefault(
+                (segment, query_id),
+                {
+                    "segment": segment,
+                    "query_id": query_id,
+                    "jobs": 0,
+                    "supported": 0,
+                    "rejected": 0,
+                    "failed": 0,
+                    "inconclusive": {},
+                },
+            )
+            outcome = job.get("research_outcome")
+            reason = job.get("result_reason")
+            for bucket in (row, query):
+                bucket["jobs"] += 1
+                if outcome == "supported":
+                    bucket["supported"] += 1
+                elif outcome == "rejected":
+                    bucket["rejected"] += 1
+                elif job.get("state") == "failed":
+                    bucket["failed"] += 1
+                else:
+                    key = reason if isinstance(reason, str) and reason else "inconclusive"
+                    bucket["inconclusive"][key] = bucket["inconclusive"].get(key, 0) + 1
         return {
             "day": today,
             "timezone": zone_name,
@@ -383,6 +515,12 @@ class BDService:
             ),
             "failed": failed,
             "awaiting_human_review": awaiting,
+            "yield": {
+                "segments": sorted(by_segment.values(), key=lambda item: item["segment"]),
+                "queries": sorted(
+                    by_query.values(), key=lambda item: (item["segment"], item["query_id"])
+                ),
+            },
         }
 
     def snapshot(self):
@@ -445,6 +583,9 @@ class BDService:
                     for key in ("created_at", "started_at", "heartbeat_at", "finished_at")
                 }
             )
+            discovery = (job.get("result") or {}).get("discovery_query") or {}
+            payload = job.get("payload") if isinstance(job.get("payload"), dict) else {}
+            public["discovery_query_id"] = discovery.get("id") or payload.get("query_id")
             if job["state"] == "completed":
                 result = job.get("result") or {}
                 retained = result.get("packets", [result] if result.get("organization") else [])
@@ -619,6 +760,7 @@ class BDService:
                 raw["kill_switch"], raw["schedule_enabled"], job_counts["running"] > 0
             ),
             "daily_summary": self._daily_summary(raw, jobs, packets),
+            "yield_report": self._yield_report(jobs),
             "kill_switch": raw["kill_switch"],
             "bots": bots,
             "jobs": jobs,

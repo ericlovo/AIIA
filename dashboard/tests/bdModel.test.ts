@@ -103,6 +103,7 @@ test('status banner never treats a quiet system as working', async () => {
 test('withheld outcomes explain absent evidence instead of implying provider failure', async () => {
   const { researchReason, outcomeLabel } = await import('../src/console/bdModel.ts')
   assert.equal(researchReason('no_new_evidence'), 'No new evidence was found in this run.')
+  assert.match(researchReason('headline_lacks_named_organization'), /named organization/)
   assert.match(researchReason('segment_entity_or_event_unconfirmed'), /not confirmed/)
   assert.match(researchReason(undefined), /not established/)
   assert.equal(outcomeLabel('rejected'), 'Rejected research')

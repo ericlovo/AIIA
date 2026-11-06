@@ -13,7 +13,8 @@ const bots = ['Healthcare', 'PE technical diligence', 'Alumni & associations', '
 const snapshot = {
   mode: 'replay', schedule_enabled: false, kill_switch: false,
   status_banner: { state: 'paused_schedule_off', label: 'Paused: schedule off' },
-  daily_summary: { day: '2026-10-27', timezone: 'America/Chicago', candidates_proposed: 1, inconclusive: 2, failed: 0, awaiting_human_review: 1 },
+  daily_summary: { day: '2026-10-27', timezone: 'America/Chicago', candidates_proposed: 1, inconclusive: 2, failed: 0, awaiting_human_review: 1, yield: { segments: [{ segment: 'healthcare', jobs: 3, supported: 1, rejected: 0, failed: 0, inconclusive: { segment_entity_or_event_unconfirmed: 2 } }], queries: [{ segment: 'healthcare', query_id: 'hc-ehr-event', jobs: 3, supported: 1, rejected: 0, failed: 0, inconclusive: { segment_entity_or_event_unconfirmed: 2 } }] } },
+  yield_report: { scope: 'lifetime_stored_runs', segments: [{ segment: 'healthcare', jobs: 3, supported: 1, rejected: 0, failed: 0, inconclusive: { segment_entity_or_event_unconfirmed: 2 }, queries: [{ id: 'hc-ehr-event', jobs: 3, supported: 1, rejected: 0, failed: 0, inconclusive: { segment_entity_or_event_unconfirmed: 2 } }] }] },
   bots, budget,
   jobs: [{ id: 'queue-1', bot_id: 'bot-1', tenant_id: 'synthetic-1', segment: 'PE technical diligence', state: 'queued', step: 'queued', created_at: at, started_at: null, heartbeat_at: null }, { id: 'job-1', bot_id: 'bot-0', tenant_id: 'synthetic-0', segment: 'Healthcare', state: 'running', step: 'Extracting public evidence', created_at: at, started_at: at, heartbeat_at: at }],
   events: [{ id: 'event-1', kind: 'job_running', message: 'Research started from recorded public evidence.', created_at: at, bot_id: 'bot-0', job_id: 'job-1' }],
@@ -76,6 +77,7 @@ try {
     await page.getByRole('heading', { name: 'The research desk.' }).waitFor()
     await page.getByRole('status', { name: 'Conductor status' }).getByText('Paused: schedule off', { exact: true }).waitFor()
     await page.getByRole('region', { name: 'Daily research summary' }).getByText('Candidates proposed', { exact: true }).waitFor()
+    await page.getByRole('region', { name: 'Query yield' }).getByText('hc-ehr-event', { exact: true }).waitFor()
     await page.locator('.bd-packet').getByText('Synthetic Health Group', { exact: true }).waitFor()
     await page.getByText('Live', { exact: true }).waitFor()
     await page.getByRole('region', { name: 'Work queue', exact: true }).getByText('PE technical diligence', { exact: true }).first().waitFor()

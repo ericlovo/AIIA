@@ -8,6 +8,24 @@ All notable changes to AIIA are documented here. This project adheres to
 
 ### Added
 
+- **BD query yield tuning.** Segment RSS banks now target named buying
+  events (EHR/CIO/RFP/acquisitions, PE platform deals, named alumni
+  associations). Queries rotate by stored yield, zero-yield queries decay
+  after four jobs, headlines without a named organization skip Qwen/Jev,
+  and RSS descriptions are retained as evidence. Local extraction warms
+  `qwen3:8b` with `keep_alive` and retries once on timeout without an extra
+  job reservation. Studio and the daily summary show per-segment and
+  per-query jobs / supported / inconclusive reasons. Evidence bar, airgap,
+  egress, budgets, and the kill switch are unchanged.
+
+- **K12 evaluation throughput.** Pending document-review notices are now
+  judged with listing evidence inside the existing 20-call cap instead of
+  being skipped. Already-reviewed notices are counted. Unavailable sources
+  include a coded HTTP reason (CA/WV same-host redirects and an honest UA).
+  Periscope Bid Closing Date from an already-fetched detail can qualify;
+  bid opening remains unlabeled as a deadline. Highest-volume remaining
+  states are ranked with honest blockers; no fake adapters.
+
 - **Standing BD research cadence.** The conductor now has a versioned
   America/Chicago weekday/weekend schedule, per-slot bot rotation, Qwen
   `keep_alive` warmup with one retry, inconclusive next-query suggestions, and

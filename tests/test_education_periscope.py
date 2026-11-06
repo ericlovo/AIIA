@@ -195,6 +195,39 @@ def test_state_specific_complete_pagination_limits(state, total, success):
             assert pages == [0]
 
 
+@pytest.mark.parametrize(
+    "date_fields, expected",
+    [
+        ("<tr><td>Bid Closing Date:</td><td>12/15/2026</td></tr>", "2026-12-15"),
+        ("<tr><td>Contract End Date:</td><td>12/15/2026</td></tr>", None),
+        ("Bid Closing Date: 12/15/2026", None),
+        (
+            "<tr><td>Response Due:</td><td>12/15/2026</td></tr>"
+            "<tr><td>Response Due:</td><td>12/22/2026</td></tr>",
+            None,
+        ),
+    ],
+)
+def test_detail_requires_unambiguous_submission_field(date_fields, expected):
+    def handler(request):
+        if "bidDetail" in request.url.path:
+            return httpx.Response(
+                200,
+                headers={"content-type": "text/html"},
+                text=(
+                    "Bid Number: 1 Bulletin Desc: Request for Proposals for professional services. "
+                    f"Ship-to Address: Example School District<table>{date_fields}</table>"
+                ),
+            )
+        return httpx.Response(200, headers={"content-type": "text/html"}, text=listing([row(1)], 1))
+
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        found = fetch(client, {"state": "OR", "url": BASES["OR"] + PATH}, "2026-10-31")
+    assert found[0].get("deadline_date") == expected
+    assert found[0]["alert_eligible"] is bool(expected)
+    assert json.loads(found[0]["quote"])["bid_opening_date"] == "2026-11-19"
+
+
 def test_massachusetts_state_education_buyer_remains_pending():
     def handler(request):
         assert "bidDetail" not in request.url.path
