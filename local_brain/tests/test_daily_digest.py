@@ -1791,3 +1791,19 @@ def test_slack_keeps_failures_for_agents_missing_from_roster():
         )
     )
     assert "Inspect 1 other failed agent runs in Studio" in body
+
+
+def test_customer_output_once_and_missing_marker_is_verification():
+    agents = [
+        {"id": "customer", "suite": "mindmoor", "name": "Alumni Nations Research Scout"},
+        {"id": "marker", "repo_id": "aiia", "loop_skip_reason": "awaiting_review"},
+    ]
+    item = {"agent_id": "customer", "status": "completed", "result": "done"}
+    body = daily_digest.format_slack_digest(
+        **_status_digest_kwargs(
+            agents=agents, assignments=[item, {**item, "title": "SYNTHETIC QA example"}]
+        )
+    )
+    assert body.count("review 1 agent output") == 1
+    assert body.count("1 synthetic QA awaiting review") == 1
+    assert "verify waiting marker: no matching completed output" in body

@@ -69,8 +69,9 @@ Slack sections (action-first format):
 - Whole rows fit within the existing message limit, preserving `_Details in Studio_`
   and a “More items in Studio” marker when needed.
 
-Slack counts an awaiting-review agent marker only when no pending output already
-represents that agent. The fuller inbox body and Studio morning-note rendering
+Slack counts each output under its customer or product once. Explicitly labeled
+synthetic QA stays visible separately; a waiting marker without a completed
+output requests verification instead of claiming an output exists. The fuller inbox body and Studio morning-note rendering
 retain their existing contracts. Slack formatting does not change schedules,
 permissions, runtime records, or delivery/outbox deduplication.
 

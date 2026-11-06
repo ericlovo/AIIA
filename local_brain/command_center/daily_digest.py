@@ -2283,20 +2283,44 @@ def format_slack_digest(
     def reviews(count: int) -> str:
         return f"review {count} agent output" + ("s" if count != 1 else "")
 
-    def review_count(ids: set[str]) -> int:
+    _, customer_lines = collect_morning_lines(
+        date=date,
+        agents=agents,
+        assignments=assignments,
+        repo_evidence=repo_evidence,
+        products=catalog,
+        customers=roster,
+        customer_evidence=customer_evidence,
+    )
+    customer_ids = {
+        line.id
+        for line in customer_lines
+        if line.state not in {"consulting", "unmapped", "unmounted"}
+    }
+    owner = {
+        agent.get("id"): next(
+            (c.id for c in map_agent_to_customers(agent, roster) if c.id in customer_ids), None
+        )
+        for agent in agents
+    }
+
+    def review_parts(ids: set[str]) -> list[str]:
         pending = [
             item for item in assignments if item.get("agent_id") in ids and _agent_waiting(item)
         ]
+        synthetic = sum(
+            str(item.get("title") or "").startswith("SYNTHETIC QA ") for item in pending
+        )
+        parts = [reviews(len(pending) - synthetic)] if len(pending) > synthetic else []
+        if synthetic:
+            parts.append(f"{synthetic} synthetic QA awaiting review")
         represented = {item.get("agent_id") for item in pending}
-        # An awaiting-review marker is a fallback, not an extra output to review.
-        fallback = {
-            agent.get("id")
-            for agent in agents
-            if agent.get("id") in ids
-            and agent.get("id") not in represented
-            and agent.get("loop_skip_reason") == "awaiting_review"
-        }
-        return len(pending) + len(fallback)
+        if any(
+            a.get("id") in ids - represented and a.get("loop_skip_reason") == "awaiting_review"
+            for a in agents
+        ):
+            parts.append("verify waiting marker: no matching completed output")
+        return parts
 
     for product in catalog:
         ev = evidence.get(product.mount)
@@ -2306,8 +2330,12 @@ def format_slack_digest(
         covered_ids.update(
             agent.get("id") for agent in agents if map_agent_to_product(agent, catalog) is product
         )
-        review = review_count(
-            {agent.get("id") for agent in agents if map_agent_to_product(agent, catalog) is product}
+        review = review_parts(
+            {
+                agent.get("id")
+                for agent in agents
+                if not owner[agent.get("id")] and map_agent_to_product(agent, catalog) is product
+            }
         )
         parts = []
         if not ev or not _evidence_has_pulls(ev) or not ev.complete:
@@ -2348,8 +2376,7 @@ def format_slack_digest(
                 notes.append(f"{held} PRs on hold")
             if notes:
                 background.append(row(product.name, notes))
-        if review:
-            parts.append(reviews(review))
+        parts.extend(review)
         if failed:
             parts.append(f"inspect {failed} failed agent runs")
         if paused:
@@ -2359,15 +2386,6 @@ def format_slack_digest(
         else:
             quiet.append(label(product.name))
 
-    _, customer_lines = collect_morning_lines(
-        date=date,
-        agents=agents,
-        assignments=assignments,
-        repo_evidence=repo_evidence,
-        products=catalog,
-        customers=roster,
-        customer_evidence=customer_evidence,
-    )
     for line in customer_lines:
         if line.state in {"consulting", "unmapped", "unmounted"}:
             background.append(row(line.name, [line.note]))
@@ -2377,21 +2395,17 @@ def format_slack_digest(
         covered_ids.update(
             agent.get("id") for agent in agents if customer in map_agent_to_customers(agent, roster)
         )
-        count = review_count(
-            {
-                agent.get("id")
-                for agent in agents
-                if customer in map_agent_to_customers(agent, roster)
-            }
-        )
-        if count:
-            parts.append(reviews(count))
+        parts.extend(review_parts({aid for aid, cid in owner.items() if cid == customer.id}))
         if line.extra:
             parts.append(line.extra)
         if parts:
             attention.append(row(line.name, parts))
         else:
             quiet.append(label(line.name))
+
+    remaining = review_parts({item.get("agent_id") for item in assignments} - covered_ids)
+    if remaining:
+        attention.append(row("Other work", remaining))
 
     # Failure detail can contain credentials or private context. Keep it in Studio.
     failing = [task for task in tasks if task.get("last_status") == "failed"]
