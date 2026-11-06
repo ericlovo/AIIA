@@ -14,15 +14,14 @@ export function TopBar() {
   })
 
   const services = monitor?.services ? Object.values(monitor.services) : []
-  const online = services.filter(s => s.status === 'online').length
-  const allOnline = online === services.length && services.length > 0
+  const integrations = services.filter(s => s.id !== 'aiia' && s.id !== 'ollama')
   // Tri-state for status so we don't lie by defaulting to "down" during load
   const brainState = healthError ? 'unknown' : !health ? 'loading' : health.aiia?.status === 'online' ? 'up' : health.aiia?.status === 'offline' ? 'down' : 'unknown'
   const ollamaState = healthError ? 'unknown' : !health ? 'loading' : health.ollama?.status === 'online' ? 'up' : health.ollama?.status === 'offline' ? 'down' : 'unknown'
 
   return (
-    <header className="h-14 shrink-0 border-b border-neutral-900 flex items-center justify-between px-3 sm:px-6 bg-neutral-950">
-      <div className="flex min-w-0 items-center gap-3 sm:gap-8">
+    <header className="min-h-14 shrink-0 border-b border-neutral-900 flex items-center justify-between px-3 sm:px-6 bg-neutral-950">
+      <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 py-2 sm:gap-x-8">
         {/* Brand */}
         <div className="flex items-baseline gap-2">
           <span className="text-base font-semibold text-white">AIIA</span>
@@ -30,7 +29,7 @@ export function TopBar() {
         </div>
 
         {/* Status pills */}
-        <div className="hidden items-center gap-4 text-xs sm:flex">
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs">
           <Pill
             dot={brainState === 'up' ? 'green' : brainState === 'down' ? 'red' : 'gray'}
             label={brainState === 'loading' ? 'checking brain…' : brainState === 'up' ? 'brain online' : brainState === 'unknown' ? 'brain status unavailable' : 'brain down'}
@@ -39,10 +38,16 @@ export function TopBar() {
             dot={ollamaState === 'up' ? 'green' : ollamaState === 'down' ? 'amber' : 'gray'}
             label={ollamaState === 'loading' ? 'checking ollama…' : ollamaState === 'up' ? 'ollama ready' : ollamaState === 'unknown' ? 'ollama status unverified' : 'ollama unavailable'}
           />
-          <Pill
-            dot={monitorError || !monitor || services.length === 0 ? 'gray' : allOnline ? 'green' : 'amber'}
-            label={monitorError ? 'service status unavailable' : !monitor ? 'checking services…' : services.length === 0 ? 'service status unverified' : `${online}/${services.length} services`}
-          />
+          {monitorError || integrations.length === 0 ? (
+            <Pill dot="gray" label={!monitorError && !monitor ? 'checking integrations…' : 'integration status unavailable'} />
+          ) : integrations.map(service => (
+            <Pill key={service.id}
+              dot={service.status === 'online' ? 'green' : service.status === 'offline' && !service.uses_default_endpoint ? 'red' : 'amber'}
+              label={service.status === 'offline' && service.uses_default_endpoint
+                ? `${service.name}: default endpoint offline`
+                : `${service.name}: ${service.status}`}
+            />
+          ))}
         </div>
       </div>
 

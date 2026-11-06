@@ -81,6 +81,7 @@ async function del<T>(path: string): Promise<T> {
 
 // Types
 export interface Service {
+  uses_default_endpoint?: boolean;
   id: string;
   name: string;
   category: string;

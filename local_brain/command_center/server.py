@@ -216,6 +216,7 @@ MONITORED_SERVICES = {
     },
     "default": {
         "name": "App Analyst",
+        "uses_default_endpoint": "APP_BACKEND_URL" not in os.environ,
         "url": os.getenv("APP_BACKEND_URL", "https://localhost:9000") + "/health",
         "metrics_url": os.getenv("APP_BACKEND_URL", "https://localhost:9000") + "/metrics",
         "timeout": 10.0,
@@ -223,6 +224,7 @@ MONITORED_SERVICES = {
     },
     "platform": {
         "name": "AIIA Platform",
+        "uses_default_endpoint": "AIIA_PLATFORM_URL" not in os.environ,
         "url": os.getenv("AIIA_PLATFORM_URL", "http://localhost:9000") + "/health",
         "timeout": 10.0,
         "category": "backend",
@@ -315,6 +317,7 @@ class MonitorState:
             "id": sid,
             "name": cfg["name"],
             "category": cfg["category"],
+            "uses_default_endpoint": cfg.get("uses_default_endpoint", False),
             "status": self.statuses[sid],
             "response_time_ms": times[-1]["ms"] if times else None,
             "avg_response_time_ms": avg_ms,
