@@ -365,6 +365,13 @@ def test_digest_task_files_one_row_and_one_post_per_day(tmp_path, monkeypatch):
     runner, inbox = _runner(tmp_path, monkeypatch)
     inbox.ingest(text="a finding", source_key="review:x", source="code_review", project="aiia")
 
+    original = daily_digest.format_slack_digest
+
+    def with_titled_change(**kwargs):
+        kwargs["repo_evidence"][0].merged_prs = [daily_digest.PullSignal(42, "Research & <review>")]
+        return original(**kwargs)
+
+    monkeypatch.setattr(daily_digest, "format_slack_digest", with_titled_change)
     summary, body = asyncio.run(runner._task_daily_digest())
     assert (
         summary.startswith("Digest ")
@@ -392,7 +399,7 @@ def test_digest_task_files_one_row_and_one_post_per_day(tmp_path, monkeypatch):
     assert "Needs a decision" not in post["body"]
     assert "Needs a decision" in body
     assert "Agents:" in body
-    assert "&lt;" not in post["body"] or "<" not in body
+    assert "#42 Research &amp; &lt;review&gt;" in post["body"]
 
     summary2, _ = asyncio.run(runner._task_daily_digest())
     assert "inbox row existing" in summary2 and "already queued" in summary2
