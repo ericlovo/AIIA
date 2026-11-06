@@ -1032,12 +1032,12 @@ def test_sample_rendered_digest_matches_the_product_status_shape():
 
 def test_slack_digest_leads_with_actions_and_distinguishes_merged_from_deployed():
     slack = daily_digest.format_slack_digest(**_status_digest_kwargs())
-    assert slack.startswith("*AIIA · Thu Oct 8*\n\n*Needs attention*")
+    assert slack.startswith("*AIIA · Thu Oct 8*\n\n*Merged — deployment not verified*")
     assert "review for merge: #18" in slack
     assert "resolve conflicts: #12" in slack
     assert "review 1 agent output" in slack
     assert "*Merged — deployment not verified*" in slack
-    assert slack.index("*Needs attention*") < slack.index("*Merged")
+    assert slack.index("*Merged") < slack.index("*Needs attention*")
     assert "RuntimeError" not in slack and "HTTP 500" not in slack
     assert "Daily Brief*: failed; inspect the run in Studio before retrying" in slack
     assert "*Decisions*" in slack
@@ -1700,7 +1700,7 @@ def test_slack_separates_draft_conflicts_and_maintenance_from_main_failure():
         )
     )
     assert "investigate failing CI on main" in body
-    assert "review for merge: #203, #204" in body
+    assert "review for merge: #203 x; review for merge: #204 x" in body
     assert "1 draft PR" in body and "1 dependency PR" in body
     assert "#201" not in body and "#202" not in body
 

@@ -55,8 +55,11 @@ Slack sections (action-first format):
 - **Decisions**: at most three current inbox suggestions, each on its own line.
   Rows explicitly labeled `Stale story:` become a backlog count instead. No inbox
   records are dismissed, deleted, or marked reviewed by this presentation filter.
-- **Merged — deployment not verified**: merged PR numbers, without calling them
-  shipped or claiming the deployment is live.
+- Shipping leads with PR numbers and titles. A verified receipt takes precedence.
+  For up to two recent merges per repo without receipts, the collector also checks
+  GitHub deployments for the exact merge SHA. A successful latest status for
+  the primary production target is labeled provider-reported; this does not
+  attest to browser QA. Other merges remain deployment-unverified.
 - **Background — not merge requests**: draft/dependency/held PR counts, consulting
   status, and remaining backlog. These PR categories stay outside the merge asks.
 - Quiet products share a compact **No active alerts** line. Drafts and maintenance

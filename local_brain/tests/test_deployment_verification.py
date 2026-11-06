@@ -97,7 +97,7 @@ def test_studio_and_digest_separate_verified_and_unverified_merges():
     )
     line = digest.morning_product_line(product, evidence, review=1)
     assert "verified deployed #1" in line.note
-    assert "merged #2; deployment not verified" in line.note
+    assert "merged #2 Merged only; deployment not verified" in line.note
     text = digest.format_slack_digest(
         date="2026-10-25",
         agents=[],
@@ -109,7 +109,7 @@ def test_studio_and_digest_separate_verified_and_unverified_merges():
         customers=[],
         repo_evidence=[evidence],
     )
-    assert "*Verified deployed*\n- *Demo*: #1; local-production" in text
+    assert "*Verified deployed*\n- *Demo*: #1 Deployed; local-production" in text
     assert "*Merged — deployment not verified*\n- *Demo*: #2" in text
 
 
@@ -125,3 +125,18 @@ def test_merged_pr_uses_merge_commit_not_branch_head():
     ]
     pulls = digest._merged_pr_rows(lambda path: rows, "owner/repo", NOW)
     assert pulls[0].sha == SHA
+
+
+@pytest.mark.parametrize("state,expected", [("success", "Production – demo"), ("inactive", "")])
+def test_provider_proof_requires_matching_production_target_sha_and_latest_status(state, expected):
+    def api(path):
+        if "/statuses?" in path:
+            assert "/3/statuses?" in path
+            return [{"state": state}]
+        return [
+            {"id": 1, "environment": "Preview", "sha": SHA},
+            {"id": 2, "environment": "production", "sha": "b" * 40},
+            {"id": 3, "environment": "Production – demo", "sha": SHA},
+        ]
+
+    assert digest._production_target(api, "owner/demo", SHA) == expected
