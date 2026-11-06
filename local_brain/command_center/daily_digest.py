@@ -2284,9 +2284,6 @@ def format_slack_digest(
     def row(name: str, parts: list[str]) -> str:
         return f"- *{label(name)}*: " + "; ".join(label(part) for part in parts)
 
-    def reviews(count: int) -> str:
-        return f"review {count} agent output" + ("s" if count != 1 else "")
-
     _, customer_lines = collect_morning_lines(
         date=date,
         agents=agents,
@@ -2308,22 +2305,56 @@ def format_slack_digest(
         for agent in agents
     }
 
-    def review_parts(ids: set[str]) -> list[str]:
+    def review_parts(name: str, ids: set[str]) -> list[str]:
         pending = [
             item for item in assignments if item.get("agent_id") in ids and _agent_waiting(item)
         ]
-        synthetic = sum(
-            str(item.get("title") or "").startswith("SYNTHETIC QA ") for item in pending
-        )
-        parts = [reviews(len(pending) - synthetic)] if len(pending) > synthetic else []
+        parts = []
+        clean_checks: dict[str, int] = {}
+        synthetic = 0
+        for item in pending:
+            title = str(item.get("title") or "Untitled assignment")
+            result = str(item.get("result") or "")
+            if title.startswith("SYNTHETIC QA "):
+                synthetic += 1
+                continue
+            scheduled = re.match(r"(?:Assignment: )?Scheduled: (.+?)(?: Objective:|$)", title)
+            if (
+                scheduled
+                and result.startswith("**Verdict:** ✅ Clean day")
+                and not re.search(r"approval|please decide|decision needed|\?", result, re.I)
+            ):
+                check = _short_title(scheduled[1], 40)
+                clean_checks[check] = clean_checks.get(check, 0) + 1
+                continue
+            if (
+                "rfp" in title.lower()
+                and "source collector" in result.lower()
+                and "begin daily digest delivery" in result.lower()
+                and "slack" in result.lower()
+            ):
+                parts.append("RFP watch: verify the collector, then decide on daily Slack delivery")
+                continue
+            proposals = re.findall(r"^### [^\n]*?\*\*PR \d+: ([^*\n]+)\*\* *$", result, re.M)
+            if proposals:
+                parts.append(_short_title(title.removeprefix("Next best action: "), 56))
+                parts.append("Choose which proposals to develop")
+                parts.extend(_short_title(proposal, 65) for proposal in proposals[:4])
+                if len(proposals) > 4:
+                    parts.append(f"{len(proposals) - 4} more proposals in Studio")
+            else:
+                parts.append(f"{_short_title(title, 46)} — accept or request changes")
+        for check, count in clean_checks.items():
+            runs = "run" if count == 1 else "runs"
+            background.append(row(name, [f"{check}: {count} earlier {runs} reported a clean day"]))
         if synthetic:
-            parts.append(f"{synthetic} synthetic QA awaiting review")
+            background.append(row(name, [f"{synthetic} synthetic QA awaiting review"]))
         represented = {item.get("agent_id") for item in pending}
         if any(
             a.get("id") in ids - represented and a.get("loop_skip_reason") == "awaiting_review"
             for a in agents
         ):
-            parts.append("verify waiting marker: no matching completed output")
+            parts.append("Studio flags a review but has no matching output; verify the queue")
         return parts
 
     for product in catalog:
@@ -2335,11 +2366,12 @@ def format_slack_digest(
             agent.get("id") for agent in agents if map_agent_to_product(agent, catalog) is product
         )
         review = review_parts(
+            product.name,
             {
                 agent.get("id")
                 for agent in agents
                 if not owner[agent.get("id")] and map_agent_to_product(agent, catalog) is product
-            }
+            },
         )
         parts = []
         if not ev or not _evidence_has_pulls(ev) or not ev.complete:
@@ -2377,7 +2409,7 @@ def format_slack_digest(
             if dependencies:
                 notes.append(f"{dependencies} dependency PR" + ("s" if dependencies != 1 else ""))
             if held:
-                notes.append(f"{held} PRs on hold")
+                notes.append(f"{held} PR" + ("s" if held != 1 else "") + " on hold")
             if notes:
                 background.append(row(product.name, notes))
         parts.extend(review)
@@ -2399,7 +2431,9 @@ def format_slack_digest(
         covered_ids.update(
             agent.get("id") for agent in agents if customer in map_agent_to_customers(agent, roster)
         )
-        parts.extend(review_parts({aid for aid, cid in owner.items() if cid == customer.id}))
+        parts.extend(
+            review_parts(line.name, {aid for aid, cid in owner.items() if cid == customer.id})
+        )
         if line.extra:
             parts.append(line.extra)
         if parts:
@@ -2407,7 +2441,9 @@ def format_slack_digest(
         else:
             quiet.append(label(line.name))
 
-    remaining = review_parts({item.get("agent_id") for item in assignments} - covered_ids)
+    remaining = review_parts(
+        "Other work", {item.get("agent_id") for item in assignments} - covered_ids
+    )
     if remaining:
         attention.append(row("Other work", remaining))
 

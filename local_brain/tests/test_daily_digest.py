@@ -1042,7 +1042,7 @@ def test_slack_digest_leads_with_actions_and_distinguishes_merged_from_deployed(
     assert slack.startswith("*AIIA · Thu Oct 8*\n\n*Merged — deployment not verified*")
     assert "review for merge: #18" in slack
     assert "resolve conflicts: #12" in slack
-    assert "review 1 agent output" in slack
+    assert "accept or request changes" in slack
     assert "*Merged — deployment not verified*" in slack
     assert slack.index("*Merged") < slack.index("*Needs attention*")
     assert "RuntimeError" not in slack and "HTTP 500" not in slack
@@ -1755,8 +1755,8 @@ def test_slack_review_marker_does_not_double_count_an_output():
             tasks=[],
         )
     )
-    assert "review 1 agent output" in body
-    assert "review 2 agent outputs" not in body
+    assert "accept or request changes" in body
+    assert body.count("accept or request changes") == 1
 
 
 def test_slack_preserves_footer_and_hides_raw_failure_payload_under_size_pressure():
@@ -1811,6 +1811,30 @@ def test_customer_output_once_and_missing_marker_is_verification():
             agents=agents, assignments=[item, {**item, "title": "SYNTHETIC QA example"}]
         )
     )
-    assert body.count("review 1 agent output") == 1
+    assert body.count("accept or request changes") == 1
     assert body.count("1 synthetic QA awaiting review") == 1
-    assert "verify waiting marker: no matching completed output" in body
+    assert "Studio flags a review but has no matching output; verify the queue" in body
+
+
+def test_slack_review_names_proposals_and_separates_historical_checks():
+    base = {"agent_id": "a", "status": "completed"}
+    rows = [
+        {**base, "title": "Intake options", "result": "### **PR 1: Intake page**"},
+        {
+            **base,
+            "title": "RFP watch",
+            "result": "Source collector pending. Begin daily digest delivery to Slack?",
+        },
+        {**base, "title": "Scheduled: Delivery", "result": "**Verdict:** ✅ Clean day"},
+        {
+            **base,
+            "title": "Scheduled: Launch",
+            "result": "**Verdict:** ✅ Clean day. Approval needed?",
+        },
+    ]
+    body = daily_digest.format_slack_digest(**_status_digest_kwargs(assignments=rows))
+    attention, background = body.split("*Background")
+    assert "Intake options; Choose which proposals to develop; Intake page" in attention
+    assert "verify the collector, then decide on daily Slack delivery" in attention
+    assert "Scheduled: Launch — accept or request changes" in attention
+    assert "Delivery: 1 earlier run reported a clean day" in background
