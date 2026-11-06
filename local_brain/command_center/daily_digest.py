@@ -820,9 +820,13 @@ def _production_target(api: GitHubApi, slug: str, sha: str) -> str:
             if type(deployment_id) is not int:
                 continue
             statuses = api(f"repos/{slug}/deployments/{deployment_id}/statuses?per_page=1")
-            if isinstance(statuses, list) and statuses and isinstance(statuses[0], dict):
-                if statuses[0].get("state") == "success":
-                    return target
+            if (
+                isinstance(statuses, list)
+                and statuses
+                and isinstance(statuses[0], dict)
+                and statuses[0].get("state") == "success"
+            ):
+                return target
             break
     except (OSError, RuntimeError):
         pass
