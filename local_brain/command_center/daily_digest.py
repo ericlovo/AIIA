@@ -230,6 +230,7 @@ class RepoEvidence:
     open_pulls: list[PullSignal] = field(default_factory=list)
     remote: bool = False
     verified_deployments: dict[int, str] = field(default_factory=dict)
+    provider_deployments: dict[int, str] = field(default_factory=dict)
 
 
 @dataclass
@@ -802,6 +803,36 @@ def _merged_pr_rows(github_api: GitHubApi, slug: str, since: datetime) -> list[P
     return merged
 
 
+def _production_target(api: GitHubApi, slug: str, sha: str) -> str:
+    if not re.fullmatch(r"[0-9a-f]{40}", sha):
+        return ""
+    try:
+        rows = api(f"repos/{slug}/deployments?sha={sha}&per_page=10")
+        if not isinstance(rows, list):
+            return ""
+        for row in rows:
+            if not isinstance(row, dict) or row.get("sha") != sha:
+                continue
+            target = row.get("environment")
+            if target not in ("Production", "production", f"Production – {slug.split('/')[-1]}"):
+                continue
+            deployment_id = row.get("id")
+            if type(deployment_id) is not int:
+                continue
+            statuses = api(f"repos/{slug}/deployments/{deployment_id}/statuses?per_page=1")
+            if (
+                isinstance(statuses, list)
+                and statuses
+                and isinstance(statuses[0], dict)
+                and statuses[0].get("state") == "success"
+            ):
+                return target
+            break
+    except (OSError, RuntimeError):
+        pass
+    return ""
+
+
 def _label_names(raw: Any) -> tuple[str, ...]:
     if not isinstance(raw, list):
         return ()
@@ -1070,6 +1101,12 @@ def collect_repo_evidence(
         open_pulls=open_pulls,
         remote=bool(slug),
         verified_deployments=verified_deployments,
+        provider_deployments={
+            p.number: target
+            for p in merged_prs[:2]
+            if p.number not in verified_deployments
+            and (target := _production_target(github_api, slug, p.sha))
+        },
     )
 
 
@@ -1862,13 +1899,15 @@ def _waiting_parts(
 def _shipped_part(evidence: RepoEvidence | None) -> str:
     if not evidence or not evidence.merged_prs:
         return ""
-    verified = [p for p in evidence.merged_prs if p.number in evidence.verified_deployments]
-    unverified = [p for p in evidence.merged_prs if p.number not in evidence.verified_deployments]
     parts = []
-    if verified:
-        parts.append("verified deployed " + _pr_number_list(verified))
-    if unverified:
-        parts.append("merged " + _pr_number_list(unverified) + "; deployment not verified")
+    for p in evidence.merged_prs:
+        change = f"#{p.number} {_short_title(p.title, 72)}".strip()
+        if p.number in evidence.verified_deployments:
+            parts.append(f"verified deployed {change}")
+        elif p.number in evidence.provider_deployments:
+            parts.append(f"provider reported production deploy: {change}")
+        else:
+            parts.append(f"merged {change}; deployment not verified")
     return "; ".join(parts)
 
 
@@ -2234,6 +2273,7 @@ def format_slack_digest(
     attention: list[str] = []
     merged: list[str] = []
     deployed: list[str] = []
+    provider: list[str] = []
     background: list[str] = []
     quiet: list[str] = []
     covered_ids: set[str] = set()
@@ -2247,20 +2287,44 @@ def format_slack_digest(
     def reviews(count: int) -> str:
         return f"review {count} agent output" + ("s" if count != 1 else "")
 
-    def review_count(ids: set[str]) -> int:
+    _, customer_lines = collect_morning_lines(
+        date=date,
+        agents=agents,
+        assignments=assignments,
+        repo_evidence=repo_evidence,
+        products=catalog,
+        customers=roster,
+        customer_evidence=customer_evidence,
+    )
+    customer_ids = {
+        line.id
+        for line in customer_lines
+        if line.state not in {"consulting", "unmapped", "unmounted"}
+    }
+    owner = {
+        agent.get("id"): next(
+            (c.id for c in map_agent_to_customers(agent, roster) if c.id in customer_ids), None
+        )
+        for agent in agents
+    }
+
+    def review_parts(ids: set[str]) -> list[str]:
         pending = [
             item for item in assignments if item.get("agent_id") in ids and _agent_waiting(item)
         ]
+        synthetic = sum(
+            str(item.get("title") or "").startswith("SYNTHETIC QA ") for item in pending
+        )
+        parts = [reviews(len(pending) - synthetic)] if len(pending) > synthetic else []
+        if synthetic:
+            parts.append(f"{synthetic} synthetic QA awaiting review")
         represented = {item.get("agent_id") for item in pending}
-        # An awaiting-review marker is a fallback, not an extra output to review.
-        fallback = {
-            agent.get("id")
-            for agent in agents
-            if agent.get("id") in ids
-            and agent.get("id") not in represented
-            and agent.get("loop_skip_reason") == "awaiting_review"
-        }
-        return len(pending) + len(fallback)
+        if any(
+            a.get("id") in ids - represented and a.get("loop_skip_reason") == "awaiting_review"
+            for a in agents
+        ):
+            parts.append("verify waiting marker: no matching completed output")
+        return parts
 
     for product in catalog:
         ev = evidence.get(product.mount)
@@ -2270,8 +2334,12 @@ def format_slack_digest(
         covered_ids.update(
             agent.get("id") for agent in agents if map_agent_to_product(agent, catalog) is product
         )
-        review = review_count(
-            {agent.get("id") for agent in agents if map_agent_to_product(agent, catalog) is product}
+        review = review_parts(
+            {
+                agent.get("id")
+                for agent in agents
+                if not owner[agent.get("id")] and map_agent_to_product(agent, catalog) is product
+            }
         )
         parts = []
         if not ev or not _evidence_has_pulls(ev) or not ev.complete:
@@ -2289,19 +2357,17 @@ def format_slack_digest(
                 parts.append("investigate failed checks: " + _pr_number_list(checks))
             ready = [pull for pull in active if _eric_owned_ready(pull)]
             if ready and product.asks and ev.complete:
-                parts.append("review for merge: " + _pr_number_list(ready))
+                parts.extend(f"review for merge: #{p.number} {p.title}" for p in ready)
             for signal in ev.drift:
-                parts.append(_behind_phrase(signal.ref, signal.behind_main))
-            if ev.merged_prs:
-                verified = [p for p in ev.merged_prs if p.number in ev.verified_deployments]
-                unverified = [p for p in ev.merged_prs if p.number not in ev.verified_deployments]
-                if verified:
-                    environments = sorted({ev.verified_deployments[p.number] for p in verified})
-                    deployed.append(
-                        row(product.name, [_pr_number_list(verified), ", ".join(environments)])
-                    )
-                if unverified:
-                    merged.append(row(product.name, [_pr_number_list(unverified)]))
+                parts.append("branch " + _behind_phrase(signal.ref, signal.behind_main))
+            for p in ev.merged_prs:
+                change = f"#{p.number} {p.title}".strip()
+                if p.number in ev.verified_deployments:
+                    deployed.append(row(product.name, [change, ev.verified_deployments[p.number]]))
+                elif p.number in ev.provider_deployments:
+                    provider.append(row(product.name, [change, ev.provider_deployments[p.number]]))
+                else:
+                    merged.append(row(product.name, [change]))
             drafts = sum(pull.draft for pull in pulls)
             dependencies = sum(_pull_is_dependabot(pull) and not pull.draft for pull in pulls)
             held = sum(_pull_held(pull, product.holds) for pull in ev.open_pulls)
@@ -2314,8 +2380,7 @@ def format_slack_digest(
                 notes.append(f"{held} PRs on hold")
             if notes:
                 background.append(row(product.name, notes))
-        if review:
-            parts.append(reviews(review))
+        parts.extend(review)
         if failed:
             parts.append(f"inspect {failed} failed agent runs")
         if paused:
@@ -2325,15 +2390,6 @@ def format_slack_digest(
         else:
             quiet.append(label(product.name))
 
-    _, customer_lines = collect_morning_lines(
-        date=date,
-        agents=agents,
-        assignments=assignments,
-        repo_evidence=repo_evidence,
-        products=catalog,
-        customers=roster,
-        customer_evidence=customer_evidence,
-    )
     for line in customer_lines:
         if line.state in {"consulting", "unmapped", "unmounted"}:
             background.append(row(line.name, [line.note]))
@@ -2343,15 +2399,7 @@ def format_slack_digest(
         covered_ids.update(
             agent.get("id") for agent in agents if customer in map_agent_to_customers(agent, roster)
         )
-        count = review_count(
-            {
-                agent.get("id")
-                for agent in agents
-                if customer in map_agent_to_customers(agent, roster)
-            }
-        )
-        if count:
-            parts.append(reviews(count))
+        parts.extend(review_parts({aid for aid, cid in owner.items() if cid == customer.id}))
         if line.extra:
             parts.append(line.extra)
         if parts:
@@ -2359,14 +2407,22 @@ def format_slack_digest(
         else:
             quiet.append(label(line.name))
 
+    remaining = review_parts({item.get("agent_id") for item in assignments} - covered_ids)
+    if remaining:
+        attention.append(row("Other work", remaining))
+
     # Failure detail can contain credentials or private context. Keep it in Studio.
     failing = [task for task in tasks if task.get("last_status") == "failed"]
     for task in failing[:3]:
+        counts = re.fullmatch(
+            r"FAILED: (\d+ passed, \d+ failed, \d+ errors)", str(task.get("last_result") or "")
+        )
+        failure = counts[1] if counts else "failed"
         attention.insert(
             0,
             row(
                 str(task.get("name") or "Scheduled task"),
-                ["failed; inspect the run in Studio before retrying"],
+                [failure + "; inspect the run in Studio before retrying"],
             ),
         )
     if len(failing) > 3:
@@ -2395,10 +2451,11 @@ def format_slack_digest(
 
     lines = [f"*AIIA · {slack_header_date(date)}*"]
     for heading, rows in (
+        ("Verified deployed", deployed),
+        ("Production deployment reported by provider", provider),
+        ("Merged — deployment not verified", merged),
         ("Needs attention", attention),
         ("Decisions", decisions),
-        ("Verified deployed", deployed),
-        ("Merged — deployment not verified", merged),
         ("Background — not merge requests", background),
     ):
         if rows:

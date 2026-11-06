@@ -2116,7 +2116,7 @@ Be specific and reference actual file names. Keep each point to 1-2 sentences.""
                 memory_id=key,
                 idea_id=idea["id"],
                 channel_id=slack_memory_posts.channel_id(),
-                body=daily_digest.escape(slack_body)[:3_000],
+                body=slack_body,
             )
             delivery = "slack post queued" if queued else "slack post already queued"
         await self._progress("daily_digest", 100, "Complete")

@@ -365,6 +365,13 @@ def test_digest_task_files_one_row_and_one_post_per_day(tmp_path, monkeypatch):
     runner, inbox = _runner(tmp_path, monkeypatch)
     inbox.ingest(text="a finding", source_key="review:x", source="code_review", project="aiia")
 
+    original = daily_digest.format_slack_digest
+
+    def with_titled_change(**kwargs):
+        kwargs["repo_evidence"][0].merged_prs = [daily_digest.PullSignal(42, "Research & <review>")]
+        return original(**kwargs)
+
+    monkeypatch.setattr(daily_digest, "format_slack_digest", with_titled_change)
     summary, body = asyncio.run(runner._task_daily_digest())
     assert (
         summary.startswith("Digest ")
@@ -392,7 +399,7 @@ def test_digest_task_files_one_row_and_one_post_per_day(tmp_path, monkeypatch):
     assert "Needs a decision" not in post["body"]
     assert "Needs a decision" in body
     assert "Agents:" in body
-    assert "&lt;" not in post["body"] or "<" not in body
+    assert "#42 Research &amp; &lt;review&gt;" in post["body"]
 
     summary2, _ = asyncio.run(runner._task_daily_digest())
     assert "inbox row existing" in summary2 and "already queued" in summary2
@@ -1032,12 +1039,12 @@ def test_sample_rendered_digest_matches_the_product_status_shape():
 
 def test_slack_digest_leads_with_actions_and_distinguishes_merged_from_deployed():
     slack = daily_digest.format_slack_digest(**_status_digest_kwargs())
-    assert slack.startswith("*AIIA · Thu Oct 8*\n\n*Needs attention*")
+    assert slack.startswith("*AIIA · Thu Oct 8*\n\n*Merged — deployment not verified*")
     assert "review for merge: #18" in slack
     assert "resolve conflicts: #12" in slack
     assert "review 1 agent output" in slack
     assert "*Merged — deployment not verified*" in slack
-    assert slack.index("*Needs attention*") < slack.index("*Merged")
+    assert slack.index("*Merged") < slack.index("*Needs attention*")
     assert "RuntimeError" not in slack and "HTTP 500" not in slack
     assert "Daily Brief*: failed; inspect the run in Studio before retrying" in slack
     assert "*Decisions*" in slack
@@ -1700,7 +1707,7 @@ def test_slack_separates_draft_conflicts_and_maintenance_from_main_failure():
         )
     )
     assert "investigate failing CI on main" in body
-    assert "review for merge: #203, #204" in body
+    assert "review for merge: #203 x; review for merge: #204 x" in body
     assert "1 draft PR" in body and "1 dependency PR" in body
     assert "#201" not in body and "#202" not in body
 
@@ -1791,3 +1798,19 @@ def test_slack_keeps_failures_for_agents_missing_from_roster():
         )
     )
     assert "Inspect 1 other failed agent runs in Studio" in body
+
+
+def test_customer_output_once_and_missing_marker_is_verification():
+    agents = [
+        {"id": "customer", "suite": "mindmoor", "name": "Alumni Nations Research Scout"},
+        {"id": "marker", "repo_id": "aiia", "loop_skip_reason": "awaiting_review"},
+    ]
+    item = {"agent_id": "customer", "status": "completed", "result": "done"}
+    body = daily_digest.format_slack_digest(
+        **_status_digest_kwargs(
+            agents=agents, assignments=[item, {**item, "title": "SYNTHETIC QA example"}]
+        )
+    )
+    assert body.count("review 1 agent output") == 1
+    assert body.count("1 synthetic QA awaiting review") == 1
+    assert "verify waiting marker: no matching completed output" in body
