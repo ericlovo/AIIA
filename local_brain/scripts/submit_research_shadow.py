@@ -181,7 +181,7 @@ class RunnerClient:
 
     def submit(self, envelope):
         try:
-            normalized = _normalized(envelope)
+            _normalized(envelope)
             if len(json.dumps(envelope, allow_nan=False).encode()) > 1024 * 1024:
                 raise ValueError()
         except (ValueError, TypeError, KeyError):
@@ -195,7 +195,16 @@ class RunnerClient:
             or body["replayed"] != (status == 200)
         ):
             raise RunnerClientError("invalid_submission_response")
-        receipt = _receipt(body["receipt"])
+        self.validate_submission_receipt(envelope, body["receipt"])
+        return status, body
+
+    def validate_submission_receipt(self, envelope, receipt):
+        """Correlate fresh or saved receipts without network or provider calls."""
+        try:
+            normalized = _normalized(envelope)
+        except (ValueError, TypeError, KeyError):
+            raise RunnerClientError("invalid_submission") from None
+        receipt = _receipt(receipt)
         expected_hash = hashlib.sha256(
             json.dumps(normalized, sort_keys=True, ensure_ascii=False).encode()
         ).hexdigest()
@@ -214,7 +223,7 @@ class RunnerClient:
             or receipt["candidateCount"] != len(envelope["source"]["candidates"])
         ):
             raise RunnerClientError("receipt_submission_mismatch")
-        return status, body
+        return receipt
 
     def receipt(self, receipt_id):
         try:
