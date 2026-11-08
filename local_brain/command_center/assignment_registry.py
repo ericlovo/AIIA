@@ -461,7 +461,17 @@ class AssignmentRegistry:
         return dismissed
 
     @_durable_mutation
-    def acknowledge_attention(self, assignment_id, *, expected_version, key, active):
+    def acknowledge_attention(
+        self, assignment_id: str, *, expected_version: str, key: str, active: bool
+    ) -> dict[str, Any]:
+        """Suppress or restore identical-evidence attention as one versioned group.
+
+        The selected record is the write target for a new acknowledgement event,
+        and restore still deactivates every matching key. Validation uses the
+        selected record's review_version; a successful change then bumps every
+        current identical-evidence sibling so a stale sibling cannot rewrite the
+        group.
+        """
         from .attention import evidence_key
 
         item = self.get_assignment(assignment_id)
@@ -471,6 +481,7 @@ class AssignmentRegistry:
             raise ValueError("review_changed_refresh_required")
         if not key or evidence_key(item) != key:
             raise ValueError("evidence_changed_refresh_required")
+        group = [record for record in self.assignments if evidence_key(record) == key]
         now = _now()
         if not active:
             for record in self.assignments:
@@ -479,7 +490,8 @@ class AssignmentRegistry:
                         event.update(active=False, restored_at=now)
         else:
             item.setdefault("attention_events", []).append({"key": key, "at": now, "active": True})
-        item.update(review_version=uuid.uuid4().hex, updated_at=now)
+        for record in group:
+            record.update(review_version=uuid.uuid4().hex, updated_at=now)
         return item
 
     @_durable_mutation
