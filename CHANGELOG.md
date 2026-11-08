@@ -120,6 +120,14 @@ All notable changes to AIIA are documented here. This project adheres to
   names the model and Ollama deadline. The scheduled test runner isolates Mini
   launchd env and `~/.aiia` so host flags cannot fail default-off assertions.
 
+- **Scheduled Test Runner hermeticity for TypeSafe + Sanction.** Isolating
+  `AIIA_AIRGAP` without isolating `SANCTION_API_URL` / `SANCTION_API_KEY`
+  unmasked hybrid fail-closed on the Mini, so thirteen TypeSafe advisor
+  tests failed only on that host. The suite now scrubs Sanction credentials
+  too, scopes the TypeSafe httpx mock to the advisor module, and re-runs
+  those modules under a Mini-like launchd environment so a future leak
+  fails on CI.
+
 - **Digest product lines stay green unless a live PR is actually blocked.**
   Draft PRs and skipped Codex drafts no longer count as conflict or check
   blockers (no more `#117 conflict` plus `skipped: 1 codex drafts (#117)`).

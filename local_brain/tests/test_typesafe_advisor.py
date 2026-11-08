@@ -1,4 +1,5 @@
 import json
+from types import SimpleNamespace
 
 import httpx
 import pytest
@@ -18,7 +19,7 @@ CANDIDATES = [
 
 
 @pytest.fixture
-def upstream(monkeypatch):
+def upstream(monkeypatch, _isolate_host_environment):
     monkeypatch.setenv("AIIA_TYPESAFE_ENABLED", "true")
     monkeypatch.setenv("TYPESAFE_API_KEY", "synthetic-key")
     state = {
@@ -44,10 +45,14 @@ def upstream(monkeypatch):
             raise httpx.ReadTimeout("secret provider detail", request=request)
         return httpx.Response(state["status"], json=state["payload"])
 
+    def fake_client(**kwargs):
+        return REAL_CLIENT(transport=httpx.MockTransport(handler), **kwargs)
+
+    # Patch the advisor module only. Replacing httpx.AsyncClient globally
+    # also intercepts authorize_egress's Sanction POST, which then treats a
+    # TypeSafe mock body as an unauthorized hybrid decision.
     monkeypatch.setattr(
-        module.httpx,
-        "AsyncClient",
-        lambda **kwargs: REAL_CLIENT(transport=httpx.MockTransport(handler), **kwargs),
+        module, "httpx", SimpleNamespace(AsyncClient=fake_client, HTTPError=httpx.HTTPError)
     )
     return state
 
