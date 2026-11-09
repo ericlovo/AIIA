@@ -629,8 +629,8 @@ Checks 4 services every 30 seconds with 24-hour history retention:
 | Service | Check URL | Timeout | Category |
 |---------|-----------|---------|----------|
 | AIIA Local Brain | `localhost:8100/v1/aiia/status` | 5s | intelligence |
-| AIIA Analyst (DefaultApp) | `localhost:9000/health` | 10s | backend |
-| AIIA Platform | `localhost:9000/health` | 10s | backend |
+| App Analyst (opt-in) | `APP_BACKEND_URL` + `/health` | 10s | backend |
+| AIIA Platform (opt-in) | `AIIA_PLATFORM_URL` + `/health` | 10s | backend |
 | Ollama | `localhost:11434/api/tags` | 3s | local |
 
 **Status Values:** online, degraded (slow/4xx), offline (timeout/5xx/error)
@@ -752,3 +752,5 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 ## License
 
 Apache 2.0 — see [LICENSE](../LICENSE) for details.
+
+App Analyst and AIIA Platform show **Not configured** when their endpoint environment variable is absent or blank. Set a base URL and restart Studio to enable a monitor. Unconfigured integrations receive no probes and produce no Health Journal warnings. Historical monitor records are retained.

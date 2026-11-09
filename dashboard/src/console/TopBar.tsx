@@ -42,9 +42,9 @@ export function TopBar() {
             <Pill dot="gray" label={!monitorError && !monitor ? 'checking integrations…' : 'integration status unavailable'} />
           ) : integrations.map(service => (
             <Pill key={service.id}
-              dot={service.status === 'online' ? 'green' : service.status === 'offline' && !service.uses_default_endpoint ? 'red' : 'amber'}
-              label={service.status === 'offline' && service.uses_default_endpoint
-                ? `${service.name}: default endpoint offline`
+              dot={service.configured === false || service.status === 'not_configured' || service.status === 'unknown' ? 'gray' : service.status === 'online' ? 'green' : service.status === 'offline' ? 'red' : 'amber'}
+              label={service.configured === false || service.status === 'not_configured'
+                ? `${service.name}: Not configured`
                 : `${service.name}: ${service.status}`}
             />
           ))}

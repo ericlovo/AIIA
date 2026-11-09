@@ -216,16 +216,16 @@ MONITORED_SERVICES = {
     },
     "default": {
         "name": "App Analyst",
-        "uses_default_endpoint": "APP_BACKEND_URL" not in os.environ,
-        "url": os.getenv("APP_BACKEND_URL", "https://localhost:9000") + "/health",
-        "metrics_url": os.getenv("APP_BACKEND_URL", "https://localhost:9000") + "/metrics",
+        "configured": bool(os.getenv("APP_BACKEND_URL", "").strip()),
+        "url": os.getenv("APP_BACKEND_URL", "").strip().rstrip("/") + "/health",
+        "metrics_url": os.getenv("APP_BACKEND_URL", "").strip().rstrip("/") + "/metrics",
         "timeout": 10.0,
         "category": "backend",
     },
     "platform": {
         "name": "AIIA Platform",
-        "uses_default_endpoint": "AIIA_PLATFORM_URL" not in os.environ,
-        "url": os.getenv("AIIA_PLATFORM_URL", "http://localhost:9000") + "/health",
+        "configured": bool(os.getenv("AIIA_PLATFORM_URL", "").strip()),
+        "url": os.getenv("AIIA_PLATFORM_URL", "").strip().rstrip("/") + "/health",
         "timeout": 10.0,
         "category": "backend",
     },
@@ -317,8 +317,8 @@ class MonitorState:
             "id": sid,
             "name": cfg["name"],
             "category": cfg["category"],
-            "uses_default_endpoint": cfg.get("uses_default_endpoint", False),
-            "status": self.statuses[sid],
+            "configured": cfg.get("configured", True),
+            "status": self.statuses[sid] if cfg.get("configured", True) else "not_configured",
             "response_time_ms": times[-1]["ms"] if times else None,
             "avg_response_time_ms": avg_ms,
             "uptime_pct": round((online / total) * 100, 1) if total > 0 else None,
@@ -433,9 +433,11 @@ class ConnectionManager:
 # ─────────────────────────────────────────────────────────────
 
 
-async def check_service(client: httpx.AsyncClient, service_id: str) -> ServiceHealth:
-    """Check a single service. Never raises — always returns a ServiceHealth."""
+async def check_service(client: httpx.AsyncClient, service_id: str) -> ServiceHealth | None:
+    """Check a configured service; skip unconfigured integrations."""
     cfg = MONITORED_SERVICES[service_id]
+    if not cfg.get("configured", True):
+        return None
     now = datetime.now(timezone.utc).isoformat()
 
     try:
@@ -527,14 +529,19 @@ async def production_monitor_loop():
     """Autonomous monitor — checks all services every MONITOR_INTERVAL seconds."""
     await asyncio.sleep(3)  # let server finish startup
     logger.info(
-        f"Production Monitor started — checking {len(MONITORED_SERVICES)} services every {MONITOR_INTERVAL}s"
+        "Production Monitor started — checking configured services every %ss",
+        MONITOR_INTERVAL,
     )
 
     while True:
         try:
             async with httpx.AsyncClient() as client:
                 results = await asyncio.gather(
-                    *[check_service(client, sid) for sid in MONITORED_SERVICES],
+                    *[
+                        check_service(client, sid)
+                        for sid, cfg in MONITORED_SERVICES.items()
+                        if cfg.get("configured", True)
+                    ],
                     return_exceptions=True,
                 )
 
@@ -551,7 +558,9 @@ async def production_monitor_loop():
             await manager.broadcast("monitor_update", snapshot)
 
             # Also update legacy health dict
-            state.health = {sid: {"status": monitor.statuses[sid]} for sid in MONITORED_SERVICES}
+            state.health = {
+                sid: {"status": service["status"]} for sid, service in snapshot["services"].items()
+            }
 
             # Persist every 5 cycles (~2.5 min)
             if monitor.cycle_count % 5 == 0:

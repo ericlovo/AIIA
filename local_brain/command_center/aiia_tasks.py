@@ -1238,7 +1238,11 @@ class TaskRunner:
         await self._progress("health_journal", 10, "Reading monitor state")
 
         snapshot = self.monitor_state.get_full_snapshot()
-        services = snapshot.get("services", {})
+        services = {
+            sid: svc
+            for sid, svc in snapshot.get("services", {}).items()
+            if svc.get("configured", True) and svc.get("status") != "not_configured"
+        }
 
         await self._progress("health_journal", 30, "Formatting health snapshot")
 
@@ -1267,7 +1271,9 @@ class TaskRunner:
 
         # Emit insight if any service is degraded/offline
         offline = [
-            svc.get("name", sid) for sid, svc in services.items() if svc.get("status") != "online"
+            svc.get("name", sid)
+            for sid, svc in services.items()
+            if svc.get("status") in {"offline", "degraded"}
         ]
         if offline:
             await self._emit_insight(
@@ -1276,11 +1282,11 @@ class TaskRunner:
                 f"{len(offline)} service(s) not healthy: {', '.join(offline)}",
                 source_task="health_journal",
             )
-        else:
+        elif services and all(svc.get("status") == "online" for svc in services.values()):
             await self._emit_insight(
                 "metric",
                 "success",
-                f"All {len(services)} services healthy",
+                f"All {len(services)} configured services healthy",
                 source_task="health_journal",
             )
 

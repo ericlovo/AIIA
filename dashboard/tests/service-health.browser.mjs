@@ -11,7 +11,7 @@ try {
     await page.route('**/api/**', route => {
       const path = new URL(route.request().url()).pathname
       const services = Object.fromEntries([['default', 'App Analyst'], ['platform', 'AIIA Platform']].map(
-        ([id, name]) => [id, { id, name, status: 'offline', uses_default_endpoint: fallback }],
+        ([id, name]) => [id, { id, name, status: fallback ? 'not_configured' : 'offline', configured: !fallback }],
       ))
       const data = path === '/api/monitor' ? { services } : path === '/api/health'
         ? { aiia: { status: 'online' }, ollama: { status: 'online' } } : { projects: [], agents: [] }
@@ -19,7 +19,7 @@ try {
     })
     await page.goto(process.env.STUDIO_URL + '#/projects')
     const header = page.locator('header').first()
-    for (const label of ['brain online', 'ollama ready', 'App Analyst: default endpoint offline', 'AIIA Platform: default endpoint offline']) {
+    for (const label of ['brain online', 'ollama ready', 'App Analyst: Not configured', 'AIIA Platform: Not configured']) {
       await header.getByText(label, { exact: true }).waitFor()
     }
     assert.ok(await header.evaluate(el => el.scrollWidth <= innerWidth))
