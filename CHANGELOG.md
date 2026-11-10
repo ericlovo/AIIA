@@ -104,6 +104,18 @@ All notable changes to AIIA are documented here. This project adheres to
   has not already run on that local date, so a busy minute no longer skips a
   day and a morning restart cannot run the same job twice. Jobs shows the zone.
 
+### Changed
+
+- **Command Center `repo_sync` is fetch-only by default.** The Mini production
+  checkout (`~/aiia-brain/AIIA-public`) is no longer fast-forwarded every 6
+  hours. The task fetches origin, reports how far HEAD is behind `origin/main`,
+  and re-indexes files at HEAD. Set `AIIA_REPO_SYNC_PULL=1` to opt into
+  `git pull --ff-only origin main`; that path refuses a dirty tracked tree or a
+  non-fast-forward, then GETs Brain `/health` on :8100. A failed verify fails
+  the run and does not restart Brain. The summary reports this run's HEAD
+  movement (not a stale stored index SHA). Official path:
+  [docs/MINI-UPDATE.md](docs/MINI-UPDATE.md).
+
 ### Security
 
 - **Command Center listens on loopback by default.** It has no auth of its
