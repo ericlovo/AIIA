@@ -56,6 +56,9 @@ logger = logging.getLogger("aiia.local_brain.api")
 
 # Command Center URL for metrics reporting
 COMMAND_CENTER_URL = os.getenv("COMMAND_CENTER_URL", "http://localhost:8200")
+# One retry after a local-model (ollama/qwen) failure. Keep this short so a
+# Daily Brief client timeout (330s) still has room after a fast connect error.
+ASK_RETRY_BACKOFF_SECONDS = 1.0
 
 
 async def _report_metrics(
@@ -1007,6 +1010,67 @@ class AIIAIngestRequest(BaseModel):
     metadata: dict[str, Any] | None = None
 
 
+def _local_model_identity(aiia: AIIA) -> tuple[str, float]:
+    model = getattr(aiia, "_model", None) or "unknown"
+    timeout = getattr(getattr(aiia, "_ollama", None), "timeout", None)
+    if timeout is None:
+        timeout = get_config().ollama_timeout
+    return str(model), float(timeout)
+
+
+def is_local_model_error(exc: BaseException) -> bool:
+    """Ollama/qwen transport, timeout, and HTTP failures — not application bugs."""
+    return isinstance(
+        exc,
+        (httpx.HTTPError, TimeoutError, asyncio.TimeoutError, ConnectionError, OSError),
+    )
+
+
+def local_model_http_error(exc: BaseException, *, model: str, timeout: float) -> HTTPException:
+    """Structured 4xx/503 instead of an unhandled 500 from the local model."""
+    raw = str(exc).strip() or type(exc).__name__
+    snippet = raw[:240]
+    if isinstance(exc, (httpx.TimeoutException, TimeoutError, asyncio.TimeoutError)):
+        return HTTPException(
+            status_code=503,
+            detail={
+                "error": "local_model_timeout",
+                "reason": (f"Local model generation timed out after {timeout:g}s (model={model})"),
+                "model": model,
+            },
+        )
+    if isinstance(exc, httpx.HTTPStatusError) and exc.response is not None:
+        status = exc.response.status_code
+        if 400 <= status < 500:
+            return HTTPException(
+                status_code=400,
+                detail={
+                    "error": "local_model_rejected",
+                    "reason": (
+                        f"Local model rejected the request "
+                        f"(HTTP {status}, model={model}): {snippet}"
+                    ),
+                    "model": model,
+                },
+            )
+        return HTTPException(
+            status_code=503,
+            detail={
+                "error": "local_model_unavailable",
+                "reason": f"Local model HTTP {status} (model={model}): {snippet}",
+                "model": model,
+            },
+        )
+    return HTTPException(
+        status_code=503,
+        detail={
+            "error": "local_model_unavailable",
+            "reason": (f"Local model call failed (model={model}): {type(exc).__name__}: {snippet}"),
+            "model": model,
+        },
+    )
+
+
 @app.post("/v1/aiia/ask", dependencies=[Depends(verify_api_key)])
 async def aiia_ask(request: AIIAAskRequest):
     """
@@ -1014,29 +1078,46 @@ async def aiia_ask(request: AIIAAskRequest):
     builds context, and reasons with the local LLM.
     """
     _aiia = await _require_aiia()
+    model, model_timeout = _local_model_identity(_aiia)
 
     start = time.monotonic()
-    try:
-        result = await _aiia.ask(
-            question=request.question,
-            context=request.context,
-            include_sessions=request.include_sessions,
-            n_results=request.n_results,
-            num_ctx=request.num_ctx,
-            depth=request.depth,
-            think=request.think,
-            max_tokens=request.max_tokens,
-            warmup=request.warmup,
-        )
-    except httpx.TimeoutException as exc:
-        model = getattr(_aiia, "_model", None) or "unknown"
-        timeout = getattr(getattr(_aiia, "_ollama", None), "timeout", None)
-        if timeout is None:
-            timeout = get_config().ollama_timeout
+    result: dict[str, Any] | None = None
+    for attempt in (0, 1):
+        try:
+            result = await _aiia.ask(
+                question=request.question,
+                context=request.context,
+                include_sessions=request.include_sessions,
+                n_results=request.n_results,
+                num_ctx=request.num_ctx,
+                depth=request.depth,
+                think=request.think,
+                max_tokens=request.max_tokens,
+                warmup=request.warmup,
+            )
+            break
+        except Exception as exc:
+            if not is_local_model_error(exc):
+                raise
+            if attempt == 0:
+                logger.warning(
+                    "Local model call failed (attempt 1/2, model=%s); retrying in %.1ss: %s",
+                    model,
+                    ASK_RETRY_BACKOFF_SECONDS,
+                    exc,
+                )
+                await asyncio.sleep(ASK_RETRY_BACKOFF_SECONDS)
+                continue
+            raise local_model_http_error(exc, model=model, timeout=model_timeout) from exc
+    if result is None:
         raise HTTPException(
-            status_code=504,
-            detail=f"Local model generation timed out after {timeout:g}s (model={model})",
-        ) from exc
+            status_code=503,
+            detail={
+                "error": "local_model_unavailable",
+                "reason": f"Local model returned no result (model={model})",
+                "model": model,
+            },
+        )
     latency = (time.monotonic() - start) * 1000
 
     # Report AIIA ask as a local LLM request

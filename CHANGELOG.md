@@ -104,6 +104,14 @@ All notable changes to AIIA are documented here. This project adheres to
 
 ### Fixed
 
+- **Daily Brief skips opt-in monitors and survives local-model failures.** App
+  Analyst and AIIA Platform report `not_configured` when unset (PR #150); the
+  07:00 CT brief no longer treats them as offline or asks Eric to recover them.
+  Only configured offline/degraded services are listed as failures.
+  `POST /v1/aiia/ask` retries one ollama/qwen failure with backoff and returns
+  a structured 4xx/503 instead of an unhandled 500. When generation is still
+  unavailable, the brief writes a partial evidence-only note for that section.
+
 - **Studio attention versions the whole identical-evidence group.** Acknowledging
   or restoring one completed report now bumps `review_version` on every current
   sibling with the same evidence. A stale sibling can no longer re-acknowledge

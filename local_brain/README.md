@@ -633,7 +633,7 @@ Checks 4 services every 30 seconds with 24-hour history retention:
 | AIIA Platform (opt-in) | `AIIA_PLATFORM_URL` + `/health` | 10s | backend |
 | Ollama | `localhost:11434/api/tags` | 3s | local |
 
-**Status Values:** online, degraded (slow/4xx), offline (timeout/5xx/error)
+**Status Values:** online, degraded (slow/4xx), offline (timeout/5xx/error), not_configured (opt-in probe unset; skipped, not a failure)
 
 ---
 
