@@ -8,6 +8,14 @@ All notable changes to AIIA are documented here. This project adheres to
 
 ### Changed
 
+- **BD suppression matching strips generic org-type words.** Candidate and
+  suppressed organization names drop leading/trailing tokens such as
+  government, department, board, and legal suffixes, and treat `County of
+  Example` as `Example County`, so civic and corporate variants match the
+  same core name. A one-token core still matches only an identical core
+  (`Northwind` does not match `Northwind Foods`). See
+  [docs/BD-ICP.md](docs/BD-ICP.md).
+
 - **BD conductor yield without extra Jev spend.** Qwen pre-screens up to eight
   unseen RSS items in a job, ranks gap-clear evidence, and sends only the best
   item to Jev (still one Jev call per job). Budget days use America/Chicago
