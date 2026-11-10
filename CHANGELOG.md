@@ -28,6 +28,18 @@ All notable changes to AIIA are documented here. This project adheres to
 
 ### Added
 
+- **Private BD ICP and suppression lists.** Segment bots (starting with
+  `healthcare`) can load a per-customer ICP profile and do-not-prospect list
+  from `~/.aiia-private/bd-icp` (or `AIIA_BD_ICP_DIR` / roster `icp_dir`).
+  Missing files leave behavior unchanged. Matching organizations are withheld
+  as `suppressed_existing_customer_pipeline` before Jev. Discovery queries and
+  Qwen/Jev prompts take a compact ICP summary. `/api/bd/snapshot` reports
+  `icp_loaded`, the customer label, `suppression_count`, and today's
+  suppressed-withhold count — never suppression names. Product
+  `typical_ratio_of_sits` may be a number or a 1–2 number range in `[0, 1]`.
+  Fail-closed logs name the failing top-level key, not values. See
+  [docs/BD-ICP.md](docs/BD-ICP.md).
+
 - **Standing BD research cadence.** The conductor now has a versioned
   America/Chicago weekday/weekend schedule, per-slot bot rotation, Qwen
   `keep_alive` warmup with one retry, inconclusive next-query suggestions, and
