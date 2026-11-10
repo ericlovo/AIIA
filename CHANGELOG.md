@@ -35,7 +35,9 @@ All notable changes to AIIA are documented here. This project adheres to
   as `suppressed_existing_customer_pipeline` before Jev. Discovery queries and
   Qwen/Jev prompts take a compact ICP summary. `/api/bd/snapshot` reports
   `icp_loaded`, the customer label, `suppression_count`, and today's
-  suppressed-withhold count — never suppression names. See
+  suppressed-withhold count — never suppression names. Product
+  `typical_ratio_of_sits` may be a number or a 1–2 number range in `[0, 1]`.
+  Fail-closed logs name the failing top-level key, not values. See
   [docs/BD-ICP.md](docs/BD-ICP.md).
 
 - **Standing BD research cadence.** The conductor now has a versioned

@@ -1,6 +1,7 @@
 import asyncio
 import copy
 import json
+import logging
 from functools import wraps
 
 import pytest
@@ -16,6 +17,7 @@ from local_brain.command_center.bd_icp import (
     matches_suppression,
     normalize_org_name,
     query_terms,
+    sits_ratio_label,
 )
 from local_brain.command_center.bd_service import BDService
 
@@ -169,6 +171,66 @@ def test_files_for_other_bot_are_ignored(tmp_path):
     assert profile.loaded is False
 
 
+def test_typical_ratio_of_sits_accepts_number_or_range(tmp_path):
+    write_profile(tmp_path)
+    single = load_bot_profile("healthcare", directory=tmp_path)
+    assert single.status == "ok"
+    assert "20% of SITS" in single.summary()
+    ranged = copy.deepcopy(SYNTHETIC_ICP)
+    ranged["products"]["BENEFITS"]["typical_ratio_of_sits"] = [0.143, 0.175]
+    write_profile(tmp_path, icp=ranged)
+    profile = load_bot_profile("healthcare", directory=tmp_path)
+    assert profile.status == "ok"
+    assert profile.loaded is True
+    assert sits_ratio_label([0.143, 0.175]) == "14-18% of SITS"
+    assert "14-18% of SITS" in profile.summary()
+    assert "Acme Widgets" not in profile.summary()
+    one_item = copy.deepcopy(SYNTHETIC_ICP)
+    one_item["products"]["BENEFITS"]["typical_ratio_of_sits"] = [0.2]
+    write_profile(tmp_path, icp=one_item)
+    listed = load_bot_profile("healthcare", directory=tmp_path)
+    assert listed.status == "ok"
+    assert "20% of SITS" in listed.summary()
+    omitted = copy.deepcopy(SYNTHETIC_ICP)
+    del omitted["products"]["BENEFITS"]["typical_ratio_of_sits"]
+    write_profile(tmp_path, icp=omitted)
+    bare = load_bot_profile("healthcare", directory=tmp_path)
+    assert bare.status == "ok"
+    assert "of SITS" not in bare.summary()
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        True,
+        False,
+        "0.2",
+        "high",
+        [[0.143, 0.175]],
+        [0.143, 0.175, 0.2],
+        [],
+        {"low": 0.143, "high": 0.175},
+        1.5,
+        -0.1,
+        [True, 0.2],
+        ["0.143", "0.175"],
+        [0.143, [0.175]],
+    ],
+)
+def test_typical_ratio_of_sits_rejects_invalid_forms(tmp_path, caplog, value):
+    icp = copy.deepcopy(SYNTHETIC_ICP)
+    icp["products"]["BENEFITS"]["typical_ratio_of_sits"] = value
+    write_profile(tmp_path, icp=icp)
+    with caplog.at_level(logging.WARNING, logger="local_brain.command_center.bd_icp"):
+        profile = load_bot_profile("healthcare", directory=tmp_path)
+    assert profile.status == "error"
+    assert profile.loaded is False
+    assert "key=products" in caplog.text
+    assert "0.143" not in caplog.text
+    assert "0.175" not in caplog.text
+    assert "Benefits administration" not in caplog.text
+
+
 def test_malformed_files_fail_closed(tmp_path, caplog):
     folder = tmp_path / "healthcare"
     folder.mkdir()
@@ -183,8 +245,12 @@ def test_malformed_files_fail_closed(tmp_path, caplog):
     assert "Acme Widgets" not in caplog.text
     junk = dict(SYNTHETIC_ICP, version=2, buyer_types={"hot": ["SHOULD_NOT_SHAPE_QUERY"]})
     (folder / "broken.icp.json").write_text(json.dumps(junk), encoding="utf-8")
-    profile = load_bot_profile("healthcare", directory=tmp_path)
+    caplog.clear()
+    with caplog.at_level(logging.WARNING, logger="local_brain.command_center.bd_icp"):
+        profile = load_bot_profile("healthcare", directory=tmp_path)
     assert profile.status == "error"
+    assert "key=version" in caplog.text
+    assert "SHOULD_NOT_SHAPE_QUERY" not in caplog.text
     assert "SHOULD_NOT_SHAPE_QUERY" not in pipeline.discovery_query("healthcare", profile)
     assert query_terms(profile) == ""
 
@@ -218,6 +284,7 @@ def test_loaded_profile_shapes_query_and_prompts(tmp_path):
     assert "Downweight lanes" in summary
     assert "channel/partner" in summary
     assert "Benefits administration" in summary
+    assert "20% of SITS" in summary
     assert "Acme Widgets" not in summary
     assert "Example County Hospital" not in summary
     assert len(summary) < 2400

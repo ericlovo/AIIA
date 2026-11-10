@@ -10,6 +10,7 @@ from __future__ import annotations
 import contextvars
 import json
 import logging
+import math
 import os
 import re
 from dataclasses import dataclass, field
@@ -116,6 +117,37 @@ def matches_suppression(name, organizations):
     return matching_suppressed_org(name, organizations) is not None
 
 
+def _is_unit_ratio(value):
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return False
+    return math.isfinite(value) and 0 <= value <= 1
+
+
+def sits_ratio(value):
+    """Parse typical_ratio_of_sits: one number or a list of 1-2 numbers in [0, 1]."""
+    if _is_unit_ratio(value):
+        return (float(value),)
+    if isinstance(value, list) and 1 <= len(value) <= 2:
+        parsed = []
+        for item in value:
+            if isinstance(item, (list, dict, str, bool)) or not _is_unit_ratio(item):
+                return None
+            parsed.append(float(item))
+        return tuple(parsed)
+    return None
+
+
+def sits_ratio_label(value):
+    parsed = sits_ratio(value)
+    if not parsed:
+        return ""
+    percents = [int(round(item * 100)) for item in parsed]
+    low, high = min(percents), max(percents)
+    if low == high:
+        return f"{low}% of SITS"
+    return f"{low}-{high}% of SITS"
+
+
 def _strings(value, limit=8):
     if not isinstance(value, list):
         return []
@@ -202,7 +234,11 @@ class BotIcpProfile:
                 if not isinstance(code, str) or not code.strip():
                     continue
                 if isinstance(spec, dict) and isinstance(spec.get("name"), str) and spec["name"]:
-                    product_bits.append(f"{code.strip()}: {spec['name'].strip()}")
+                    bit = f"{code.strip()}: {spec['name'].strip()}"
+                    ratio = sits_ratio_label(spec.get("typical_ratio_of_sits"))
+                    if ratio:
+                        bit += f" ({ratio})"
+                    product_bits.append(bit)
                 else:
                     product_bits.append(code.strip())
         lines = ["ICP targeting guidance (not a prospect or customer list):"]
@@ -291,76 +327,90 @@ def _str_list(value):
     return isinstance(value, list) and all(isinstance(item, str) for item in value)
 
 
-def _applies_to_bot(data, bot_id):
-    bot_ids = data.get("bot_ids")
-    if not isinstance(bot_ids, list) or not bot_ids:
-        return False
-    if any(not _nonempty_str(item) for item in bot_ids):
-        return False
-    return bot_id in bot_ids
+def _fail_closed_log(bot_id, error, key=None):
+    if isinstance(key, str) and key:
+        logger.warning("BD ICP for bot %s failed closed: %s key=%s", bot_id, error, key)
+    else:
+        logger.warning("BD ICP for bot %s failed closed: %s", bot_id, error)
 
 
 def _validate_icp(data, bot_id):
     if data.get("version") != 1:
-        return "malformed_icp_profile"
-    if not _applies_to_bot(data, bot_id):
-        if not isinstance(data.get("bot_ids"), list) or any(
-            not _nonempty_str(item) for item in data.get("bot_ids") or [""]
-        ):
-            return "malformed_icp_profile"
-        return "skip"
-    required_strings = ("customer", "updated", "source", "employer_size", "stages_note")
-    if any(not _nonempty_str(data.get(key)) for key in required_strings):
-        return "malformed_icp_profile"
+        return "malformed_icp_profile", "version"
+    bot_ids = data.get("bot_ids")
+    if (
+        not isinstance(bot_ids, list)
+        or not bot_ids
+        or any(not _nonempty_str(item) for item in bot_ids)
+    ):
+        return "malformed_icp_profile", "bot_ids"
+    if bot_id not in bot_ids:
+        return "skip", None
+    for key in ("customer", "updated", "source", "employer_size", "stages_note"):
+        if not _nonempty_str(data.get(key)):
+            return "malformed_icp_profile", key
     buyers = data.get("buyer_types")
-    if not isinstance(buyers, dict) or not _str_list(buyers.get("hot")):
-        return "malformed_icp_profile"
-    if not _str_list(buyers.get("downweight")):
-        return "malformed_icp_profile"
-    if not _str_list(data.get("employer_sectors")) or not _str_list(data.get("signals")):
-        return "malformed_icp_profile"
+    if (
+        not isinstance(buyers, dict)
+        or not _str_list(buyers.get("hot"))
+        or not _str_list(buyers.get("downweight"))
+    ):
+        return "malformed_icp_profile", "buyer_types"
+    if not _str_list(data.get("employer_sectors")):
+        return "malformed_icp_profile", "employer_sectors"
+    if not _str_list(data.get("signals")):
+        return "malformed_icp_profile", "signals"
     geography = data.get("geography")
     if not isinstance(geography, dict) or any(
         not _str_list(geography.get(key)) for key in ("priority_1", "priority_2", "lower")
     ):
-        return "malformed_icp_profile"
+        return "malformed_icp_profile", "geography"
     products = data.get("products")
     if not isinstance(products, dict):
-        return "malformed_icp_profile"
+        return "malformed_icp_profile", "products"
     for spec in products.values():
         if not isinstance(spec, dict) or not _nonempty_str(spec.get("name")):
-            return "malformed_icp_profile"
-        for key in ("value_share", "typical_ratio_of_sits"):
-            if key in spec and not isinstance(spec[key], (int, float)):
-                return "malformed_icp_profile"
-            if key in spec and isinstance(spec[key], bool):
-                return "malformed_icp_profile"
+            return "malformed_icp_profile", "products"
+        if "value_share" in spec:
+            share = spec["value_share"]
+            if (
+                isinstance(share, bool)
+                or not isinstance(share, (int, float))
+                or not math.isfinite(share)
+            ):
+                return "malformed_icp_profile", "products"
+        if "typical_ratio_of_sits" in spec and sits_ratio(spec["typical_ratio_of_sits"]) is None:
+            return "malformed_icp_profile", "products"
     channels = data.get("channels")
     if (
         not isinstance(channels, dict)
         or not _nonempty_str(channels.get("treat_as"))
         or not _str_list(channels.get("known"))
     ):
-        return "malformed_icp_profile"
-    return "ok"
+        return "malformed_icp_profile", "channels"
+    return "ok", None
 
 
 def _validate_suppression(data, bot_id):
     if data.get("version") != 1:
-        return "malformed_suppression_list"
-    if not _applies_to_bot(data, bot_id):
-        if not isinstance(data.get("bot_ids"), list) or any(
-            not _nonempty_str(item) for item in data.get("bot_ids") or [""]
-        ):
-            return "malformed_suppression_list"
-        return "skip"
-    if any(not _nonempty_str(data.get(key)) for key in ("customer", "reason", "updated")):
-        return "malformed_suppression_list"
+        return "malformed_suppression_list", "version"
+    bot_ids = data.get("bot_ids")
+    if (
+        not isinstance(bot_ids, list)
+        or not bot_ids
+        or any(not _nonempty_str(item) for item in bot_ids)
+    ):
+        return "malformed_suppression_list", "bot_ids"
+    if bot_id not in bot_ids:
+        return "skip", None
+    for key in ("customer", "reason", "updated"):
+        if not _nonempty_str(data.get(key)):
+            return "malformed_suppression_list", key
     if not _str_list(data.get("organizations")):
-        return "malformed_suppression_list"
+        return "malformed_suppression_list", "organizations"
     if "notes" in data and not isinstance(data["notes"], str):
-        return "malformed_suppression_list"
-    return "ok"
+        return "malformed_suppression_list", "notes"
+    return "ok", None
 
 
 def load_bot_profile(bot_id, *, directory=None, config=None):
@@ -374,7 +424,7 @@ def load_bot_profile(bot_id, *, directory=None, config=None):
         if not root.exists():
             return absent
         if not root.is_dir():
-            logger.warning("BD ICP for bot %s failed closed: unreadable_icp_dir", bot_id)
+            _fail_closed_log(bot_id, "unreadable_icp_dir")
             return BotIcpProfile(bot_id=bot_id, status="error", error="unreadable_icp_dir")
         folder = root / bot_id
         if not folder.is_dir():
@@ -392,13 +442,13 @@ def load_bot_profile(bot_id, *, directory=None, config=None):
         for path in icp_files:
             parsed = _read_json(path)
             if parsed is None:
-                logger.warning("BD ICP for bot %s failed closed: malformed_icp_profile", bot_id)
+                _fail_closed_log(bot_id, "malformed_icp_profile")
                 return BotIcpProfile(bot_id=bot_id, status="error", error="malformed_icp_profile")
-            check = _validate_icp(parsed, bot_id)
+            check, key = _validate_icp(parsed, bot_id)
             if check == "skip":
                 continue
             if check != "ok":
-                logger.warning("BD ICP for bot %s failed closed: %s", bot_id, check)
+                _fail_closed_log(bot_id, check, key)
                 return BotIcpProfile(bot_id=bot_id, status="error", error=check)
             icp_data = parsed
             customer = parsed["customer"].strip()
@@ -406,17 +456,15 @@ def load_bot_profile(bot_id, *, directory=None, config=None):
         for path in suppression_files:
             parsed = _read_json(path)
             if parsed is None:
-                logger.warning(
-                    "BD ICP for bot %s failed closed: malformed_suppression_list", bot_id
-                )
+                _fail_closed_log(bot_id, "malformed_suppression_list")
                 return BotIcpProfile(
                     bot_id=bot_id, status="error", error="malformed_suppression_list"
                 )
-            check = _validate_suppression(parsed, bot_id)
+            check, key = _validate_suppression(parsed, bot_id)
             if check == "skip":
                 continue
             if check != "ok":
-                logger.warning("BD ICP for bot %s failed closed: %s", bot_id, check)
+                _fail_closed_log(bot_id, check, key)
                 return BotIcpProfile(bot_id=bot_id, status="error", error=check)
             if customer is None:
                 customer = parsed["customer"].strip()
@@ -438,5 +486,5 @@ def load_bot_profile(bot_id, *, directory=None, config=None):
             organizations=tuple(organizations),
         )
     except (OSError, TypeError, ValueError):
-        logger.warning("BD ICP for bot %s failed closed: malformed_icp_profile", bot_id)
+        _fail_closed_log(bot_id, "malformed_icp_profile")
         return BotIcpProfile(bot_id=bot_id, status="error", error="malformed_icp_profile")

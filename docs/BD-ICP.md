@@ -63,7 +63,7 @@ default path. Only files whose `bot_ids` include the bot are loaded.
     "BENEFITS": {
       "name": "Benefits administration",
       "value_share": 0.4,
-      "typical_ratio_of_sits": 0.2
+      "typical_ratio_of_sits": [0.143, 0.175]
     }
   },
   "channels": {
@@ -74,6 +74,11 @@ default path. Only files whose `bot_ids` include the bot are loaded.
   "stages_note": "Prefer expansion and hiring over brand mentions."
 }
 ```
+
+`typical_ratio_of_sits` may be a single number in `[0, 1]` or a list of one or
+two such numbers (a range). The compact summary renders a range as
+`14-18% of SITS`. Bools, strings, nested lists, and values outside `[0, 1]`
+fail closed. Malformed files log the failing **top-level key name only**.
 
 ## Behavior
 
