@@ -76,11 +76,104 @@ def daily_brief_ask_body(prompt: str, *, retry: bool = False) -> dict[str, Any]:
 
 
 def is_generation_timeout(exc: BaseException) -> bool:
-    """True when Brain generation hit its Ollama deadline (HTTP 504) or the client did."""
+    """True when Brain generation hit its Ollama deadline or the client did."""
     if isinstance(exc, (httpx.TimeoutException, TimeoutError, asyncio.TimeoutError)):
         return True
     text = f"{type(exc).__name__}: {exc}".lower()
-    return "http 504" in text or "timed out" in text or "timeout" in type(exc).__name__.lower()
+    if "timeout" in type(exc).__name__.lower() or "timed out" in text:
+        return True
+    if "local_model_timeout" in text:
+        return True
+    return "http 504" in text
+
+
+def is_configured_monitor_service(svc: dict[str, Any]) -> bool:
+    """True when a monitor probe is in play (not an opt-in service left unset)."""
+    return bool(svc.get("configured", True)) and svc.get("status") != "not_configured"
+
+
+def classify_monitor_services(
+    services: dict[str, Any],
+) -> tuple[dict[str, Any], dict[str, Any], list[str]]:
+    """Split a monitor snapshot into probed, skipped (not_configured), and real failures."""
+    probed: dict[str, Any] = {}
+    skipped: dict[str, Any] = {}
+    failures: list[str] = []
+    for sid, svc in services.items():
+        if not is_configured_monitor_service(svc):
+            skipped[sid] = svc
+            continue
+        probed[sid] = svc
+        if svc.get("status") in {"offline", "degraded"}:
+            failures.append(str(svc.get("name", sid)))
+    return probed, skipped, failures
+
+
+def format_service_health_line(sid: str, svc: dict[str, Any]) -> str:
+    status = svc.get("status", "unknown")
+    uptime = svc.get("uptime_pct")
+    uptime_str = f", {uptime}% uptime" if uptime is not None else ""
+    avg_rt = svc.get("avg_response_time_ms")
+    rt_str = f", avg {avg_rt}ms" if avg_rt else ""
+    return f"{svc.get('name', sid)}: {status}{uptime_str}{rt_str}"
+
+
+def format_brief_platform_health(services: dict[str, Any]) -> tuple[str, list[str]]:
+    """Prompt-ready health block. Skipped probes must not be treated as offline."""
+    probed, skipped, failures = classify_monitor_services(services)
+    lines: list[str] = []
+    if probed:
+        lines.append("Configured services:")
+        for sid, svc in probed.items():
+            lines.append(f"  - {format_service_health_line(sid, svc)}")
+    else:
+        lines.append("Configured services: none reporting")
+    if skipped:
+        lines.append(
+            "Skipped (not_configured — opt-in probes that were not run; "
+            "not offline; do not recommend recovery):"
+        )
+        for sid, svc in skipped.items():
+            lines.append(f"  - {svc.get('name', sid)}: not_configured")
+    if failures:
+        lines.append("Real failures (configured services only): " + ", ".join(failures))
+    else:
+        lines.append("Real failures (configured services only): none")
+    return "\n".join(lines), failures
+
+
+def partial_daily_brief(
+    *,
+    reason: str,
+    commits_section: str,
+    health_section: str,
+    token_section: str,
+    wip_section: str,
+    priorities_section: str,
+    kb_docs: int,
+    kb_delta: int,
+    total_memories: int,
+    mem_delta: int,
+    model: str,
+) -> str:
+    """Evidence-only brief when /v1/aiia/ask cannot generate the narrative."""
+    kb_sign = "+" if kb_delta >= 0 else ""
+    mem_sign = "+" if mem_delta >= 0 else ""
+    return (
+        f"## 1. Shipped Code (by product)\n{commits_section}\n\n"
+        "## 2. Priority Recommendations\n"
+        f"Unavailable — AIIA generation failed ({reason}). "
+        "Use WIP and project priorities below.\n\n"
+        f"WORK IN PROGRESS:\n{wip_section}\n\n"
+        f"PROJECT PRIORITIES:\n{priorities_section}\n\n"
+        f"## 3. Platform Health\n{health_section}\n\n"
+        "## 4. Key Numbers\n"
+        f"{token_section}\n"
+        f"KB STATS: {kb_docs} docs ({kb_sign}{kb_delta}), "
+        f"{total_memories} memories ({mem_sign}{mem_delta}), model: {model}\n\n"
+        f"Note: Generated narrative section was unavailable ({reason}). "
+        "This is a partial brief from gathered evidence only."
+    )
 
 
 def cron_zone(defn: dict) -> ZoneInfo:
@@ -1241,7 +1334,7 @@ class TaskRunner:
         services = {
             sid: svc
             for sid, svc in snapshot.get("services", {}).items()
-            if svc.get("configured", True) and svc.get("status") != "not_configured"
+            if is_configured_monitor_service(svc)
         }
 
         await self._progress("health_journal", 30, "Formatting health snapshot")
@@ -1527,17 +1620,10 @@ class TaskRunner:
 
         await self._progress("daily_brief", 15, "Reading health trends")
 
-        # Health snapshot from monitor
+        # Health snapshot from monitor. Opt-in probes left unset are skipped,
+        # not listed as offline — otherwise the model tells Eric to recover them.
         snapshot = self.monitor_state.get_full_snapshot()
-        services = snapshot.get("services", {})
-        health_lines = []
-        for sid, svc in services.items():
-            status = svc.get("status", "unknown")
-            uptime = svc.get("uptime_pct")
-            uptime_str = f", {uptime}% uptime" if uptime is not None else ""
-            avg_rt = svc.get("avg_response_time_ms")
-            rt_str = f", avg {avg_rt}ms" if avg_rt else ""
-            health_lines.append(f"{svc.get('name', sid)}: {status}{uptime_str}{rt_str}")
+        health_section, health_failures = format_brief_platform_health(snapshot.get("services", {}))
 
         await self._progress("daily_brief", 25, "Checking AIIA knowledge stats")
 
@@ -1666,7 +1752,6 @@ class TaskRunner:
         else:
             commits_section = "  No commits in last 24h"
 
-        health_section = "\n".join(f"  - {h}" for h in health_lines)
         memory_section = "\n".join(
             f"  - [{m.get('category', '?')}] {m.get('fact', '')[:100]}"
             for m in recent_memories[:10]
@@ -1675,6 +1760,7 @@ class TaskRunner:
         commits_section = commits_section[:6000]
         health_section = health_section[:2000]
         token_section = token_section[:1000]
+        failure_note = ", ".join(health_failures) if health_failures else "none"
 
         prompt = f"""Generate a morning briefing for the development team lead. Use at most 500 words and exactly 4 sections:
 
@@ -1685,7 +1771,7 @@ Summarize what was built yesterday, grouped by product. Highlight notable featur
 Based on WIP items, project priorities, and what shipped — what should the team focus on today? Consider: client deadlines, revenue impact, security items, unfinished work.
 
 ## 3. Platform Health
-Brief service status — what's up, what's degraded, any concerns.
+Report configured services only. Treat skipped / not_configured probes as absent — they are opt-in and were not run. Do not call them offline. Do not tell anyone to recover them. Only list real failures (offline or degraded configured services). If real failures is "none", say the configured platform is healthy.
 
 ## 4. Key Numbers
 Token usage, KB growth, one-liners. Keep this tight.
@@ -1712,27 +1798,41 @@ PROJECT PRIORITIES:
 RECENT MEMORIES:
 {memory_section}"""
 
+        generation_unavailable = False
         try:
             brief = await self._generate_daily_brief(prompt)
         except Exception as e:
             # httpx timeouts stringify to "", which hid every failure for weeks.
             reason = f"{type(e).__name__}: {str(e)[:160]}".rstrip(": ")
-            if is_generation_timeout(e):
-                raise RuntimeError(
-                    f"Brief generation failed after warmup and one bounded retry ({reason})"
-                ) from e
-            raise RuntimeError(f"Brief generation failed ({reason})") from e
+            logger.warning("Daily Brief generation unavailable; writing partial brief (%s)", reason)
+            brief = partial_daily_brief(
+                reason=reason,
+                commits_section=commits_section,
+                health_section=health_section,
+                token_section=token_section,
+                wip_section=wip_section,
+                priorities_section=priorities_section,
+                kb_docs=kb_docs,
+                kb_delta=kb_delta,
+                total_memories=total_memories,
+                mem_delta=mem_delta,
+                model=model,
+            )
+            generation_unavailable = True
 
         await self._progress("daily_brief", 80, "Storing brief")
 
-        # Store as memory. Only a real brief is remembered: a failure line here
-        # would feed every Local-memory agent's fingerprint and context.
+        # Store as memory. A partial brief still has gathered evidence; a bare
+        # failure line would feed every Local-memory agent's fingerprint.
         brief_summary = brief[:500] if len(brief) > 500 else brief
+        marker = "PARTIAL Daily Brief" if generation_unavailable else "Daily Brief"
         await self._aiia_request(
             "POST",
             "/v1/aiia/remember",
             {
-                "fact": f"Daily Brief {datetime.now(timezone.utc).strftime('%Y-%m-%d')}: {brief_summary}",
+                "fact": (
+                    f"{marker} {datetime.now(timezone.utc).strftime('%Y-%m-%d')}: {brief_summary}"
+                ),
                 "category": "project",
                 "source": "task:daily_brief",
             },
@@ -1741,12 +1841,19 @@ RECENT MEMORIES:
         # End session
         try:
             session_id = f"daily-brief-{datetime.now(timezone.utc).strftime('%Y%m%d')}"
+            health_summary = (
+                f"failures: {failure_note}" if health_failures else "configured services reporting"
+            )
+            prefix = "Partial Daily Brief" if generation_unavailable else "Daily Brief"
             await self._aiia_request(
                 "POST",
                 "/v1/aiia/session-end",
                 {
                     "session_id": session_id,
-                    "summary": f"Daily Brief: {len(recent_commits)} commits, {kb_docs} KB docs, all services reporting",
+                    "summary": (
+                        f"{prefix}: {len(recent_commits)} commits, {kb_docs} KB docs, "
+                        f"{health_summary}"
+                    ),
                 },
             )
         except Exception:
@@ -1769,7 +1876,16 @@ RECENT MEMORIES:
         }
 
         await self._progress("daily_brief", 100, "Complete")
-        summary = f"Brief generated: {len(recent_commits)} commits, {kb_docs} KB docs, {total_memories} memories"
+        if generation_unavailable:
+            summary = (
+                f"Partial brief (generation unavailable): {len(recent_commits)} commits, "
+                f"{kb_docs} KB docs, {total_memories} memories"
+            )
+        else:
+            summary = (
+                f"Brief generated: {len(recent_commits)} commits, "
+                f"{kb_docs} KB docs, {total_memories} memories"
+            )
         return (summary, brief)
 
     # ─── Continuous Tasks ────────────────────────────────────
