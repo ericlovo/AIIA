@@ -78,7 +78,7 @@ These are references to existing server environment variables, not raw credentia
 
 A configured client research job reads its bound tenant's account list, then researches only its explicitly configured public `research_segment`. It records read availability and account count locally; it does not guess identity matches between discovered companies and CRM accounts. CRM records are never included in Qwen or Jev public-evidence payloads. Packet contacts remain held for tenant restriction and requested-date checks. The standalone detail adapter preserves suppression flags for future explicit account matching; no write/verification endpoint is implemented.
 
-News evidence keys are SHA-256 of the source URL, a NUL separator, and the SHA-256 of exact source text. `job.seen_evidence` contains prior keys for the same bot and tenant. A job selects the first unseen of up to eight current headlines; if all are seen, it returns `packets: []`, `reason: no_new_evidence` without model calls. The key is stored on each packet. Updated source text gets a new key. Source-key dedup does not assert that differently syndicated articles represent different real-world events.
+News evidence keys are SHA-256 of the source URL, a NUL separator, and the SHA-256 of exact source text. `job.seen_evidence` contains prior keys for the same bot and tenant. A job pre-screens unseen items from up to eight current headlines with Qwen, ranks gap-clear extractions, and sends one to Jev; if all are seen, it returns `packets: []`, `reason: no_new_evidence` without model calls. Screened-out keys are stored with withhold context (organization, headline, URL, quote, Jev scores). Updated source text gets a new key. Source-key dedup does not assert that differently syndicated articles represent different real-world events.
 
 ### Healthcare prospect quality
 
@@ -97,9 +97,11 @@ These conservative thresholds are not calibrated identity verification. Editoria
 sector trends, and insufficient evidence are withheld; no company is fabricated to
 fill the queue. Other segments keep their existing three questions.
 
-Completed withholds record the source evidence key without a prospect packet.
-The conductor remembers those keys within the same bot and tenant, so subsequent
-cycles can examine other sources instead of repeating a rejected headline.
+Completed withholds record the source evidence key plus organization, headline,
+URL, the Qwen quote, and Jev scores when judgment ran. The snapshot exposes that
+context on the job so Studio can review withholds. The conductor remembers those
+keys within the same bot and tenant, so subsequent cycles can examine other
+sources instead of repeating a rejected headline.
 Provider failures remain failures, not completed reviews. Existing historical
 packets are not rewritten.
 

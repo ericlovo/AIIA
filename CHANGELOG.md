@@ -6,6 +6,17 @@ All notable changes to AIIA are documented here. This project adheres to
 
 ## [Unreleased]
 
+### Changed
+
+- **BD conductor yield without extra Jev spend.** Qwen pre-screens up to eight
+  unseen RSS items in a job, ranks gap-clear evidence, and sends only the best
+  item to Jev (still one Jev call per job). Budget days use America/Chicago
+  (configurable) instead of UTC, and a per-bot lease burst cap spreads a
+  midnight backlog. Daily token reservations default to a measured estimate
+  with a 2000-token floor instead of the flat 8000-token job cap. Withholds
+  persist organization, headline, URL, quote, and Jev scores on the snapshot.
+  Kill switch, review gates, and withhold thresholds are unchanged.
+
 ### Added
 
 - **Standing BD research cadence.** The conductor now has a versioned

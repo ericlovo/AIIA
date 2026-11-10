@@ -4,11 +4,21 @@ export interface BDBot {
   id: string; name: string; segment: string; tenant_id: string; budgets: Budget
   counts: Record<'queued' | 'running' | 'completed' | 'failed', number>
 }
+export interface BDWithheld {
+  evidence_key?: string; reason: string; organization: string; headline: string
+  source_url: string; quote: string
+  jev_scores?: {
+    claim_supported?: number | null; evidence_strength?: number | null
+    disposition?: string | null; disposition_confidence?: number | null
+    entity_role?: string | null; entity_role_confidence?: number | null
+    entity_role_probability?: number | null
+  } | null
+}
 export interface BDJob {
   id: string; bot_id: string; tenant_id: string; segment: string
   state: 'queued' | 'leased' | 'running' | 'completed' | 'failed' | 'cancelled'
   mode?: string; research_outcome?: ResearchOutcome; result_reason?: string
-  next_query?: string | null
+  next_query?: string | null; withheld?: BDWithheld[]
   finished_at?: string | null; error?: string | null; attempts?: number
   step: string; created_at: string; started_at: string | null; heartbeat_at: string | null
 }
@@ -51,6 +61,7 @@ export interface BDSnapshot {
   job_window?: { limit: number; total: number; returned: number; truncated: boolean; queue_total: number; queue_returned: number }
   mode: string; schedule_enabled: boolean; kill_switch: boolean; bots: BDBot[]; jobs: BDJob[]
   events: BDEvent[]; packets: BDPacket[]; budget: Budget
+  budget_day_timezone?: string; budget_policy?: string
   health: Record<'qwen' | 'jev' | 'managed_leads', ProviderHealth>
   jev: { calls_per_minute: number | null; verdict_mix: Record<'Choice' | 'Score' | 'Noul', number> | null; latency_ms: number | null; errors: number | null }
 }
@@ -144,6 +155,7 @@ export function researchReason(reason: string | undefined): string {
     segment_evidence_unverified: 'Segment evidence checks have not verified this result.',
     source_evidence_missing: 'The retained result is missing source evidence.',
     no_supported_prospect: 'The evidence did not support a prospect for this segment.',
+    not_selected_better_candidate: 'A stronger named-organization operational event from this batch was sent to judgment.',
     no_named_organization: 'No named organization was supported by the source.',
     no_new_evidence: 'No new evidence was found in this run.',
     segment_entity_or_event_unconfirmed: 'The organization or market event was not confirmed for this segment.',

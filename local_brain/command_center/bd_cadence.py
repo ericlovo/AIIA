@@ -30,6 +30,9 @@ NEXT_QUERY = {
     "segment_entity_or_event_unconfirmed": (
         "Find a named in-segment operator and a confirmed relevant event"
     ),
+    "not_selected_better_candidate": (
+        "A stronger named-organization operational event from this batch was sent to judgment"
+    ),
     "qwen_unavailable": "Warm qwen3:8b and retry this source after the model is resident",
     "source_evidence_missing": "Retain the source quote and URL before treating this as a candidate",
     "source_evidence_unverified": "Re-check grounding: named organization, quote, and supported claim",

@@ -1181,3 +1181,157 @@ async def test_jev_http_failure_keeps_status_without_response_body(monkeypatch):
         )
     assert events[-1][1]["message"] == "jev_http_429"
     assert "private body" not in str(events)
+
+
+def _gap_clear_source(name, extra="opens a new outpatient clinic expansion"):
+    title = f"{name} {extra}"
+    source, extraction, judgments = pipeline.synthetic_fixture("healthcare")
+    source = {
+        **source,
+        "title": title,
+        "url": f"https://example.org/{name.replace(' ', '-').lower()}",
+    }
+    extraction = {
+        **extraction,
+        "organization": name,
+        "quote": title,
+        "signal": extra,
+    }
+    return source, extraction, judgments
+
+
+@async_test
+async def test_qwen_screens_unseen_items_and_sends_only_the_best_to_jev(monkeypatch):
+    weak, weak_ex, _ = _gap_clear_source("Clinic Co", "opens")
+    strong, strong_ex, judgments = _gap_clear_source(
+        "Orchard Health System", "opens a $40 million outpatient clinic expansion"
+    )
+    generic, generic_ex, _ = pipeline.synthetic_fixture("healthcare")
+    generic = {
+        **generic,
+        "title": "Hospital expands services",
+        "url": "https://example.org/generic",
+    }
+    generic_ex = {
+        **generic_ex,
+        "organization": "Hospital",
+        "quote": generic["title"],
+        "signal": "expands",
+    }
+    called = []
+    judged = []
+
+    async def retrieve(segment):
+        return [generic, weak, strong]
+
+    async def local(source):
+        called.append(source["url"])
+        if source["url"] == generic["url"]:
+            return generic_ex, 10
+        if source["url"] == weak["url"]:
+            return weak_ex, 11
+        return strong_ex, 12
+
+    async def judge(source, extracted, segment):
+        judged.append((source["url"], extracted["organization"]))
+        return judgments
+
+    monkeypatch.setattr(pipeline, "retrieve_sources", retrieve)
+    monkeypatch.setattr(pipeline, "extract_ready", local)
+    monkeypatch.setattr(pipeline, "judge", judge)
+    result = await pipeline.run_pipeline(job(mode="live"))
+    assert called == [generic["url"], weak["url"], strong["url"]]
+    assert judged == [(strong["url"], "Orchard Health System")]
+    assert result["packets"][0]["organization"] == "Orchard Health System"
+    reasons = {item["reason"] for item in result["withheld"]}
+    assert "generic_healthcare_reference" in reasons
+    assert "not_selected_better_candidate" in reasons
+    assert pipeline.evidence_key(generic) in result["reviewed_evidence"]
+    assert pipeline.evidence_key(weak) in result["reviewed_evidence"]
+    assert pipeline.evidence_key(strong) in result["reviewed_evidence"]
+
+
+@async_test
+async def test_qwen_screen_respects_job_seconds_and_leaves_unseen_unmarked(monkeypatch):
+    first, first_ex, _ = pipeline.synthetic_fixture("healthcare")
+    first = {**first, "title": "Hospital expands services", "url": "https://example.org/generic"}
+    first_ex = {
+        **first_ex,
+        "organization": "Hospital",
+        "quote": first["title"],
+        "signal": "expands",
+    }
+    second, second_ex, _ = _gap_clear_source(
+        "Orchard Health System", "opens a $40 million outpatient clinic expansion"
+    )
+    clock = {"t": 0.0}
+    monkeypatch.setattr(pipeline.time, "monotonic", lambda: clock["t"])
+    called = []
+
+    async def retrieve(segment):
+        return [first, second]
+
+    async def local(source):
+        called.append(source["url"])
+        clock["t"] += 90
+        return (first_ex if source["url"] == first["url"] else second_ex), 10
+
+    async def forbidden(*args):
+        raise AssertionError("time-capped screen must not call Jev without a selected item")
+
+    monkeypatch.setattr(pipeline, "retrieve_sources", retrieve)
+    monkeypatch.setattr(pipeline, "extract_ready", local)
+    monkeypatch.setattr(pipeline, "judge", forbidden)
+    result = await pipeline.run_pipeline(
+        job(mode="live", budget={"seconds": 120, "tokens": 8000, "calls": 6})
+    )
+    assert called == [first["url"]]
+    assert pipeline.evidence_key(second) not in result["reviewed_evidence"]
+    assert result["packets"] == []
+    assert result["withheld"][0]["headline"] == first["title"]
+    assert result["reason"] == "generic_healthcare_reference"
+
+
+@async_test
+async def test_withhold_persists_org_headline_url_quote_and_jev_scores(monkeypatch):
+    source, extraction, judgments = pipeline.synthetic_fixture("healthcare")
+    source.update(title="Orchard Health opens a clinic", publisher="Daily Star")
+    extraction.update(
+        organization="Orchard Health",
+        quote="Orchard Health opens a clinic",
+        signal="opens a clinic",
+    )
+    judgments["answers"]["claim_supported"]["noul"] = 0.5
+    judged = []
+
+    async def retrieve(segment):
+        return [source]
+
+    async def local(source):
+        return extraction, 10
+
+    async def judge(source, extracted, segment):
+        judged.append(1)
+        return judgments
+
+    monkeypatch.setattr(pipeline, "retrieve_sources", retrieve)
+    monkeypatch.setattr(pipeline, "extract_ready", local)
+    monkeypatch.setattr(pipeline, "judge", judge)
+    result = await pipeline.run_pipeline(job(mode="live"))
+    assert judged == [1]
+    assert result["packets"] == []
+    withheld = result["withheld"][0]
+    assert withheld["organization"] == "Orchard Health"
+    assert withheld["headline"] == source["title"]
+    assert withheld["source_url"] == source["url"]
+    assert withheld["quote"] == extraction["quote"]
+    assert withheld["jev_scores"]["claim_supported"] == 0.5
+    assert withheld["jev_scores"]["entity_role"] == "healthcare_operator"
+
+
+def test_screen_rank_prefers_named_org_and_operational_event():
+    weak, weak_ex, _ = _gap_clear_source("Clinic Co", "opens")
+    strong, strong_ex, _ = _gap_clear_source(
+        "Orchard Health System", "opens a $40 million outpatient clinic expansion"
+    )
+    assert pipeline.screen_rank(strong, strong_ex) > pipeline.screen_rank(weak, weak_ex)
