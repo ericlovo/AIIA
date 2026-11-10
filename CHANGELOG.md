@@ -6,6 +6,17 @@ All notable changes to AIIA are documented here. This project adheres to
 
 ## [Unreleased]
 
+### Changed
+
+- **BD conductor yield without extra Jev spend.** Qwen pre-screens up to eight
+  unseen RSS items in a job, ranks gap-clear evidence, and sends only the best
+  item to Jev (still one Jev call per job). Budget days use America/Chicago
+  (configurable) instead of UTC, and a per-bot lease burst cap spreads a
+  midnight backlog. Daily token reservations default to a measured estimate
+  with a 2000-token floor instead of the flat 8000-token job cap. Withholds
+  persist organization, headline, URL, quote, and Jev scores on the snapshot.
+  Kill switch, review gates, and withhold thresholds are unchanged.
+
 ### Fixed
 
 - **Studio morning-note latency.** `GET /api/studio/morning-note` now serves the
@@ -102,6 +113,18 @@ All notable changes to AIIA are documented here. This project adheres to
   has not already run on that local date, so a busy minute no longer skips a
   day and a morning restart cannot run the same job twice. Jobs shows the zone.
 
+### Changed
+
+- **Command Center `repo_sync` is fetch-only by default.** The Mini production
+  checkout (`~/aiia-brain/AIIA-public`) is no longer fast-forwarded every 6
+  hours. The task fetches origin, reports how far HEAD is behind `origin/main`,
+  and re-indexes files at HEAD. Set `AIIA_REPO_SYNC_PULL=1` to opt into
+  `git pull --ff-only origin main`; that path refuses a dirty tracked tree or a
+  non-fast-forward, then GETs Brain `/health` on :8100. A failed verify fails
+  the run and does not restart Brain. The summary reports this run's HEAD
+  movement (not a stale stored index SHA). Official path:
+  [docs/MINI-UPDATE.md](docs/MINI-UPDATE.md).
+
 ### Security
 
 - **Command Center listens on loopback by default.** It has no auth of its
@@ -112,6 +135,14 @@ All notable changes to AIIA are documented here. This project adheres to
   loopback only.
 
 ### Fixed
+
+- **Daily Brief skips opt-in monitors and survives local-model failures.** App
+  Analyst and AIIA Platform report `not_configured` when unset (PR #150); the
+  07:00 CT brief no longer treats them as offline or asks Eric to recover them.
+  Only configured offline/degraded services are listed as failures.
+  `POST /v1/aiia/ask` retries one ollama/qwen failure with backoff and returns
+  a structured 4xx/503 instead of an unhandled 500. When generation is still
+  unavailable, the brief writes a partial evidence-only note for that section.
 
 - **Studio attention versions the whole identical-evidence group.** Acknowledging
   or restoring one completed report now bumps `review_version` on every current

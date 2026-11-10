@@ -22,7 +22,7 @@ import os
 import re
 import sys
 import time
-from collections.abc import Callable, Coroutine
+from collections.abc import Callable, Coroutine, Mapping
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
@@ -76,11 +76,104 @@ def daily_brief_ask_body(prompt: str, *, retry: bool = False) -> dict[str, Any]:
 
 
 def is_generation_timeout(exc: BaseException) -> bool:
-    """True when Brain generation hit its Ollama deadline (HTTP 504) or the client did."""
+    """True when Brain generation hit its Ollama deadline or the client did."""
     if isinstance(exc, (httpx.TimeoutException, TimeoutError, asyncio.TimeoutError)):
         return True
     text = f"{type(exc).__name__}: {exc}".lower()
-    return "http 504" in text or "timed out" in text or "timeout" in type(exc).__name__.lower()
+    if "timeout" in type(exc).__name__.lower() or "timed out" in text:
+        return True
+    if "local_model_timeout" in text:
+        return True
+    return "http 504" in text
+
+
+def is_configured_monitor_service(svc: dict[str, Any]) -> bool:
+    """True when a monitor probe is in play (not an opt-in service left unset)."""
+    return bool(svc.get("configured", True)) and svc.get("status") != "not_configured"
+
+
+def classify_monitor_services(
+    services: dict[str, Any],
+) -> tuple[dict[str, Any], dict[str, Any], list[str]]:
+    """Split a monitor snapshot into probed, skipped (not_configured), and real failures."""
+    probed: dict[str, Any] = {}
+    skipped: dict[str, Any] = {}
+    failures: list[str] = []
+    for sid, svc in services.items():
+        if not is_configured_monitor_service(svc):
+            skipped[sid] = svc
+            continue
+        probed[sid] = svc
+        if svc.get("status") in {"offline", "degraded"}:
+            failures.append(str(svc.get("name", sid)))
+    return probed, skipped, failures
+
+
+def format_service_health_line(sid: str, svc: dict[str, Any]) -> str:
+    status = svc.get("status", "unknown")
+    uptime = svc.get("uptime_pct")
+    uptime_str = f", {uptime}% uptime" if uptime is not None else ""
+    avg_rt = svc.get("avg_response_time_ms")
+    rt_str = f", avg {avg_rt}ms" if avg_rt else ""
+    return f"{svc.get('name', sid)}: {status}{uptime_str}{rt_str}"
+
+
+def format_brief_platform_health(services: dict[str, Any]) -> tuple[str, list[str]]:
+    """Prompt-ready health block. Skipped probes must not be treated as offline."""
+    probed, skipped, failures = classify_monitor_services(services)
+    lines: list[str] = []
+    if probed:
+        lines.append("Configured services:")
+        for sid, svc in probed.items():
+            lines.append(f"  - {format_service_health_line(sid, svc)}")
+    else:
+        lines.append("Configured services: none reporting")
+    if skipped:
+        lines.append(
+            "Skipped (not_configured — opt-in probes that were not run; "
+            "not offline; do not recommend recovery):"
+        )
+        for sid, svc in skipped.items():
+            lines.append(f"  - {svc.get('name', sid)}: not_configured")
+    if failures:
+        lines.append("Real failures (configured services only): " + ", ".join(failures))
+    else:
+        lines.append("Real failures (configured services only): none")
+    return "\n".join(lines), failures
+
+
+def partial_daily_brief(
+    *,
+    reason: str,
+    commits_section: str,
+    health_section: str,
+    token_section: str,
+    wip_section: str,
+    priorities_section: str,
+    kb_docs: int,
+    kb_delta: int,
+    total_memories: int,
+    mem_delta: int,
+    model: str,
+) -> str:
+    """Evidence-only brief when /v1/aiia/ask cannot generate the narrative."""
+    kb_sign = "+" if kb_delta >= 0 else ""
+    mem_sign = "+" if mem_delta >= 0 else ""
+    return (
+        f"## 1. Shipped Code (by product)\n{commits_section}\n\n"
+        "## 2. Priority Recommendations\n"
+        f"Unavailable — AIIA generation failed ({reason}). "
+        "Use WIP and project priorities below.\n\n"
+        f"WORK IN PROGRESS:\n{wip_section}\n\n"
+        f"PROJECT PRIORITIES:\n{priorities_section}\n\n"
+        f"## 3. Platform Health\n{health_section}\n\n"
+        "## 4. Key Numbers\n"
+        f"{token_section}\n"
+        f"KB STATS: {kb_docs} docs ({kb_sign}{kb_delta}), "
+        f"{total_memories} memories ({mem_sign}{mem_delta}), model: {model}\n\n"
+        f"Note: Generated narrative section was unavailable ({reason}). "
+        "This is a partial brief from gathered evidence only."
+    )
 
 
 def cron_zone(defn: dict) -> ZoneInfo:
@@ -352,6 +445,9 @@ AIIA_BASE_URL = os.getenv("AIIA_URL", "http://localhost:8100")
 # auth is on. Empty dict if no key is configured (local Brain ignores the header).
 _AIIA_KEY = os.getenv("LOCAL_BRAIN_API_KEY", "")
 _AIIA_HEADERS = {"x-api-key": _AIIA_KEY} if _AIIA_KEY else {}
+# Opt-in fast-forward of the Mini production checkout. Unset/anything other
+# than 1 keeps repo_sync fetch-only so merges cannot silently deploy.
+REPO_SYNC_PULL_ENV = "AIIA_REPO_SYNC_PULL"
 TASK_DATA_FILE = Path(__file__).parent / "task_data.json"
 MAX_RUN_HISTORY = 10
 MAX_INSIGHTS = 50
@@ -517,7 +613,10 @@ TASK_DEFINITIONS = {
     },
     "repo_sync": {
         "name": "Repo Sync",
-        "description": "Git pull + re-index changed files into ChromaDB",
+        "description": (
+            "Fetch origin, report how far HEAD is behind origin/main, re-index HEAD. "
+            "Pull only if AIIA_REPO_SYNC_PULL=1"
+        ),
         "schedule_seconds": 21600,  # every 6 hours
         "uses_llm": False,
     },
@@ -597,6 +696,46 @@ TASK_DEFINITIONS = {
         "uses_llm": True,
     },
 }
+
+
+def repo_sync_pull_enabled(environ: Mapping[str, str] | None = None) -> bool:
+    """True only when AIIA_REPO_SYNC_PULL=1 — the Mini's opt-in fast-forward."""
+    raw = (os.environ if environ is None else environ).get(REPO_SYNC_PULL_ENV, "")
+    return raw.strip() == "1"
+
+
+def format_repo_sync_summary(
+    *,
+    pull_enabled: bool,
+    head_before: str,
+    head_after: str,
+    origin_sha: str | None,
+    behind: int | None,
+    fetch_note: str,
+    verify_result: str | None,
+    index_msg: str,
+) -> str:
+    """Summarize HEAD movement this run — never the stored index SHA vs origin."""
+    if head_before == head_after:
+        movement = f"HEAD {head_after[:8]} did not move"
+    else:
+        movement = f"HEAD {head_before[:8]}→{head_after[:8]}"
+
+    origin_short = origin_sha[:8] if origin_sha else "origin/main"
+    if behind is None:
+        gap = "origin/main position unknown"
+    elif behind == 0:
+        gap = f"0 commits behind origin/main ({origin_short})"
+    else:
+        gap = f"{behind} commit(s) behind origin/main ({origin_short})"
+
+    if pull_enabled:
+        verify = verify_result or "not run"
+        return (
+            f"Pulled {head_before[:8]}→{head_after[:8]}; verify=/health {verify}. "
+            f"{movement}. {gap}. {index_msg}"
+        )
+    return f"Fetch-only ({fetch_note}): {movement}. {gap}. {index_msg}"
 
 
 # ─────────────────────────────────────────────────────────────
@@ -1177,6 +1316,14 @@ class TaskRunner:
             raise RuntimeError(f"git {' '.join(args)} failed: {error}")
         return stdout.decode().strip()
 
+    async def _verify_brain_health(self) -> tuple[bool, str]:
+        """GET Brain /health on :8100. Does not restart any service."""
+        try:
+            await self._aiia_request("GET", "/health", timeout=10.0)
+            return True, "ok"
+        except Exception as e:
+            return False, str(e)[:200]
+
     # ─── Insight Emission ─────────────────────────────────────
 
     async def _emit_insight(
@@ -1241,7 +1388,7 @@ class TaskRunner:
         services = {
             sid: svc
             for sid, svc in snapshot.get("services", {}).items()
-            if svc.get("configured", True) and svc.get("status") != "not_configured"
+            if is_configured_monitor_service(svc)
         }
 
         await self._progress("health_journal", 30, "Formatting health snapshot")
@@ -1294,52 +1441,122 @@ class TaskRunner:
         return f"Stored health snapshot: {len(services)} services checked"
 
     async def _task_repo_sync(self) -> str:
-        """Git pull + re-index changed files into ChromaDB."""
-        await self._progress("repo_sync", 5, "Getting current commit SHA")
+        """Fetch origin, optionally pull, re-index files at HEAD into ChromaDB.
 
-        await self._run_git("rev-parse", "HEAD")
-        last_sha = self._extra.get("last_commit_sha")
+        Default is fetch-only and never moves HEAD. Set AIIA_REPO_SYNC_PULL=1 to
+        fast-forward origin/main after a dirty/ff check and a /health verify.
+        Failed verify flags the run failed; this task does not restart Brain.
+        """
+        await self._progress("repo_sync", 5, "Getting current HEAD")
+        head_before = await self._run_git("rev-parse", "HEAD")
+        last_indexed = self._extra.get("last_commit_sha")
 
-        await self._progress("repo_sync", 10, "Pulling from origin")
-
+        await self._progress("repo_sync", 10, "Fetching origin")
+        fetch_note = "fetched origin"
         try:
-            pull_result = await self._run_git("pull", "--ff-only", "origin", "main")
+            await self._run_git("fetch", "origin")
         except RuntimeError as e:
-            # Non-ff pull or network error — still continue with what we have
-            pull_result = f"Pull failed (non-fatal): {e}"
-            logger.warning(pull_result)
+            fetch_note = f"fetch failed: {e}"
+            logger.warning("repo_sync: %s", fetch_note)
 
-        await self._progress("repo_sync", 20, "Detecting changed files")
+        origin_sha = None
+        behind: int | None = None
+        try:
+            origin_sha = await self._run_git("rev-parse", "origin/main")
+            behind = int(
+                (await self._run_git("rev-list", "--count", "HEAD..origin/main")).strip() or "0"
+            )
+        except (RuntimeError, ValueError) as e:
+            logger.warning("repo_sync: could not compare HEAD to origin/main: %s", e)
 
-        new_sha = await self._run_git("rev-parse", "HEAD")
+        pull_enabled = repo_sync_pull_enabled()
+        verify_result: str | None = None
 
-        if last_sha and last_sha != new_sha:
+        if pull_enabled:
+            await self._progress("repo_sync", 15, "Checking working tree before pull")
+            dirty = await self._run_git("status", "--porcelain", "--untracked-files=no")
+            if dirty.strip():
+                raise TaskRunFailure(
+                    f"Pull refused: tracked changes (HEAD {head_before[:8]})",
+                    dirty,
+                )
+            await self._progress("repo_sync", 18, "Pulling origin/main --ff-only")
+            try:
+                await self._run_git("pull", "--ff-only", "origin", "main")
+            except RuntimeError as e:
+                raise TaskRunFailure(
+                    f"Pull refused: cannot fast-forward origin/main (HEAD {head_before[:8]})",
+                    str(e),
+                ) from e
+
+            head_after = await self._run_git("rev-parse", "HEAD")
+            await self._progress("repo_sync", 22, "Verifying Brain /health")
+            verify_ok, verify_detail = await self._verify_brain_health()
+            verify_result = "ok" if verify_ok else f"failed ({verify_detail})"
+            if not verify_ok:
+                raise TaskRunFailure(
+                    f"Post-pull verify failed: {head_before[:8]}→{head_after[:8]}; "
+                    f"/health {verify_result}",
+                    f"old_sha={head_before}\nnew_sha={head_after}\nverify={verify_result}",
+                )
+            try:
+                origin_sha = await self._run_git("rev-parse", "origin/main")
+                behind = int(
+                    (await self._run_git("rev-list", "--count", "HEAD..origin/main")).strip() or "0"
+                )
+            except (RuntimeError, ValueError):
+                pass
+        else:
+            await self._progress("repo_sync", 18, "Fetch-only — leaving HEAD in place")
+            head_after = await self._run_git("rev-parse", "HEAD")
+            if head_after != head_before:
+                raise TaskRunFailure(
+                    f"Fetch-only moved HEAD {head_before[:8]}→{head_after[:8]} — aborting",
+                    f"old_sha={head_before}\nnew_sha={head_after}",
+                )
+
+        await self._progress("repo_sync", 25, "Detecting changed files at HEAD")
+        index_msg = await self._index_changed_at_head(last_indexed, head_after)
+        return format_repo_sync_summary(
+            pull_enabled=pull_enabled,
+            head_before=head_before,
+            head_after=head_after,
+            origin_sha=origin_sha,
+            behind=behind,
+            fetch_note=fetch_note,
+            verify_result=verify_result,
+            index_msg=index_msg,
+        )
+
+    async def _index_changed_at_head(self, last_sha: str | None, head_sha: str) -> str:
+        """Re-index files that changed between the stored SHA and current HEAD.
+
+        Uses the checkout at HEAD only — never origin/main. The stored SHA is
+        the last indexed HEAD, not a report of this run's HEAD movement.
+        """
+        if last_sha and last_sha != head_sha:
             # Validate last_sha still exists in this repo — a stale SHA carried
             # over from a different repo/checkout makes the diff fail forever.
             try:
                 await self._run_git("cat-file", "-e", f"{last_sha}^{{commit}}")
             except RuntimeError:
                 logger.warning("repo_sync: stored SHA %s not in repo — re-baselining", last_sha[:8])
-                self._extra["last_commit_sha"] = new_sha
+                self._extra["last_commit_sha"] = head_sha
                 await self._progress("repo_sync", 100, "Complete")
-                return f"Re-baselined to {new_sha[:8]} (discarded stale SHA). No files indexed."
-            # Get changed files between old and new
-            diff_output = await self._run_git("diff", "--name-only", f"{last_sha}..{new_sha}")
+                return f"Re-baselined to {head_sha[:8]} (discarded stale SHA). No files indexed."
+            diff_output = await self._run_git("diff", "--name-only", f"{last_sha}..{head_sha}")
             changed_files = [f for f in diff_output.strip().split("\n") if f]
         elif last_sha is None:
-            # First run — don't index everything, just mark position
-            self._extra["last_commit_sha"] = new_sha
+            self._extra["last_commit_sha"] = head_sha
             await self._progress("repo_sync", 100, "Complete")
-            return f"First run — stored baseline SHA {new_sha[:8]}. No files indexed."
+            return f"First run — stored baseline SHA {head_sha[:8]}. No files indexed."
         else:
-            # No changes
-            self._extra["last_commit_sha"] = new_sha
+            self._extra["last_commit_sha"] = head_sha
             await self._progress("repo_sync", 100, "Complete")
-            return "Already up to date — no new commits"
+            return "No new commits at HEAD to index"
 
         await self._progress("repo_sync", 30, f"Filtering {len(changed_files)} changed files")
 
-        # Filter to indexable files
         indexable = []
         for rel_path in changed_files:
             full_path = os.path.join(self.repo_path, rel_path)
@@ -1347,14 +1564,12 @@ class TaskRunner:
                 indexable.append(rel_path)
 
         if not indexable:
-            self._extra["last_commit_sha"] = new_sha
+            self._extra["last_commit_sha"] = head_sha
             await self._progress("repo_sync", 100, "Complete")
-            commits = new_sha[:8] if last_sha is None else f"{last_sha[:8]}..{new_sha[:8]}"
-            return f"Pulled {commits}: {len(changed_files)} changed files, none indexable"
+            return f"{last_sha[:8]}..{head_sha[:8]}: {len(changed_files)} changed files, none indexable"
 
         await self._progress("repo_sync", 40, f"Indexing {len(indexable)} files")
 
-        # Index each file into AIIA via ingest endpoint
         indexed_count = 0
         total_chunks = 0
         for i, rel_path in enumerate(indexable):
@@ -1380,7 +1595,7 @@ class TaskRunner:
                             "doc_type": doc_type,
                             "metadata": {
                                 "chunk_index": chunk["chunk_index"],
-                                "synced_from": new_sha[:8],
+                                "synced_from": head_sha[:8],
                             },
                         },
                     )
@@ -1390,20 +1605,19 @@ class TaskRunner:
             except Exception as e:
                 logger.warning(f"Failed to index {rel_path}: {e}")
 
-        self._extra["last_commit_sha"] = new_sha
+        self._extra["last_commit_sha"] = head_sha
         await self._progress("repo_sync", 100, "Complete")
 
-        commits_str = f"{last_sha[:8]}..{new_sha[:8]}" if last_sha else new_sha[:8]
-
+        range_str = f"{last_sha[:8]}..{head_sha[:8]}"
         if indexed_count > 0:
             await self._emit_insight(
                 "shipped",
                 "info",
-                f"Synced {indexed_count} files ({total_chunks} chunks) from {commits_str}",
+                f"Indexed {indexed_count} files ({total_chunks} chunks) at HEAD {range_str}",
                 source_task="repo_sync",
             )
 
-        return f"Pulled {commits_str}: re-indexed {indexed_count} files ({total_chunks} chunks)"
+        return f"re-indexed {indexed_count} files ({total_chunks} chunks) at {range_str}"
 
     async def _task_memory_digest(self) -> str:
         """AIIA reviews her own memories for duplicates and conflicts."""
@@ -1527,17 +1741,10 @@ class TaskRunner:
 
         await self._progress("daily_brief", 15, "Reading health trends")
 
-        # Health snapshot from monitor
+        # Health snapshot from monitor. Opt-in probes left unset are skipped,
+        # not listed as offline — otherwise the model tells Eric to recover them.
         snapshot = self.monitor_state.get_full_snapshot()
-        services = snapshot.get("services", {})
-        health_lines = []
-        for sid, svc in services.items():
-            status = svc.get("status", "unknown")
-            uptime = svc.get("uptime_pct")
-            uptime_str = f", {uptime}% uptime" if uptime is not None else ""
-            avg_rt = svc.get("avg_response_time_ms")
-            rt_str = f", avg {avg_rt}ms" if avg_rt else ""
-            health_lines.append(f"{svc.get('name', sid)}: {status}{uptime_str}{rt_str}")
+        health_section, health_failures = format_brief_platform_health(snapshot.get("services", {}))
 
         await self._progress("daily_brief", 25, "Checking AIIA knowledge stats")
 
@@ -1666,7 +1873,6 @@ class TaskRunner:
         else:
             commits_section = "  No commits in last 24h"
 
-        health_section = "\n".join(f"  - {h}" for h in health_lines)
         memory_section = "\n".join(
             f"  - [{m.get('category', '?')}] {m.get('fact', '')[:100]}"
             for m in recent_memories[:10]
@@ -1675,6 +1881,7 @@ class TaskRunner:
         commits_section = commits_section[:6000]
         health_section = health_section[:2000]
         token_section = token_section[:1000]
+        failure_note = ", ".join(health_failures) if health_failures else "none"
 
         prompt = f"""Generate a morning briefing for the development team lead. Use at most 500 words and exactly 4 sections:
 
@@ -1685,7 +1892,7 @@ Summarize what was built yesterday, grouped by product. Highlight notable featur
 Based on WIP items, project priorities, and what shipped — what should the team focus on today? Consider: client deadlines, revenue impact, security items, unfinished work.
 
 ## 3. Platform Health
-Brief service status — what's up, what's degraded, any concerns.
+Report configured services only. Treat skipped / not_configured probes as absent — they are opt-in and were not run. Do not call them offline. Do not tell anyone to recover them. Only list real failures (offline or degraded configured services). If real failures is "none", say the configured platform is healthy.
 
 ## 4. Key Numbers
 Token usage, KB growth, one-liners. Keep this tight.
@@ -1712,27 +1919,41 @@ PROJECT PRIORITIES:
 RECENT MEMORIES:
 {memory_section}"""
 
+        generation_unavailable = False
         try:
             brief = await self._generate_daily_brief(prompt)
         except Exception as e:
             # httpx timeouts stringify to "", which hid every failure for weeks.
             reason = f"{type(e).__name__}: {str(e)[:160]}".rstrip(": ")
-            if is_generation_timeout(e):
-                raise RuntimeError(
-                    f"Brief generation failed after warmup and one bounded retry ({reason})"
-                ) from e
-            raise RuntimeError(f"Brief generation failed ({reason})") from e
+            logger.warning("Daily Brief generation unavailable; writing partial brief (%s)", reason)
+            brief = partial_daily_brief(
+                reason=reason,
+                commits_section=commits_section,
+                health_section=health_section,
+                token_section=token_section,
+                wip_section=wip_section,
+                priorities_section=priorities_section,
+                kb_docs=kb_docs,
+                kb_delta=kb_delta,
+                total_memories=total_memories,
+                mem_delta=mem_delta,
+                model=model,
+            )
+            generation_unavailable = True
 
         await self._progress("daily_brief", 80, "Storing brief")
 
-        # Store as memory. Only a real brief is remembered: a failure line here
-        # would feed every Local-memory agent's fingerprint and context.
+        # Store as memory. A partial brief still has gathered evidence; a bare
+        # failure line would feed every Local-memory agent's fingerprint.
         brief_summary = brief[:500] if len(brief) > 500 else brief
+        marker = "PARTIAL Daily Brief" if generation_unavailable else "Daily Brief"
         await self._aiia_request(
             "POST",
             "/v1/aiia/remember",
             {
-                "fact": f"Daily Brief {datetime.now(timezone.utc).strftime('%Y-%m-%d')}: {brief_summary}",
+                "fact": (
+                    f"{marker} {datetime.now(timezone.utc).strftime('%Y-%m-%d')}: {brief_summary}"
+                ),
                 "category": "project",
                 "source": "task:daily_brief",
             },
@@ -1741,12 +1962,19 @@ RECENT MEMORIES:
         # End session
         try:
             session_id = f"daily-brief-{datetime.now(timezone.utc).strftime('%Y%m%d')}"
+            health_summary = (
+                f"failures: {failure_note}" if health_failures else "configured services reporting"
+            )
+            prefix = "Partial Daily Brief" if generation_unavailable else "Daily Brief"
             await self._aiia_request(
                 "POST",
                 "/v1/aiia/session-end",
                 {
                     "session_id": session_id,
-                    "summary": f"Daily Brief: {len(recent_commits)} commits, {kb_docs} KB docs, all services reporting",
+                    "summary": (
+                        f"{prefix}: {len(recent_commits)} commits, {kb_docs} KB docs, "
+                        f"{health_summary}"
+                    ),
                 },
             )
         except Exception:
@@ -1769,7 +1997,16 @@ RECENT MEMORIES:
         }
 
         await self._progress("daily_brief", 100, "Complete")
-        summary = f"Brief generated: {len(recent_commits)} commits, {kb_docs} KB docs, {total_memories} memories"
+        if generation_unavailable:
+            summary = (
+                f"Partial brief (generation unavailable): {len(recent_commits)} commits, "
+                f"{kb_docs} KB docs, {total_memories} memories"
+            )
+        else:
+            summary = (
+                f"Brief generated: {len(recent_commits)} commits, "
+                f"{kb_docs} KB docs, {total_memories} memories"
+            )
         return (summary, brief)
 
     # ─── Continuous Tasks ────────────────────────────────────

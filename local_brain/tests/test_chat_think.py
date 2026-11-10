@@ -223,11 +223,17 @@ async def test_aiia_ask_timeout_returns_actionable_gateway_timeout(monkeypatch):
     fake._model = "qwen3:8b"
     fake._ollama = MagicMock(timeout=300.0)
     monkeypatch.setattr(local_api, "_require_aiia", AsyncMock(return_value=fake))
+    monkeypatch.setattr(local_api.asyncio, "sleep", AsyncMock())
     with pytest.raises(HTTPException) as error:
         await local_api.aiia_ask(local_api.AIIAAskRequest(question="brief", max_tokens=1024))
-    assert error.value.status_code == 504
-    assert error.value.detail == "Local model generation timed out after 300s (model=qwen3:8b)"
-    assert fake.ask.await_count == 1
+    assert error.value.status_code == 503
+    assert error.value.detail["error"] == "local_model_timeout"
+    assert error.value.detail["reason"] == (
+        "Local model generation timed out after 300s (model=qwen3:8b)"
+    )
+    assert error.value.detail["model"] == "qwen3:8b"
+    assert fake.ask.await_count == 2
+    local_api.asyncio.sleep.assert_awaited_once_with(local_api.ASK_RETRY_BACKOFF_SECONDS)
 
 
 @pytest.mark.asyncio

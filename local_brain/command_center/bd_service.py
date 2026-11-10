@@ -26,6 +26,44 @@ def iso(value):
     return datetime.fromtimestamp(value, timezone.utc).isoformat() if value is not None else None
 
 
+def public_withheld(items):
+    if not isinstance(items, list):
+        return []
+    projected = []
+    for item in items[:8]:
+        if not isinstance(item, dict):
+            continue
+        scores = item.get("jev_scores")
+        public_scores = None
+        if isinstance(scores, dict):
+            public_scores = {
+                key: scores.get(key)
+                for key in (
+                    "claim_supported",
+                    "evidence_strength",
+                    "disposition",
+                    "disposition_confidence",
+                    "entity_role",
+                    "entity_role_confidence",
+                    "entity_role_probability",
+                )
+            }
+        projected.append(
+            {
+                "evidence_key": item["evidence_key"]
+                if isinstance(item.get("evidence_key"), str)
+                else "",
+                "reason": str(item.get("reason") or "")[:200],
+                "organization": str(item.get("organization") or "")[:200],
+                "headline": str(item.get("headline") or "")[:500],
+                "source_url": str(item.get("source_url") or "")[:2048],
+                "quote": str(item.get("quote") or "")[:1000],
+                "jev_scores": public_scores,
+            }
+        )
+    return projected
+
+
 def candidate_assessment(packet, segment):
     """Classify retained evidence without promoting historical or human-triaged packets."""
     from .bd_pipeline import (
@@ -388,7 +426,7 @@ class BDService:
     def snapshot(self):
         raw = self.store.snapshot()
         now = raw["timestamp"]
-        today = datetime.fromtimestamp(now, timezone.utc).date().isoformat()
+        today = self.store.budget_day(now)
 
         def budget(scope, limits):
             rows = {
@@ -473,6 +511,7 @@ class BDService:
                     if public["research_outcome"] in {"inconclusive", "rejected"}
                     else None
                 )
+                public["withheld"] = public_withheld(result.get("withheld") or [])
             elif job["state"] == "failed":
                 public["next_query"] = next_query_for(job.get("error") or "")
             jobs.append(public)
@@ -641,7 +680,8 @@ class BDService:
             "model_activity": model_activity,
             "budget": budget("global", self.store.config["global_daily_budget"]),
             "budget_policy": raw["budget_policy"],
-            "budget_day_timezone": "UTC",
+            "budget_day_timezone": raw.get("budget_day_timezone")
+            or self.store.budget_day_timezone(),
             "jev": {
                 "calls_per_minute": sum(e["timestamp"] >= now - 60 for e in calls)
                 if calls or replay

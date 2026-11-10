@@ -15,9 +15,12 @@ from local_brain.command_center.aiia_tasks import (
     DAILY_BRIEF_RETRY_NUM_CTX,
     DAILY_BRIEF_TIMEOUT_SECONDS,
     TaskRunner,
+    classify_monitor_services,
     daily_brief_ask_body,
+    format_brief_platform_health,
     is_generation_timeout,
     parse_pytest_summary,
+    partial_daily_brief,
 )
 
 
@@ -120,13 +123,22 @@ def test_daily_brief_ask_body_is_bounded_and_warms_up():
     assert retry["num_ctx"] == DAILY_BRIEF_RETRY_NUM_CTX
     assert retry["max_tokens"] == DAILY_BRIEF_RETRY_MAX_TOKENS
     assert is_generation_timeout(RuntimeError('AIIA returned HTTP 504: {"detail":"timed out"}'))
+    assert is_generation_timeout(
+        RuntimeError(
+            'AIIA returned HTTP 503: {"error":"local_model_timeout",'
+            '"reason":"Local model generation timed out after 300s (model=qwen3:8b)"}'
+        )
+    )
     assert is_generation_timeout(httpx.ReadTimeout(""))
     assert not is_generation_timeout(RuntimeError("empty_answer"))
+    assert not is_generation_timeout(
+        RuntimeError('AIIA returned HTTP 503: {"error":"local_model_unavailable"}')
+    )
 
 
-def _brief_runner(monkeypatch, request_impl) -> TaskRunner:
+def _brief_runner(monkeypatch, request_impl, services=None) -> TaskRunner:
     monitor = MagicMock()
-    monitor.get_full_snapshot.return_value = {"services": {}}
+    monitor.get_full_snapshot.return_value = {"services": services or {}}
     runner = TaskRunner(AsyncMock(), "/unused", monitor)
     runner._aiia_request = request_impl  # type: ignore[method-assign]
     runner._progress = AsyncMock()  # type: ignore[method-assign]
@@ -182,36 +194,43 @@ def test_daily_brief_retries_once_on_generation_timeout(monkeypatch):
     assert "Retry wrote the brief" in result[1]
 
 
-def test_daily_brief_failure_names_the_timeout_after_retry(monkeypatch):
+def test_daily_brief_writes_partial_brief_after_timeout_retry(monkeypatch):
     remembered: list[dict] = []
+    asked: list[dict] = []
 
     async def fake_request(method, path, body=None, timeout=30.0):
         if path == "/v1/aiia/ask":
+            asked.append(body or {})
             raise httpx.ReadTimeout("")
         if path == "/v1/aiia/remember":
             remembered.append(body or {})
         return {"total_docs": 1, "memories": [], "stats": {}, "total_memories": 0, "items": []}
 
-    with pytest.raises(RuntimeError) as excinfo:
-        asyncio.run(_brief_runner(monkeypatch, fake_request)._task_daily_brief())
-    message = str(excinfo.value)
-    assert "ReadTimeout" in message
-    assert "after warmup and one bounded retry" in message
-    assert not any("Daily Brief" in str(item.get("fact")) for item in remembered)
+    summary, brief = asyncio.run(_brief_runner(monkeypatch, fake_request)._task_daily_brief())
+    assert len(asked) == 2
+    assert "Partial brief (generation unavailable)" in summary
+    assert "ReadTimeout" in brief
+    assert "Generated narrative section was unavailable" in brief
+    assert any("PARTIAL Daily Brief" in str(item.get("fact")) for item in remembered)
 
 
 def test_daily_brief_does_not_retry_a_non_timeout_failure(monkeypatch):
     asked = []
+    remembered: list[dict] = []
 
     async def fake_request(method, path, body=None, timeout=30.0):
         if path == "/v1/aiia/ask":
             asked.append(body or {})
             raise RuntimeError("empty_answer")
+        if path == "/v1/aiia/remember":
+            remembered.append(body or {})
         return {"knowledge": {}, "memory": {}, "memories": [], "total_memories": 0}
 
-    with pytest.raises(RuntimeError, match="empty_answer"):
-        asyncio.run(_brief_runner(monkeypatch, fake_request)._task_daily_brief())
+    summary, brief = asyncio.run(_brief_runner(monkeypatch, fake_request)._task_daily_brief())
     assert len(asked) == 1
+    assert "Partial brief (generation unavailable)" in summary
+    assert "empty_answer" in brief
+    assert any("PARTIAL Daily Brief" in str(item.get("fact")) for item in remembered)
 
 
 def test_test_runner_passes_clean_suite(monkeypatch):
@@ -254,3 +273,84 @@ def test_failed_brief_cannot_display_previous_success(monkeypatch):
     asyncio.run(runner._execute_task("daily_brief"))
     assert runner.tasks["daily_brief"]["last_output"] is None
     assert runner.tasks["daily_brief"]["run_history"][0]["status"] == "failed"
+
+
+_OPTIONAL_MONITOR = {
+    "aiia": {
+        "name": "AIIA Local Brain",
+        "configured": True,
+        "status": "online",
+        "uptime_pct": 99.9,
+        "avg_response_time_ms": 12,
+    },
+    "default": {
+        "name": "App Analyst",
+        "configured": False,
+        "status": "not_configured",
+    },
+    "platform": {
+        "name": "AIIA Platform",
+        "configured": False,
+        "status": "offline",
+    },
+    "ollama": {"name": "Ollama", "configured": True, "status": "offline"},
+}
+
+
+def test_classify_monitor_services_skips_not_configured_and_lists_real_failures():
+    probed, skipped, failures = classify_monitor_services(_OPTIONAL_MONITOR)
+    assert set(probed) == {"aiia", "ollama"}
+    assert set(skipped) == {"default", "platform"}
+    assert failures == ["Ollama"]
+    block, listed = format_brief_platform_health(_OPTIONAL_MONITOR)
+    assert listed == ["Ollama"]
+    assert "App Analyst: not_configured" in block
+    assert "AIIA Platform: not_configured" in block
+    assert "do not recommend recovery" in block
+    assert "Ollama: offline" in block
+    assert "Real failures (configured services only): Ollama" in block
+    assert "App Analyst: offline" not in block
+    assert "AIIA Platform: offline" not in block
+
+
+def test_daily_brief_prompt_skips_not_configured_and_only_lists_real_failures(monkeypatch):
+    asked: list[dict] = []
+
+    async def fake_request(method, path, body=None, timeout=30.0):
+        if path == "/v1/aiia/ask":
+            asked.append(body or {})
+            return {"answer": "## 1. Shipped Code\nNothing notable."}
+        return {"knowledge": {}, "memory": {}, "memories": [], "total_memories": 0}
+
+    asyncio.run(
+        _brief_runner(monkeypatch, fake_request, services=_OPTIONAL_MONITOR)._task_daily_brief()
+    )
+    prompt = asked[0]["question"]
+    assert "Treat skipped / not_configured probes as absent" in prompt
+    assert "Do not call them offline" in prompt
+    assert "Do not tell anyone to recover them" in prompt
+    assert "App Analyst: not_configured" in prompt
+    assert "AIIA Platform: not_configured" in prompt
+    assert "Ollama: offline" in prompt
+    assert "Real failures (configured services only): Ollama" in prompt
+    assert "App Analyst: offline" not in prompt
+    assert "recover" in prompt.lower()
+
+
+def test_partial_daily_brief_names_the_unavailable_section():
+    text = partial_daily_brief(
+        reason="HTTP 503: local_model_unavailable",
+        commits_section="  No commits in last 24h",
+        health_section="Configured services: none reporting\nReal failures (configured services only): none",
+        token_section="  No token data available",
+        wip_section="  No WIP items",
+        priorities_section="  No priority data",
+        kb_docs=10,
+        kb_delta=1,
+        total_memories=4,
+        mem_delta=0,
+        model="qwen3:8b",
+    )
+    assert "Unavailable — AIIA generation failed" in text
+    assert "HTTP 503: local_model_unavailable" in text
+    assert "partial brief from gathered evidence only" in text

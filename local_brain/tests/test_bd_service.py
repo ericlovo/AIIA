@@ -81,7 +81,7 @@ def test_run_once_budget_events_result_and_public_projection(service):
     completed = next(j for j in service.store.snapshot()["jobs"] if j["state"] == "completed")
     assert completed["used_budget"]["tokens"] == 20
     assert completed["used_budget"]["calls"] == 1
-    assert snapshot["budget"]["tokens"]["used"] == service.store.config["job_budget"]["tokens"]
+    assert snapshot["budget"]["tokens"]["used"] == service.store.daily_reservation()["tokens"]
 
 
 def test_over_budget_emit_prevents_adapter_work(service):
@@ -521,6 +521,18 @@ def test_withheld_outcome_visible_without_exposing_raw_result(service):
             "reason": "segment_entity_or_event_unconfirmed",
             "packets": [],
             "private_debug": "DO_NOT_EXPOSE",
+            "withheld": [
+                {
+                    "evidence_key": "a" * 64,
+                    "reason": "segment_entity_or_event_unconfirmed",
+                    "organization": "Orchard Health",
+                    "headline": "Orchard Health opens a clinic",
+                    "source_url": "https://example.org/orchard",
+                    "quote": "Orchard Health opens a clinic",
+                    "jev_scores": {"claim_supported": 0.5, "entity_role": "uncertain"},
+                    "private_debug": "DO_NOT_EXPOSE_WITHHOLD",
+                }
+            ],
         }
 
     service.pipeline = pipeline
@@ -532,7 +544,14 @@ def test_withheld_outcome_visible_without_exposing_raw_result(service):
     assert job["result_reason"] == "segment_entity_or_event_unconfirmed"
     assert job["next_query"]
     assert snapshot["packets"] == []
+    withheld = job["withheld"][0]
+    assert withheld["organization"] == "Orchard Health"
+    assert withheld["headline"] == "Orchard Health opens a clinic"
+    assert withheld["source_url"] == "https://example.org/orchard"
+    assert withheld["quote"] == "Orchard Health opens a clinic"
+    assert withheld["jev_scores"]["claim_supported"] == 0.5
     assert "DO_NOT_EXPOSE" not in json.dumps(snapshot)
+    assert snapshot["budget_day_timezone"] == "America/Chicago"
 
 
 @pytest.mark.parametrize("mutation", ["quote", "provenance", "disposition", "nan"])

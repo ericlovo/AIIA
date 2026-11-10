@@ -262,7 +262,7 @@ Every backlog story is scored against these filters (0-10 each, weighted):
 | `ci_monitor` | Every 30m | No | CI/CD pipeline checks |
 | `code_health` | Every 3h | No | Lint, test, dependency analysis |
 | `security_scan` | Every 6h | No | 6-scanner security suite |
-| `repo_sync` | Every 6h | No | Re-index repo into ChromaDB |
+| `repo_sync` | Every 6h | No | Fetch origin, report how far HEAD is behind `origin/main`, re-index HEAD. Pull only if `AIIA_REPO_SYNC_PULL=1`. Official Mini update path: [`docs/MINI-UPDATE.md`](../docs/MINI-UPDATE.md). |
 | `learning_loop` | Every 4h | Yes | Extract insights from recent actions |
 | `test_runner` | Every 4h | No | Run platform test suite |
 | `cross_tenant_analytics` | Daily 3am | Yes | Cross-tenant pattern analysis |
@@ -633,7 +633,7 @@ Checks 4 services every 30 seconds with 24-hour history retention:
 | AIIA Platform (opt-in) | `AIIA_PLATFORM_URL` + `/health` | 10s | backend |
 | Ollama | `localhost:11434/api/tags` | 3s | local |
 
-**Status Values:** online, degraded (slow/4xx), offline (timeout/5xx/error)
+**Status Values:** online, degraded (slow/4xx), offline (timeout/5xx/error), not_configured (opt-in probe unset; skipped, not a failure)
 
 ---
 
@@ -727,6 +727,9 @@ curl localhost:8100/health  # Brain API healthy
 curl localhost:8200/api/aiia  # AIIA status + doc count
 open http://localhost:8200    # Dashboard
 ```
+
+Updating the Mini production checkout (`~/aiia-brain/AIIA-public`) is **fetch-only
+by default**. See [the official Mini update path](../docs/MINI-UPDATE.md).
 
 ---
 

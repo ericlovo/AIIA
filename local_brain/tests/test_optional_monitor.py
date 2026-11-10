@@ -4,7 +4,11 @@ from unittest.mock import AsyncMock
 import pytest
 
 from local_brain.command_center import server
-from local_brain.command_center.aiia_tasks import TaskRunner
+from local_brain.command_center.aiia_tasks import (
+    TaskRunner,
+    classify_monitor_services,
+    is_configured_monitor_service,
+)
 
 
 @pytest.mark.asyncio
@@ -57,3 +61,18 @@ async def test_journal_only_reports_configured_failures(status, expected):
         assert runner._emit_insight.call_args.args[1] == expected
     else:
         runner._emit_insight.assert_not_called()
+
+
+def test_not_configured_status_is_not_a_configured_monitor():
+    assert is_configured_monitor_service({"configured": False, "status": "offline"}) is False
+    assert is_configured_monitor_service({"status": "not_configured"}) is False
+    assert is_configured_monitor_service({"configured": True, "status": "online"}) is True
+    probed, skipped, failures = classify_monitor_services(
+        {
+            "default": {"name": "App Analyst", "configured": False, "status": "not_configured"},
+            "aiia": {"name": "Brain", "status": "degraded"},
+        }
+    )
+    assert "default" in skipped
+    assert "aiia" in probed
+    assert failures == ["Brain"]
