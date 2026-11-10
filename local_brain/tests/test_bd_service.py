@@ -552,6 +552,10 @@ def test_withheld_outcome_visible_without_exposing_raw_result(service):
     assert withheld["jev_scores"]["claim_supported"] == 0.5
     assert "DO_NOT_EXPOSE" not in json.dumps(snapshot)
     assert snapshot["budget_day_timezone"] == "America/Chicago"
+    assert snapshot["budget_policy"] == (
+        "Measured token, call, and seconds estimates reserved per attempt "
+        "with safety floors; no refunds"
+    )
 
 
 @pytest.mark.parametrize("mutation", ["quote", "provenance", "disposition", "nan"])

@@ -1,8 +1,10 @@
 """Durable research-only conductor. Importing this module starts no work.
 
-Every attempt reserves its full cap, including abandoned attempts. Reservations are
-not refunded: this deliberately overcounts rather than letting crashes hide spend.
-The runtime defaults to replay and never sends outreach or writes to a CRM.
+Every attempt reserves a measured estimate (or the full job cap in job_cap mode),
+including abandoned attempts. Reservations are not refunded: this deliberately
+overcounts rather than letting crashes hide spend. The in-run consume ceiling
+stays the configured job_budget. The runtime defaults to replay and never sends
+outreach or writes to a CRM.
 """
 
 import hashlib
@@ -27,9 +29,32 @@ RESOURCES = ("tokens", "calls", "seconds")
 DEFAULT_BUDGET_DAY_TIMEZONE = "America/Chicago"
 DEFAULT_LEASE_BURST_LIMIT = 1
 DEFAULT_LEASE_BURST_WINDOW_SECONDS = 1800
-DEFAULT_TOKEN_RESERVE_MODE = "measured_estimate"
+DEFAULT_RESERVE_MODE = "measured_estimate"
+DEFAULT_TOKEN_RESERVE_MODE = DEFAULT_RESERVE_MODE
 DEFAULT_TOKEN_RESERVE_FLOOR = 2000
 DEFAULT_TOKEN_RESERVE_ESTIMATE = 2500
+DEFAULT_CALL_RESERVE_FLOOR = 2
+DEFAULT_CALL_RESERVE_ESTIMATE = 2
+DEFAULT_SECONDS_RESERVE_FLOOR = 30
+DEFAULT_SECONDS_RESERVE_ESTIMATE = 60
+RESERVE_SPEC = {
+    "tokens": ("token_reserve", DEFAULT_TOKEN_RESERVE_FLOOR, DEFAULT_TOKEN_RESERVE_ESTIMATE),
+    "calls": ("call_reserve", DEFAULT_CALL_RESERVE_FLOOR, DEFAULT_CALL_RESERVE_ESTIMATE),
+    "seconds": (
+        "seconds_reserve",
+        DEFAULT_SECONDS_RESERVE_FLOOR,
+        DEFAULT_SECONDS_RESERVE_ESTIMATE,
+    ),
+}
+
+
+def _join_policy(parts):
+    names = list(parts)
+    if len(names) == 1:
+        return names[0]
+    if len(names) == 2:
+        return f"{names[0]} and {names[1]}"
+    return ", ".join(names[:-1]) + f", and {names[-1]}"
 
 
 class LeaseLost(RuntimeError):
@@ -115,12 +140,15 @@ class BDConductor:
                 raise ValueError("lease_burst_limit must be a positive integer")
         if "lease_burst_window_seconds" in cfg:
             self._positive(cfg["lease_burst_window_seconds"], "lease_burst_window_seconds")
-        mode = cfg.get("token_reserve_mode", DEFAULT_TOKEN_RESERVE_MODE)
-        if mode not in {"measured_estimate", "job_cap"}:
-            raise ValueError("token_reserve_mode must be measured_estimate or job_cap")
-        for key in ("token_reserve_floor", "token_reserve_estimate"):
-            if key in cfg:
-                self._positive(cfg[key], key)
+        for resource in RESOURCES:
+            prefix, _, _ = RESERVE_SPEC[resource]
+            mode_key = f"{prefix}_mode"
+            mode = cfg.get(mode_key, DEFAULT_RESERVE_MODE)
+            if mode not in {"measured_estimate", "job_cap"}:
+                raise ValueError(f"{mode_key} must be measured_estimate or job_cap")
+            for key in (f"{prefix}_floor", f"{prefix}_estimate"):
+                if key in cfg:
+                    self._positive(cfg[key], key)
         if not isinstance(cfg.get("bots"), list) or not cfg["bots"]:
             raise ValueError("At least one configured bot is required")
         ids = set()
@@ -345,14 +373,46 @@ class BDConductor:
         zone = ZoneInfo(self.budget_day_timezone())
         return datetime.fromtimestamp(stamp, timezone.utc).astimezone(zone).date().isoformat()
 
+    def _reserve_mode(self, resource):
+        prefix, _, _ = RESERVE_SPEC[resource]
+        return self.config.get(f"{prefix}_mode", DEFAULT_RESERVE_MODE)
+
+    def _resource_reservation(self, resource):
+        cap = self.config["job_budget"][resource]
+        if self._reserve_mode(resource) != "measured_estimate":
+            return cap
+        prefix, default_floor, default_estimate = RESERVE_SPEC[resource]
+        floor = self.config.get(f"{prefix}_floor", default_floor)
+        estimate = self.config.get(f"{prefix}_estimate", default_estimate)
+        return max(floor, min(cap, estimate))
+
     def daily_reservation(self):
-        caps = {resource: self.config["job_budget"][resource] for resource in RESOURCES}
-        mode = self.config.get("token_reserve_mode", DEFAULT_TOKEN_RESERVE_MODE)
-        if mode == "measured_estimate":
-            floor = self.config.get("token_reserve_floor", DEFAULT_TOKEN_RESERVE_FLOOR)
-            estimate = self.config.get("token_reserve_estimate", DEFAULT_TOKEN_RESERVE_ESTIMATE)
-            caps["tokens"] = max(floor, min(caps["tokens"], estimate))
-        return caps
+        return {resource: self._resource_reservation(resource) for resource in RESOURCES}
+
+    def _budget_policy(self):
+        measured = [
+            resource
+            for resource in RESOURCES
+            if self._reserve_mode(resource) == "measured_estimate"
+        ]
+        if len(measured) == len(RESOURCES):
+            return (
+                "Measured token, call, and seconds estimates reserved per attempt "
+                "with safety floors; no refunds"
+            )
+        if not measured:
+            return "Full caps reserved per attempt; no refunds"
+        labels = {"tokens": "token", "calls": "calls", "seconds": "seconds"}
+        measured_txt = _join_policy(labels[resource] for resource in measured)
+        caps_txt = _join_policy(
+            labels[resource] for resource in RESOURCES if resource not in measured
+        )
+        noun = "estimate" if len(measured) == 1 else "estimates"
+        floor = "a safety floor" if len(measured) == 1 else "safety floors"
+        return (
+            f"Measured {measured_txt} {noun} reserved per attempt with {floor}; "
+            f"{caps_txt} use full caps; no refunds"
+        )
 
     def _burst_window(self):
         window = self.config.get("lease_burst_window_seconds", DEFAULT_LEASE_BURST_WINDOW_SECONDS)
@@ -747,13 +807,7 @@ class BDConductor:
                 bots=bots,
                 jobs=jobs,
                 budgets=budgets,
-                budget_policy=(
-                    "Measured token estimate reserved per attempt with a safety floor; "
-                    "calls and seconds use full caps; no refunds"
-                    if self.config.get("token_reserve_mode", DEFAULT_TOKEN_RESERVE_MODE)
-                    == "measured_estimate"
-                    else "Full caps reserved per attempt; no refunds"
-                ),
+                budget_policy=self._budget_policy(),
                 budget_day_timezone=self.budget_day_timezone(),
                 timestamp=self.clock(),
             )
