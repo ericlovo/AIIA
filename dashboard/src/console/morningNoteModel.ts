@@ -31,6 +31,7 @@ export interface MorningNotePayload {
   decisions: MorningDecision[]
   needs_you_total: number
   failure: string | null
+  generated_at?: string
 }
 
 export const STATE_LABEL: Record<string, string> = {

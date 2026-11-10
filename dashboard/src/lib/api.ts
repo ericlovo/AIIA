@@ -899,6 +899,7 @@ export const api = {
     decisions: Array<{ id: string; kind: string; product: string; title: string; why: string; more: string; expected_version?: string }>
     needs_you_total: number
     failure: string | null
+    generated_at: string
   }>('/api/studio/morning-note'),
   briefingLatest: () => get<{ briefing: string; generated_at: string; source: string }>('/api/briefing/latest'),
   tokensToday: () => get<TokenUsageToday>('/api/tokens/today'),

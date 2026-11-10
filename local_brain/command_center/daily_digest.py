@@ -16,7 +16,12 @@ import hashlib
 import json
 import os
 import re
+import subprocess
+import threading
+import time
 from collections.abc import Callable, Iterable
+from concurrent.futures import ThreadPoolExecutor, wait
+from copy import deepcopy
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -37,6 +42,9 @@ DECISION_LIMIT = 5
 DECISION_CHARS = 90
 TITLE_CHARS = 36
 SHIPPED_WINDOW = timedelta(hours=24)
+SOURCE_TIMEOUT_SECONDS = 5.0
+MORNING_NOTE_TTL_SECONDS = 300.0
+DATA_UNAVAILABLE = "data_unavailable"
 PREFERRED_REPOS = ("aiia", "mindmoor", "sanction", "proxy-ai", "morrow", "mia")
 PR_LIST_LIMIT = 20
 PR_DETAIL_CAP = 8
@@ -241,6 +249,55 @@ class DigestResult:
     evidence: list[RepoEvidence]
     failures: tuple[str, ...] = ()
     customer_evidence: list[CustomerEvidence] = field(default_factory=list)
+
+
+@dataclass
+class _MorningNoteEntry:
+    payload: dict[str, Any]
+    stored_at: float
+
+
+class MorningNoteCache:
+    """In-process morning-note cache: fresh within TTL, otherwise last stored digest."""
+
+    def __init__(self, ttl_seconds: float = MORNING_NOTE_TTL_SECONDS) -> None:
+        self.ttl_seconds = ttl_seconds
+        self._lock = threading.Lock()
+        self._entry: _MorningNoteEntry | None = None
+        self._refreshing = False
+
+    def reset(self) -> None:
+        with self._lock:
+            self._entry = None
+            self._refreshing = False
+
+    def lookup(self, *, now: float | None = None) -> tuple[dict[str, Any] | None, str]:
+        clock = time.monotonic() if now is None else now
+        with self._lock:
+            if self._entry is None:
+                return None, "miss"
+            payload = deepcopy(self._entry.payload)
+            if clock - self._entry.stored_at < self.ttl_seconds:
+                return payload, "fresh"
+            return payload, "stale"
+
+    def store(self, payload: dict[str, Any], *, now: float | None = None) -> dict[str, Any]:
+        clock = time.monotonic() if now is None else now
+        snapshot = deepcopy(payload)
+        with self._lock:
+            self._entry = _MorningNoteEntry(payload=snapshot, stored_at=clock)
+        return deepcopy(snapshot)
+
+    def claim_refresh(self) -> bool:
+        with self._lock:
+            if self._refreshing:
+                return False
+            self._refreshing = True
+            return True
+
+    def end_refresh(self) -> None:
+        with self._lock:
+            self._refreshing = False
 
 
 def loops_registry_path() -> Path:
@@ -692,11 +749,21 @@ def _mindmoor_drift(git_read: GitRead, path: Path, main_ref: str | None) -> list
     return _configured_drift(git_read, path, main_ref, "mindmoor", ("production", "alumni"))
 
 
+def _github_failure_code(exc: BaseException) -> str:
+    if isinstance(exc, (TimeoutError, subprocess.TimeoutExpired)):
+        return DATA_UNAVAILABLE
+    text = str(exc)
+    return text if text.startswith("github_") else "github_api_unavailable"
+
+
+_GITHUB_SOURCE_ERRORS = (OSError, RuntimeError, TimeoutError, subprocess.TimeoutExpired)
+
+
 def _open_pr_rows(github_api: GitHubApi, slug: str, failures: list[str]) -> list[dict[str, Any]]:
     try:
         pulls = github_api(f"repos/{slug}/pulls?state=open&per_page={PR_LIST_LIMIT}")
-    except (OSError, RuntimeError) as exc:
-        failures.append(str(exc) if str(exc).startswith("github_") else "github_api_unavailable")
+    except _GITHUB_SOURCE_ERRORS as exc:
+        failures.append(_github_failure_code(exc))
         return []
     if not isinstance(pulls, list):
         failures.append("github_api_unexpected_shape")
@@ -709,8 +776,8 @@ def _failing_ci_count(github_api: GitHubApi, slug: str, failures: list[str]) -> 
         payload = github_api(
             f"repos/{slug}/actions/runs?branch=main&per_page={CI_RUN_LIMIT}&page=1"
         )
-    except (OSError, RuntimeError) as exc:
-        failures.append(str(exc) if str(exc).startswith("github_") else "github_api_unavailable")
+    except _GITHUB_SOURCE_ERRORS as exc:
+        failures.append(_github_failure_code(exc))
         return None
     if not isinstance(payload, dict) or not isinstance(payload.get("workflow_runs"), list):
         failures.append("github_api_unexpected_shape")
@@ -747,10 +814,8 @@ def _conflict_count(
         if mergeable is None and not state and isinstance(number, int):
             try:
                 detail = github_api(f"repos/{slug}/pulls/{number}")
-            except (OSError, RuntimeError) as exc:
-                failures.append(
-                    str(exc) if str(exc).startswith("github_") else "github_api_unavailable"
-                )
+            except _GITHUB_SOURCE_ERRORS as exc:
+                failures.append(_github_failure_code(exc))
                 return None
             if not isinstance(detail, dict):
                 failures.append("github_api_unexpected_shape")
@@ -779,7 +844,7 @@ def _merged_pr_rows(github_api: GitHubApi, slug: str, since: datetime) -> list[P
             f"repos/{slug}/pulls?state=closed&base=main&sort=updated"
             f"&direction=desc&per_page={PR_LIST_LIMIT}"
         )
-    except (OSError, RuntimeError):
+    except _GITHUB_SOURCE_ERRORS:
         return []
     if not isinstance(pulls, list):
         return []
@@ -828,7 +893,7 @@ def _production_target(api: GitHubApi, slug: str, sha: str) -> str:
             ):
                 return target
             break
-    except (OSError, RuntimeError):
+    except _GITHUB_SOURCE_ERRORS:
         pass
     return ""
 
@@ -961,7 +1026,7 @@ def _enrich_pull_checks(github_api: GitHubApi, slug: str, pulls: list[PullSignal
             continue
         try:
             status = github_api(f"repos/{slug}/commits/{pull.sha}/status")
-        except (OSError, RuntimeError):
+        except _GITHUB_SOURCE_ERRORS:
             continue
         if isinstance(status, dict):
             pull.checks = str(status.get("state") or "")
@@ -1233,6 +1298,53 @@ def collect_customer_evidence(
     return rows
 
 
+def _unavailable_repo_evidence(repo_id: str, mounts: dict[str, Path]) -> RepoEvidence:
+    path = mounts.get(repo_id)
+    mounted = bool(path and (path / ".git").exists())
+    return RepoEvidence(
+        repo_id=repo_id,
+        mounted=mounted,
+        complete=False,
+        failures=(DATA_UNAVAILABLE,),
+    )
+
+
+def _collect_digest_sources(
+    *,
+    repo_ids: list[str],
+    repo_job: Callable[[str], RepoEvidence],
+    customer_job: Callable[[], list[CustomerEvidence]],
+    mounts: dict[str, Path],
+    timeout: float,
+) -> tuple[list[RepoEvidence], list[CustomerEvidence]]:
+    """Run per-repo and customer collectors in parallel; slow sources time out."""
+    workers = min(8, max(1, len(repo_ids) + 1))
+    pool = ThreadPoolExecutor(max_workers=workers, thread_name_prefix="digest-source")
+    try:
+        repo_futures = {pool.submit(repo_job, repo_id): repo_id for repo_id in repo_ids}
+        customer_future = pool.submit(customer_job)
+        _, not_done = wait([*repo_futures, customer_future], timeout=timeout)
+        evidence_by_id: dict[str, RepoEvidence] = {}
+        for future, repo_id in repo_futures.items():
+            if future in not_done:
+                evidence_by_id[repo_id] = _unavailable_repo_evidence(repo_id, mounts)
+                continue
+            try:
+                evidence_by_id[repo_id] = future.result()
+            except (TimeoutError, subprocess.TimeoutExpired):
+                evidence_by_id[repo_id] = _unavailable_repo_evidence(repo_id, mounts)
+        if customer_future in not_done:
+            customer_rows: list[CustomerEvidence] = []
+        else:
+            try:
+                customer_rows = customer_future.result()
+            except (TimeoutError, subprocess.TimeoutExpired):
+                customer_rows = []
+        return [evidence_by_id[repo_id] for repo_id in repo_ids], customer_rows
+    finally:
+        pool.shutdown(wait=False, cancel_futures=True)
+
+
 def collect_digest(
     *,
     git_read: GitRead | None = None,
@@ -1241,14 +1353,17 @@ def collect_digest(
     products: Iterable[DigestProduct] | None = None,
     customers: Iterable[DigestCustomer] | None = None,
     now: datetime | None = None,
+    source_timeout: float | None = None,
 ) -> DigestResult:
     mounts = mounts if mounts is not None else repos.REPO_MOUNTS
     catalog = list(products) if products is not None else load_products()
     roster = list(customers) if customers is not None else load_customers()
     drift_by_mount = {product.mount: product.drift for product in catalog if product.mount}
     slug_by_mount = {product.mount: product.github for product in catalog if product.mount}
-    evidence = [
-        collect_repo_evidence(
+    timeout = SOURCE_TIMEOUT_SECONDS if source_timeout is None else source_timeout
+
+    def repo_job(repo_id: str) -> RepoEvidence:
+        return collect_repo_evidence(
             repo_id,
             git_read=git_read,
             github_api=github_api,
@@ -1257,8 +1372,17 @@ def collect_digest(
             now=now,
             github_slug=slug_by_mount.get(repo_id, ""),
         )
-        for repo_id in watched_repo_ids(mounts, catalog)
-    ]
+
+    def customer_job() -> list[CustomerEvidence]:
+        return collect_customer_evidence(roster, products=catalog, git_read=git_read, mounts=mounts)
+
+    evidence, customer_rows = _collect_digest_sources(
+        repo_ids=watched_repo_ids(mounts, catalog),
+        repo_job=repo_job,
+        customer_job=customer_job,
+        mounts=mounts,
+        timeout=timeout,
+    )
     line = format_digest_line(evidence)
     return DigestResult(
         line=line,
@@ -1266,9 +1390,7 @@ def collect_digest(
         fingerprint=_fingerprint(evidence),
         evidence=evidence,
         failures=tuple(item for row in evidence for item in row.failures),
-        customer_evidence=collect_customer_evidence(
-            roster, products=catalog, git_read=git_read, mounts=mounts
-        ),
+        customer_evidence=customer_rows,
     )
 
 
@@ -2531,6 +2653,7 @@ def build_morning_note(
     products: Iterable[DigestProduct] | None = None,
     customers: Iterable[DigestCustomer] | None = None,
     customer_evidence: list[CustomerEvidence] | None = None,
+    generated_at: str | None = None,
 ) -> dict[str, Any]:
     catalog = list(products) if products is not None else load_products()
     product_lines, customer_lines = collect_morning_lines(
@@ -2558,6 +2681,7 @@ def build_morning_note(
         "decisions": cards,
         "needs_you_total": total,
         "failure": slack_failure_line(tasks=tasks, assignments=assignments, date=date) or None,
+        "generated_at": generated_at or datetime.now(timezone.utc).isoformat(),
     }
 
 
