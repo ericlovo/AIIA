@@ -19,6 +19,18 @@ def enqueue(runtime, entity="account-1", bot="healthcare", tenant="synthetic-hea
     return runtime.enqueue(bot, tenant, entity, "research")
 
 
+def job_cap_reserves(config):
+    config["token_reserve_mode"] = "job_cap"
+    config["call_reserve_mode"] = "job_cap"
+    config["seconds_reserve_mode"] = "job_cap"
+    return config
+
+
+def weekday_slots(config):
+    part = config["cadence"]["weekday"]
+    return (part["end_hour"] - part["start_hour"]) * 3600 // int(part["interval_seconds"])
+
+
 def test_state_machine_and_durable_result(runtime):
     job = enqueue(runtime)
     assert enqueue(runtime)["id"] == job["id"]
@@ -109,7 +121,7 @@ def test_cancel_idempotent_and_fenced(runtime):
 @pytest.mark.parametrize("resource", ["tokens", "calls", "seconds"])
 def test_budget_atomic_and_attempts_never_refunded(tmp_path, resource):
     config = json.loads(CONFIG_PATH.read_text())
-    config["token_reserve_mode"] = "job_cap"
+    job_cap_reserves(config)
     config["global_daily_budget"][resource] = config["job_budget"][resource]
     runtime = BDConductor(tmp_path / "budget.sqlite", config=config)
     first = enqueue(runtime)
@@ -123,6 +135,7 @@ def test_budget_atomic_and_attempts_never_refunded(tmp_path, resource):
         if x["scope"] == "global" and x["resource"] == resource
     ]
     assert reserved[0]["reserved"] == config["job_budget"][resource]
+    assert runtime.snapshot()["budget_policy"] == "Full caps reserved per attempt; no refunds"
 
 
 def test_consumption_enforced_and_rollback(runtime):
@@ -159,7 +172,7 @@ def test_scope_mode_and_config_fail_closed(runtime, tmp_path):
 
 
 def test_day_rollover_allows_new_budget(runtime):
-    runtime.config["token_reserve_mode"] = "job_cap"
+    job_cap_reserves(runtime.config)
     runtime.config["global_daily_budget"] = runtime.config["job_budget"].copy()
     enqueue(runtime)
     lease = runtime.lease("worker")
@@ -189,7 +202,7 @@ def test_live_requires_explicit_config_and_scoped_tenant(tmp_path):
 
 
 def test_bot_budget_does_not_block_other_bot(runtime):
-    runtime.config["token_reserve_mode"] = "job_cap"
+    job_cap_reserves(runtime.config)
     runtime.config["bot_daily_budget"] = runtime.config["job_budget"].copy()
     first = enqueue(runtime)
     enqueue(runtime, "second")
@@ -308,7 +321,7 @@ def test_concurrent_initialization_and_enqueue(tmp_path):
 
 
 def test_budget_blocked_reason_once_per_day_and_rollover_resumes(runtime):
-    runtime.config["token_reserve_mode"] = "job_cap"
+    job_cap_reserves(runtime.config)
     runtime.config["global_daily_budget"] = runtime.config["job_budget"].copy()
     first = enqueue(runtime)
     runtime.lease("worker")
@@ -514,7 +527,7 @@ def test_budget_day_uses_chicago_not_utc_midnight(runtime):
 
     chicago = ZoneInfo("America/Chicago")
     runtime.now[0] = datetime(2026, 11, 10, 17, 59, tzinfo=chicago).timestamp()
-    runtime.config["token_reserve_mode"] = "job_cap"
+    job_cap_reserves(runtime.config)
     runtime.config["global_daily_budget"] = runtime.config["job_budget"].copy()
     first = enqueue(runtime)
     runtime.lease("worker")
@@ -560,6 +573,71 @@ def test_measured_token_estimate_admits_more_jobs_than_flat_cap(runtime):
         if row["scope"] == "global" and row["resource"] == "tokens"
     )
     assert reserved["reserved"] == 7500
+
+
+def test_measured_reserves_admit_weekday_cadence_within_per_bot_limits(runtime):
+    slots = weekday_slots(runtime.config)
+    assert slots == 20
+    caps = runtime.daily_reservation()
+    bot = runtime.config["bot_daily_budget"]
+    assert bot == {"tokens": 50000, "calls": 50, "seconds": 1800}
+    assert caps == {"tokens": 2500, "calls": 2, "seconds": 60}
+    assert slots * caps["tokens"] <= bot["tokens"]
+    assert slots * caps["calls"] <= bot["calls"]
+    assert slots * caps["seconds"] <= bot["seconds"]
+    runtime.config["lease_burst_limit"] = slots
+    ids = [enqueue(runtime, str(n))["id"] for n in range(slots)]
+    leased = []
+    for job_id in ids:
+        job = runtime.lease("worker")
+        assert job is not None
+        leased.append(job["id"])
+        runtime.cancel(job_id)
+    assert leased == ids
+    enqueue(runtime, "overflow")
+    assert runtime.lease("worker") is None
+    snapshot = runtime.snapshot()
+    assert snapshot["budget_policy"] == (
+        "Measured token, call, and seconds estimates reserved per attempt "
+        "with safety floors; no refunds"
+    )
+    reserved = {
+        row["resource"]: row["reserved"]
+        for row in snapshot["budgets"]
+        if row["scope"] == "bot:healthcare"
+    }
+    assert reserved == {resource: slots * caps[resource] for resource in caps}
+    overflow = next(job for job in snapshot["jobs"] if job["id"] not in leased)
+    assert overflow["step"] == "daily_budget_exhausted"
+    leased_job = next(job for job in snapshot["jobs"] if job["id"] in leased)
+    assert leased_job["reserved_budget"] == runtime.config["job_budget"]
+
+
+def test_job_cap_call_and_seconds_restore_flat_caps(runtime):
+    runtime.config["call_reserve_mode"] = "job_cap"
+    runtime.config["seconds_reserve_mode"] = "job_cap"
+    runtime.config["lease_burst_limit"] = 20
+    bot = runtime.config["bot_daily_budget"]
+    call_jobs = bot["calls"] // runtime.config["job_budget"]["calls"]
+    second_jobs = bot["seconds"] // runtime.config["job_budget"]["seconds"]
+    assert call_jobs == 8
+    assert second_jobs == 15
+    limit = min(call_jobs, second_jobs)
+    ids = [enqueue(runtime, str(n))["id"] for n in range(limit + 1)]
+    leased = []
+    for job_id in ids:
+        job = runtime.lease("worker")
+        if job is None:
+            break
+        leased.append(job["id"])
+        runtime.cancel(job_id)
+    assert len(leased) == limit
+    assert runtime.daily_reservation()["calls"] == runtime.config["job_budget"]["calls"]
+    assert runtime.daily_reservation()["seconds"] == runtime.config["job_budget"]["seconds"]
+    assert runtime.snapshot()["budget_policy"] == (
+        "Measured token estimate reserved per attempt with a safety floor; "
+        "calls and seconds use full caps; no refunds"
+    )
 
 
 def test_rollover_backlog_is_capped_per_bot_burst(runtime):
@@ -613,6 +691,11 @@ def test_withheld_context_keys_are_durable_evidence(runtime):
         ("lease_burst_limit", 1.5),
         ("token_reserve_mode", "unlimited"),
         ("token_reserve_floor", 0),
+        ("call_reserve_mode", "unlimited"),
+        ("call_reserve_floor", 0),
+        ("seconds_reserve_mode", "unlimited"),
+        ("seconds_reserve_floor", 0),
+        ("seconds_reserve_estimate", -1),
     ],
 )
 def test_invalid_yield_config_fails_closed(tmp_path, field, value):
