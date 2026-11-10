@@ -170,6 +170,92 @@ def healthcare_entity_gap(source, extraction):
     return entity_gap(source, extraction, "healthcare")
 
 
+QWEN_SCREEN_LIMIT = 8
+JEV_TIME_HEADROOM = 35
+QWEN_SCREEN_MIN_SECONDS = 8
+OPERATIONAL_RANK_TERMS = (
+    "expand",
+    "expansion",
+    "acquisition",
+    "acquire",
+    "hiring",
+    "hire",
+    "open",
+    "opens",
+    "launch",
+    "platform",
+    "merger",
+    "clinic",
+    "integration",
+    "membership",
+    "fundraising",
+    "diligence",
+)
+
+
+def screen_rank(source, extraction):
+    """Rank gap-clear extractions; higher prefers a named org plus a grounded operational event."""
+    organization = extraction["organization"].strip()
+    signal = extraction["signal"].strip()
+    quote = extraction["quote"]
+    title = source.get("title", "")
+    score = min(len(organization), 80)
+    score += min(len(signal.split()), 12) * 8
+    if organization and organization in title:
+        score += 40
+    if organization and organization in quote:
+        score += 20
+    blob = f"{signal} {quote}".casefold()
+    score += 15 * sum(1 for term in OPERATIONAL_RANK_TERMS if term in blob)
+    return score
+
+
+def withhold_record(source, extraction=None, reason="", judgments=None):
+    extraction = extraction or {}
+    scores = None
+    if judgments:
+        answers = judgments.get("answers") or {}
+        entity = answers.get("entity_role") or {}
+        choice = entity.get("choice")
+        raw_probabilities = entity.get("probabilities")
+        probabilities = raw_probabilities if isinstance(raw_probabilities, dict) else {}
+        scores = {
+            "claim_supported": (answers.get("claim_supported") or {}).get("noul"),
+            "evidence_strength": (answers.get("evidence_strength") or {}).get("score"),
+            "disposition": (answers.get("disposition") or {}).get("choice"),
+            "disposition_confidence": (answers.get("disposition") or {}).get("confidence"),
+            "entity_role": choice,
+            "entity_role_confidence": entity.get("confidence"),
+            "entity_role_probability": probabilities.get(choice) if choice else None,
+        }
+    return {
+        "evidence_key": evidence_key(source),
+        "reason": reason,
+        "organization": extraction.get("organization", "") or "",
+        "headline": source.get("title", "") or "",
+        "source_url": source.get("url", "") or "",
+        "quote": extraction.get("quote", "") or "",
+        "jev_scores": scores,
+    }
+
+
+def _job_resource_cap(job, resource, default):
+    budget = job.get("budget") or job.get("reserved_budget") or {}
+    value = budget.get(resource, default)
+    if (
+        isinstance(value, bool)
+        or not isinstance(value, (int, float))
+        or not math.isfinite(value)
+        or value <= 0
+    ):
+        return default
+    return value
+
+
+def _qwen_provider_failure(code):
+    return isinstance(code, str) and code.startswith("qwen_")
+
+
 class DataUnavailable(ValueError):
     def __init__(self, code):
         self.code = code
@@ -522,9 +608,12 @@ def token_reservation(payload, output_tokens):
     return len(json.dumps(payload, ensure_ascii=False).encode("utf-8")) + output_tokens + 256
 
 
-async def extract_local(source):
+async def extract_local(source, timeout=90):
     payload = qwen_payload(source)
-    async with httpx.AsyncClient(timeout=90, trust_env=False) as client:
+    bound = 90 if not isinstance(timeout, (int, float)) or isinstance(timeout, bool) else timeout
+    if not math.isfinite(bound) or bound <= 0:
+        bound = 90
+    async with httpx.AsyncClient(timeout=min(90, max(1, bound)), trust_env=False) as client:
         response = await client.post(QWEN_ENDPOINT, json=payload)
         response.raise_for_status()
     data = response.json()
@@ -842,6 +931,8 @@ async def run_pipeline(job, emit=None):
         mode=mode,
         reserve_calls=1 if mode == "live" and imported is None else 0,
     )
+    withheld = []
+    reviewed_evidence = []
     if mode == "replay":
         source, extraction, judgments = synthetic_fixture(job["segment"])
         await event("qwen_replayed", provider="qwen", model="replay:saved-qwen", mode="replay-only")
@@ -884,55 +975,104 @@ async def run_pipeline(job, emit=None):
                     "seconds": round(time.monotonic() - started, 3),
                 },
             }
-        source = sources[0]
-        await event(
-            "qwen_called",
-            provider="qwen",
-            model="qwen3:8b",
-            reserve_calls=1,
-            reserve_tokens=token_reservation(qwen_payload(source), 512),
-        )
-        qwen_started = time.monotonic()
-        extraction, tokens = await observed("qwen", extract_ready(source))
-        await event(
-            "qwen_completed",
-            provider="qwen",
-            model="qwen3:8b",
-            latency_ms=round((time.monotonic() - qwen_started) * 1000),
-        )
-        await event(
-            "provider_health",
-            provider="qwen",
-            provider_status="available",
-            message="Local extraction completed",
-        )
-        if research_segment in SEGMENT_ENTITIES:
-            gap = entity_gap(source, extraction, research_segment)
+        seconds_cap = _job_resource_cap(job, "seconds", 120)
+        reviewed_evidence = []
+        withheld = []
+        ranked = []
+        tokens = 0
+        qwen_calls = 0
+        for source in sources[:QWEN_SCREEN_LIMIT]:
+            remaining = seconds_cap - (time.monotonic() - started)
+            if remaining < JEV_TIME_HEADROOM + QWEN_SCREEN_MIN_SECONDS:
+                break
+            await event(
+                "qwen_called",
+                provider="qwen",
+                model="qwen3:8b",
+                reserve_calls=1 if qwen_calls == 0 else 0,
+                reserve_tokens=(
+                    token_reservation(qwen_payload(source), 512) if qwen_calls == 0 else 0
+                ),
+            )
+            qwen_started = time.monotonic()
+            try:
+                extraction, used = await observed("qwen", extract_ready(source))
+            except DataUnavailable as exc:
+                if _qwen_provider_failure(exc.code):
+                    raise
+                reviewed_evidence.append(evidence_key(source))
+                record = withhold_record(source, reason=exc.code)
+                withheld.append(record)
+                await event(
+                    "candidate_withheld",
+                    reason=exc.code,
+                    message="Evidence did not identify a supported segment prospect",
+                )
+                qwen_calls += 1
+                continue
+            qwen_calls += 1
+            tokens += used
+            await event(
+                "qwen_completed",
+                provider="qwen",
+                model="qwen3:8b",
+                latency_ms=round((time.monotonic() - qwen_started) * 1000),
+            )
+            await event(
+                "provider_health",
+                provider="qwen",
+                provider_status="available",
+                message="Local extraction completed",
+            )
+            reviewed_evidence.append(evidence_key(source))
+            gap = (
+                entity_gap(source, extraction, research_segment)
+                if research_segment in SEGMENT_ENTITIES
+                else None
+            )
             if gap:
-                usage = {
-                    "tokens": tokens,
-                    "calls": (1 if imported is not None else 2) + int(managed is not None),
-                    "network_calls": (0 if imported is not None else 1) + int(managed is not None),
-                    "seconds": round(time.monotonic() - started, 3),
-                    "kind": "measured-inference",
-                }
+                withheld.append(withhold_record(source, extraction, gap))
                 await event(
                     "candidate_withheld",
                     reason=gap,
                     message="Evidence did not identify a supported segment prospect",
                 )
-                return {
-                    "status": "no_supported_prospect",
-                    "reason": gap,
-                    "next_query": next_query_for(gap),
-                    "research_outcome": (
-                        "rejected" if gap == "publisher_is_not_prospect" else "inconclusive"
-                    ),
-                    "packets": [],
-                    "reviewed_evidence": [evidence_key(source)],
-                    "usage": usage,
-                    "mode": "live",
-                }
+                continue
+            ranked.append((screen_rank(source, extraction), len(ranked), source, extraction, used))
+        if not ranked:
+            reason = withheld[0]["reason"] if withheld else "no_supported_prospect"
+            usage = {
+                "tokens": tokens,
+                "calls": qwen_calls + (0 if imported is not None else 1) + int(managed is not None),
+                "network_calls": (0 if imported is not None else 1) + int(managed is not None),
+                "seconds": round(time.monotonic() - started, 3),
+                "kind": "measured-inference",
+            }
+            return {
+                "status": "no_supported_prospect",
+                "reason": reason,
+                "next_query": next_query_for(reason),
+                "research_outcome": (
+                    "rejected" if reason == "publisher_is_not_prospect" else "inconclusive"
+                ),
+                "packets": [],
+                "reviewed_evidence": reviewed_evidence,
+                "withheld": withheld,
+                "usage": usage,
+                "mode": "live",
+            }
+        ranked.sort(key=lambda item: (-item[0], item[1]))
+        _, _, source, extraction, _ = ranked[0]
+        for _, _, other_source, other_extraction, _ in ranked[1:]:
+            record = withhold_record(
+                other_source, other_extraction, "not_selected_better_candidate"
+            )
+            withheld.append(record)
+            await event(
+                "candidate_withheld",
+                reason="not_selected_better_candidate",
+                message="A stronger gap-clear item from this batch was selected for judgment",
+            )
         await event(
             "jev_called",
             model="jev-latest",
@@ -951,7 +1091,7 @@ async def run_pipeline(job, emit=None):
         usage = {
             "tokens": tokens
             + sum(judgments["usage"][key] for key in ("input_tokens", "output_tokens")),
-            "calls": (2 if imported is not None else 3) + int(managed is not None),
+            "calls": qwen_calls + 1 + (0 if imported is not None else 1) + int(managed is not None),
             "network_calls": (1 if imported is not None else 2) + int(managed is not None),
             "kind": "measured-inference",
         }
@@ -996,6 +1136,7 @@ async def run_pipeline(job, emit=None):
                 reason=reason,
                 message="No supported segment prospect in this evidence",
             )
+            withheld.append(withhold_record(source, extraction, reason, judgments))
             return {
                 "status": "no_supported_prospect",
                 "reason": reason,
@@ -1012,7 +1153,8 @@ async def run_pipeline(job, emit=None):
                     else "inconclusive"
                 ),
                 "packets": [],
-                "reviewed_evidence": [evidence_key(source)],
+                "reviewed_evidence": reviewed_evidence or [evidence_key(source)],
+                "withheld": withheld,
                 "usage": usage,
                 "mode": "replay-only" if mode == "replay" else "live",
             }
@@ -1027,4 +1169,9 @@ async def run_pipeline(job, emit=None):
         packet["research_segment"] = research_segment
     await event("candidate_proposed", organization=packet["organization"], segment=job["segment"])
     await event("packet_assembled", status=packet["status"])
-    return {"packets": [packet], "usage": usage, "mode": packet["mode"]}
+    result = {"packets": [packet], "usage": usage, "mode": packet["mode"]}
+    if reviewed_evidence:
+        result["reviewed_evidence"] = reviewed_evidence
+    if withheld:
+        result["withheld"] = withheld
+    return result

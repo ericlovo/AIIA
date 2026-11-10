@@ -109,6 +109,7 @@ def test_cancel_idempotent_and_fenced(runtime):
 @pytest.mark.parametrize("resource", ["tokens", "calls", "seconds"])
 def test_budget_atomic_and_attempts_never_refunded(tmp_path, resource):
     config = json.loads(CONFIG_PATH.read_text())
+    config["token_reserve_mode"] = "job_cap"
     config["global_daily_budget"][resource] = config["job_budget"][resource]
     runtime = BDConductor(tmp_path / "budget.sqlite", config=config)
     first = enqueue(runtime)
@@ -158,6 +159,7 @@ def test_scope_mode_and_config_fail_closed(runtime, tmp_path):
 
 
 def test_day_rollover_allows_new_budget(runtime):
+    runtime.config["token_reserve_mode"] = "job_cap"
     runtime.config["global_daily_budget"] = runtime.config["job_budget"].copy()
     enqueue(runtime)
     lease = runtime.lease("worker")
@@ -187,6 +189,7 @@ def test_live_requires_explicit_config_and_scoped_tenant(tmp_path):
 
 
 def test_bot_budget_does_not_block_other_bot(runtime):
+    runtime.config["token_reserve_mode"] = "job_cap"
     runtime.config["bot_daily_budget"] = runtime.config["job_budget"].copy()
     first = enqueue(runtime)
     enqueue(runtime, "second")
@@ -305,6 +308,7 @@ def test_concurrent_initialization_and_enqueue(tmp_path):
 
 
 def test_budget_blocked_reason_once_per_day_and_rollover_resumes(runtime):
+    runtime.config["token_reserve_mode"] = "job_cap"
     runtime.config["global_daily_budget"] = runtime.config["job_budget"].copy()
     first = enqueue(runtime)
     runtime.lease("worker")
@@ -502,3 +506,117 @@ def test_withheld_evidence_is_durable_and_scoped(runtime):
     assert restarted.evidence_keys("srg", "synthetic-srg") == []
     restarted.bots["pe-diligence"]["tenant_id"] = "synthetic-healthcare"
     assert restarted.evidence_keys("pe-diligence", "synthetic-healthcare") == []
+
+
+def test_budget_day_uses_chicago_not_utc_midnight(runtime):
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+
+    chicago = ZoneInfo("America/Chicago")
+    runtime.now[0] = datetime(2026, 11, 10, 17, 59, tzinfo=chicago).timestamp()
+    runtime.config["token_reserve_mode"] = "job_cap"
+    runtime.config["global_daily_budget"] = runtime.config["job_budget"].copy()
+    first = enqueue(runtime)
+    runtime.lease("worker")
+    runtime.cancel(first["id"])
+    enqueue(runtime, "second")
+    assert runtime.budget_day_timezone() == "America/Chicago"
+    assert runtime.snapshot()["budget_day_timezone"] == "America/Chicago"
+    runtime.now[0] = datetime(2026, 11, 10, 18, 1, tzinfo=chicago).timestamp()
+    assert runtime.lease("worker") is None
+    runtime.now[0] = datetime(2026, 11, 11, 0, 1, tzinfo=chicago).timestamp()
+    assert runtime.lease("worker") is not None
+
+
+def test_measured_token_estimate_admits_more_jobs_than_flat_cap(runtime):
+    runtime.config["token_reserve_mode"] = "measured_estimate"
+    runtime.config["token_reserve_floor"] = 2000
+    runtime.config["token_reserve_estimate"] = 2500
+    runtime.config["bot_daily_budget"] = {
+        **runtime.config["job_budget"],
+        "tokens": 8000,
+        "calls": 100,
+        "seconds": 10000,
+    }
+    runtime.config["global_daily_budget"] = {
+        **runtime.config["job_budget"],
+        "tokens": 8000,
+        "calls": 100,
+        "seconds": 10000,
+    }
+    ids = [enqueue(runtime, str(n))["id"] for n in range(4)]
+    leased = []
+    for job_id in ids:
+        job = runtime.lease("worker")
+        if job is None:
+            break
+        leased.append(job["id"])
+        runtime.cancel(job_id)
+        runtime.now[0] += runtime._burst_window() + 1
+    assert leased == ids[:3]
+    reserved = next(
+        row
+        for row in runtime.snapshot()["budgets"]
+        if row["scope"] == "global" and row["resource"] == "tokens"
+    )
+    assert reserved["reserved"] == 7500
+
+
+def test_rollover_backlog_is_capped_per_bot_burst(runtime):
+    runtime.config["lease_burst_limit"] = 1
+    runtime.config["lease_burst_window_seconds"] = 1800
+    jobs = [enqueue(runtime, str(n)) for n in range(4)]
+    first = runtime.lease("worker")
+    assert first["id"] == jobs[0]["id"]
+    runtime.cancel(first["id"])
+    assert runtime.lease("worker") is None
+    other = enqueue(runtime, "other-bot", "srg", "synthetic-srg")
+    second = runtime.lease("worker")
+    assert second["id"] == other["id"]
+    runtime.cancel(second["id"])
+    runtime.now[0] += 1800
+    resumed = runtime.lease("worker")
+    assert resumed["id"] == jobs[1]["id"]
+
+
+def test_withheld_context_keys_are_durable_evidence(runtime):
+    key = "b" * 64
+    job = enqueue(runtime)
+    lease = runtime.lease("worker")
+    runtime.start(job["id"], lease["lease_token"])
+    runtime.complete(
+        job["id"],
+        lease["lease_token"],
+        {
+            "packets": [],
+            "withheld": [
+                {
+                    "evidence_key": key,
+                    "reason": "no_named_organization",
+                    "organization": "",
+                    "headline": "Hospital expands",
+                    "source_url": "https://example.org/a",
+                    "quote": "Hospital expands",
+                    "jev_scores": None,
+                }
+            ],
+        },
+    )
+    assert runtime.evidence_keys("healthcare", "synthetic-healthcare") == [key]
+
+
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("budget_day_timezone", "Not/AZone"),
+        ("lease_burst_limit", 0),
+        ("lease_burst_limit", 1.5),
+        ("token_reserve_mode", "unlimited"),
+        ("token_reserve_floor", 0),
+    ],
+)
+def test_invalid_yield_config_fails_closed(tmp_path, field, value):
+    config = json.loads(CONFIG_PATH.read_text())
+    config[field] = value
+    with pytest.raises(ValueError):
+        BDConductor(tmp_path / "bad-yield.sqlite", config=config)

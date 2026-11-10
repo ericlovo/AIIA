@@ -24,6 +24,12 @@ CONFIG_PATH = Path(__file__).with_name("config") / "bd_roster.v1.json"
 ACTIVE = {"leased", "running"}
 TERMINAL = {"completed", "failed", "cancelled"}
 RESOURCES = ("tokens", "calls", "seconds")
+DEFAULT_BUDGET_DAY_TIMEZONE = "America/Chicago"
+DEFAULT_LEASE_BURST_LIMIT = 1
+DEFAULT_LEASE_BURST_WINDOW_SECONDS = 1800
+DEFAULT_TOKEN_RESERVE_MODE = "measured_estimate"
+DEFAULT_TOKEN_RESERVE_FLOOR = 2000
+DEFAULT_TOKEN_RESERVE_ESTIMATE = 2500
 
 
 class LeaseLost(RuntimeError):
@@ -95,6 +101,26 @@ class BDConductor:
         for key in ("global_daily_budget", "bot_daily_budget", "job_budget"):
             for resource in RESOURCES:
                 self._positive(cfg.get(key, {}).get(resource), f"{key}.{resource}")
+        if "budget_day_timezone" in cfg:
+            zone = cfg["budget_day_timezone"]
+            if not isinstance(zone, str) or not zone.strip():
+                raise ValueError("budget_day_timezone must be a nonempty IANA zone")
+            try:
+                ZoneInfo(zone)
+            except ZoneInfoNotFoundError as exc:
+                raise ValueError("Invalid budget_day_timezone") from exc
+        if "lease_burst_limit" in cfg:
+            limit = cfg["lease_burst_limit"]
+            if type(limit) is not int or limit < 1:
+                raise ValueError("lease_burst_limit must be a positive integer")
+        if "lease_burst_window_seconds" in cfg:
+            self._positive(cfg["lease_burst_window_seconds"], "lease_burst_window_seconds")
+        mode = cfg.get("token_reserve_mode", DEFAULT_TOKEN_RESERVE_MODE)
+        if mode not in {"measured_estimate", "job_cap"}:
+            raise ValueError("token_reserve_mode must be measured_estimate or job_cap")
+        for key in ("token_reserve_floor", "token_reserve_estimate"):
+            if key in cfg:
+                self._positive(cfg[key], key)
         if not isinstance(cfg.get("bots"), list) or not cfg["bots"]:
             raise ValueError("At least one configured bot is required")
         ids = set()
@@ -304,9 +330,67 @@ class BDConductor:
         with self._transaction() as db:
             self._recover(db)
 
+    def budget_day_timezone(self):
+        zone = self.config.get("budget_day_timezone")
+        if isinstance(zone, str) and zone.strip():
+            return zone
+        cadence = self.config.get("cadence") or {}
+        zone = cadence.get("timezone")
+        if isinstance(zone, str) and zone.strip():
+            return zone
+        return DEFAULT_BUDGET_DAY_TIMEZONE
+
+    def budget_day(self, timestamp=None):
+        stamp = self.clock() if timestamp is None else timestamp
+        zone = ZoneInfo(self.budget_day_timezone())
+        return datetime.fromtimestamp(stamp, timezone.utc).astimezone(zone).date().isoformat()
+
+    def daily_reservation(self):
+        caps = {resource: self.config["job_budget"][resource] for resource in RESOURCES}
+        mode = self.config.get("token_reserve_mode", DEFAULT_TOKEN_RESERVE_MODE)
+        if mode == "measured_estimate":
+            floor = self.config.get("token_reserve_floor", DEFAULT_TOKEN_RESERVE_FLOOR)
+            estimate = self.config.get("token_reserve_estimate", DEFAULT_TOKEN_RESERVE_ESTIMATE)
+            caps["tokens"] = max(floor, min(caps["tokens"], estimate))
+        return caps
+
+    def _burst_window(self):
+        window = self.config.get("lease_burst_window_seconds", DEFAULT_LEASE_BURST_WINDOW_SECONDS)
+        if isinstance(window, bool) or not isinstance(window, (int, float)) or window <= 0:
+            return DEFAULT_LEASE_BURST_WINDOW_SECONDS
+        return window
+
+    def _burst_limit(self):
+        limit = self.config.get("lease_burst_limit", DEFAULT_LEASE_BURST_LIMIT)
+        return limit if type(limit) is int and limit >= 1 else DEFAULT_LEASE_BURST_LIMIT
+
+    def _queued_for_bot(self, db, bot_id):
+        count = 0
+        now = self.clock()
+        for row in db.execute("SELECT data FROM bd_jobs WHERE state='queued'"):
+            queued = json.loads(row[0])
+            if queued.get("bot_id") == bot_id and queued.get("available_at", 0) <= now:
+                count += 1
+        return count
+
+    def _burst_full(self, db, bot_id):
+        window = self._burst_window()
+        since = self.clock() - window
+        count = 0
+        for row in db.execute(
+            "SELECT data FROM bd_events WHERE kind='job_leased' AND timestamp>?",
+            (since,),
+        ):
+            details = json.loads(row[0])
+            if details.get("bot_id") == bot_id:
+                count += 1
+                if count >= self._burst_limit():
+                    return True
+        return False
+
     def _reserve(self, db, bot_id):
-        day = datetime.fromtimestamp(self.clock(), timezone.utc).date().isoformat()
-        caps = self.config["job_budget"]
+        day = self.budget_day()
+        caps = self.daily_reservation()
         scopes = (
             ("global", self.config["global_daily_budget"]),
             ("bot:" + bot_id, self.config["bot_daily_budget"]),
@@ -353,8 +437,30 @@ class BDConductor:
                     or job["available_at"] > self.clock()
                 ):
                     continue
+                if (
+                    job.get("attempts", 0) == 0
+                    and self._queued_for_bot(db, job["bot_id"]) > 1
+                    and self._burst_full(db, job["bot_id"])
+                ):
+                    window = int(self.clock() // self._burst_window())
+                    if job.get("burst_blocked_window") != window:
+                        job.update(
+                            step="lease_burst_capped",
+                            burst_blocked_window=window,
+                            updated_at=self.clock(),
+                        )
+                        self._save(db, job)
+                        self._event(
+                            db,
+                            "lease_burst_capped",
+                            job,
+                            window_seconds=self._burst_window(),
+                            limit=self._burst_limit(),
+                            message="Per-bot lease burst cap reached; queued until the window resets",
+                        )
+                    continue
                 if not self._reserve(db, job["bot_id"]):
-                    day = datetime.fromtimestamp(self.clock(), timezone.utc).date().isoformat()
+                    day = self.budget_day()
                     if job.get("budget_blocked_day") != day:
                         job.update(
                             step="daily_budget_exhausted",
@@ -550,6 +656,10 @@ class BDConductor:
                 for key in result.get("reviewed_evidence", []):
                     if isinstance(key, str) and re.fullmatch(r"[a-f0-9]{64}", key):
                         keys.add(key)
+                for item in result.get("withheld", []):
+                    key = item.get("evidence_key") if isinstance(item, dict) else None
+                    if isinstance(key, str) and re.fullmatch(r"[a-f0-9]{64}", key):
+                        keys.add(key)
                 for packet in result.get("packets", []):
                     key = packet.get("evidence_key")
                     if isinstance(key, str) and key:
@@ -637,7 +747,13 @@ class BDConductor:
                 bots=bots,
                 jobs=jobs,
                 budgets=budgets,
-                budget_policy="Full caps reserved per attempt; no refunds",
-                budget_day_timezone="UTC",
+                budget_policy=(
+                    "Measured token estimate reserved per attempt with a safety floor; "
+                    "calls and seconds use full caps; no refunds"
+                    if self.config.get("token_reserve_mode", DEFAULT_TOKEN_RESERVE_MODE)
+                    == "measured_estimate"
+                    else "Full caps reserved per attempt; no refunds"
+                ),
+                budget_day_timezone=self.budget_day_timezone(),
                 timestamp=self.clock(),
             )
