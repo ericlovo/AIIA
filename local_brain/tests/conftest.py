@@ -137,6 +137,7 @@ _HOST_ENV_ISOLATE = (
     "AIIA_AIRGAP",
     "AIIA_BD_CONFIG",
     "AIIA_BD_DATABASE",
+    "AIIA_BD_ICP_DIR",
     "AIIA_DEFAULT_MODEL",
     "AIIA_DEPLOYMENT_RECEIPTS",
     "AIIA_LIVE_TESTS",
@@ -186,6 +187,9 @@ def _isolate_host_environment(
     monkeypatch.setenv("EQ_BRAIN_DATA_DIR", str(host / "eq_data"))
     for key in _HOST_ENV_ISOLATE:
         monkeypatch.delenv(key, raising=False)
+    # Point ICP discovery at a missing sandbox path so Mini private customer
+    # files under ~/.aiia-private/bd-icp are never read during tests.
+    monkeypatch.setenv("AIIA_BD_ICP_DIR", str(host / "missing-bd-icp"))
     monkeypatch.setattr(config_mod, "_config", None)
     monkeypatch.setenv("ANONYMIZED_TELEMETRY", "False")
     monkeypatch.setenv("CHROMA_TELEMETRY_ENABLED", "0")

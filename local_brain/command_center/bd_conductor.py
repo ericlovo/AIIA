@@ -76,6 +76,10 @@ class BDConductor:
             raise ValueError("schedule_enabled must be boolean")
         if "cadence" in cfg:
             validate_cadence(cfg["cadence"])
+        if "icp_dir" in cfg:
+            directory = cfg["icp_dir"]
+            if not isinstance(directory, str) or not directory.strip():
+                raise ValueError("icp_dir must be a nonempty string")
         if "schedule_window" in cfg:
             window = cfg["schedule_window"]
             if not isinstance(window, dict) or set(window) != {"start_at", "end_at", "timezone"}:

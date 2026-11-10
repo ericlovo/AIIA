@@ -18,6 +18,7 @@ from .bd_cadence import (
     status_banner,
 )
 from .bd_conductor import BDConductor, LeaseLost
+from .bd_icp import SUPPRESSED_REASON, load_bot_profile
 
 logger = logging.getLogger(__name__)
 
@@ -202,6 +203,8 @@ class BDService:
         job["managed_leads"] = dict(self.store.bots[job["bot_id"]].get("managed_leads", {}))
         job["research_segment"] = self.store.bots.get(job["bot_id"], {}).get("research_segment")
         job["seen_evidence"] = self.store.evidence_keys(job["bot_id"], job["tenant_id"])
+        if self.store.config.get("icp_dir"):
+            job["icp_dir"] = self.store.config["icp_dir"]
 
         async def emit(kind, detail=None, **extra):
             data = {**(detail or {}), **extra}
@@ -441,6 +444,17 @@ class BDService:
         bots = []
         for bot in raw["bots"]:
             jobs = [j for j in raw["jobs"] if j["bot_id"] == bot["id"]]
+            suppressed_today = 0
+            for job in jobs:
+                if job.get("state") != "completed":
+                    continue
+                stamp = job.get("finished_at") or job.get("created_at")
+                if stamp is None or self.store.budget_day(stamp) != today:
+                    continue
+                for item in (job.get("result") or {}).get("withheld") or []:
+                    if isinstance(item, dict) and item.get("reason") == SUPPRESSED_REASON:
+                        suppressed_today += 1
+            profile = load_bot_profile(bot["id"], config=self.store.config)
             bots.append(
                 {
                     **{
@@ -454,6 +468,8 @@ class BDService:
                         "failed": sum(j["state"] == "failed" for j in jobs),
                     },
                     "budgets": budget("bot:" + bot["id"], self.store.config["bot_daily_budget"]),
+                    **profile.public_fields(),
+                    "suppressed_withholds_today": suppressed_today,
                 }
             )
         jobs = []

@@ -33,6 +33,9 @@ NEXT_QUERY = {
     "not_selected_better_candidate": (
         "A stronger named-organization operational event from this batch was sent to judgment"
     ),
+    "suppressed_existing_customer_pipeline": (
+        "Skip organizations already in the customer pipeline; search for a new named operator"
+    ),
     "qwen_unavailable": "Warm qwen3:8b and retry this source after the model is resident",
     "source_evidence_missing": "Retain the source quote and URL before treating this as a candidate",
     "source_evidence_unverified": "Re-check grounding: named organization, quote, and supported claim",
