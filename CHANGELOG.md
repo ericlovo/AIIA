@@ -6,6 +6,15 @@ All notable changes to AIIA are documented here. This project adheres to
 
 ## [Unreleased]
 
+### Fixed
+
+- **Studio morning-note latency.** `GET /api/studio/morning-note` now serves the
+  last stored payload from a 5-minute in-process TTL cache with
+  stale-while-revalidate, so Command Center clients are not blocked on
+  `collect_digest`. Per-source digest collectors time out independently and
+  report `data_unavailable` instead of stalling the whole home request. The
+  response shape is unchanged except for a `generated_at` timestamp.
+
 ### Added
 
 - **Standing BD research cadence.** The conductor now has a versioned

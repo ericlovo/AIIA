@@ -17,6 +17,7 @@ import json
 import logging
 import os
 import sqlite3
+import threading
 import time
 import uuid
 from collections import deque
@@ -1590,9 +1591,11 @@ async def patch_suite_agents(suite: str, body: SuiteAgentsPatchRequest | None = 
     return {"suite": suite, "count": len(shown), "agents": shown}
 
 
-@app.get("/api/studio/morning-note")
-async def studio_morning_note():
-    """Structured morning-note for the Studio home. Same collectors as the digest."""
+morning_note_cache = daily_digest.MorningNoteCache()
+_morning_note_fill_lock = asyncio.Lock()
+
+
+def _assemble_morning_note() -> dict[str, Any]:
     zone = cron_zone(TASK_DEFINITIONS["daily_digest"])
     date = datetime.now(timezone.utc).astimezone(zone).date().isoformat()
     inbox = memory_capture_inbox()
@@ -1609,7 +1612,7 @@ async def studio_morning_note():
                 inbox_counts[source] = total
     except (OSError, sqlite3.Error) as exc:
         raise HTTPException(status_code=503, detail="memory_inbox_unavailable") from exc
-    repo_result = await asyncio.to_thread(daily_digest.collect_digest)
+    repo_result = daily_digest.collect_digest()
     return daily_digest.build_morning_note(
         date=date,
         agents=agent_registry.list(),
@@ -1620,6 +1623,46 @@ async def studio_morning_note():
         inbox_items=inbox_items,
         customer_evidence=repo_result.customer_evidence,
     )
+
+
+def _refresh_morning_note() -> None:
+    try:
+        morning_note_cache.store(_assemble_morning_note())
+    except Exception:
+        logger.exception("morning-note background refresh failed")
+    finally:
+        morning_note_cache.end_refresh()
+
+
+def _schedule_morning_note_refresh() -> None:
+    if not morning_note_cache.claim_refresh():
+        return
+    threading.Thread(target=_refresh_morning_note, name="morning-note-refresh", daemon=True).start()
+
+
+@app.get("/api/studio/morning-note")
+async def studio_morning_note():
+    """Structured morning-note for the Studio home. Same collectors as the digest.
+
+    Serves the last stored payload from an in-process TTL cache (5 minutes) and
+    refreshes stale copies in the background so clients are not blocked on
+    collect_digest. Slow digest sources time out independently.
+    """
+    payload, status = morning_note_cache.lookup()
+    if status == "fresh":
+        return payload
+    if status == "stale":
+        _schedule_morning_note_refresh()
+        return payload
+    async with _morning_note_fill_lock:
+        payload, status = morning_note_cache.lookup()
+        if status == "fresh":
+            return payload
+        if status == "stale":
+            _schedule_morning_note_refresh()
+            return payload
+        payload = await asyncio.to_thread(_assemble_morning_note)
+        return morning_note_cache.store(payload)
 
 
 @app.get("/api/studio/activity")
