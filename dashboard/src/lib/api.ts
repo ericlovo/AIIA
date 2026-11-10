@@ -81,11 +81,11 @@ async function del<T>(path: string): Promise<T> {
 
 // Types
 export interface Service {
-  uses_default_endpoint?: boolean;
+  configured?: boolean;
   id: string;
   name: string;
   category: string;
-  status: 'online' | 'degraded' | 'offline';
+  status: 'online' | 'degraded' | 'offline' | 'unknown' | 'not_configured';
   response_time_ms: number;
   avg_response_time_ms: number;
   uptime_pct: number;
