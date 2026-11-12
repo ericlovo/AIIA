@@ -1,4 +1,5 @@
 // Synthetic only: all requests are intercepted; no live bots or models run.
+import { openStudioView } from './studio-navigation.mjs'
 import assert from 'node:assert/strict'
 import { readFile, mkdir } from 'node:fs/promises'
 import { join } from 'node:path'
@@ -59,7 +60,7 @@ try {
     await page.getByRole('heading', { name: 'Bots', exact: true }).waitFor()
     assert.equal(new URL(page.url()).hash, '#/bots')
     const nav = page.getByRole('navigation', { name: 'Studio', exact: true })
-    assert.deepEqual(await nav.getByRole('link').allTextContents(), ['Research', 'Bots', 'Work'])
+    assert.deepEqual(await nav.getByRole('link').allTextContents(), ['Desk', 'Research', 'Record'])
     assert.equal(posts.length, 0)
     await page.getByRole('link', { name: 'Open Research Scout' }).focus()
     await page.keyboard.press('Enter')
@@ -144,7 +145,7 @@ try {
     await page.getByRole('main').evaluate(el => { el.scrollTop = 0 })
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false)
     await page.screenshot({ path: join(output, `bots-task-${width}.png`), animations: 'disabled' })
-    await nav.getByRole('link', { name: 'Bots', exact: true }).click()
+    await openStudioView(page, 'Bots')
     await page.getByRole('region', { name: 'Research Scout interaction' }).waitFor({ state: 'detached' })
     await page.getByRole('link', { name: 'Open Research Scout' }).waitFor()
     await page.screenshot({ path: join(output, `bots-home-${width}.png`), animations: 'disabled' })
@@ -171,7 +172,7 @@ try {
     await page.getByRole('region', { name: 'History', exact: true }).getByText('No runs yet. Run a use case or send a task to start.').waitFor()
     assert.deepEqual(errors, [])
     assert.deepEqual(blocked, [])
-    console.log(`${width}px: Bots default, keyboard selection, task success/failure, switch/back pending guard, no automatic execution, More and layout passed`)
+    console.log(`${width}px: Bots workspace, keyboard selection, task success/failure, switch/back pending guard, no automatic execution, More and layout passed`)
     await context.close()
   }
 } finally { await browser.close() }

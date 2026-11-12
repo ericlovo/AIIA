@@ -7,13 +7,15 @@ import os
 import sqlite3
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Literal
+from typing import Annotated, Literal
 from urllib.parse import urlsplit
 
 from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import Path as APIPath
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field, StrictBool
 
+from . import bd_desk
 from .bd_conductor import BDConductor
 from .bd_pipeline import DataUnavailable, PublicExcerpt, load_public_excerpt
 from .bd_service import BDService
@@ -33,6 +35,12 @@ class KillControl(BaseModel):
 class ReviewControl(BaseModel):
     model_config = ConfigDict(extra="forbid")
     status: Literal["human_review_required", "research_next", "watch", "dismissed"]
+
+
+class DeskDecision(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    expected_tenant_id: str = Field(min_length=1, max_length=200)
+    status: Literal["research_next", "watch", "dismissed"]
 
 
 class ScheduleControl(BaseModel):
@@ -89,6 +97,41 @@ def create_router(factory=None):
             return result
         except (OSError, sqlite3.Error, ValueError) as exc:
             raise HTTPException(503, "bd_storage_or_configuration_unavailable") from exc
+
+    @router.get("/desk")
+    def desk(current: BDService = Depends(service)):
+        return bd_desk.desk_packets(current)
+
+    @router.get("/record")
+    def record(current: BDService = Depends(service)):
+        return bd_desk.record_list(current.store)
+
+    @router.get("/record/{receipt_id}")
+    def record_detail(
+        receipt_id: Annotated[int, APIPath(gt=0, le=2**63 - 1)],
+        current: BDService = Depends(service),
+    ):
+        try:
+            return bd_desk.record_detail(current, receipt_id)
+        except KeyError as exc:
+            raise HTTPException(404, "receipt_not_found") from exc
+
+    @router.post("/desk/{bot_id}/{job_id}/{index}/review", dependencies=[Depends(same_origin)])
+    def decide(
+        bot_id: str,
+        job_id: str,
+        index: int,
+        body: DeskDecision,
+        current: BDService = Depends(service),
+    ):
+        try:
+            return bd_desk.decide(
+                current, bot_id, job_id, index, body.expected_tenant_id, body.status
+            )
+        except KeyError as exc:
+            raise HTTPException(404, "packet_not_found") from exc
+        except ValueError as exc:
+            raise HTTPException(409, "packet_changed") from exc
 
     @router.get("/snapshot")
     async def snapshot(current: BDService = Depends(ready)):

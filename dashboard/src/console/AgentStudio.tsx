@@ -17,6 +17,8 @@ import { Today } from './Today'
 import { MorningNote } from './MorningNote'
 import { Jobs } from './Jobs'
 import { BDConductor } from './BDConductor'
+import { Desk } from './Desk'
+import { BDRecord } from './BDRecord'
 import { Bots } from './Bots'
 import { Projects } from './Projects'
 import { MemoryLog } from './MemoryLog'
@@ -180,6 +182,8 @@ export function AgentStudio() {
   const retiredCount = useMemo(() => agents.filter(agent => agent.retired).length, [agents])
 
   const page = (() => {
+    if (route.view === 'desk') return <Desk />
+    if (route.view === 'record') return <BDRecord receiptId={route.receiptId} showRun={route.showRun} />
     if (view === 'home') return <MorningNote agents={agents} onDetails={() => navigate({ view: 'assignments' })} />
     if (view === 'bd') return <BDConductor />
     if (view === 'bots') return <Bots agents={agents} loading={isLoading} error={isError} agentId={route.view === 'bots' ? route.agentId : undefined} />
@@ -219,7 +223,7 @@ export function AgentStudio() {
       return <MemoryLog key={key} agents={agents} source={route.view === 'memory' ? route.source : undefined} intent={review ? { bucket: review === 'all' ? '' : review } : undefined} />
     }
 
-    if (view !== 'agents') {
+    if (view === 'assignments' || view === 'handoffs') {
       return (
         <WorkBoard
           key={key}
