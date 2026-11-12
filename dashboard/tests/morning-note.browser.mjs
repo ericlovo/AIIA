@@ -36,7 +36,7 @@ const note = {
     { id: 'mindmoor', name: 'Mindmoor', kind: 'product', state: 'waiting', note: 'Alumni version is 12 changes behind main.' },
     { id: 'sanction', name: 'Sanction', kind: 'product', state: 'blocked', note: 'Automated checks are red on the latest change.' },
     { id: 'mia', name: 'MIA', kind: 'product', state: 'shipped', note: "Last week's update is out." },
-    { id: 'morrow', name: 'Morrow', kind: 'product', state: 'shipped', note: 'Conversation board is out to beta testers.' },
+    { id: 'morrow', name: 'Morrow', kind: 'product', repositories: ['example/morrow'], state: 'shipped', note: 'Conversation board is out to beta testers.' },
   ],
   customers: [
     { id: 'trs', name: "That's Right Sweetie", kind: 'customer', state: 'shipped', note: 'Daily client prep is arriving each morning.' },
@@ -105,6 +105,7 @@ try {
     const { context, page, pageErrors, writes, failPermissions } = await open(width, height)
     await page.getByRole('heading', { level: 1, name: /Good (morning|afternoon|evening)\.$/ }).waitFor()
     await page.getByRole('heading', { name: 'Where things stand', exact: true }).waitFor()
+    assert.equal(await page.getByRole('link', { name: 'example/morrow' }).getAttribute('href'), 'https://github.com/example/morrow')
     await page.getByRole('heading', { name: /Needs you/ }).waitFor()
     await page.getByRole('heading', { name: 'Ask for anything', exact: true }).waitFor()
     assert.equal(await page.getByRole('navigation', { name: 'Studio' }).count(), 0)

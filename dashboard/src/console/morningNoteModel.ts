@@ -9,6 +9,7 @@ export interface MorningLine {
   kind: 'product' | 'customer' | string
   state: MorningState | string
   note: string
+  repositories?: string[]
   waiting?: string
   extra?: string
   target?: string
@@ -36,7 +37,8 @@ export interface MorningNotePayload {
 
 export const STATE_LABEL: Record<string, string> = {
   shipped: 'Shipped',
-  clean: 'Shipped',
+  clean: 'Clear',
+  unavailable: 'Status unavailable',
   blocked: 'Blocked',
   waiting: 'Waiting on you',
   countdown: 'Coming up',

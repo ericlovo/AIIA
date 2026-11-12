@@ -154,7 +154,9 @@ function StatusList({ items, now }: { items: MorningLine[]; now: Date }) {
           <li key={item.id} className="line">
             <span className="line-name"><span className={`dot dot-${item.state}`} aria-hidden="true" />{item.name}</span>
             <span className={`line-state w-${item.state}${ticking ? ' countdown' : ''}`}>{state}</span>
-            <span className="line-note">{item.note}</span>
+            <span className="line-note">{item.note}{item.repositories?.map(slug => (
+              <span key={slug}> · <a href={`https://github.com/${slug}`} target="_blank" rel="noreferrer">{slug}</a></span>
+            ))}</span>
           </li>
         )
       })}

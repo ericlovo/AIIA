@@ -1355,8 +1355,18 @@ def collect_digest(
     now: datetime | None = None,
     source_timeout: float | None = None,
 ) -> DigestResult:
-    mounts = mounts if mounts is not None else repos.REPO_MOUNTS
     catalog = list(products) if products is not None else load_products()
+    if mounts is None:
+        mounts = dict(repos.REPO_MOUNTS)
+        for product in catalog:
+            if product.mount in mounts or not repos._GITHUB_SLUG.fullmatch(product.github):
+                continue
+            directory = product.github.split("/")[1]
+            if directory in {".", ".."}:
+                continue
+            path = Path.home() / directory
+            if (path / ".git").exists() and _github_slug(path).lower() == product.github.lower():
+                mounts[product.mount] = path
     roster = list(customers) if customers is not None else load_customers()
     drift_by_mount = {product.mount: product.drift for product in catalog if product.mount}
     slug_by_mount = {product.mount: product.github for product in catalog if product.mount}
@@ -1920,6 +1930,7 @@ SLACK_EMOJI = {
     "countdown": "🟢",
     "unmapped": "⚪",
     "unmounted": "⚪",
+    "unavailable": "⚪",
     "consulting": "⚪",
 }
 
@@ -2103,6 +2114,10 @@ def morning_product_line(
         pending=bool(lead),
     )
     parts: list[str] = []
+    if product.github and (evidence is None or not evidence.complete):
+        parts.append("Repository status unavailable")
+        if state in {"unmounted", "clean"}:
+            state = "waiting" if waiting else "unavailable"
     if shipped:
         parts.append(shipped)
     parts.extend(hard)
@@ -2656,13 +2671,14 @@ def build_morning_note(
     generated_at: str | None = None,
 ) -> dict[str, Any]:
     catalog = list(products) if products is not None else load_products()
+    roster = list(customers) if customers is not None else load_customers()
     product_lines, customer_lines = collect_morning_lines(
         date=date,
         agents=agents,
         assignments=assignments,
         repo_evidence=repo_evidence,
         products=catalog,
-        customers=customers,
+        customers=roster,
         customer_evidence=customer_evidence,
     )
     cards, total = morning_decision_cards(
@@ -2674,10 +2690,25 @@ def build_morning_note(
         resolved_prs=_pr_keys_from_evidence(repo_evidence, merged=True),
         open_prs=_pr_keys_from_evidence(repo_evidence, merged=False),
     )
+    slugs = {p.id: p.github for p in catalog if repos._GITHUB_SLUG.fullmatch(p.github)}
+    customer_slugs = {
+        c.id: list(dict.fromkeys(slugs[pid] for pid in c.products if pid in slugs))
+        for c in roster
+        if not (c.consulting or c.no_repo)
+    }
     return {
         "date": date,
-        "products": [morning_line_payload(line) for line in product_lines],
-        "customers": [morning_line_payload(line) for line in customer_lines],
+        "products": [
+            {
+                **morning_line_payload(line),
+                "repositories": [slugs[line.id]] if line.id in slugs else [],
+            }
+            for line in product_lines
+        ],
+        "customers": [
+            {**morning_line_payload(line), "repositories": customer_slugs.get(line.id, [])}
+            for line in customer_lines
+        ],
         "decisions": cards,
         "needs_you_total": total,
         "failure": slack_failure_line(tasks=tasks, assignments=assignments, date=date) or None,
