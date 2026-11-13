@@ -72,3 +72,7 @@ Thumbs.db
 
 # Durable BD conductor runtime (never commit research records)
 local_brain/command_center/bd_data/
+
+# Neon branch context and the workstation-specific Codex MCP project pin
+/.codex/config.toml
+.neon
