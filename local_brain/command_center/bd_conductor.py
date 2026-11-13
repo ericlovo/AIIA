@@ -238,16 +238,16 @@ class BDConductor:
         details = {**data, "mode": mode, "replay_only": mode == "replay"}
         if job:
             details.update(bot_id=job["bot_id"], tenant_id=job["tenant_id"])
-        db.execute(
+        return db.execute(
             "INSERT INTO bd_events(timestamp,kind,job_id,data) VALUES(?,?,?,?)",
             (self.clock(), kind, job["id"] if job else None, json.dumps(details, allow_nan=False)),
-        )
+        ).lastrowid
 
     @staticmethod
     def _save(db, job):
         db.execute(
-            "UPDATE bd_jobs SET state=?, data=? WHERE id=?",
-            (job["state"], json.dumps(job, allow_nan=False), job["id"]),
+            "UPDATE bd_jobs SET state=?, data=? WHERE id=? AND tenant_id=?",
+            (job["state"], json.dumps(job, allow_nan=False), job["id"], job["tenant_id"]),
         )
 
     @staticmethod
@@ -682,35 +682,52 @@ class BDConductor:
                         )
         return sorted(keys)
 
+    def configured_scope(self):
+        return json.dumps({bot_id: bot["tenant_id"] for bot_id, bot in self.bots.items()})
+
+    @staticmethod
+    def packet_at(job, index):
+        result = job.get("result") or {}
+        packets = result.get("packets", [result] if result.get("organization") else [])
+        if (
+            job["state"] != "completed"
+            or type(index) is not int
+            or not 0 <= index < len(packets)
+            or not isinstance(packets[index], dict)
+            or not packets[index].get("organization")
+        ):
+            raise ValueError("Review requires a completed proposal packet")
+        return packets[index]
+
+    def write_review(self, db, job, index, status):
+        review = {"status": status, "updated_at": self.clock()}
+        job.setdefault("packet_reviews", {})[str(index)] = review
+        self._save(db, job)
+        return self._event(
+            db,
+            "packet_reviewed",
+            job,
+            packet_index=index,
+            review_status=status,
+            message="Local research triage updated; no outreach or CRM action",
+        )
+
     def set_packet_review(self, job_id, index, status):
-        allowed = {"human_review_required", "research_next", "watch", "dismissed"}
-        if status not in allowed:
+        if status not in {"human_review_required", "research_next", "watch", "dismissed"}:
             raise ValueError("Invalid proposal review status")
-        if type(index) is not int or index < 0:
-            raise ValueError("Packet index must be a nonnegative integer")
         with self._transaction() as db:
-            job = self._get(db, job_id)
-            result = job.get("result") or {}
-            packets = result.get("packets", [result] if result.get("organization") else [])
-            if (
-                job["state"] != "completed"
-                or index >= len(packets)
-                or not isinstance(packets[index], dict)
-                or not packets[index].get("organization")
-            ):
-                raise ValueError("Review requires a completed proposal packet")
-            reviews = job.setdefault("packet_reviews", {})
-            reviews[str(index)] = {"status": status, "updated_at": self.clock()}
-            self._save(db, job)
-            self._event(
-                db,
-                "packet_reviewed",
-                job,
-                packet_index=index,
-                review_status=status,
-                message="Local research triage updated; no outreach or CRM action",
-            )
-            return reviews[str(index)]
+            row = db.execute(
+                """SELECT j.data FROM bd_jobs j JOIN json_each(?) scope
+                     ON j.tenant_id=scope.value AND json_extract(j.data,'$.bot_id')=scope.key
+                   WHERE j.id=? AND j.tenant_id=json_extract(j.data,'$.tenant_id')""",
+                (self.configured_scope(), job_id),
+            ).fetchone()
+            if not row:
+                raise KeyError(job_id)
+            job = json.loads(row[0])
+            self.packet_at(job, index)
+            self.write_review(db, job, index, status)
+            return job["packet_reviews"][str(index)]
 
     def events(self, after_id=0, limit=200):
         with self._transaction() as db:

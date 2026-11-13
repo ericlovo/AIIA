@@ -1,10 +1,13 @@
 import type { ReviewBucket } from '../lib/api'
 
 export type InboxSource = 'slack' | 'loops' | 'signals' | 'all'
-export type StudioView = 'home' | 'bd' | 'bots' | 'switchboard' | 'inbox' | 'jobs' | 'projects' | 'history' | 'activity' | 'agents' | 'assignments' | 'handoffs' | 'memory' | 'world' | 'signals'
+export type StudioView = 'desk' | 'record' | 'home' | 'bd' | 'bots' | 'switchboard' | 'inbox' | 'jobs' | 'projects' | 'history' | 'activity' | 'agents' | 'assignments' | 'handoffs' | 'memory' | 'world' | 'signals'
 
 export const VIEWS: { id: StudioView; label: string }[] = [
+  { id: 'desk', label: 'Desk' },
+  { id: 'record', label: 'Record' },
   { id: 'bd', label: 'Research' },
+  { id: 'home', label: 'Morning note' },
   { id: 'bots', label: 'Bots' },
   { id: 'switchboard', label: 'Today' },
   { id: 'inbox', label: 'Inbox' },
@@ -26,6 +29,8 @@ export const VIEWS: { id: StudioView; label: string }[] = [
  * can be linked to, reloaded, and reached with the back button.
  */
 export type StudioRoute =
+  | { view: 'desk' }
+  | { view: 'record'; receiptId?: number; showRun?: boolean }
   | { view: 'home' }
   | { view: 'bd' }
   | { view: 'bots'; agentId?: string }
@@ -42,9 +47,11 @@ export type StudioRoute =
   | { view: 'world' }
   | { view: 'signals' }
 
-export const DEFAULT_ROUTE: StudioRoute = { view: 'home' }
+export const DEFAULT_ROUTE: StudioRoute = { view: 'desk' }
 
 const PATHS: Record<StudioView, string> = {
+  desk: 'desk',
+  record: 'record',
   home: 'note',
   bd: 'bd',
   bots: 'bots',
@@ -78,6 +85,11 @@ export function parseRoute(hash: string): StudioRoute | null {
       if (id || (source && !['slack', 'loops', 'signals', 'all'].includes(source))) return null
       return { view, source: source as InboxSource | undefined }
     }
+    case 'record': {
+      if (!id) return { view }
+      const receiptId = Number(id)
+      return /^[1-9]\d*$/.test(id) && Number.isSafeInteger(receiptId) ? { view, receiptId, ...(param('show') === 'run' ? { showRun: true } : {}) } : null
+    }
     case 'bots':
     case 'agents': return { view, agentId: id }
     case 'assignments': return { view, assignmentId: id, agentId: id ? undefined : param('agent') }
@@ -106,6 +118,10 @@ export function formatRoute(route: StudioRoute): string {
       break
     case 'history':
       if (route.attention) query.set('attention', '1')
+      break
+    case 'record':
+      id = route.receiptId === undefined ? '' : String(route.receiptId)
+      if (id && route.showRun) query.set('show', 'run')
       break
     case 'bots':
     case 'agents': id = route.agentId ?? ''; break

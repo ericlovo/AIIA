@@ -259,3 +259,83 @@ def test_source_import_rejects_killed_cross_origin_and_bad_hash(live_route_app):
         client.post("/api/bd/kill-switch", json={"enabled": True})
         assert client.post("/api/bd/sources", json=import_body()).status_code == 409
         assert service.store.snapshot()["jobs"] == []
+
+
+def test_desk_decision_is_atomic_idempotent_and_traceable_after_restart(route_app):
+    import asyncio
+    from concurrent.futures import ThreadPoolExecutor
+
+    from local_brain.command_center import bd_desk
+    from local_brain.command_center.bd_pipeline import run_pipeline
+
+    app, service = route_app
+    store = service.store
+    tenant = "synthetic-healthcare"
+    sample = asyncio.run(
+        run_pipeline(
+            {
+                "segment": "healthcare",
+                "tenant_id": tenant,
+                "mode": "replay",
+                "payload": {"replay_step_delay": 0},
+            }
+        )
+    )["packets"][0]
+    job = store.enqueue("healthcare", tenant, "sample-review", "research")
+    lease = store.lease("test")
+    store.start(job["id"], lease["lease_token"])
+    store.record_event(job["id"], lease["lease_token"], "qwen_replayed")
+    store.record_event(job["id"], lease["lease_token"], "jev_replayed")
+    store.complete(
+        job["id"],
+        lease["lease_token"],
+        {"packets": [sample, sample, {"organization": "Unsupported"}]},
+    )
+
+    # No lifespan: these routes must not start a worker in response to inspecting a packet.
+    client = TestClient(app)
+    desk = client.get("/api/bd/desk").json()
+    assert [(p["index"], p["job_id"]) for p in desk["packets"]] == [(0, job["id"]), (1, job["id"])]
+    assert not desk["has_more"]
+    assert client.get(f"/api/bd/record/{2**63}").status_code == 422
+    path = f"/api/bd/desk/healthcare/{job['id']}/1/review"
+    body = {"status": "watch", "expected_tenant_id": tenant}
+    assert client.post(path, json={**body, "expected_tenant_id": "wrong"}).status_code == 404
+    assert client.post(path.replace("/healthcare/", "/pe-diligence/"), json=body).status_code == 404
+    assert client.post(path, headers={"sec-fetch-site": "cross-site"}, json=body).status_code == 403
+    assert client.post(path.replace("/1/review", "/2/review"), json=body).status_code == 409
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        responses = list(pool.map(lambda _: client.post(path, json=body), range(2)))
+    assert [r.status_code for r in responses] == [200, 200]
+    receipt = responses[0].json()["receipt"]
+    assert responses[1].json()["receipt"] == receipt
+    assert receipt["packet_index"] == 1 and receipt["tenant_id"] == tenant
+    assert client.post(path, json={**body, "status": "research_next"}).status_code == 409
+    assert [p["index"] for p in client.get("/api/bd/desk").json()["packets"]] == [0]
+    assert client.get("/api/bd/record").json() == {"receipts": [receipt], "has_more": False}
+    assert service._worker is None
+
+    # Reopening the database and switching the operator queue cannot invalidate a receipt link.
+    restarted = BDService(BDConductor(store.path))
+    restarted.store.set_packet_review(job["id"], 1, "dismissed")
+    detail = bd_desk.record_detail(restarted, receipt["id"])
+    assert detail["receipt"] == receipt
+    assert detail["packet"]["review_status"] == "watch"
+    assert detail["packet"]["id"] == sample.get("id", f"{job['id']}:1")
+    assert [e["kind"] for e in detail["stages"]] == [
+        "qwen_replayed",
+        "jev_replayed",
+        "job_completed",
+        "packet_reviewed",
+    ]
+    assert all(e["job_id"] == job["id"] for e in detail["stages"])
+    assert [e["status"] for e in bd_desk.record_list(restarted.store)["receipts"]] == [
+        "dismissed",
+        "watch",
+    ]
+
+    # Current roster ownership gates old data even if the bot ID was reused.
+    store.bots["healthcare"]["tenant_id"] = "synthetic-reassigned"
+    assert client.get("/api/bd/desk").json()["packets"] == []
+    assert client.get("/api/bd/record").json()["receipts"] == []
+    assert client.get(f"/api/bd/record/{receipt['id']}").status_code == 404

@@ -1,0 +1,23 @@
+.bd-record { height:100%; overflow:auto; background:#f7f5ef; color:#272a24; font:15px/1.5 -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif }
+.receipt-wrap { max-width:980px; margin:auto; padding:clamp(20px,4vw,48px); overflow-wrap:anywhere }
+.bd-record h1,.bd-record h2 { font:500 clamp(38px,5vw,58px)/1.12 'Iowan Old Style',Palatino,Georgia,serif; letter-spacing:-.04em; margin:0 0 12px }
+.bd-record h2 { font-size:clamp(24px,3vw,32px) }
+.receipt-intro { color:#606458; margin-bottom:26px }
+.bd-record a { color:#27503b; text-decoration:underline; text-underline-offset:3px }
+.receipt-back { display:inline-flex; align-items:center; min-height:44px; margin-right:18px }
+.receipt-search { display:block; font-weight:600; margin:20px 0 }
+.receipt-search input { display:block; margin-top:6px; padding:10px; background:white; border:1px solid #a9afa3; border-radius:6px; width:min(100%,32em); font-weight:400 }
+.receipt-list { padding:0; list-style:none }
+.receipt-list a { display:flex; justify-content:space-between; align-items:baseline; gap:12px; text-decoration:none; border-top:1px solid #c5c9bc; padding:16px 2px }
+.receipt-list a:hover strong { text-decoration:underline }
+.bd-record small { display:block; color:#62685e; font-size:12px }
+.receipt-card { border:1px solid #d5d8ca; background:#fffef9; border-radius:9px; margin:18px 0 28px; padding:clamp(17px,3vw,28px) }
+.receipt-card h2,.receipt-card p,.receipt-evidence p { margin:8px 0 }
+.receipt-evidence { border-top:2px solid #5a6f5e; padding-top:15px }
+.receipt-evidence blockquote { border-left:3px solid #89a394; padding:8px 14px; margin:14px 0; background:#f0f0e6 }
+.receipt-evidence details { margin-top:15px }
+.receipt-evidence summary,.receipt-notice button { min-height:44px; cursor:pointer; padding:9px 0 }
+.receipt-evidence li { border-top:1px solid #d6d9ce; padding:8px 0 }
+.receipt-notice button { color:#27503b; text-decoration:underline }
+.bd-record :focus-visible { outline:3px solid #3667a0; outline-offset:2px }
+@media(max-width:540px){.receipt-list a{display:block}.receipt-list a>span{display:block;margin-top:4px}}
