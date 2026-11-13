@@ -1,7 +1,16 @@
 import type { BDEvent, BDPacket } from './bdModel'
 
+export type ReceiptId = number | string
+
+// SQLite uses positive integers. PostgreSQL returns canonical UUID strings.
+export function isReceiptId(value: unknown): value is ReceiptId {
+  if (typeof value === 'number') return Number.isSafeInteger(value) && value > 0
+  return typeof value === 'string' && value.length === 36 &&
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(value)
+}
+
 export interface BDReceipt {
-  id: number
+  id: ReceiptId
   job_id: string
   packet_index: number
   tenant_id: string

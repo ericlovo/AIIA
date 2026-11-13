@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { ArrowUpRight, Check, RefreshCw } from 'lucide-react'
 import { studioFetch, studioJSON } from '../lib/connection'
 import { packetOutcome, publicSource, type BDPacket } from './bdModel'
-import type { BDReceipt } from './bdRecordModel'
+import { isReceiptId, type BDReceipt } from './bdRecordModel'
 import { formatRoute } from './studioRoute'
 import './Desk.css'
 
@@ -36,7 +36,7 @@ async function decide({ packet, status }: Submission) {
   if (response.status === 409) throw new Error('This packet has changed since it was opened.')
   if (response.status === 404) throw new Error('This packet is no longer available.')
   const { receipt } = await studioJSON<{ receipt: BDReceipt }>(response)
-  if (!receipt || !Number.isSafeInteger(receipt.id) || receipt.id <= 0 ||
+  if (!receipt || !isReceiptId(receipt.id) ||
     receipt.tenant_id !== packet.tenant_id || receipt.bot_id !== packet.bot_id ||
     receipt.job_id !== packet.job_id || receipt.packet_index !== packet.index || receipt.status !== status
   ) throw new Error('The server did not confirm a matching receipt.')

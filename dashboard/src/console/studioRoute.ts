@@ -1,3 +1,4 @@
+import { isReceiptId, type ReceiptId } from './bdRecordModel.ts'
 import type { ReviewBucket } from '../lib/api'
 
 export type InboxSource = 'slack' | 'loops' | 'signals' | 'all'
@@ -30,7 +31,7 @@ export const VIEWS: { id: StudioView; label: string }[] = [
  */
 export type StudioRoute =
   | { view: 'desk' }
-  | { view: 'record'; receiptId?: number; showRun?: boolean }
+  | { view: 'record'; receiptId?: ReceiptId; showRun?: boolean }
   | { view: 'home' }
   | { view: 'bd' }
   | { view: 'bots'; agentId?: string }
@@ -87,8 +88,9 @@ export function parseRoute(hash: string): StudioRoute | null {
     }
     case 'record': {
       if (!id) return { view }
-      const receiptId = Number(id)
-      return /^[1-9]\d*$/.test(id) && Number.isSafeInteger(receiptId) ? { view, receiptId, ...(param('show') === 'run' ? { showRun: true } : {}) } : null
+      const integer = Number(id)
+      const receiptId = String(integer) === id ? integer : id
+      return isReceiptId(receiptId) ? { view, receiptId, ...(param('show') === 'run' ? { showRun: true } : {}) } : null
     }
     case 'bots':
     case 'agents': return { view, agentId: id }

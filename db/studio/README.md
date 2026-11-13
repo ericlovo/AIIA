@@ -70,3 +70,33 @@ On a disposable local PostgreSQL database, apply `001_work.sql`, then run
 `psql -X -v ON_ERROR_STOP=1 -f db/studio/test_work.sql` as its local
 superuser. The test switches between synthetic tenant logins and rolls back
 its fixtures. Never grant the hosted application superuser privileges.
+
+## Review a synthetic BD packet on Neon dev
+
+From a development workstation, apply `002_bd_packets.sql` once to the same
+dev branch as `001_work.sql`, using the migration owner. The migration adds
+replay packets and links each packet decision to its work item and run.
+Use a separate synthetic tenant login provisioned as described above for the
+preview. Set `STUDIO_DESK_DEV_DSN` to that login's TLS connection string
+and `STUDIO_DESK_DEV_TENANT_ID` to its mapped UUID in the server environment.
+
+Install the `studio-postgres` Python extra in the development environment
+and run `npm ci && npm run build` in `dashboard/`. From the repository root,
+seed the fixture and start the loopback preview:
+
+```sh
+python -c 'import os; from local_brain.command_center.bd_desk_postgres import PostgresDesk; print(PostgresDesk(os.environ["STUDIO_DESK_DEV_DSN"], os.environ["STUDIO_DESK_DEV_TENANT_ID"]).seed())'
+python -m local_brain.command_center.bd_desk_dev --port 8765
+```
+
+Open `http://127.0.0.1:8765/#/desk`, select **Watch**, follow **View receipt
+in Record**, then **Inspect run**. The run ID should match the seed command's
+output. Seeding again preserves the existing decision.
+
+To exercise those steps in a browser, run the following from the repository
+root with the preview running. Set `DESK_NEON_RUN_ID` to the printed UUID.
+On later runs the test finds the existing decision in Record and reloads it.
+
+```sh
+DESK_NEON_STUDIO_URL=http://127.0.0.1:8765 node dashboard/tests/desk-neon-dev.browser.mjs
+```
