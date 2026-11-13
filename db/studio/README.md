@@ -4,6 +4,32 @@ This schema is for the hosted Studio backend. Each tenant can connect a feature 
 
 The Mini still owns its registries, run ledger, BD packets and memory. This migration creates empty tables. It does not install a runtime adapter, import local records, start a worker, or require the Mini to connect to Neon.
 
+## Connect Codex to a development project
+
+The Neon and Neon Postgres skills live in `.agents/skills` with their source
+recorded in `skills-lock.json`. From a trusted checkout with the Neon CLI
+installed, select the project and branch and register its OAuth MCP endpoint:
+
+```sh
+neon link --project-id "$STUDIO_NEON_PROJECT_ID" --branch dev --no-env-pull --no-config -y
+neon mcp --oauth --project --project-id "$STUDIO_NEON_PROJECT_ID" --agent codex -y
+```
+
+Set `STUDIO_NEON_PROJECT_ID` to your project's ID first. The CLI writes local
+branch context to `.neon` and the project-specific endpoint to
+`.codex/config.toml`. Open a fresh Codex session, authenticate the Neon MCP
+server when prompted, and select the development branch explicitly when
+calling `run_sql`. This catalog query checks that the migration is present.
+Expect eight tables and seven with forced row-level security. The eighth table
+maps database logins to tenants and is accessible only to the migration owner.
+
+```sql
+SELECT count(*) AS studio_tables,
+       count(*) FILTER (WHERE relrowsecurity AND relforcerowsecurity) AS forced_rls
+FROM pg_catalog.pg_class
+WHERE relnamespace = 'studio'::regnamespace AND relkind = 'r';
+```
+
 ## Apply on a new development branch
 
 Use the migration owner on the dedicated AIIA Studio project. Select the project and development branch in Neon, then configure a local libpq service named `aiia_studio_dev` with its direct endpoint, role, database and TLS settings. Keep the password in a secret store. Run from the repository root:
