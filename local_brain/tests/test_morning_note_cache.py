@@ -92,10 +92,10 @@ def test_morning_note_cache_hit_skips_collect_digest(tmp_path, monkeypatch):
     inbox = MemoryInbox(tmp_path / "inbox.sqlite3")
     monkeypatch.setattr(server, "memory_capture_inbox", lambda: inbox)
     server.morning_note_cache.reset()
-    calls: list[int] = []
+    timeouts: list[float] = []
 
-    def collect(**kwargs):
-        calls.append(1)
+    def collect(*, source_timeout=daily_digest.SOURCE_TIMEOUT_SECONDS):
+        timeouts.append(source_timeout)
         return _empty_digest()
 
     monkeypatch.setattr(daily_digest, "collect_digest", collect)
@@ -111,7 +111,7 @@ def test_morning_note_cache_hit_skips_collect_digest(tmp_path, monkeypatch):
     assert body["generated_at"] == second.json()["generated_at"]
     assert "products" in body and "customers" in body and "decisions" in body
     assert "needs_you_total" in body
-    assert len(calls) == 1
+    assert timeouts == [5.0]
 
 
 def test_morning_note_stale_refresh_returns_last_digest_immediately(tmp_path, monkeypatch):

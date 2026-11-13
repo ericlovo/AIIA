@@ -19,9 +19,9 @@ once per local day. Jobs shows `daily 07:40 America/Chicago`.
 Products, customers, and GitHub slugs come from checked-in
 `config/digest_products.json` (override with `AIIA_DIGEST_PRODUCTS`).
 Default products: AIIA, Mindmoor (production / alumni drift), Sanction, MIA,
-Morrow. Morrow has no repo configured yet. Default customers: That's Right
+Morrow. All five have configured GitHub slugs. Default customers: That's Right
 Sweetie (TRS), Alumni Nations, Smart Medical. Missing mappings stay blank;
-Smart Medical prints `not mapped yet`. Never invent a repo, agent, or branch.
+Smart Medical is consulting-only. Never invent a repo, agent, or branch.
 
 For each configured mount the digest reuses the #104 collectors: open / merged
 PRs, failing CI on `main`, merge conflicts, check state, and Mindmoor
@@ -46,34 +46,21 @@ through the memory-post outbox. The inbox row keeps the fuller
 The Slack post is a separate morning-note body: text only, no buttons,
 Slack mrkdwn enabled for `digest:` posts.
 
-Slack sections (action-first format):
+Slack leads with decisions and blockers. Each row names the product or customer and
+links to the PR or assignment when available. Assignment links use the catalog's
+optional HTTPS `studio_url`. Proposals appear as one choice with examples.
+A pending collector check appears as a prerequisite for alerts.
 
-- Date header, then **Needs attention**: scheduled-task failures, main CI failures,
-  conflicts/check failures on active non-dependency PRs, eligible PR numbers to
-  review for merge, agent output reviews, and delivery drift. Missing or incomplete
-  repository evidence is explicit; it cannot produce an all-clear or merge ask.
-- **Decisions**: at most three current inbox suggestions, each on its own line.
-  Rows explicitly labeled `Stale story:` become a backlog count instead. No inbox
-  records are dismissed, deleted, or marked reviewed by this presentation filter.
-- Shipping leads with PR numbers and titles. A verified receipt takes precedence.
-  For up to two recent merges per repo without receipts, the collector also checks
-  GitHub deployments for the exact merge SHA. A successful latest status for
-  the primary production target is labeled provider-reported; this does not
-  attest to browser QA. Other merges remain deployment-unverified.
-- **Background — not merge requests**: draft/dependency/held PR counts, consulting
-  status, and remaining backlog. These PR categories stay outside the merge asks.
-- Quiet products share a compact **No active alerts** line. Drafts and maintenance
-  remain separate; this is not a claim that every PR passes.
-- Failure messages name the task and direct the operator to inspect its Studio
-  run before retrying. Raw exception strings stay out of Slack.
-- Whole rows fit within the existing message limit, preserving `_Details in Studio_`
-  and a “More items in Studio” marker when needed.
+Recent merges appear under verified deployment, provider-reported production
+deployment, or merged without deployment evidence. Open PRs can show a pending
+review request or an update in the last 24 hours. The post shows at most seven
+rows across sections and counts additional items. Drafts, held PRs, maintenance,
+routine checks, synthetic QA, and backlog stay in Studio. Partial repo coverage
+appears once at the end. A quiet day with complete repo coverage gets one sentence.
 
-Slack counts each output under its customer or product once. Explicitly labeled
-synthetic QA stays visible separately; a waiting marker without a completed
-output requests verification instead of claiming an output exists. The fuller inbox body and Studio morning-note rendering
-retain their existing contracts. Slack formatting does not change schedules,
-permissions, runtime records, or delivery/outbox deduplication.
+The scheduled digest allows 60 seconds for repository collection. Interactive
+Studio reads retain their five-second budget. Delivery still uses one outbox
+entry per Chicago date.
 
 Quiet/green product days still print the three inbox segments with
 `none`. They do not open a Work item and do not record a `quiet_clear`
