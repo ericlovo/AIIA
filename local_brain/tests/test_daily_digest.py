@@ -1838,3 +1838,23 @@ def test_slack_review_names_proposals_and_separates_historical_checks():
     assert "verify the collector, then decide on daily Slack delivery" in attention
     assert "Scheduled: Launch — accept or request changes" in attention
     assert "Delivery: 1 earlier run reported a clean day" in background
+
+
+def test_configured_repo_keeps_its_identity_when_collection_times_out():
+    product = daily_digest.DigestProduct(
+        id="example", name="Example", mount="example", github="example/app"
+    )
+    customer = daily_digest.DigestCustomer(id="tenant", name="Tenant", products=("example",))
+    note = daily_digest.build_morning_note(
+        date="2026-11-12",
+        agents=[],
+        assignments=[],
+        tasks=[],
+        inbox_counts={},
+        products=[product],
+        customers=[customer],
+        repo_evidence=[daily_digest.RepoEvidence(repo_id="example", mounted=False, complete=False)],
+    )
+    assert note["products"][0]["state"] == "unavailable"
+    assert note["products"][0]["repositories"] == ["example/app"]
+    assert note["customers"][0]["repositories"] == ["example/app"]
