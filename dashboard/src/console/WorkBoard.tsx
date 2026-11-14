@@ -254,6 +254,15 @@ export function WorkBoard({
 
   const pendingApprovalIds = decisionQueue.pendingApprovalIds
   const matchingEvidence = selectedAssignment?.attention_key ? assignments.filter(item => item.attention_key === selectedAssignment.attention_key) : []
+  const repeatApprovalPending = matchingEvidence.some(item => pendingApprovalIds.has(item.id))
+  const repeatReports = selectedAssignment?.attention_key && !selectedAssignment.dismissed_at && (
+    <Disclosure key={selectedAssignment.id} title="Repeat reports" initiallyOpen={!embedded}>
+      <p>{matchingEvidence.length > 1 && `${matchingEvidence.length} reports share this evidence. `}Acknowledging moves this report and exact repeats to History. Changed evidence returns to Needs you.</p>
+      {repeatApprovalPending && <p>Decide the pending approval before acknowledging these reports.</p>}
+      <button className="border border-neutral-600 p-3 disabled:opacity-50" disabled={attention.isPending || (!selectedAssignment.attention_seen && repeatApprovalPending)} onClick={() => attention.mutate({ item: selectedAssignment, active: !selectedAssignment.attention_seen })}>{selectedAssignment.attention_seen ? 'Restore identical reports to attention' : matchingEvidence.length > 1 ? 'Acknowledge identical reports' : 'Acknowledge report and future repeats'}</button>
+      {attention.error && <p role="alert">{attention.error.message}</p>}
+    </Disclosure>
+  )
   const laneItems = assignments.filter(item => workLane(item, pendingApprovalIds.has(item.id)) === lane)
   const groups = view === 'assignments' && lane === 'needs-you' ? decisionQueue.groups : groupWork(laneItems)
 
@@ -362,16 +371,10 @@ export function WorkBoard({
       </section>}
 
       {inspectorOpen && <aside ref={inspectorRef} tabIndex={-1} aria-label={view === 'assignments' ? creatingAssignment ? 'New work' : 'Selected work' : 'Handoff details'} className="min-h-0 min-w-0 bg-neutral-950 outline-none lg:overflow-y-auto">
-        {view === 'assignments' && selectedAssignment?.attention_key && !selectedAssignment.dismissed_at && <section aria-label="Attention decision" className="m-4 space-y-3 border border-neutral-700 p-4 text-sm">
-          <h3>{selectedAssignment.attention_seen ? 'Acknowledged repeat' : 'Attention decision'}</h3>
-          <p>{matchingEvidence.length} record(s) have identical evidence and scope from the same agent. Acknowledgement moves these and future exact repeats to History. It does not accept output, start work, or approve permissions. Changed evidence returns to Needs you.</p>
-          {matchingEvidence.some(item => pendingApprovalIds.has(item.id)) && <p>Pending approval must be decided separately. Acknowledgement is blocked.</p>}
-          <button className="border border-neutral-600 p-3 disabled:opacity-50" disabled={attention.isPending || (!selectedAssignment.attention_seen && matchingEvidence.some(item => pendingApprovalIds.has(item.id)))} onClick={() => attention.mutate({ item: selectedAssignment, active: !selectedAssignment.attention_seen })}>{selectedAssignment.attention_seen ? 'Restore identical reports to attention' : 'Acknowledge identical reports'}</button>
-          {attention.error && <p role="alert">{attention.error.message}</p>}
-        </section>}
         {view === 'assignments' ? (
           selectedAssignment ? (
             <AssignmentDetails
+              repeatReports={repeatReports}
               summaryVisible={embedded && selectedAssignment.id === initialAssignmentId}
               onOpenAssignment={openAssignment}
               assignment={selectedAssignment}
@@ -527,6 +530,7 @@ function AssignmentForm({ agents, draft, pending, error, onChange, onSubmit, onC
 }
 
 interface AssignmentDetailsProps {
+  repeatReports: React.ReactNode
   summaryVisible: boolean
   onOpenAssignment: (id: string) => void
   assignment: Assignment
@@ -552,7 +556,7 @@ interface AssignmentDetailsProps {
   onRemove: () => void
 }
 
-function AssignmentDetails({ summaryVisible, assignment, agent, agentName, workspace, writes, repo, isRunning, isRemoving, isRequestingWorkspace, isApprovingWorkspace, isApprovingWrite, isRejectingWrite, hasHandoff, error, onRun, onHandoff, onRequestWorkspace, onApproveWorkspace, onApproveWrite, onRejectWrite, onRemove, onOpenAssignment }: AssignmentDetailsProps) {
+function AssignmentDetails({ repeatReports, summaryVisible, assignment, agent, agentName, workspace, writes, repo, isRunning, isRemoving, isRequestingWorkspace, isApprovingWorkspace, isApprovingWrite, isRejectingWrite, hasHandoff, error, onRun, onHandoff, onRequestWorkspace, onApproveWorkspace, onApproveWrite, onRejectWrite, onRemove, onOpenAssignment }: AssignmentDetailsProps) {
   const runnable = assignment.status === 'queued' || assignment.status === 'failed'
   const gitEnabled = agent?.tools.includes('Git workspace') ?? false
   const workspaceWrites = workspace ? writes.filter(item => item.workspace_id === workspace.id) : []
@@ -578,6 +582,7 @@ function AssignmentDetails({ summaryVisible, assignment, agent, agentName, works
       {assignment.status === 'completed' && assignment.result.trim() && (assignment.dismissed_at || assignment.attention_seen
         ? <Disclosure key={`optional-review-${assignment.id}`} title="Output verdict and optional review"><ArtifactReview key={assignment.id} assignment={assignment} /></Disclosure>
         : <ArtifactReview key={assignment.id} assignment={assignment} />)}
+      {repeatReports}
       <Disclosure key={`brief-${assignment.id}`} title="Assignment brief" initiallyOpen={!summaryVisible}>
         {summaryVisible && <TextBlock label="Assigned to" value={agentName} />}
         <TextBlock label="Objective" value={assignment.objective} />
