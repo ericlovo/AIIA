@@ -69,6 +69,11 @@
       "kind": "consulting",
       "no_repo": true,
       "status_note": ""
+    },
+    {
+      "id": "gci",
+      "name": "GCI",
+      "code": "GCI"
     }
   ]
 }

@@ -627,7 +627,8 @@ function NodeInspector({ node, onClose, onOpenAssignment, onConnect, runningAssi
       {assignment && <div className="mt-3 text-[9px] font-semibold tracking-[0.16em] uppercase text-white/35">{assignment.status} · {assignment.priority} priority</div>}
       {assignment?.id === assignmentRunTargetId && runError && <div className="mt-3 border border-red-900/60 bg-red-950/40 px-3 py-2 text-xs text-red-300">{runError}</div>}
       <div className="mt-4 flex flex-wrap gap-2">
-        {runnable && <button type="button" disabled={isRunning} onClick={() => { void onRunAssignment(assignment.id).catch(() => undefined) }} className="bg-amber-300 px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-neutral-950 disabled:cursor-wait disabled:opacity-50">{isRunning ? 'Mini working' : assignment.status === 'failed' ? 'Retry assignment' : 'Run assignment'}</button>}
+        {assignment?.run_ticket && <p role="status">Queued to run</p>}
+        {runnable && !assignment?.run_ticket && <button type="button" disabled={isRunning} onClick={() => { void onRunAssignment(assignment.id).catch(() => undefined) }} className="bg-amber-300 px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-neutral-950 disabled:cursor-wait disabled:opacity-50">{isRunning ? 'Mini working' : assignment.status === 'failed' ? 'Retry assignment' : 'Run assignment'}</button>}
         {assignment && <button type="button" onClick={() => onOpenAssignment(assignment.id)} className="bg-cyan-300 px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-neutral-950">Open work</button>}
         {assignment?.status === 'completed' && assignment.result && <button type="button" onClick={() => onConnect(assignment.id)} className="border border-fuchsia-400/50 px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-fuchsia-200 hover:border-fuchsia-200">Connect handoff</button>}
       </div>

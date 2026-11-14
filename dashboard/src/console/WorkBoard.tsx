@@ -22,8 +22,10 @@ import {
   type RepositoryResource,
 } from '../lib/api'
 import { AgentPicker } from './AgentPicker'
+import { GradientButton } from '../components/kokonut/GradientButton'
 import { assignmentLabel, assignmentOrigin, assignmentNextAction, reviewLabel } from './assignmentReview'
 import { formatRoute, type StudioView } from './studioRoute'
+import { MeetingScope } from './ClientMeetings'
 import { PageHeader } from './PageHeader'
 import { replaceRoute } from './useStudioRoute'
 
@@ -55,6 +57,9 @@ interface WorkBoardProps {
   agents: Agent[]
   view: Extract<StudioView, 'assignments' | 'handoffs'>
   onRouteHandoff: (sourceId: string, targetId: string) => void
+  embedded?: boolean
+  initialClientId?: string
+  initialMeetingId?: string
   initialAgentId?: string
   initialAssignmentId?: string
   initialHandoffSourceId?: string
@@ -65,6 +70,9 @@ export function WorkBoard({
   agents,
   view,
   onRouteHandoff,
+  embedded = false,
+  initialClientId = '',
+  initialMeetingId = '',
   initialAgentId = '',
   initialAssignmentId = '',
   initialHandoffSourceId = '',
@@ -112,20 +120,20 @@ export function WorkBoard({
   const [visibleGroups, setVisibleGroups] = useState(50)
   const [lane, setLane] = useState<WorkLane>('needs-you')
   const [selectedAssignmentId, setSelectedAssignmentId] = useState<string | null>(initialAssignmentId || null)
-  const [creatingAssignment, setCreatingAssignment] = useState(Boolean(initialAgentId) && !initialAssignmentId)
+  const [creatingAssignment, setCreatingAssignment] = useState(Boolean(initialAgentId || initialClientId) && !initialAssignmentId)
   const [selectedHandoffId, setSelectedHandoffId] = useState<string | null>(null)
   // Selecting inside the view rewrites the address without a history entry, so
   // a selected assignment can be copied or reloaded. The first render is the
   // arrival itself, which already matches the address, so it is left alone.
   const syncedSelection = useRef(selectedAssignmentId)
   useEffect(() => {
-    if (view !== 'assignments' || syncedSelection.current === selectedAssignmentId) return
+    if (embedded || view !== 'assignments' || syncedSelection.current === selectedAssignmentId) return
     syncedSelection.current = selectedAssignmentId
     replaceRoute(selectedAssignmentId ? { view: 'assignments', assignmentId: selectedAssignmentId } : { view: 'assignments' })
-  }, [view, selectedAssignmentId])
+  }, [embedded, view, selectedAssignmentId])
   const [assignmentDraft, setAssignmentDraft] = useState<AssignmentDefinition>(() => ({
     ...EMPTY_ASSIGNMENT,
-    agent_id: initialAgentId,
+    agent_id: initialAgentId, client_id: initialClientId, meeting_id: initialMeetingId,
   }))
   const [handoffDraft, setHandoffDraft] = useState<HandoffDefinition>(() => ({
     ...EMPTY_HANDOFF,
@@ -141,14 +149,15 @@ export function WorkBoard({
   })
   const selectedAssignment = selectedRow && !selectedRow.summary ? selectedRow : detail.data?.assignment ?? null
   const selectedHandoff = handoffs.find(item => item.id === selectedHandoffId) ?? null
+  const downstream = assignments.find(item => item.id === selectedHandoff?.target_assignment_id)
   const inspectedAssignmentId = selectedAssignment?.id
   useEffect(() => {
-    if (view !== 'assignments' || (!creatingAssignment && !inspectedAssignmentId)) return
+    if (embedded || view !== 'assignments' || (!creatingAssignment && !inspectedAssignmentId)) return
     inspectorRef.current?.focus({ preventScroll: true })
     if (window.matchMedia('(max-width:1023px)').matches) {
       inspectorRef.current?.scrollIntoView({ block: 'start' })
     }
-  }, [view, creatingAssignment, inspectedAssignmentId])
+  }, [embedded, view, creatingAssignment, inspectedAssignmentId])
 
   const createAssignment = useMutation({
     mutationFn: api.createAssignment,
@@ -160,7 +169,7 @@ export function WorkBoard({
     },
   })
   const runAssignment = useMutation({
-    mutationFn: api.runAssignment,
+    mutationFn: api.enqueueAssignment,
     onSettled: () => {
       qc.invalidateQueries({ queryKey: ['agents'] })
       qc.invalidateQueries({ queryKey: ['assignments'] })
@@ -214,7 +223,7 @@ export function WorkBoard({
 
   const completedAssignments = assignments.filter(item => item.status === 'completed' && (item.has_result ?? Boolean(item.result)))
   const runningCount = assignments.filter(item => item.status === 'running').length
-  const manualStartCount = assignments.filter(item => item.status === 'queued').length
+  const manualStartCount = assignments.filter(item => item.status === 'queued' && !item.run_ticket).length
 
   function agentName(agentId: string) {
     return agents.find(agent => agent.id === agentId)?.name ?? 'Removed agent'
@@ -253,17 +262,18 @@ export function WorkBoard({
   const inspectorOpen = view === 'handoffs' || creatingAssignment || Boolean(selectedAssignmentId)
 
   return (
-    <main className={`grid h-full min-h-0 max-h-full auto-rows-max grid-cols-1 overflow-y-auto bg-neutral-950 lg:grid-rows-[minmax(0,1fr)] lg:overflow-hidden [&_button]:min-h-11 [&_button]:min-w-11 [&_summary]:min-h-11 [&_summary]:tracking-normal ${inspectorOpen ? 'lg:grid-cols-[minmax(0,1fr)_minmax(390px,480px)]' : ''}`}>
-      <section className={`flex min-w-0 flex-col border-neutral-900 lg:overflow-hidden ${inspectorOpen ? 'border-b lg:border-r lg:border-b-0' : ''}`}>
+    <div className={embedded ? "inline-inspector" : `work-board grid h-full min-h-0 max-h-full auto-rows-max grid-cols-1 overflow-y-auto bg-neutral-950 lg:grid-rows-[minmax(0,1fr)] lg:overflow-hidden [&_button]:min-h-11 [&_button]:min-w-11 [&_summary]:min-h-11 [&_summary]:tracking-normal ${inspectorOpen ? 'lg:grid-cols-[minmax(0,1fr)_minmax(390px,480px)]' : ''}`}>
+      {!embedded && <section className={`flex min-w-0 flex-col border-neutral-900 lg:overflow-hidden ${inspectorOpen ? 'border-b lg:border-r lg:border-b-0' : ''}`}>
         <PageHeader title={view === 'assignments' ? 'Work' : 'Handoff ledger'} meta={<>
           <span>{assignments.length} assignments</span>
           <span>{manualStartCount} awaiting manual start</span>
           <span>{runningCount} running</span>
+          {assignments.some(item => item.run_ticket) && <span>{assignments.filter(item => item.run_ticket).length} in execution queue</span>}
           {view === 'handoffs' && <span>{handoffs.length} handoffs</span>}
         </>} />
 
         <div className="overflow-y-auto px-5 py-6 sm:px-7 lg:min-h-0 lg:flex-1">
-          <div className="mx-auto max-w-5xl">
+          <div className="work-list mx-auto max-w-6xl">
             <div className="mb-4 flex items-center justify-between gap-4">
               <div className="text-xs font-semibold text-neutral-400">
                 {view === 'assignments' ? `${groups.length} ${groups.length === 1 ? 'group' : 'groups'} · ${laneItems.length} ${laneItems.length === 1 ? 'record' : 'records'}` : 'Artifact routes'}
@@ -279,24 +289,6 @@ export function WorkBoard({
               </button>
             </div>
 
-            {view === 'assignments' && <p className="mt-4 text-sm leading-relaxed text-neutral-300">Start with Needs you. Open a record to see the decision and its evidence. Reviewing output never grants Git permissions. History keeps completed reviews and dismissed records.</p>}
-            {view === 'assignments' && <section className="my-4 space-y-3 border border-neutral-800 p-3 text-sm">
-              <button onClick={() => setPreviewOpen(!previewOpen)} aria-expanded={previewOpen}>Preview suspected test records</button>
-              {previewOpen && <div className="space-y-3">
-                {fixturePreview.isLoading && <p>Loading preview…</p>}
-                {fixturePreview.error && <p role="alert">Could not load classification preview.</p>}
-                {fixturePreview.data && <>
-                  <p>{fixturePreview.data.candidates.length} suspected test records · {fixturePreview.data.blocked.length} blocked by pending approvals</p>
-                  <p>{fixturePreview.data.warning}</p>
-                  <p>Preview only. Original records, verdicts and history remain unchanged. No classification action is enabled.</p>
-                  <details><summary>Inspect candidate IDs and evidence</summary>
-                    {fixturePreview.data.candidates.map(item => <div key={item.id} className="break-words border-t border-neutral-800 py-3"><button onClick={() => openAssignment(item.id)}>{item.title} · {item.id}</button><p>{item.result}</p><p>{item.reason}</p><p className="break-all text-xs">Fingerprint: {item.fingerprint}</p></div>)}
-                  </details>
-                  {fixturePreview.data.blocked.map(item => <p key={item.id}>Approval protected: {item.title} · {item.id}</p>)}
-                </>}
-              </div>}
-            </section>}
-
             {view === 'assignments' && decisionQueue.error && <p role="alert" className="py-3 text-sm text-red-300">Could not refresh all decisions or permissions. Counts may be stale; no all-clear is available.</p>}
             {assignmentsError && <p role="alert" className="py-6 text-sm text-red-300">Could not refresh the backlog. Counts may be stale; refresh before deciding.</p>}
             {loading && <p role="status" className="py-6 text-sm text-neutral-400">Loading work...</p>}
@@ -310,13 +302,12 @@ export function WorkBoard({
               </button>
             )}
 
-            {view === 'assignments' && <IdeaAttention />}
             {view === 'assignments' && <nav aria-label="Work views" className="mb-5 flex flex-wrap gap-2">
               {([['needs-you', 'Needs you'], ['working', 'Working'], ['history', 'History']] as const).map(([value, label]) => <button key={value} aria-pressed={lane === value} onClick={() => { setLane(value); setVisibleGroups(50) }} className={`border px-3 py-2 text-sm ${lane === value ? 'border-cyan-400 text-cyan-200' : 'border-neutral-700 text-neutral-300'}`}>
                 {label} ({value === 'needs-you' ? decisionQueue.error ? 'Unavailable' : decisionQueue.loading ? 'Loading' : decisionQueue.total : assignments.filter(item => workLane(item, pendingApprovalIds.has(item.id)) === value).length})
               </button>)}
             </nav>}
-            {view === 'assignments' && lane === 'needs-you' && decisionQueue.savedIdeas > 0 && <p className="mb-4 text-sm text-neutral-300"><a className="inline-flex min-h-11 items-center text-cyan-200 underline" href={formatRoute({ view: 'inbox', source: 'all' })}>Review saved ideas ({decisionQueue.savedIdeas})</a> · Decide what to keep as memory. This does not approve execution.</p>}
+            {view === 'assignments' && lane === 'needs-you' && decisionQueue.savedIdeas > 0 && <p className="mb-4 text-sm text-neutral-300"><a className="inline-flex min-h-11 items-center text-cyan-200 underline" href={formatRoute({ view: 'inbox', source: 'all' })}>Review saved ideas ({decisionQueue.savedIdeas})</a></p>}
             {view === 'assignments' && lane === 'needs-you' && decisionQueue.missingApprovalIds.length > 0 && <p role="alert" className="mb-4 text-sm text-amber-200">Permission requests reference unavailable work: {decisionQueue.missingApprovalIds.join(', ')}. These approvals remain pending; do not proceed until their records are available.</p>}
             {view === 'assignments' ? (
               <div className="space-y-3">
@@ -348,9 +339,27 @@ export function WorkBoard({
                 ))}
               </div>
             )}
+            {view === 'assignments' && <details className="my-4 rounded-xl border border-neutral-700 p-3 text-sm">
+              <summary className="cursor-pointer">Classification and verification tools</summary>
+              <IdeaAttention />
+              <button onClick={() => setPreviewOpen(!previewOpen)} aria-expanded={previewOpen}>Preview suspected test records</button>
+              {previewOpen && <div className="space-y-3">
+                {fixturePreview.isLoading && <p>Loading preview…</p>}
+                {fixturePreview.error && <p role="alert">Could not load classification preview.</p>}
+                {fixturePreview.data && <>
+                  <p>{fixturePreview.data.candidates.length} suspected test records · {fixturePreview.data.blocked.length} blocked by pending approvals</p>
+                  <p>{fixturePreview.data.warning}</p>
+                  <p>Preview only. Original records, verdicts and history remain unchanged. No classification action is enabled.</p>
+                  <details><summary>Inspect candidate IDs and evidence</summary>
+                    {fixturePreview.data.candidates.map(item => <div key={item.id} className="break-words border-t border-neutral-800 py-3"><button onClick={() => openAssignment(item.id)}>{item.title} · {item.id}</button><p>{item.result}</p><p>{item.reason}</p><p className="break-all text-xs">Fingerprint: {item.fingerprint}</p></div>)}
+                  </details>
+                  {fixturePreview.data.blocked.map(item => <p key={item.id}>Approval protected: {item.title} · {item.id}</p>)}
+                </>}
+              </div>}
+            </details>}
           </div>
         </div>
-      </section>
+      </section>}
 
       {inspectorOpen && <aside ref={inspectorRef} tabIndex={-1} aria-label={view === 'assignments' ? creatingAssignment ? 'New work' : 'Selected work' : 'Handoff details'} className="min-h-0 min-w-0 bg-neutral-950 outline-none lg:overflow-y-auto">
         {view === 'assignments' && selectedAssignment?.attention_key && !selectedAssignment.dismissed_at && <section aria-label="Attention decision" className="m-4 space-y-3 border border-neutral-700 p-4 text-sm">
@@ -363,6 +372,7 @@ export function WorkBoard({
         {view === 'assignments' ? (
           selectedAssignment ? (
             <AssignmentDetails
+              summaryVisible={embedded && selectedAssignment.id === initialAssignmentId}
               onOpenAssignment={openAssignment}
               assignment={selectedAssignment}
               agent={agents.find(item => item.id === selectedAssignment.agent_id) ?? null}
@@ -378,7 +388,7 @@ export function WorkBoard({
               isRejectingWrite={rejectWrite.isPending}
               hasHandoff={handoffs.some(item => item.source_assignment_id === selectedAssignment.id || item.target_assignment_id === selectedAssignment.id)}
               error={runAssignment.error ?? removeAssignment.error ?? requestWorkspace.error ?? approveWorkspace.error ?? approveWrite.error ?? rejectWrite.error}
-              onRun={() => runAssignment.mutate(selectedAssignment.id)}
+              onRun={() => runAssignment.mutate(selectedAssignment)}
               onHandoff={() => prepareHandoff(selectedAssignment)}
               onRequestWorkspace={() => requestWorkspace.mutate(selectedAssignment.id)}
               onApproveWorkspace={workspaceId => approveWorkspace.mutate(workspaceId)}
@@ -402,13 +412,13 @@ export function WorkBoard({
         ) : selectedHandoff ? (
           <HandoffDetails
             handoff={selectedHandoff}
-            assignment={assignments.find(item => item.id === selectedHandoff.target_assignment_id) ?? null}
+            assignment={downstream ?? null}
             fromAgent={agentName(selectedHandoff.from_agent_id)}
             toAgent={agentName(selectedHandoff.to_agent_id)}
             isRunning={runAssignment.isPending}
             isRemoving={removeHandoff.isPending}
             error={runAssignment.error ?? removeHandoff.error}
-            onRun={() => runAssignment.mutate(selectedHandoff.target_assignment_id)}
+            onRun={() => downstream && runAssignment.mutate(downstream)}
             onRemove={() => removeHandoff.mutate(selectedHandoff.id)}
           />
         ) : (
@@ -423,7 +433,7 @@ export function WorkBoard({
           />
         )}
       </aside>}
-    </main>
+    </div>
   )
 }
 
@@ -436,7 +446,7 @@ function AssignmentCard({ assignment, agentName, selected, onSelect, approvalPen
           <div className="break-words text-base font-medium text-white">{assignment.title}</div>
           <div className="mt-1 break-words text-xs text-cyan-300/80">{agentName}</div>
         </div>
-        <StatusLabel status={assignment.status} />
+        {assignment.run_ticket ? <span role="status">Queued to run</span> : <StatusLabel status={assignment.status} />}
       </div>
       <p className="mt-4 line-clamp-2 break-words text-sm leading-relaxed text-neutral-400">{assignment.objective}</p>
       <div className="mt-5 flex flex-wrap items-center justify-between gap-2 text-xs text-neutral-400">
@@ -495,6 +505,7 @@ function AssignmentForm({ agents, draft, pending, error, onChange, onSubmit, onC
         <AgentPicker agents={agents} value={draft.agent_id} onChange={agent_id => onChange({ ...draft, agent_id })} placeholder="Choose an agent" />
       </Field>
       <Field label="Objective"><textarea value={draft.objective} onChange={event => onChange({ ...draft, objective: event.target.value })} rows={5} placeholder="Return the five highest-leverage integration points." /></Field>
+      <MeetingScope draft={draft} onChange={onChange} />
       <Disclosure title="Context, success criteria and priority">
         <Field label="Context"><textarea value={draft.context} onChange={event => onChange({ ...draft, context: event.target.value })} rows={4} placeholder="Relevant decisions, constraints, or source material." /></Field>
         <Field label="Success criteria"><textarea value={draft.success_criteria} onChange={event => onChange({ ...draft, success_criteria: event.target.value })} rows={3} placeholder="What must be true for this work to be done?" /></Field>
@@ -516,6 +527,7 @@ function AssignmentForm({ agents, draft, pending, error, onChange, onSubmit, onC
 }
 
 interface AssignmentDetailsProps {
+  summaryVisible: boolean
   onOpenAssignment: (id: string) => void
   assignment: Assignment
   agent: Agent | null
@@ -540,31 +552,34 @@ interface AssignmentDetailsProps {
   onRemove: () => void
 }
 
-function AssignmentDetails({ assignment, agent, agentName, workspace, writes, repo, isRunning, isRemoving, isRequestingWorkspace, isApprovingWorkspace, isApprovingWrite, isRejectingWrite, hasHandoff, error, onRun, onHandoff, onRequestWorkspace, onApproveWorkspace, onApproveWrite, onRejectWrite, onRemove, onOpenAssignment }: AssignmentDetailsProps) {
+function AssignmentDetails({ summaryVisible, assignment, agent, agentName, workspace, writes, repo, isRunning, isRemoving, isRequestingWorkspace, isApprovingWorkspace, isApprovingWrite, isRejectingWrite, hasHandoff, error, onRun, onHandoff, onRequestWorkspace, onApproveWorkspace, onApproveWrite, onRejectWrite, onRemove, onOpenAssignment }: AssignmentDetailsProps) {
   const runnable = assignment.status === 'queued' || assignment.status === 'failed'
   const gitEnabled = agent?.tools.includes('Git workspace') ?? false
   const workspaceWrites = workspace ? writes.filter(item => item.workspace_id === workspace.id) : []
   const pendingWriteCount = workspaceWrites.filter(item => item.status === 'pending').length
   const workspaceNeedsAttention = workspace?.status === 'pending' || workspace?.status === 'failed' || pendingWriteCount > 0
   return (
-    <Panel title={assignment.title} eyebrow="Decision and evidence">
+    <Panel title={summaryVisible ? undefined : assignment.title} eyebrow="Decision and evidence">
       {isTestFixture(assignment) && <p className="text-sm text-amber-200">Test fixture · Preserved for reference. Any pending approval still needs your decision.</p>}
-      <div className="flex flex-wrap items-center justify-between gap-3">
+      {!summaryVisible && <div className="flex flex-wrap items-center justify-between gap-3">
         <span className="min-w-0 break-words text-sm text-neutral-300">{agentName}</span>
-        <StatusLabel status={assignment.status} />
-      </div>
+        {assignment.run_ticket ? <span role="status">Queued to run</span> : <StatusLabel status={assignment.status} />}
+      </div>}
+      {assignment.client_id && <a className="text-sm text-cyan-200 underline" href={formatRoute({ view: 'meetings', clientId: assignment.client_id, meetingId: assignment.meeting_id })}>Open shared {assignment.meeting_id ? 'call notes' : 'client meetings'}</a>}
       <section aria-label="Next action" className="space-y-2 border-l-2 border-cyan-600 pl-3">
         <h3 className="text-xs font-semibold text-cyan-200">Next action</h3>
         <p className="text-sm leading-relaxed text-neutral-300">{assignmentNextAction(assignment, workspace?.status === 'pending', pendingWriteCount, isTestFixture(assignment))}</p>
       </section>
       {error && <ErrorNotice error={error} />}
-      {runnable && !assignment.dismissed_at && <button disabled={isRunning} onClick={onRun} className="min-h-11 w-full bg-white px-3 py-2.5 text-sm font-medium text-neutral-950 disabled:cursor-not-allowed disabled:opacity-40">{isRunning ? 'Mini is working…' : assignment.status === 'failed' ? 'Retry assignment' : 'Run assignment'}</button>}
+      {assignment.queue_error && <p role="alert">Queue request stopped · {assignment.queue_error}</p>}
+      {runnable && !assignment.run_ticket && !assignment.dismissed_at && <GradientButton disabled={isRunning} onClick={onRun} className="w-full">{isRunning ? 'Queueing…' : assignment.status === 'failed' ? 'Retry assignment' : 'Run assignment'}</GradientButton>}
       {assignment.error && <section aria-label="Failure evidence" className="border-l-2 border-red-500 bg-red-950/20 p-3 text-sm text-red-200"><h3 className="font-medium">What went wrong</h3><p className="mt-2 whitespace-pre-wrap break-words">{assignment.error}</p></section>}
       {assignment.result && <TextBlock label="Work product" value={assignment.result} />}
       {assignment.status === 'completed' && assignment.result.trim() && (assignment.dismissed_at || assignment.attention_seen
         ? <Disclosure key={`optional-review-${assignment.id}`} title="Output verdict and optional review"><ArtifactReview key={assignment.id} assignment={assignment} /></Disclosure>
         : <ArtifactReview key={assignment.id} assignment={assignment} />)}
-      <Disclosure key={`brief-${assignment.id}`} title="Assignment brief" initiallyOpen>
+      <Disclosure key={`brief-${assignment.id}`} title="Assignment brief" initiallyOpen={!summaryVisible}>
+        {summaryVisible && <TextBlock label="Assigned to" value={agentName} />}
         <TextBlock label="Objective" value={assignment.objective} />
         {assignment.success_criteria && <TextBlock label="Success criteria" value={assignment.success_criteria} />}
         {assignment.context && <TextBlock label="Context" value={assignment.context} muted />}
@@ -801,14 +816,15 @@ function HandoffDetails({ handoff, assignment, fromAgent, toAgent, isRunning, is
       {assignment && <OutputRecovery key={`recovery-${assignment.id}`} assignment={assignment} busy={isRunning} />}
       {assignment && <AssignmentHistory key={`history-${assignment.id}`} assignmentId={assignment.id} />}
       {error && <ErrorNotice error={error} />}
-      {runnable && <button disabled={isRunning} onClick={onRun} className="w-full bg-white px-3 py-2.5 text-sm font-medium text-neutral-950 disabled:cursor-not-allowed disabled:opacity-40">{isRunning ? 'Mini is working…' : assignment?.status === 'failed' ? 'Retry downstream work' : 'Run downstream assignment'}</button>}
+      {assignment?.run_ticket && <p role="status">Queued to run</p>}
+      {runnable && !assignment?.run_ticket && <button disabled={isRunning} onClick={onRun} className="w-full bg-white px-3 py-2.5 text-sm font-medium text-neutral-950 disabled:cursor-not-allowed disabled:opacity-40">{isRunning ? 'Mini is working…' : assignment?.status === 'failed' ? 'Retry downstream work' : 'Run downstream assignment'}</button>}
       <button disabled={isRemoving || handoff.status === 'running'} onClick={onRemove} className="w-full px-3 py-2 text-xs text-neutral-600 hover:text-red-300 disabled:opacity-30">Unlink handoff</button>
     </Panel>
   )
 }
 
-function Panel({ eyebrow, title, actions, children }: { eyebrow: string; title: string; actions?: React.ReactNode; children: React.ReactNode }) {
-  return <><div className="flex items-start justify-between gap-3 border-b border-neutral-900 px-5 py-5 sm:px-6"><div className="min-w-0"><div className="text-xs font-semibold text-neutral-400">{eyebrow}</div><div role="heading" aria-level={2} className="mt-2 break-words text-lg text-white">{title}</div></div>{actions}</div><div className="space-y-5 px-5 py-6 sm:px-6">{children}</div></>
+function Panel({ eyebrow, title, actions, children }: { eyebrow: string; title?: string; actions?: React.ReactNode; children: React.ReactNode }) {
+  return <>{title !== undefined && <div className="flex items-start justify-between gap-3 border-b border-neutral-900 px-5 py-5 sm:px-6"><div className="min-w-0"><div className="text-xs font-semibold text-neutral-400">{eyebrow}</div><div role="heading" aria-level={2} className="mt-2 break-words text-lg text-white">{title}</div></div>{actions}</div>}<div className="space-y-5 px-5 py-6 sm:px-6">{children}</div></>
 }
 
 function Disclosure({ title, initiallyOpen = false, children }: { title: string; initiallyOpen?: boolean; children: React.ReactNode }) {

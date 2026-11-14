@@ -9,7 +9,9 @@ test('every route survives a round trip through the URL', () => {
     { view: 'inbox' }, { view: 'inbox', source: 'slack' }, { view: 'inbox', source: 'loops' },
     { view: 'inbox', source: 'signals' }, { view: 'inbox', source: 'all' },
     { view: 'jobs' }, { view: 'projects' }, { view: 'history' }, { view: 'history', attention: true },
-    { view: 'home' }, { view: 'bd' },
+    { view: 'home' }, { view: 'bd' }, { view: 'meetings' },
+    { view: 'meetings', clientId: 'gci', meetingId: 'call-1' },
+    { view: 'assignments', clientId: 'smart-medical', meetingId: 'call-2' },
     { view: 'switchboard' }, { view: 'switchboard', taskId: 'nightly-sync' }, { view: 'activity' },
     { view: 'agents' }, { view: 'agents', agentId: 'a/b c' }, { view: 'assignments' },
     { view: 'assignments', assignmentId: 'asg-1' }, { view: 'assignments', agentId: 'agent-2' },
@@ -24,7 +26,7 @@ test('every route survives a round trip through the URL', () => {
 })
 
 test('paths are the names people see, not internal view ids', () => {
-  assert.equal(formatRoute(DEFAULT_ROUTE), '#/desk')
+  assert.equal(formatRoute(DEFAULT_ROUTE), '#/note')
   assert.equal(formatRoute({ view: 'record', receiptId: 105 }), '#/record/105')
   assert.equal(formatRoute({ view: 'home' }), '#/note')
   assert.equal(formatRoute({ view: 'bots' }), '#/bots')

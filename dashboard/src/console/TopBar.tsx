@@ -29,7 +29,7 @@ export function TopBar() {
         </div>
 
         {/* Status pills */}
-        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs">
+        <div className="service-health flex flex-wrap items-center gap-x-4 gap-y-1 text-xs">
           <Pill
             dot={brainState === 'up' ? 'green' : brainState === 'down' ? 'red' : 'gray'}
             label={brainState === 'loading' ? 'checking brain…' : brainState === 'up' ? 'brain online' : brainState === 'unknown' ? 'brain status unavailable' : 'brain down'}

@@ -9,6 +9,9 @@ export interface MorningLine {
   kind: 'product' | 'customer' | string
   state: MorningState | string
   note: string
+  incomplete?: boolean
+  agent_ids?: string[]
+  github?: string
   waiting?: string
   extra?: string
   target?: string
@@ -36,12 +39,12 @@ export interface MorningNotePayload {
 
 export const STATE_LABEL: Record<string, string> = {
   shipped: 'Shipped',
-  clean: 'Shipped',
+  clean: 'Clear',
   blocked: 'Blocked',
   waiting: 'Waiting on you',
   countdown: 'Coming up',
   unmapped: 'Not mapped',
-  unmounted: 'Not mapped',
+  unmounted: 'Checkout unavailable',
 }
 
 const COUNT_WORDS = ['No', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine', 'Ten']

@@ -33,7 +33,7 @@ export function attentionAssignments(assignments: Assignment[], agentId = ''): A
   const rank = (item: Assignment) => item.status === 'failed' ? 0 : item.review_status === 'rejected' ? 1 : 2
   const priority = { urgent: 0, high: 1, normal: 2, low: 3 }
   return assignments.filter(item => (!agentId || item.agent_id === agentId)
-    && !item.dismissed_at
+    && !item.dismissed_at && !item.run_ticket
     && (item.status === 'failed' || (item.status === 'completed' && (!(item.has_result ?? Boolean(item.result.trim())) || item.review_status !== 'accepted'))))
     .sort((a, b) => rank(a) - rank(b) || priority[a.priority] - priority[b.priority]
       || a.created_at.localeCompare(b.created_at) || a.id.localeCompare(b.id))
@@ -83,6 +83,7 @@ export function bulkDismissError(message: string, titleOf: (id: string) => strin
 }
 
 export function assignmentNextAction(assignment: Assignment, workspacePending = false, pendingWrites = 0, fixture = false) {
+  if (assignment.run_ticket) return 'In the Mini queue. You can move on while this waits for its turn.'
   if (workspacePending) return 'Review the Git workspace request below. Accepting output does not approve this request.'
   if (pendingWrites) return 'Review the pending Git writes below. Each write needs its own approval.'
   if (assignment.dismissed_at) return 'Saved in History. No decision is requested. The original evidence and verdict are preserved; restore to attention if it needs another look.'

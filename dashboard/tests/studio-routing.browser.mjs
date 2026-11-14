@@ -1,6 +1,6 @@
 // Studio routing: every view is an address. Deep links open the right record,
 // back and forward walk the views, selection inside a view keeps the address
-// current without adding history, and unknown addresses land on Desk.
+// current without adding history, and unknown addresses land on Home.
 //
 // Every API response and the Studio WebSocket are intercepted with synthetic
 // data; nothing is written to a real Brain or Command Center.
@@ -110,7 +110,7 @@ try {
   for (const width of [320, 390, 653, 1440]) {
     const { context, page, pageErrors } = await open('#/today', { width })
     await heading(page, 'Today').waitFor()
-    assert.deepEqual(await nav(page).getByRole('link').allTextContents(), ['Desk', 'Research', 'Record'])
+    assert.deepEqual(await nav(page).getByRole('link').allTextContents(), ['Home', 'Work', 'Research', 'Bots'])
     const tools = nav(page).locator('summary[aria-label="Studio tools"]')
     await tools.click()
     await nav(page).getByRole('link', { name: 'Signals', exact: true }).waitFor()
@@ -137,16 +137,18 @@ try {
   // 1. Every nav item is a real link to its own address, and one is current.
   {
     const { context, page, pageErrors } = await open()
-    await nav(page).getByRole('link', { name: 'Desk', exact: true }).waitFor()
-    assert.equal(await hash(page), '#/desk', 'an empty address lands on Desk')
+    await nav(page).getByRole('link', { name: 'Home', exact: true }).waitFor()
+    assert.equal(await hash(page), '#/note', 'an empty address lands on Home')
     await openStudioView(page, 'Work')
     await heading(page, 'Work').waitFor()
     assert.equal(await hash(page), '#/assignments')
-    assert.deepEqual(await nav(page).getByRole('link').allTextContents(), ['Desk', 'Research', 'Record'])
+    assert.deepEqual(await nav(page).getByRole('link').allTextContents(), ['Home', 'Work', 'Research', 'Bots'])
     await nav(page).locator('summary[aria-label="Studio tools"]').click()
     const links = await nav(page).getByRole('link').evaluateAll(items => items.map(item => [item.textContent, item.getAttribute('href'), item.getAttribute('aria-current')]))
     assert.deepEqual(links, [
-      ['Desk', '#/desk', null], ['Research', '#/bd', null], ['Record', '#/record', null], ['Morning note', '#/note', null], ['Bots', '#/bots', null], ['Today', '#/today', null], ['Inbox', '#/inbox', null], ['Jobs', '#/jobs', null], ['Work', '#/assignments', 'page'], ['Projects', '#/projects', null],
+      ['Home', '#/note', null], ['Work', '#/assignments', 'page'], ['Research', '#/bd', null], ['Bots', '#/bots', null],
+      ['Desk', '#/desk', null], ['Record', '#/record', null], ['Today', '#/today', null], ['Inbox', '#/inbox', null],
+      ['Jobs', '#/jobs', null], ['Projects', '#/projects', null], ['Client meetings', '#/meetings', null],
       ['Activity history', '#/history', null], ['Overview', '#/overview', null], ['Agents', '#/agents', null],
       ['Signals', '#/signals', null],
       ['Handoffs', '#/handoffs', null], ['Memory', '#/memory', null], ['Map', '#/map', null],
@@ -207,18 +209,18 @@ try {
     await context.close()
   }
 
-  // 5. Unknown addresses land on Desk and leave no dead entry behind.
+  // 5. Unknown addresses land on Home and leave no dead entry behind.
   {
     const { context, page } = await open('#/nowhere/at/all')
-    await nav(page).getByRole('link', { name: 'Desk', exact: true }).waitFor()
-    await page.waitForFunction(() => window.location.hash === '#/desk')
+    await nav(page).getByRole('link', { name: 'Home', exact: true }).waitFor()
+    await page.waitForFunction(() => window.location.hash === '#/note')
     await openStudioView(page, 'Work')
     await heading(page, 'Work').waitFor()
     await openStudioView(page, 'Map')
     await heading(page, 'Agent control map').waitFor()
     await page.evaluate(() => { window.location.hash = '#/bogus' })
-    await page.waitForFunction(() => window.location.hash === '#/desk')
-    await nav(page).getByRole('link', { name: 'Desk', exact: true }).waitFor()
+    await page.waitForFunction(() => window.location.hash === '#/note')
+    await nav(page).getByRole('link', { name: 'Home', exact: true }).waitFor()
     await page.goBack()
     await heading(page, 'Agent control map').waitFor()
     assert.equal(await hash(page), '#/map', 'the redirect replaces the bad entry, it does not add one')

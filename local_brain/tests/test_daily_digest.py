@@ -786,7 +786,12 @@ def test_checked_in_product_config_has_the_five_defaults():
     assert products[3].holds == (42,)
     assert products[1].drift == ("production", "alumni")
     customers = daily_digest.load_customers()
-    assert [customer.id for customer in customers] == ["trs", "alumni-nations", "smart-medical"]
+    assert [customer.id for customer in customers] == [
+        "trs",
+        "alumni-nations",
+        "smart-medical",
+        "gci",
+    ]
     assert customers[0].code == "TRS" and customers[0].branch == "trs"
     assert customers[1].agents == ("Alumni Nations Research Scout",)
     assert customers[1].phase and customers[1].phase.start == "2026-10-15"

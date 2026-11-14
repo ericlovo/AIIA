@@ -30,6 +30,7 @@ try {
       await route.fulfill({ contentType: 'application/json', body: JSON.stringify(body) })
     })
     await page.goto(`${process.env.STUDIO_URL}#/assignments`)
+    await page.getByText('Classification and verification tools', { exact: true }).click()
     await page.getByRole('button', { name: 'Preview suspected test records' }).click()
     await page.getByText(/230 suspected test records/).waitFor()
     await page.getByRole('button', { name: /Repeated report QA Watch/ }).click()

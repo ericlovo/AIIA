@@ -2241,6 +2241,7 @@ def collect_morning_lines(
     repo_evidence: list[RepoEvidence] | None = None,
     products: Iterable[DigestProduct] | None = None,
     customers: Iterable[DigestCustomer] | None = None,
+    include_reviews: bool = True,
     customer_evidence: list[CustomerEvidence] | None = None,
 ) -> tuple[list[MorningLine], list[MorningLine]]:
     catalog = list(products) if products is not None else load_products()
@@ -2261,7 +2262,7 @@ def collect_morning_lines(
                 product,
                 evidence_by_mount.get(product.mount),
                 paused=paused,
-                review=review,
+                review=review if include_reviews else 0,
                 failed_agents=failed,
             )
         )
@@ -2287,7 +2288,7 @@ def collect_morning_lines(
                 customer,
                 product_evidence=touched,
                 customer_evidence=customer_rows.get(customer.id),
-                review=review,
+                review=review if include_reviews else 0,
                 paused=paused,
                 failed_agents=failed,
                 date=date,
@@ -2656,15 +2657,42 @@ def build_morning_note(
     generated_at: str | None = None,
 ) -> dict[str, Any]:
     catalog = list(products) if products is not None else load_products()
+    roster = list(customers) if customers is not None else load_customers()
     product_lines, customer_lines = collect_morning_lines(
         date=date,
         agents=agents,
         assignments=assignments,
         repo_evidence=repo_evidence,
         products=catalog,
-        customers=customers,
+        customers=roster,
+        include_reviews=False,
         customer_evidence=customer_evidence,
     )
+    product_agents: dict[str, list[str]] = {}
+    customer_agents: dict[str, list[str]] = {}
+    for agent in agents:
+        if not agent.get("id"):
+            continue
+        product = map_agent_to_product(agent, catalog)
+        if product:
+            product_agents.setdefault(product.id, []).append(agent["id"])
+        for customer in map_agent_to_customers(agent, roster):
+            customer_agents.setdefault(customer.id, []).append(agent["id"])
+    repos_by_product = {product.id: product.github for product in catalog}
+
+    evidence = {row.repo_id: row for row in repo_evidence or []}
+    mounts = {product.id: product.mount for product in catalog}
+
+    def status_payload(line, agent_ids, github=""):
+        source = evidence.get(mounts.get(line.id)) if line.kind == "product" else None
+        incomplete = source is not None and not source.complete
+        return {
+            **morning_line_payload(line),
+            "agent_ids": agent_ids,
+            "incomplete": incomplete,
+            "github": github if repos._GITHUB_SLUG.fullmatch(github) else "",
+        }
+
     cards, total = morning_decision_cards(
         inbox_items or [],
         assignments=assignments,
@@ -2676,8 +2704,13 @@ def build_morning_note(
     )
     return {
         "date": date,
-        "products": [morning_line_payload(line) for line in product_lines],
-        "customers": [morning_line_payload(line) for line in customer_lines],
+        "products": [
+            status_payload(line, product_agents.get(line.id, []), repos_by_product.get(line.id, ""))
+            for line in product_lines
+        ],
+        "customers": [
+            status_payload(line, customer_agents.get(line.id, [])) for line in customer_lines
+        ],
         "decisions": cards,
         "needs_you_total": total,
         "failure": slack_failure_line(tasks=tasks, assignments=assignments, date=date) or None,
