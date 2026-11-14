@@ -256,7 +256,7 @@ export function WorkBoard({
   const matchingEvidence = selectedAssignment?.attention_key ? assignments.filter(item => item.attention_key === selectedAssignment.attention_key) : []
   const repeatApprovalPending = matchingEvidence.some(item => pendingApprovalIds.has(item.id))
   const repeatReports = selectedAssignment?.attention_key && !selectedAssignment.dismissed_at && (
-    <Disclosure key={selectedAssignment.id} title="Repeat reports" initiallyOpen={!embedded}>
+    <Disclosure key={`repeat-reports-${selectedAssignment.id}`} title="Repeat reports" initiallyOpen={!embedded}>
       <p>{matchingEvidence.length > 1 && `${matchingEvidence.length} reports share this evidence. `}Acknowledging moves this report and exact repeats to History. Changed evidence returns to Needs you.</p>
       {repeatApprovalPending && <p>Decide the pending approval before acknowledging these reports.</p>}
       <button className="border border-neutral-600 p-3 disabled:opacity-50" disabled={attention.isPending || (!selectedAssignment.attention_seen && repeatApprovalPending)} onClick={() => attention.mutate({ item: selectedAssignment, active: !selectedAssignment.attention_seen })}>{selectedAssignment.attention_seen ? 'Restore identical reports to attention' : matchingEvidence.length > 1 ? 'Acknowledge identical reports' : 'Acknowledge report and future repeats'}</button>
