@@ -19,6 +19,9 @@ const packet = {
   review_status: 'human_review_required', created_at: '2026-11-12T12:00:00Z',
   emails: [], phones: [], signals: ['Upcoming procurement'], insights: [],
 }
+const packetWithoutSource = {
+  ...packet, id: 'bd-fixture-42:0', index: 0, organization: 'North Valley Cooperative', source_url: '',
+}
 const stages = ['qwen_replayed', 'jev_replayed'].map((kind, index) => ({
   id: index + 1, kind, created_at: packet.created_at, mode: 'replay',
   message: index ? 'Recorded judgment supported further research.' : 'Recorded source passage extracted.',
@@ -38,6 +41,8 @@ try {
     page.setDefaultTimeout(6000)
     const writes = [], blocked = [], errors = [], detailReads = []
     let receipt, failNext = width === 390, unavailable = false, mismatched = false
+    let queue = [packetWithoutSource, packet], queueReads = 0
+    if (width === 1440) await page.clock.install()
     page.on('pageerror', e => errors.push(e.message))
     await page.routeWebSocket('**/*', ws => ws.onMessage(() => {}))
     await context.route('**/*', async route => {
@@ -60,12 +65,14 @@ try {
           tenant_id: packet.tenant_id, status, created_at: '2026-11-12T14:30:00Z', mode: 'replay',
           organization: packet.organization,
         }
+        queue = []
         return route.fulfill({ json: { receipt } })
       }
       if (req.method() === 'GET') {
         if (path === '/api/bd/desk') {
+          queueReads++
           if (unavailable) return route.fulfill({ status: 503, json: { detail: 'synthetic_queue_unavailable' } })
-          return route.fulfill({ json: { packets: receipt ? [] : [packet], has_more: false } })
+          return route.fulfill({ json: { packets: queue, has_more: false } })
         }
         if (path === '/api/bd/record') return route.fulfill({ json: { receipts: receipt ? [receipt] : [], has_more: false } })
         if (path === '/api/bd/record/105' && receipt) {
@@ -82,9 +89,17 @@ try {
     await page.getByRole('heading', { level: 1, name: 'Desk', exact: true }).waitFor()
     assert.equal(new URL(page.url()).hash, '#/desk')
     await page.getByRole('heading', { name: packet.organization, exact: true }).waitFor()
+    assert.equal(await page.getByRole('heading', { name: packetWithoutSource.organization, exact: true }).count(), 0)
     await page.getByText(packet.source_quote, { exact: true }).waitFor()
     assert.equal(await page.getByRole('link', { name: 'Open source' }).getAttribute('href'), packet.source_url)
     assert.equal(writes.length, 0)
+    if (width === 1440) {
+      const readsBefore = queueReads
+      queue = [packetWithoutSource]
+      await page.clock.fastForward(65_000)
+      await page.getByRole('heading', { name: packet.organization, exact: true }).waitFor()
+      assert.equal(queueReads, readsBefore, 'Desk polled the queue while the packet was open for review')
+    }
     await page.screenshot({ path: join(output, 'desk-' + width + '.png'), animations: 'disabled' })
     const choice = page.getByRole('button', { name: button, exact: true })
     await choice.click()
@@ -101,7 +116,9 @@ try {
     await link.click()
     const run = page.getByRole('region', { name: 'Run evidence' })
     await run.waitFor()
+    await page.getByRole('heading', { name: packet.organization, exact: true }).waitFor()
     assert.ok((await page.getByRole('main').innerText()).includes(packet.job_id))
+    assert.ok((await run.innerText()).includes('Packet index ' + packet.index))
     assert.ok((await run.innerText()).includes(packet.source_quote))
     const runLink = page.getByRole('link', { name: 'Inspect run ' + packet.job_id })
     assert.equal(await runLink.getAttribute('href'), '#/record/105?show=run')
@@ -128,6 +145,11 @@ try {
     await nav.getByRole('link', { name: 'Desk', exact: true }).click()
     await page.getByRole('heading', { name: 'No packets awaiting review' }).waitFor()
     if (width === 390) {
+      queue = [packetWithoutSource]
+      await page.getByRole('button', { name: 'Refresh packets' }).click()
+      await page.getByRole('alert').filter({ hasText: /none of the returned packets can be reviewed/i }).waitFor()
+      assert.equal(await page.getByRole('heading', { name: 'No packets awaiting review' }).count(), 0)
+      assert.equal(await page.getByRole('group', { name: 'Packet decision' }).count(), 0)
       mismatched = true
       await page.goto('http://studio.test/#/record/105')
       await page.reload()
