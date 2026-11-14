@@ -2708,7 +2708,9 @@ def build_morning_note(
             status_payload(line, product_agents.get(line.id, []), repos_by_product.get(line.id, ""))
             for line in product_lines
         ],
-        "customers": [status_payload(line, customer_agents.get(line.id, [])) for line in customer_lines],
+        "customers": [
+            status_payload(line, customer_agents.get(line.id, [])) for line in customer_lines
+        ],
         "decisions": cards,
         "needs_you_total": total,
         "failure": slack_failure_line(tasks=tasks, assignments=assignments, date=date) or None,

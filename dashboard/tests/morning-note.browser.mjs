@@ -147,7 +147,16 @@ try {
     for (const [index, action] of [[0, 'Retry assignment'], [1, 'Run assignment']]) {
       const card = page.locator('.cards .work-decision').filter({ has: page.locator('summary', { hasText: `Review evidence ${index}` }) })
       await card.locator('summary').first().click()
-      await card.getByRole('button', { name: action, exact: true }).click()
+      const runButton = card.getByRole('button', { name: action, exact: true })
+      await runButton.waitFor()
+      assert.equal(await card.getByText(`Review evidence ${index}`, { exact: true }).count(), 1)
+      assert.equal(await card.getByText('Decision and evidence', { exact: true }).count(), 0)
+      assert.equal(await card.getByText('Failed', { exact: true }).count(), 0)
+      if (index === 0) {
+        await card.locator('summary').first().scrollIntoViewIfNeeded()
+        await page.screenshot({ path: join(output, `expanded-task-${label}.png`), animations: 'disabled' })
+      }
+      await runButton.click()
       await execution.getByRole('link', { name: `Review evidence ${index}` }).waitFor()
     }
     assert.deepEqual(await execution.locator('li a').allTextContents(), ['Active assignment', 'Review evidence 0', 'Review evidence 1'])

@@ -1931,10 +1931,13 @@ async def _execute_agent(
                 "think": bool(agent.get("think", False)),
                 "purpose": purpose or ("agent_studio_loop" if loop_run else "agent_studio"),
             }
-            assignment = assignment_registry.get_assignment(assignment_id) if assignment_id else None
+            assignment = (
+                assignment_registry.get_assignment(assignment_id) if assignment_id else None
+            )
             if assignment and assignment.get("client_id"):
                 context = await asyncio.to_thread(
-                    client_meetings.store.agent_context, assignment["client_id"],
+                    client_meetings.store.agent_context,
+                    assignment["client_id"],
                     assignment.get("meeting_id", ""),
                 )
                 chat_request["system"] += (

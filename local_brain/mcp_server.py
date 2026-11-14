@@ -144,12 +144,18 @@ async def aiia_client_meetings(client_id: str = "", meeting_id: str = "") -> str
     """
     if meeting_id and not client_id:
         return "Choose a client first."
-    if any(value and not re.fullmatch(r"[a-zA-Z0-9_-]{1,100}", value)
-           for value in (client_id, meeting_id)):
+    if any(
+        value and not re.fullmatch(r"[a-zA-Z0-9_-]{1,100}", value)
+        for value in (client_id, meeting_id)
+    ):
         return "Invalid client or meeting ID."
     path = "/api/clients"
     if client_id:
-        path += f"/{client_id}/context?meeting_id={meeting_id}" if meeting_id else f"/{client_id}/meetings"
+        path += (
+            f"/{client_id}/context?meeting_id={meeting_id}"
+            if meeting_id
+            else f"/{client_id}/meetings"
+        )
     return json.dumps(await _call_command_center("GET", path), ensure_ascii=False)
 
 

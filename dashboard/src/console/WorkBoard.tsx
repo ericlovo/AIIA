@@ -372,6 +372,7 @@ export function WorkBoard({
         {view === 'assignments' ? (
           selectedAssignment ? (
             <AssignmentDetails
+              summaryVisible={embedded && selectedAssignment.id === initialAssignmentId}
               onOpenAssignment={openAssignment}
               assignment={selectedAssignment}
               agent={agents.find(item => item.id === selectedAssignment.agent_id) ?? null}
@@ -526,6 +527,7 @@ function AssignmentForm({ agents, draft, pending, error, onChange, onSubmit, onC
 }
 
 interface AssignmentDetailsProps {
+  summaryVisible: boolean
   onOpenAssignment: (id: string) => void
   assignment: Assignment
   agent: Agent | null
@@ -550,19 +552,19 @@ interface AssignmentDetailsProps {
   onRemove: () => void
 }
 
-function AssignmentDetails({ assignment, agent, agentName, workspace, writes, repo, isRunning, isRemoving, isRequestingWorkspace, isApprovingWorkspace, isApprovingWrite, isRejectingWrite, hasHandoff, error, onRun, onHandoff, onRequestWorkspace, onApproveWorkspace, onApproveWrite, onRejectWrite, onRemove, onOpenAssignment }: AssignmentDetailsProps) {
+function AssignmentDetails({ summaryVisible, assignment, agent, agentName, workspace, writes, repo, isRunning, isRemoving, isRequestingWorkspace, isApprovingWorkspace, isApprovingWrite, isRejectingWrite, hasHandoff, error, onRun, onHandoff, onRequestWorkspace, onApproveWorkspace, onApproveWrite, onRejectWrite, onRemove, onOpenAssignment }: AssignmentDetailsProps) {
   const runnable = assignment.status === 'queued' || assignment.status === 'failed'
   const gitEnabled = agent?.tools.includes('Git workspace') ?? false
   const workspaceWrites = workspace ? writes.filter(item => item.workspace_id === workspace.id) : []
   const pendingWriteCount = workspaceWrites.filter(item => item.status === 'pending').length
   const workspaceNeedsAttention = workspace?.status === 'pending' || workspace?.status === 'failed' || pendingWriteCount > 0
   return (
-    <Panel title={assignment.title} eyebrow="Decision and evidence">
+    <Panel title={summaryVisible ? undefined : assignment.title} eyebrow="Decision and evidence">
       {isTestFixture(assignment) && <p className="text-sm text-amber-200">Test fixture · Preserved for reference. Any pending approval still needs your decision.</p>}
-      <div className="flex flex-wrap items-center justify-between gap-3">
+      {!summaryVisible && <div className="flex flex-wrap items-center justify-between gap-3">
         <span className="min-w-0 break-words text-sm text-neutral-300">{agentName}</span>
         {assignment.run_ticket ? <span role="status">Queued to run</span> : <StatusLabel status={assignment.status} />}
-      </div>
+      </div>}
       {assignment.client_id && <a className="text-sm text-cyan-200 underline" href={formatRoute({ view: 'meetings', clientId: assignment.client_id, meetingId: assignment.meeting_id })}>Open shared {assignment.meeting_id ? 'call notes' : 'client meetings'}</a>}
       <section aria-label="Next action" className="space-y-2 border-l-2 border-cyan-600 pl-3">
         <h3 className="text-xs font-semibold text-cyan-200">Next action</h3>
@@ -576,7 +578,8 @@ function AssignmentDetails({ assignment, agent, agentName, workspace, writes, re
       {assignment.status === 'completed' && assignment.result.trim() && (assignment.dismissed_at || assignment.attention_seen
         ? <Disclosure key={`optional-review-${assignment.id}`} title="Output verdict and optional review"><ArtifactReview key={assignment.id} assignment={assignment} /></Disclosure>
         : <ArtifactReview key={assignment.id} assignment={assignment} />)}
-      <Disclosure key={`brief-${assignment.id}`} title="Assignment brief" initiallyOpen>
+      <Disclosure key={`brief-${assignment.id}`} title="Assignment brief" initiallyOpen={!summaryVisible}>
+        {summaryVisible && <TextBlock label="Assigned to" value={agentName} />}
         <TextBlock label="Objective" value={assignment.objective} />
         {assignment.success_criteria && <TextBlock label="Success criteria" value={assignment.success_criteria} />}
         {assignment.context && <TextBlock label="Context" value={assignment.context} muted />}
@@ -820,8 +823,8 @@ function HandoffDetails({ handoff, assignment, fromAgent, toAgent, isRunning, is
   )
 }
 
-function Panel({ eyebrow, title, actions, children }: { eyebrow: string; title: string; actions?: React.ReactNode; children: React.ReactNode }) {
-  return <><div className="flex items-start justify-between gap-3 border-b border-neutral-900 px-5 py-5 sm:px-6"><div className="min-w-0"><div className="text-xs font-semibold text-neutral-400">{eyebrow}</div><div role="heading" aria-level={2} className="mt-2 break-words text-lg text-white">{title}</div></div>{actions}</div><div className="space-y-5 px-5 py-6 sm:px-6">{children}</div></>
+function Panel({ eyebrow, title, actions, children }: { eyebrow: string; title?: string; actions?: React.ReactNode; children: React.ReactNode }) {
+  return <>{title !== undefined && <div className="flex items-start justify-between gap-3 border-b border-neutral-900 px-5 py-5 sm:px-6"><div className="min-w-0"><div className="text-xs font-semibold text-neutral-400">{eyebrow}</div><div role="heading" aria-level={2} className="mt-2 break-words text-lg text-white">{title}</div></div>{actions}</div>}<div className="space-y-5 px-5 py-6 sm:px-6">{children}</div></>
 }
 
 function Disclosure({ title, initiallyOpen = false, children }: { title: string; initiallyOpen?: boolean; children: React.ReactNode }) {
