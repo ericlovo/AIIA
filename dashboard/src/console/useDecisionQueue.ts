@@ -10,6 +10,8 @@ export function useDecisionQueue() {
   const queries = [assignments, workspaces, writes, ideas]
   return {
     ...decisionQueue(assignments.data?.assignments ?? [], workspaces.data?.workspaces ?? [], writes.data?.writes ?? [], ideas.data?.attention_counts ? ideas.data.attention_counts.needs_you ?? 0 : ideas.data?.total ?? 0),
+    executing: (assignments.data?.assignments ?? []).filter(item => item.run_ticket || item.status === 'running')
+      .sort((a, b) => (a.run_ticket ?? 0) - (b.run_ticket ?? 0)),
     verification: ideas.data?.attention_counts?.verification ?? 0,
     activity: ideas.data?.attention_counts?.activity ?? 0,
     loading: queries.some(query => query.isPending),

@@ -535,7 +535,26 @@ export type AssignmentPriority = 'low' | 'normal' | 'high' | 'urgent';
 export type AssignmentTrigger = 'manual' | 'interval' | 'handoff' | 'revision';
 export type AssignmentSource = 'manual' | 'memory_capture' | 'loop_schedule' | 'agent_handoff' | 'revision' | 'loop_check';
 
+export type MeetingSource = 'zoom' | 'morrow' | 'manual'
+export interface ClientMeeting {
+  id: string
+  client_id: string
+  title: string
+  starts_at: string
+}
+export interface MeetingNote {
+  id: string
+  author: string
+  source: MeetingSource
+  source_ref: string
+  text: string
+  created_at: string
+}
 export interface Assignment {
+  client_id?: string
+  meeting_id?: string
+  run_ticket?: number;
+  queue_error?: string;
   attention_key?: string;
   attention_seen?: boolean;
   summary?: boolean;
@@ -573,7 +592,7 @@ export interface Assignment {
 }
 
 export type AssignmentDefinition = Pick<Assignment,
-  'title' | 'objective' | 'agent_id' | 'priority' | 'context' | 'success_criteria'
+  'title' | 'objective' | 'agent_id' | 'priority' | 'context' | 'success_criteria' | 'client_id' | 'meeting_id'
 >;
 
 export type HandoffArtifactType = 'brief' | 'analysis' | 'plan' | 'decision' | 'review';
@@ -731,7 +750,16 @@ export interface SignalJobStatus {
   }[];
 }
 
+const clientPath = (client: string) => `/api/clients/${encodeURIComponent(client)}/meetings`
+const meetingPath = (client: string, id: string) => `${clientPath(client)}/${encodeURIComponent(id)}`
+
 export const api = {
+  clients: () => get<{ clients: { id: string; name: string }[] }>('/api/clients'),
+  meetings: (client: string) => get<{ meetings: (ClientMeeting & { note_count: number })[] }>(clientPath(client)),
+  meeting: (client: string, id: string) => get<ClientMeeting & { notes: MeetingNote[] }>(meetingPath(client, id)),
+  createMeeting: (client: string, title: string, starts_at: string) => post<ClientMeeting>(clientPath(client), { title, starts_at }),
+  addMeetingNote: (client: string, id: string, note: Pick<MeetingNote, 'author' | 'source' | 'text' | 'source_ref'>) =>
+    post<{ id: string }>(`${meetingPath(client, id)}/notes`, note),
   signalJobs: () => get<SignalJobStatus>('/api/signal-jobs'),
   runSignalJob: (id: string) => post<{ status: string }>(`/api/signal-jobs/${encodeURIComponent(id)}/run`),
   configureSignalJob: (id: string, enabled: boolean) => put<SignalJobStatus>(`/api/signal-jobs/${encodeURIComponent(id)}`, { enabled }),
@@ -857,6 +885,8 @@ export const api = {
     post<{ assignment: Assignment }>(`/api/assignments/${encodeURIComponent(id)}/revision`, { expected_version, note }),
   deleteAssignment: (id: string) =>
     del<{ deleted: boolean }>(`/api/assignments/${id}`),
+  enqueueAssignment: (item: Assignment) =>
+    post<{ assignment: Assignment }>(`/api/assignments/${encodeURIComponent(item.id)}/enqueue`, { expected_version: item.review_version }),
   runAssignment: (id: string) =>
     post<{ assignment: Assignment; agent: Agent; model: string; latency_ms: number }>(`/api/assignments/${id}/run`),
   recoverAssignment: (id: string) =>

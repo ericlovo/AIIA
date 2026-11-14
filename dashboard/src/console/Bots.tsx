@@ -1,12 +1,14 @@
 import { useEffect, useRef, useState } from 'react'
 import { useIsMutating, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api, type Agent } from '../lib/api'
+import { Search, ArrowUpRight, Aperture, Boxes, Orbit, Radar } from 'lucide-react'
+import { resolveKind, KIND_LABELS } from './agentRoster'
 import { PageHeader } from './PageHeader'
 import { formatRoute } from './studioRoute'
 
 function purpose(agent: Agent) { return agent.one_liner?.trim() || agent.use_when?.trim() || agent.mission }
 function status(agent: Agent, pending = false) { return pending || agent.status === 'running' ? 'Working' : agent.status === 'error' ? 'Needs attention' : agent.retired ? 'Retired' : 'Ready' }
-function initials(name: string) { return name.trim().split(/\s+/).slice(0, 2).map(word => word[0]).join('').toUpperCase() }
+const roleIcons = { coding: Boxes, product: Orbit, ops: Radar, '': Aperture }
 const focus = 'focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-cyan-300'
 
 function TaskPanel({ agent }: { agent: Agent }) {
@@ -94,11 +96,19 @@ function BotHistory({ agent }: { agent: Agent }) {
 
 function BotTile({ agent, selected }: { agent: Agent; selected: boolean }) {
   const pending = useIsMutating({ mutationKey: ['bot-run', agent.id] }) > 0
+  const kind = resolveKind(agent)
+  const Icon = roleIcons[kind]
   const latest = (agent.last_error ? `Failed: ${agent.last_error}` : agent.last_result?.trim() || 'No result recorded.').replace(/\s+/g, ' ')
-  return <a href={formatRoute({ view: 'bots', agentId: agent.id })} aria-label={`Open ${agent.name}`} aria-current={selected ? 'page' : undefined} className={`block min-w-0 rounded-xl border p-5 transition-colors ${focus} ${selected ? 'border-cyan-400 bg-cyan-950/30' : 'border-neutral-800 bg-neutral-900/40 hover:border-neutral-600'}`}>
-    <div className="flex items-center gap-3"><span aria-hidden="true" className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-neutral-600 bg-neutral-800 text-sm font-medium text-cyan-100">{initials(agent.name)}</span><div className="min-w-0"><h2 className="break-words text-base font-medium text-white">{agent.name}</h2><p className={`mt-1 text-xs ${pending || agent.status === 'running' ? 'text-amber-200' : 'text-neutral-400'}`}>{status(agent, pending)}</p></div></div>
+  return <a data-kind={kind} href={formatRoute({ view: 'bots', agentId: agent.id })} aria-label={`Open ${agent.name}`} aria-current={selected ? 'page' : undefined} className={`bot-tile block min-w-0 rounded-xl border p-5 transition-colors ${focus} ${selected ? 'border-cyan-400 bg-cyan-950/30' : 'border-neutral-800 bg-neutral-900/40 hover:border-neutral-600'}`}>
+    <div className="bot-tile-top">
+      <span aria-hidden="true" className="bot-emblem"><Icon size={24} strokeWidth={1.5} /></span>
+      <span className="bot-state" data-state={status(agent, pending)}>{status(agent, pending)}</span>
+    </div>
+    <h2 className="bot-name">{agent.name}</h2>
     <p className="mt-4 line-clamp-2 break-words text-sm leading-relaxed text-neutral-300">{purpose(agent)}</p>
-    <div className="mt-3 text-xs leading-relaxed text-neutral-400"><p>{agent.last_run_at ? <>Last activity: <time dateTime={agent.last_run_at}>{new Date(agent.last_run_at).toLocaleString()}</time></> : 'No activity yet.'}</p><p className="mt-1 truncate" title={latest}>{latest}</p></div>
+    <div className="bot-foot"><span>{kind ? KIND_LABELS[kind] : 'General'}</span><ArrowUpRight size={16} aria-hidden="true" /></div>
+    {agent.last_run_at && <p className="bot-recent" title={latest}>Last activity · <time dateTime={agent.last_run_at}>{new Date(agent.last_run_at).toLocaleDateString()}</time></p>}
+
   </a>
 }
 
@@ -106,14 +116,19 @@ export function Bots({ agents, loading, error, agentId }: { agents: Agent[]; loa
   const qc = useQueryClient()
   const selected = agents.find(agent => agent.id === agentId)
   const visible = agents.filter(agent => !agent.retired || agent.id === agentId)
-  return <main className="h-full min-h-0 overflow-y-auto bg-neutral-950 text-neutral-200">
-    <PageHeader title="Bots" meta={<span>Pick a bot. Give it a task.</span>} />
+  const [search, setSearch] = useState('')
+  const term = search.trim().toLowerCase()
+  const matches = visible.filter(agent => [agent.name, purpose(agent), agent.suite, KIND_LABELS[resolveKind(agent)]].some(text => text?.toLowerCase().includes(term)))
+  return <main className="bots-page h-full min-h-0 overflow-y-auto bg-neutral-950 text-neutral-200">
+    <PageHeader title="Bots" meta={!loading && !error && <span>{visible.length} bots · {visible.filter(agent => agent.status === 'running').length} working</span>} />
     {loading && <p role="status" className="px-5 py-6 sm:px-7">Loading bots...</p>}
     {error && <div role="alert" className="px-5 py-6 text-sm text-red-300 sm:px-7">Bots unavailable. <button className={`min-h-11 px-3 underline ${focus}`} onClick={() => void qc.invalidateQueries({ queryKey: ['agents'] })}>Retry</button></div>}
     {!loading && !error && <div className={`grid min-w-0 gap-6 px-5 pb-8 pt-5 sm:px-7 ${selected ? 'xl:grid-cols-[minmax(0,1fr)_minmax(360px,1fr)]' : ''}`}>
       <section aria-label="Choose a bot" className="min-w-0">
+        <label className="bot-search"><Search size={17} aria-hidden="true" /><input aria-label="Find a bot" type="search" placeholder="Find a bot by name or purpose" value={search} onChange={event => setSearch(event.target.value)} /></label>
+        {visible.length > 0 && !matches.length && <p role="status">No matching bots. <button className="underline" onClick={() => setSearch('')}>Clear search</button></p>}
         {!visible.length && <p className="text-sm text-neutral-400">No active bots available. <a className={`inline-flex min-h-11 items-center text-cyan-300 ${focus}`} href={formatRoute({ view: 'agents' })}>Open agent settings</a></p>}
-        <div className={`grid min-w-0 gap-4 ${selected ? 'sm:grid-cols-2 xl:grid-cols-1 2xl:grid-cols-2' : 'sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4'}`}>{visible.map(agent => <BotTile key={agent.id} agent={agent} selected={agent.id === agentId} />)}</div>
+        <div className={`grid min-w-0 gap-4 ${selected ? 'sm:grid-cols-2 xl:grid-cols-1 2xl:grid-cols-2' : 'sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4'}`}>{matches.map(agent => <BotTile key={agent.id} agent={agent} selected={agent.id === agentId} />)}</div>
       </section>
       {selected && <div className="min-w-0 max-xl:row-start-1"><TaskPanel key={selected.id} agent={selected} /></div>}
       {agentId && !selected && <p role="alert" className="text-sm text-amber-200">This bot is unavailable. Choose another bot.</p>}

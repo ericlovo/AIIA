@@ -9,6 +9,7 @@ export function isTestFixture(item: Assignment): boolean {
 
 export function workLane(item: Assignment, approvalPending = false): WorkLane {
   if (approvalPending) return 'needs-you'
+  if (item.run_ticket) return 'working'
   if (isTestFixture(item) || item.dismissed_at) return 'history'
   if (item.status === 'running') return 'working'
   if (item.recovery_pending || item.status === 'queued' || item.status === 'failed' || (item.status === 'completed' && !(item.has_result ?? Boolean(item.result.trim())))) return 'needs-you'

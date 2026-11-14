@@ -21,7 +21,7 @@ export function Today({ agents, loading, agentError, attention }: { agents: Agen
     ...(workspaces.data?.workspaces ?? []).filter(item => item.status === 'pending').map(item => ({ id: `workspace-${item.id}`, assignmentId: item.assignment_id, label: 'Approve workspace' })),
     ...(writes.data?.writes ?? []).filter(item => item.status === 'pending').map(item => ({ id: `write-${item.id}`, assignmentId: item.assignment_id, label: `Review ${item.op.replaceAll('_', ' ')}` })),
   ]
-  const active = work.filter(item => item.status === 'running' || item.status === 'queued')
+  const active = work.filter(item => item.run_ticket || item.status === 'running' || item.status === 'queued')
   const scheduled = agents.filter(item => item.loop_enabled)
   const accepted = work.filter(item => item.status === 'completed' && item.review_status === 'accepted')
     .sort((a, b) => b.updated_at.localeCompare(a.updated_at)).slice(0, 3)
@@ -56,7 +56,7 @@ export function Today({ agents, loading, agentError, attention }: { agents: Agen
 
         <section aria-label="Work in progress" className="border-b border-neutral-800 py-6">
           <div className="flex items-center justify-between gap-2"><h2 className="text-lg font-medium text-white">Work in progress</h2><a href="#/assignments" className={link}>Open work<ArrowRight size={16} aria-hidden="true" /></a></div>
-          {active.slice(0, 4).map(item => <WorkRow key={item.id} item={item} detail={item.status === 'running' ? 'Running on the Mini' : 'Awaiting manual start'} />)}
+          {active.slice(0, 4).map(item => <WorkRow key={item.id} item={item} detail={item.status === 'running' ? 'Running on the Mini' : item.run_ticket ? 'Queued to run' : 'Awaiting manual start'} />)}
           {!active.length && <p className="py-3 text-sm text-neutral-400">{assignments.isError ? 'Work status unavailable.' : assignments.isPending ? 'Checking work...' : 'No active assignments.'}</p>}
         </section>
 

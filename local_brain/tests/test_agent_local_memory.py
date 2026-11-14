@@ -187,3 +187,61 @@ def test_agent_without_the_tool_does_not_read_memory(studio):
 
     assert brain.memory_requests == []
     assert "Local memory" not in brain.system_prompt
+
+
+def test_assignment_uses_latest_shared_call_and_propagates_scope(studio, tmp_path, monkeypatch):
+    from local_brain.command_center import client_meetings
+    from local_brain.command_center.assignment_registry import AssignmentRegistry
+
+    server, agents, brain = studio
+    store = client_meetings.MeetingStore(tmp_path / "meetings.db")
+    monkeypatch.setattr(client_meetings, "store", store)
+    assignments = AssignmentRegistry(tmp_path / "assignments.json")
+    monkeypatch.setattr(server, "assignment_registry", assignments)
+    draft = client_meetings.NewMeeting(title="Review", starts_at="2026-11-12T16:00:00Z")
+    call = store.create("smart-medical", draft)
+    other = store.create("gci", draft)
+
+    def note(client, meeting, source, author, text):
+        return store.append(
+            client, meeting["id"], client_meetings.NewNote(source=source, author=author, text=text)
+        )
+
+    first = note("smart-medical", call, "zoom", "A", "verify the blue fixture")
+    note("gci", other, "zoom", "A", "unrelated yellow fixture")
+    agent = agents.create(name="Test", mission="Review", persona="Brief", skills=[])
+    payload = dict(
+        title="Check evidence",
+        objective="Summarize",
+        agent_id=agent["id"],
+        client_id="smart-medical",
+        meeting_id=call["id"],
+    )
+    work = asyncio.run(server.create_assignment(server.AssignmentCreateRequest(**payload)))[
+        "assignment"
+    ]
+    second = note("smart-medical", call, "morrow", "B", "inspect the green fixture")
+    asyncio.run(server._run_assignment(work["id"]))
+    chat = json.loads(next(r.content for r in brain.requests if r.url.path == "/v1/chat"))
+    content = chat["messages"][0]["content"]
+    for phrase in (first["id"], second["id"], "blue fixture", "green fixture"):
+        assert phrase in content
+    assert "yellow fixture" not in content
+    assert chat["messages"][-1]["content"].startswith("Assignment: Check evidence")
+    completed = assignments.get_assignment(work["id"])
+    _, target = assignments.create_handoff(
+        source_assignment_id=work["id"],
+        to_agent_id="second",
+        artifact_type="brief",
+        instructions="Inspect",
+    )
+    assignments.review_assignment(
+        work["id"], decision="rejected", expected_version=completed["review_version"], note="Revise"
+    )
+    revision = assignments.create_revision(
+        work["id"], expected_version=completed["review_version"], note="Try again"
+    )
+    assert all(
+        x["meeting_id"] == call["id"] and x["client_id"] == "smart-medical"
+        for x in (target, revision)
+    )

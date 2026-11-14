@@ -16,6 +16,7 @@ REPO_MOUNTS = {
     "aiia": Path.home() / "aiia-brain" / "AIIA-public",
     "mindmoor": Path.home() / "mindmoor",
     "sanction": Path.home() / "sanction",
+    "morrow": Path.home() / "morrow",
     "proxy-ai": Path.home() / "proxy-ai",
 }
 
@@ -23,6 +24,7 @@ REPO_NAMES = {
     "aiia": "AIIA",
     "mindmoor": "Mindmoor",
     "sanction": "Sanction",
+    "morrow": "Morrow",
     "proxy-ai": "Proxy AI",
 }
 

@@ -1,19 +1,20 @@
 import type { ReviewBucket } from '../lib/api'
 
 export type InboxSource = 'slack' | 'loops' | 'signals' | 'all'
-export type StudioView = 'desk' | 'record' | 'home' | 'bd' | 'bots' | 'switchboard' | 'inbox' | 'jobs' | 'projects' | 'history' | 'activity' | 'agents' | 'assignments' | 'handoffs' | 'memory' | 'world' | 'signals'
+export type StudioView = 'desk' | 'record' | 'home' | 'bd' | 'bots' | 'switchboard' | 'inbox' | 'jobs' | 'projects' | 'history' | 'activity' | 'agents' | 'assignments' | 'handoffs' | 'memory' | 'world' | 'signals' | 'meetings'
 
 export const VIEWS: { id: StudioView; label: string }[] = [
   { id: 'desk', label: 'Desk' },
   { id: 'record', label: 'Record' },
   { id: 'bd', label: 'Research' },
-  { id: 'home', label: 'Morning note' },
+  { id: 'home', label: 'Home' },
   { id: 'bots', label: 'Bots' },
   { id: 'switchboard', label: 'Today' },
   { id: 'inbox', label: 'Inbox' },
   { id: 'jobs', label: 'Jobs' },
   { id: 'assignments', label: 'Work' },
   { id: 'projects', label: 'Projects' },
+  { id: 'meetings', label: 'Client meetings' },
   { id: 'history', label: 'Activity history' },
   { id: 'activity', label: 'Overview' },
   { id: 'agents', label: 'Agents' },
@@ -39,20 +40,22 @@ export type StudioRoute =
   | { view: 'inbox'; source?: InboxSource }
   | { view: 'jobs' }
   | { view: 'projects' }
+  | { view: 'meetings'; clientId?: string; meetingId?: string }
   | { view: 'activity' }
   | { view: 'agents'; agentId?: string }
-  | { view: 'assignments'; assignmentId?: string; agentId?: string }
+  | { view: 'assignments'; assignmentId?: string; agentId?: string; clientId?: string; meetingId?: string }
   | { view: 'handoffs'; from?: string; to?: string }
   | { view: 'memory'; review?: ReviewBucket | 'all'; source?: 'signals' }
   | { view: 'world' }
   | { view: 'signals' }
 
-export const DEFAULT_ROUTE: StudioRoute = { view: 'desk' }
+export const DEFAULT_ROUTE: StudioRoute = { view: 'home' }
 
 const PATHS: Record<StudioView, string> = {
   desk: 'desk',
   record: 'record',
   home: 'note',
+  meetings: 'meetings',
   bd: 'bd',
   bots: 'bots',
   switchboard: 'today', activity: 'overview', agents: 'agents', assignments: 'assignments',
@@ -92,7 +95,8 @@ export function parseRoute(hash: string): StudioRoute | null {
     }
     case 'bots':
     case 'agents': return { view, agentId: id }
-    case 'assignments': return { view, assignmentId: id, agentId: id ? undefined : param('agent') }
+    case 'meetings': return { view, clientId: id, meetingId: id ? param('call') : undefined }
+    case 'assignments': return { view, assignmentId: id, agentId: id ? undefined : param('agent'), clientId: id ? undefined : param('client'), meetingId: id ? undefined : param('call') }
     case 'handoffs': return id ? null : { view, from: param('from'), to: param('to') }
     case 'memory': {
       if (id) return null
@@ -125,8 +129,14 @@ export function formatRoute(route: StudioRoute): string {
       break
     case 'bots':
     case 'agents': id = route.agentId ?? ''; break
+    case 'meetings':
+      id = route.clientId ?? ''
+      if (id && route.meetingId) query.set('call', route.meetingId)
+      break
     case 'assignments':
       id = route.assignmentId ?? ''
+      if (!id && route.clientId) query.set('client', route.clientId)
+      if (!id && route.clientId && route.meetingId) query.set('call', route.meetingId)
       if (!id && route.agentId) query.set('agent', route.agentId)
       break
     case 'handoffs':
