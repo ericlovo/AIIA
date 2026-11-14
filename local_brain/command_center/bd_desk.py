@@ -4,10 +4,13 @@ import json
 import sqlite3
 from contextlib import closing
 
+from pydantic import AnyHttpUrl, TypeAdapter, ValidationError
+
 from .bd_service import iso
 
 DESK_LIMIT = 50
 RECORD_LIMIT = 100
+_SOURCE_URL = TypeAdapter(AnyHttpUrl)
 
 # Match both durable event scope and current configuration before exposing a receipt.
 RECEIPTS = """
@@ -19,6 +22,16 @@ RECEIPTS = """
        AND scope.value=j.tenant_id AND j.tenant_id=json_extract(j.data,'$.tenant_id')
      WHERE e.kind='packet_reviewed'
 """
+
+
+def _desk_candidate(packet):
+    if packet["candidate_status"] != "supported":
+        return False
+    try:
+        _SOURCE_URL.validate_python(packet["source_url"])
+    except ValidationError:
+        return False
+    return True
 
 
 def desk_packets(service):
@@ -42,10 +55,7 @@ def desk_packets(service):
                 if not isinstance(item, dict):
                     continue
                 packet = service._packet(job, item, index)
-                if (
-                    packet["review_status"] == "human_review_required"
-                    and packet["candidate_status"] == "supported"
-                ):
+                if packet["review_status"] == "human_review_required" and _desk_candidate(packet):
                     if len(packets) == DESK_LIMIT:
                         return {"packets": packets, "has_more": True}
                     packets.append(packet)
@@ -141,7 +151,7 @@ def decide(service, bot_id, job_id, index, expected_tenant_id, status):
             raise KeyError(job_id)
         job = json.loads(row[0])
         packet = service._packet(job, store.packet_at(job, index), index)
-        if packet["candidate_status"] != "supported":
+        if not _desk_candidate(packet):
             raise ValueError("packet_changed")
         if packet["review_status"] == status:
             row = db.execute(

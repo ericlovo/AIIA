@@ -261,26 +261,75 @@ def test_source_import_rejects_killed_cross_origin_and_bad_hash(live_route_app):
         assert service.store.snapshot()["jobs"] == []
 
 
-def test_desk_decision_is_atomic_idempotent_and_traceable_after_restart(route_app):
+@pytest.fixture
+def supported_packet():
     import asyncio
-    from concurrent.futures import ThreadPoolExecutor
 
-    from local_brain.command_center import bd_desk
     from local_brain.command_center.bd_pipeline import run_pipeline
 
-    app, service = route_app
-    store = service.store
-    tenant = "synthetic-healthcare"
-    sample = asyncio.run(
+    return asyncio.run(
         run_pipeline(
             {
                 "segment": "healthcare",
-                "tenant_id": tenant,
+                "tenant_id": "synthetic-healthcare",
                 "mode": "replay",
                 "payload": {"replay_step_delay": 0},
             }
         )
     )["packets"][0]
+
+
+def test_desk_filters_unusable_sources_before_limit_and_rejects_decisions(
+    route_app, supported_packet, monkeypatch
+):
+    from local_brain.command_center import bd_desk
+
+    monkeypatch.setattr(bd_desk, "DESK_LIMIT", 1)
+    app, service = route_app
+    store = service.store
+    tenant = "synthetic-healthcare"
+    job = store.enqueue("healthcare", tenant, "source-review", "research")
+    token = store.lease("test")["lease_token"]
+    store.start(job["id"], token)
+    packets = [
+        {key: value for key, value in supported_packet.items() if key != "source_url"},
+        {**supported_packet, "source_url": "javascript:void(0)"},
+        {**supported_packet, "source_url": "https://"},
+        {**supported_packet, "source_url": "https://example.org:invalid"},
+        {**supported_packet, "source_url": " HTTP://EXAMPLE.ORG/news "},
+        {**supported_packet, "source_url": "/relative"},
+        supported_packet,
+        {**supported_packet, "source_url": None},
+    ]
+    store.complete(job["id"], token, {"packets": packets})
+    client = TestClient(app)
+    decision = {"status": "watch", "expected_tenant_id": tenant}
+    path = f"/api/bd/desk/healthcare/{job['id']}"
+    for index in (0, 1, 2, 3, 5, 7):
+        response = client.post(f"{path}/{index}/review", json=decision)
+        assert response.status_code == 409
+        assert response.json()["detail"] == "packet_changed"
+    assert client.get("/api/bd/record").json()["receipts"] == []
+    first = client.get("/api/bd/desk").json()
+    assert [p["index"] for p in first["packets"]] == [4]
+    assert first["has_more"] is True
+    assert client.post(f"{path}/4/review", json=decision).status_code == 200
+    last = client.get("/api/bd/desk").json()
+    assert [p["index"] for p in last["packets"]] == [6]
+    assert last["has_more"] is False
+
+
+def test_desk_decision_is_atomic_idempotent_and_traceable_after_restart(
+    route_app, supported_packet
+):
+    from concurrent.futures import ThreadPoolExecutor
+
+    from local_brain.command_center import bd_desk
+
+    app, service = route_app
+    store = service.store
+    tenant = "synthetic-healthcare"
+    sample = supported_packet
     job = store.enqueue("healthcare", tenant, "sample-review", "research")
     lease = store.lease("test")
     store.start(job["id"], lease["lease_token"])

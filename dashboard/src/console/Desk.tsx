@@ -20,12 +20,13 @@ async function loadQueue(signal: AbortSignal) {
   const response = await studioFetch('/api/bd/desk', { signal, cache: 'no-store' })
   const data = await studioJSON<PacketQueue>(response)
   if (!Array.isArray(data?.packets)) throw new Error('The packet queue could not be read.')
-  if (!data.packets.every(packet =>
+  const packets = data.packets.filter(packet =>
     packet?.bot_id && packet.job_id && packet.tenant_id && Number.isInteger(packet.index) &&
     packet.index >= 0 && typeof packet.organization === 'string' &&
     packet.review_status === 'human_review_required' && packetOutcome(packet) === 'supported'
-  )) throw new Error('The queue contains a packet that cannot be reviewed.')
-  return data
+  )
+  if (data.packets.length && !packets.length) throw new Error('None of the returned packets can be reviewed.')
+  return { ...data, packets }
 }
 
 async function decide({ packet, status }: Submission) {
@@ -91,7 +92,7 @@ export function Desk() {
   const client = useQueryClient()
   const query = useQuery({
     queryKey: ['bd-desk'], queryFn: ({ signal }) => loadQueue(signal), retry: false,
-    refetchOnWindowFocus: false, refetchOnReconnect: false,
+    refetchOnWindowFocus: false, refetchOnReconnect: false, refetchInterval: false,
   })
   const lock = useRef(false)
   const confirmation = useRef<HTMLHeadingElement>(null)
