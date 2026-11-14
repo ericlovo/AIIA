@@ -23,7 +23,8 @@
 .studio-glass .work-list section:hover { border-color: #9fc6ed69; }
 .studio-glass :focus-visible { outline: 2px solid #99dcff; outline-offset: 2px; }
 @media (max-width: 640px) {
-  .studio-glass > header > div:first-child > div:nth-child(2) { display:none; }
+  .studio-glass .service-health { flex-wrap:nowrap; overflow-x:auto; width:100%; scrollbar-width:thin; }
+  .studio-glass .service-health > div { flex:none; }
   .studio-glass > header { min-height:36px; }
 }
 

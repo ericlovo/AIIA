@@ -69,8 +69,8 @@ try {
         return route.abort('blockedbyclient')
       }
       if (url.pathname === '/') return route.fulfill({ contentType: 'text/html', body: await readFile(join(dist, 'index.html')) })
-      if (/^\/assets\/[A-Za-z0-9_.-]+\.(css|js)$/.test(url.pathname)) return route.fulfill({
-        contentType: url.pathname.endsWith('.css') ? 'text/css' : 'text/javascript',
+      if (/^\/assets\/[A-Za-z0-9_.-]+\.(css|js|webp)$/.test(url.pathname)) return route.fulfill({
+        contentType: url.pathname.endsWith('.webp') ? 'image/webp' : url.pathname.endsWith('.css') ? 'text/css' : 'text/javascript',
         body: await readFile(join(dist, url.pathname.slice(1))),
       })
       if (!url.pathname.startsWith('/api/')) {
@@ -103,6 +103,7 @@ try {
           truncated: false, coverage: 'bounded_recent_history', notice: 'No deployment evidence in this fixture.' },
       }
       else if (url.pathname === '/api/agents') body = { agents }
+      else if (url.pathname === '/api/clients') body = { clients: [] }
       else if (url.pathname === '/api/agents/resources') body = { repos: [], github: { status: 'disconnected' } }
       else if (url.pathname === '/api/agents/models') body = { default: '', models: [] }
       else if (url.pathname === '/api/integrations/typesafe/status') body = { ready: false, enabled: false, configured: false }
