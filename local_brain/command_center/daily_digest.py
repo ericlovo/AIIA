@@ -198,6 +198,7 @@ class CustomerEvidence:
     customer_id: str
     behind_main: int | None = None
     ref_found: bool = False
+    comparison: DriftSignal | None = None
 
 
 @dataclass
@@ -205,6 +206,9 @@ class DriftSignal:
     repo_id: str
     ref: str
     behind_main: int
+    base_ref: str = ""
+    head_ref: str = ""
+    github: str = ""
 
 
 @dataclass
@@ -728,6 +732,7 @@ def _configured_drift(
     main_ref: str | None,
     repo_id: str,
     labels: tuple[str, ...],
+    github: str = "",
 ) -> list[DriftSignal]:
     if not main_ref or not labels:
         return []
@@ -745,7 +750,7 @@ def _configured_drift(
         if behind is None:
             continue
         if behind > 0:
-            signals.append(DriftSignal(repo_id, label, behind))
+            signals.append(DriftSignal(repo_id, label, behind, ref, main_ref, github))
     return signals
 
 
@@ -1128,7 +1133,7 @@ def collect_repo_evidence(
     if mounted:
         if drift_refs is None and repo_id == "mindmoor":
             drift_refs = ("production", "alumni")
-        drift = _configured_drift(git_read, path, main_ref, repo_id, drift_refs or ())
+        drift = _configured_drift(git_read, path, main_ref, repo_id, drift_refs or (), slug)
 
     moved: list[str] = []
     stuck: list[str] = []
@@ -1279,7 +1284,7 @@ def collect_customer_evidence(
         if not customer.mapped() or not (customer.branch or customer.tenant):
             rows.append(CustomerEvidence(customer_id=customer.id))
             continue
-        behind = None
+        comparison = None
         ref_found = False
         for product_id in customer.products:
             product = catalog.get(product_id)
@@ -1294,11 +1299,22 @@ def collect_customer_evidence(
                 continue
             ref_found = True
             count = _behind_count(git_read, path, customer_ref, main_ref)
-            if count is None:
-                continue
-            behind = count if behind is None else max(behind, count)
+            if count is not None and (comparison is None or count > comparison.behind_main):
+                comparison = DriftSignal(
+                    product.mount,
+                    customer.branch or customer.tenant,
+                    count,
+                    customer_ref,
+                    main_ref,
+                    _github_slug(path) or product.github,
+                )
         rows.append(
-            CustomerEvidence(customer_id=customer.id, behind_main=behind, ref_found=ref_found)
+            CustomerEvidence(
+                customer_id=customer.id,
+                behind_main=comparison.behind_main if comparison else None,
+                ref_found=ref_found,
+                comparison=comparison,
+            )
         )
     return rows
 
@@ -2465,6 +2481,32 @@ def format_slack_digest(
     def row(name: str, message: str) -> str:
         return f"• *{escape(_short_title(name, 60))}* — {message}"
 
+    seen_comparisons = set()
+
+    def add_drift(owner: str, signal: DriftSignal, fallback_slug: str) -> None:
+        base = signal.base_ref.removeprefix("origin/")
+        head = signal.head_ref.removeprefix("origin/")
+        slug = signal.github or fallback_slug
+        if not repos._GITHUB_SLUG.fullmatch(slug) or {".", ".."}.intersection(slug.split("/")):
+            slug = ""
+        if base and head and (slug or signal.repo_id):
+            key = (slug.lower() or signal.repo_id, base, head, signal.behind_main)
+            if key in seen_comparisons:
+                return
+            seen_comparisons.add(key)
+        subject = escape(_short_title(base or signal.ref, 100))
+        target = escape(_short_title(head, 100)) if head else "the default branch"
+        commits = "commit" if signal.behind_main == 1 else "commits"
+        message = f"{subject} is {signal.behind_main} {commits} behind {target}."
+        if slug and base and head:
+            compare = f"{quote(base, safe='')}...{quote(head, safe='')}"
+            message += f" <https://github.com/{slug}/compare/{compare}|Compare branches>"
+        elif slug:
+            message += f" <https://github.com/{slug}/branches|Browse branches>"
+        elif studio:
+            message += f" <{studio}/#/projects|Open projects>"
+        drift.append(row(owner, message))
+
     def pull_label(product: DigestProduct, pull: PullSignal) -> str:
         number = f"#{pull.number}"
         if repos._GITHUB_SLUG.fullmatch(product.github):
@@ -2520,7 +2562,7 @@ def format_slack_digest(
                 if updated and clock - SHIPPED_WINDOW <= updated <= clock:
                     moving.append(row(product.name, f"Updated {change}"))
         for signal in ev.drift:
-            drift.append(row(product.name, escape(_behind_phrase(signal.ref, signal.behind_main))))
+            add_drift(product.name, signal, product.github)
         for pull in ev.merged_prs:
             change = pull_label(product, pull)
             if pull.number in ev.verified_deployments:
@@ -2669,17 +2711,18 @@ def format_slack_digest(
     for customer in roster:
         evidence_row = customer_rows.get(customer.id)
         if evidence_row and evidence_row.behind_main and not customer.excluded_from_releases:
-            drift.append(
-                row(
-                    customer.name,
-                    escape(
-                        _behind_phrase(
-                            customer.branch or customer.code or customer.id,
-                            evidence_row.behind_main,
-                        )
-                    ),
+            if evidence_row.comparison:
+                signal = evidence_row.comparison
+                slug = next((p.github for p in catalog if p.mount == signal.repo_id), "")
+                add_drift(customer.name, signal, slug)
+            else:
+                # Older evidence retained only the count. Point at a known
+                # repository when the customer maps unambiguously to one.
+                slugs = {p.github for p in catalog if p.id in customer.products}
+                signal = DriftSignal(
+                    "", customer.branch or customer.code or customer.id, evidence_row.behind_main
                 )
-            )
+                add_drift(customer.name, signal, slugs.pop() if len(slugs) == 1 else "")
 
     candidates = inbox_items or []
     chosen, _, _ = choose_decisions(
