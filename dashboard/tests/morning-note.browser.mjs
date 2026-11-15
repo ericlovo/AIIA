@@ -35,7 +35,7 @@ const note = {
     { id: 'aiia', name: 'AIIA', kind: 'product', state: 'waiting', agent_ids: ['ci'], note: 'verified deployed #127; merged #128; deployment not verified · waiting on you: 1 review' },
     { id: 'mindmoor', name: 'Mindmoor', kind: 'product', state: 'waiting', note: 'Alumni version is 12 changes behind main.' },
     { id: 'sanction', name: 'Sanction', kind: 'product', state: 'blocked', note: 'Automated checks are red on the latest change.' },
-    { id: 'mia', name: 'MIA', kind: 'product', state: 'shipped', note: "Last week's update is out." },
+    { id: 'mia', name: 'MIA', kind: 'product', state: 'unmounted', github: 'example/moral-intention-analyst', note: 'Checkout unavailable' },
     { id: 'morrow', name: 'Morrow', kind: 'product', state: 'clean', github: 'example/morrow', note: 'Conversation board is out to beta testers.' },
   ],
   customers: [
@@ -131,6 +131,21 @@ try {
     assert.equal(overflow, false, `${label} overflowed horizontally`)
 
     await page.screenshot({ path: join(output, `morning-note-${label}.png`), fullPage: false, animations: 'disabled' })
+
+    const mia = page.locator('.project-tile').filter({ has: page.getByText('MIA', { exact: true }) })
+    assert.equal(await mia.getByRole('link', { name: 'Repository' }).getAttribute('href'), 'https://github.com/example/moral-intention-analyst')
+    assert.equal(await mia.getByText('Checkout unavailable', { exact: true }).count(), 1)
+
+    const shortcut = page.getByRole('button', { name: /pending decisions/ })
+    await shortcut.focus()
+    await page.keyboard.press('Enter')
+    const queueHeading = page.getByRole('heading', { name: 'Needs you 13', exact: true })
+    assert.ok(await queueHeading.evaluate(el => el === document.activeElement))
+    const navBox = await page.getByRole('navigation', { name: 'Studio', exact: true }).boundingBox()
+    const headingBox = await queueHeading.boundingBox()
+    assert.ok(navBox.y >= 0 && headingBox.y >= navBox.y + navBox.height && headingBox.y < height)
+    await page.keyboard.press('Tab')
+    assert.ok(await queueHeading.evaluate(el => el.parentElement.contains(document.activeElement)))
 
     assert.equal(await page.getByRole('button', { name: 'Approve', exact: true }).count(), 0)
     assert.equal(await page.getByRole('button', { name: 'Not now', exact: true }).count(), 0)

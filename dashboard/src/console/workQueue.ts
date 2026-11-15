@@ -22,7 +22,13 @@ export function groupWork(items: Assignment[]): Assignment[][] {
   for (const item of items) {
     // Manual source references identify individual runs, not distinct task scope.
     // This is display grouping only; every record still requires its own decision.
-    const key = JSON.stringify([item.source_kind === 'manual' ? '' : item.agent_id, item.priority, item.schedule_key, item.source_kind, item.source_kind === 'manual' ? '' : item.source_ref, item.source_handoff_id, item.title, item.group_scope ?? JSON.stringify([item.objective, item.context, item.success_criteria]), item.status, item.review_status, Boolean(item.dismissed_at), item.revision_of, Boolean(item.recovery_pending)])
+    const key = JSON.stringify([
+      item.client_id || '', item.meeting_id || '',
+      item.source_kind === 'manual' ? '' : item.agent_id, item.priority, item.schedule_key,
+      item.source_kind, item.source_kind === 'manual' ? '' : item.source_ref, item.source_handoff_id,
+      item.title, item.group_scope ?? JSON.stringify([item.objective, item.context, item.success_criteria]),
+      item.status, item.review_status, Boolean(item.dismissed_at), item.revision_of, Boolean(item.recovery_pending),
+    ])
     const group = groups.get(key) ?? []
     group.push(item)
     groups.set(key, group)

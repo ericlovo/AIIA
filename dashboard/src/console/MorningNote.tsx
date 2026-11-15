@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api, MEMORY_CATEGORIES, type Agent, type Assignment, type MemoryCategory, type MemoryIdea } from '../lib/api'
 import {
@@ -39,6 +39,15 @@ export function MorningNote({ agents, onDetails }: { agents: Agent[]; onDetails:
   const [taken, setTaken] = useState<Array<{ id: string; agent: string; text: string; why: string; at: string }>>([])
   const [askError, setAskError] = useState('')
   const queue = useDecisionQueue()
+  const decisionsHeading = useRef<HTMLHeadingElement>(null)
+
+  function showDecisions() {
+    const heading = decisionsHeading.current
+    const surface = heading?.closest<HTMLElement>('.studio-surface')
+    if (!heading || !surface) return
+    heading.focus({ preventScroll: true })
+    surface.scrollBy({ top: heading.getBoundingClientRect().top - surface.getBoundingClientRect().top - 8 })
+  }
 
   useEffect(() => {
     const tick = window.setInterval(() => setNow(new Date()), 30_000)
@@ -75,7 +84,7 @@ export function MorningNote({ agents, onDetails }: { agents: Agent[]; onDetails:
         <header className="hero-glass">
           <p className="date">{formatLongDate(now)}</p>
           <h1 id="greet">{greeting(now)}.</h1>
-          <GradientButton className="mt-4" onClick={() => document.getElementById('h-decide')?.scrollIntoView({ block: 'start' })}>
+          <GradientButton className="mt-4" onClick={showDecisions}>
             {queue.loading ? 'Loading decisions' : queue.error ? 'Decision queue unavailable' : `${queue.total} pending decision${queue.total === 1 ? '' : 's'}`} <ArrowUpRight size={17} />
           </GradientButton>
         </header>
@@ -91,7 +100,7 @@ export function MorningNote({ agents, onDetails }: { agents: Agent[]; onDetails:
         </section>
 
         <section aria-labelledby="h-decide">
-          <h2 id="h-decide">Needs you <span className="count">{queue.error ? 'Unavailable' : queue.loading ? 'Loading' : queue.total}</span></h2>
+          <h2 id="h-decide" ref={decisionsHeading} tabIndex={-1}>Needs you <span className="count">{queue.error ? 'Unavailable' : queue.loading ? 'Loading' : queue.total}</span></h2>
           {queue.error && <p className="err" role="alert">Could not refresh all decisions. Counts may be stale; no all-clear is available.</p>}
           {!queue.loading && !queue.error && queue.total === 0 && <p className="empty">Nothing needs you right now.</p>}
           {queue.executing.length > 0 && <section className="mini-queue" aria-label="Mini execution queue">
@@ -183,7 +192,7 @@ function StatusList({ items, now, agents, queue }: { items: MorningLine[]; now: 
     return <li className="project-tile" key={item.id}>
       <div className="tile-heading"><Icon aria-hidden="true" size={20} /><strong>{item.name}</strong></div>
       <p className={`tile-state w-${state}`}><span className={`dot dot-${state}`} />{work.length ? `${work.length} decision${work.length === 1 ? '' : 's'}` : item.target && state === 'countdown' ? countdown(item.target, now).text : item.incomplete && state === 'clean' ? 'Checks unavailable' : STATE_LABEL[state] || state}</p>
-      {item.note && item.note !== 'nothing blocked' && <p className="tile-note">{item.note}</p>}
+      {item.note && item.note !== 'nothing blocked' && item.note !== STATE_LABEL[state] && <p className="tile-note">{item.note}</p>}
       {work.length > 0 && <details className="tile-decisions"><summary>View decisions</summary>{work.map(record => <WorkDecision key={record.id} item={record} agents={agents} approval={queue.pendingApprovalIds.has(record.id)} />)}</details>}
       {item.kind === 'customer' && <a className="repo-link mr-3" href={formatRoute({ view: 'meetings', clientId: item.id })}>Meeting notes <ArrowUpRight size={14} /></a>}
       {item.github && <a className="repo-link" href={`https://github.com/${item.github}`} target="_blank" rel="noreferrer">Repository <ArrowUpRight size={14}/></a>}

@@ -42,6 +42,52 @@ def test_acknowledge_exact_repeats_durable_and_reversible(tmp_path):
     assert loaded.get_assignment(first["id"])["attention_events"][0]["restored_at"]
 
 
+@pytest.mark.parametrize("legacy_event", [True, False])
+def test_acknowledgement_stays_with_its_client_and_call(tmp_path, legacy_event):
+    registry = AssignmentRegistry(tmp_path / "work.json")
+    unscoped = completed(registry)
+    first = completed(registry, client_id="client-a", meeting_id="call-a")
+    repeat = completed(registry, client_id="client-a", meeting_id="call-a")
+    others = [
+        completed(registry, client_id="client-b", meeting_id="call-a"),
+        completed(registry, client_id="client-a", meeting_id="call-b"),
+        completed(registry, client_id="client-a"),
+        unscoped,
+    ]
+    key = evidence_key(first)
+    assert evidence_key(repeat) == key
+    assert all(evidence_key(item) != key for item in others)
+    versions = {item["id"]: item["review_version"] for item in others}
+
+    if legacy_event:
+        first["attention_events"] = [{"key": evidence_key(unscoped), "active": True}]
+        registry.save()
+    else:
+        registry.acknowledge_attention(
+            first["id"], expected_version=first["review_version"], key=key, active=True
+        )
+    loaded = AssignmentRegistry(registry.data_file)
+    assert acknowledged_keys(loaded.assignments) == {key}
+
+    # An older unscoped acknowledgement can coexist with the scoped one.
+    unscoped = loaded.get_assignment(unscoped["id"])
+    loaded.acknowledge_attention(
+        unscoped["id"],
+        expected_version=unscoped["review_version"],
+        key=evidence_key(unscoped),
+        active=True,
+    )
+    repeat = loaded.get_assignment(repeat["id"])
+    loaded.acknowledge_attention(
+        repeat["id"], expected_version=repeat["review_version"], key=key, active=False
+    )
+    assert acknowledged_keys(AssignmentRegistry(loaded.data_file).assignments) == {
+        evidence_key(unscoped)
+    }
+    for item in others[:-1]:
+        assert loaded.get_assignment(item["id"])["review_version"] == versions[item["id"]]
+
+
 def test_stale_sibling_cannot_suppress_restored_group(tmp_path):
     registry = AssignmentRegistry(tmp_path / "work.json")
     first = completed(registry)
