@@ -505,7 +505,7 @@ class AssignmentRegistry:
         current identical-evidence sibling so a stale sibling cannot rewrite the
         group.
         """
-        from .attention import evidence_key
+        from .attention import evidence_key, scoped_evidence_key
 
         item = self.get_assignment(assignment_id)
         if not item:
@@ -519,7 +519,7 @@ class AssignmentRegistry:
         if not active:
             for record in self.assignments:
                 for event in record.get("attention_events", []):
-                    if event.get("key") == key and event.get("active"):
+                    if event.get("active") and scoped_evidence_key(record, event["key"]) == key:
                         event.update(active=False, restored_at=now)
         else:
             item.setdefault("attention_events", []).append({"key": key, "at": now, "active": True})

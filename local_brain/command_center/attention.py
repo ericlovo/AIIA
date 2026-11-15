@@ -4,6 +4,16 @@ import hashlib
 import json
 
 
+def scoped_evidence_key(item, key):
+    """Bind legacy digests to the client and call of the record that owns them."""
+    client = item.get("client_id") or ""
+    meeting = item.get("meeting_id") or ""
+    if not (client or meeting) or key.startswith("scoped:"):
+        return key
+    payload = json.dumps([client, meeting, key]).encode()
+    return "scoped:" + hashlib.sha256(payload).hexdigest()
+
+
 def evidence_key(item):
     if (
         item.get("status") != "completed"
@@ -31,12 +41,13 @@ def evidence_key(item):
         "" if k == "source_ref" and item.get("source_kind") == "manual" else item.get(k, "")
         for k in fields
     ]
-    return hashlib.sha256(json.dumps(values, sort_keys=True).encode()).hexdigest()
+    digest = hashlib.sha256(json.dumps(values, sort_keys=True).encode()).hexdigest()
+    return scoped_evidence_key(item, digest)
 
 
 def acknowledged_keys(items):
     return {
-        event["key"]
+        scoped_evidence_key(item, event["key"])
         for item in items
         for event in item.get("attention_events", [])
         if event.get("active")

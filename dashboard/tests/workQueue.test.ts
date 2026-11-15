@@ -34,6 +34,20 @@ test('different scope, non-manual sources and decisions remain separate', () => 
   }
 })
 
+test('identical work groups only within the same client and call', () => {
+  const scoped = { client_id: 'client-a', meeting_id: 'call-a', group_scope: 'same-brief' }
+  const records = [
+    work('first', scoped), work('repeat', scoped),
+    work('other-client', { ...scoped, client_id: 'client-b' }),
+    work('other-call', { ...scoped, meeting_id: 'call-b' }),
+    work('client-only', { ...scoped, meeting_id: '' }),
+    work('unscoped', { group_scope: scoped.group_scope }),
+  ]
+  assert.deepEqual(groupWork(records).map(group => group.map(item => item.id)), [
+    ['first', 'repeat'], ['other-client'], ['other-call'], ['client-only'], ['unscoped'],
+  ])
+})
+
 test('matching manual tasks across historical agents and run references group without bulk decisions', () => {
   const records = [work('one', { agent_id: 'old-agent', source_kind: 'manual', source_ref: 'run-1' }), work('two', { agent_id: 'new-agent', source_kind: 'manual', source_ref: 'run-2' })]
   assert.equal(groupWork(records).length, 1)

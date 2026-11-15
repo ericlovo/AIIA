@@ -2061,7 +2061,7 @@ def _compose_morning_note(line: MorningLine) -> str:
     if line.state == "consulting":
         return line.note or "no repo, consulting"
     if line.state == "unmounted":
-        return "no repo"
+        return "Checkout unavailable"
     bits = [part for part in line.parts if part]
     if line.waiting:
         bits.append(f"waiting on you: {line.waiting}")
@@ -2195,7 +2195,7 @@ def _slack_line(line: MorningLine) -> str:
     if line.state == "consulting":
         return f"{emoji} *{name}*: {escape(line.note or 'no repo, consulting')}"
     if line.state == "unmounted":
-        return f"{emoji} *{name}*: no repo"
+        return f"{emoji} *{name}*: {escape(line.note)}"
     bits = [escape(part) for part in line.parts if part]
     if line.waiting:
         bits.append(f"*waiting on you:* {escape(line.waiting)}")

@@ -1366,6 +1366,28 @@ def test_unmounted_repo_falls_back_to_github_slug():
     assert payload.get("owners")
 
 
+def test_unavailable_checkout_keeps_the_catalog_repository_in_home():
+    product = daily_digest.DigestProduct(
+        id="mia", name="MIA", mount="mia", github="example/moral-intention-analyst"
+    )
+    source = daily_digest._unavailable_repo_evidence("mia", {})
+    payload = daily_digest.build_morning_note(
+        date="2026-11-15",
+        products=[product],
+        repo_evidence=[source],
+        customers=[],
+        agents=[],
+        assignments=[],
+        tasks=[],
+        inbox_counts={},
+    )
+    row = payload["products"][0]
+    assert row["github"] == product.github
+    assert row["state"] == "unmounted"
+    assert row["note"] == "Checkout unavailable"
+    assert row["incomplete"] is True
+
+
 def test_checked_in_mia_and_morrow_use_github_when_unmounted():
     calls: list[str] = []
 
