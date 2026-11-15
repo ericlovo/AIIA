@@ -2014,6 +2014,27 @@ def test_slack_filters_inbox_status_updates_before_limiting_decisions():
     assert "Delivery check" not in body
 
 
+@pytest.mark.parametrize("status,section", [("failure", "Blocked"), ("pending", "In progress")])
+def test_slack_requires_a_confirmed_failure_for_an_unstable_pr(status, section):
+    pull = daily_digest.PullSignal(22, "Update dashboard", sha="abc", mergeable_state="unstable")
+    daily_digest._enrich_pull_checks(lambda _: {"state": status}, "example/repo", [pull])
+    body = daily_digest.format_slack_digest(
+        **_status_digest_kwargs(
+            products=[PRODUCTS[0]],
+            customers=[],
+            agents=[],
+            tasks=[],
+            assignments=[],
+            inbox_items=[],
+            repo_evidence=[
+                daily_digest.RepoEvidence("aiia", mounted=True, complete=True, open_pulls=[pull])
+            ],
+        )
+    )
+    assert f"*{section}*" in body and "#22" in body
+    assert ("Fix failing checks" in body) == (status == "failure")
+
+
 def test_slack_separates_rows_and_links_to_failed_task_and_main_checks():
     body = daily_digest.format_slack_digest(
         **_status_digest_kwargs(

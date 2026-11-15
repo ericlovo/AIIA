@@ -1023,7 +1023,6 @@ def _enrich_pull_checks(github_api: GitHubApi, slug: str, pulls: list[PullSignal
         if pull.checks or pull.mergeable_state in {
             "clean",
             "dirty",
-            "unstable",
             "blocked",
             "draft",
         }:
@@ -2506,8 +2505,10 @@ def format_slack_digest(
             change = pull_label(product, pull)
             if _pull_conflicted(pull):
                 blockers.append(row(product.name, f"Resolve the conflict on {change}"))
-            elif pull.checks in {"failure", "error"} or pull.mergeable_state == "unstable":
+            elif pull.checks in {"failure", "error"}:
                 blockers.append(row(product.name, f"Fix failing checks on {change}"))
+            elif pull.mergeable_state == "unstable":
+                moving.append(row(product.name, f"Check results unconfirmed · {change}"))
             elif pull.mergeable_state == "blocked":
                 blockers.append(row(product.name, f"Check merge requirements on {change}"))
             elif pull.review_requested:
