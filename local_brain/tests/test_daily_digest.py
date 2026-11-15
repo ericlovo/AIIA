@@ -2106,3 +2106,91 @@ def test_slack_owner_pr_with_outstanding_review_is_in_progress(review_request):
     assert "*In progress*" in body and "Awaiting review" in body
     assert body.count("#160") == 1
     assert "*Decisions*" not in body and "for merge" not in body
+
+
+def test_slack_drift_compares_the_measured_branches_and_shows_shared_evidence_once(tmp_path):
+    repo = _repo_with_drift(tmp_path)
+    _git(repo, "branch", "-m", "main", "master")
+    _git(repo, "branch", "-D", "alumni")
+    _git(repo, "update-ref", "refs/remotes/origin/release/alumni-pilot", "HEAD~1")
+    _git(repo, "update-ref", "refs/remotes/origin/master", "HEAD")
+    product = daily_digest.DigestProduct(
+        "platform", "Platform", mount="platform", github="example/catalog", drift=("alumni",)
+    )
+    customer = daily_digest.DigestCustomer(
+        "pilot",
+        "Pilot",
+        products=("platform",),
+        branch="release/alumni-pilot",
+    )
+    mounts = {"platform": repo}
+    evidence = daily_digest.collect_repo_evidence(
+        "platform",
+        mounts=mounts,
+        drift_refs=product.drift,
+        github_api=lambda endpoint: [],
+    )
+    customers = daily_digest.collect_customer_evidence(
+        [customer], products=[product], mounts=mounts
+    )
+    assert customers[0].comparison.base_ref == "origin/release/alumni-pilot"
+    assert customers[0].comparison.head_ref == "origin/master"
+
+    def push(evidence_rows):
+        return daily_digest.format_slack_digest(
+            **_status_digest_kwargs(
+                products=[product],
+                customers=[customer],
+                agents=[],
+                assignments=[],
+                tasks=[],
+                inbox_items=[],
+                repo_evidence=evidence_rows,
+                customer_evidence=customers,
+            )
+        )
+
+    for rows, owner in (([evidence], "Platform"), ([], "Pilot")):
+        body = push(rows)
+        assert body.count("|Compare branches>") == 1
+        line = next(line for line in body.splitlines() if "|Compare branches>" in line)
+        assert f"*{owner}*" in line
+        assert "release/alumni-pilot is 1 commit behind master." in line
+        assert "github.com/ericlovo/mindmoor/compare/release%2Falumni-pilot...master" in line
+
+
+def test_slack_drift_legacy_counts_use_branch_list_or_projects_without_guessing_refs():
+    products = [
+        daily_digest.DigestProduct("p", "Platform", mount="p", github="example/platform"),
+        daily_digest.DigestProduct("other", "Other", mount="other", github="https://invalid"),
+    ]
+    customer = daily_digest.DigestCustomer("c", "Customer", products=("p",), branch="pilot")
+    body = daily_digest.format_slack_digest(
+        **_status_digest_kwargs(
+            products=products,
+            customers=[customer],
+            agents=[],
+            assignments=[],
+            tasks=[],
+            inbox_items=[],
+            repo_evidence=[
+                daily_digest.RepoEvidence(
+                    "p", True, True, drift=[daily_digest.DriftSignal("p", "production", 7)]
+                ),
+                daily_digest.RepoEvidence(
+                    "other", True, True, drift=[daily_digest.DriftSignal("other", "release", 2)]
+                ),
+            ],
+            customer_evidence=[daily_digest.CustomerEvidence("c", 3, True)],
+        )
+    )
+    assert body.count("github.com/example/platform/branches|Browse branches>") == 2
+    assert "#/projects|Open projects>" in body
+    assert "/compare/" not in body and "https://invalid" not in body
+
+
+def test_drift_links_normalize_full_git_ref_names():
+    assert daily_digest._github_branch("refs/remotes/origin/topic/alias") == "topic/alias"
+    assert daily_digest._github_branch("refs/heads/topic/alias") == "topic/alias"
+    assert daily_digest._github_branch("refs/remotes/peer/topic") == ""
+    assert daily_digest._github_branch("refs/tags/archive") == ""
