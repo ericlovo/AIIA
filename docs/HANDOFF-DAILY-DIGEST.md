@@ -46,10 +46,17 @@ through the memory-post outbox. The inbox row keeps the fuller
 The Slack post is a separate morning-note body: text only, no buttons,
 Slack mrkdwn enabled for `digest:` posts.
 
-Slack leads with decisions and blockers. Each row names the product or customer and
-links to the PR or assignment when available. Assignment links use the catalog's
-optional HTTPS `studio_url`. Proposals appear as one choice with examples.
-A pending collector check appears as a prerequisite for alerts.
+Slack leads with decisions and blockers. Each bullet names the action and links to
+the corresponding assignment, inbox record, scheduled task, bot or pull request
+when available. Studio links use the catalog's optional HTTPS `studio_url`.
+An assignment's client determines its customer label. Unscoped work uses the
+agent's product. Several proposed changes in one report appear as one choice.
+Failed checks link to the run for inspection. After a retry, the current result and
+scoped acknowledgments determine whether the run still needs attention.
+Proposal counts exclude explicitly marked QA-only or do-not-merge options.
+Proposal lists over 72 hours old carry their report date and a link to reconcile
+the remaining work. Proposed watch cadences are labeled as proposals. An explicit
+handoff to an external schedule supersedes older requests to start that watch.
 
 Recent merges appear under verified deployment, provider-reported production
 deployment, or merged without deployment evidence. Open PRs can show a pending

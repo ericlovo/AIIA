@@ -784,6 +784,7 @@ class MemoryInbox:
     def list(
         self,
         *,
+        idea_id: str = "",
         project: str = "",
         source: str = "",
         query: str = "",
@@ -803,6 +804,9 @@ class MemoryInbox:
         if attention and attention not in ATTENTION_LANES:
             raise ValueError("invalid_attention_lane")
         clauses, args = [], []
+        if idea_id:
+            clauses.append("ideas.id=?")
+            args.append(idea_id)
         if attention:
             clauses.append("(" + ATTENTION_SQL + ")=?")
             args.append(attention)

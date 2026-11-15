@@ -6,7 +6,7 @@ test('every route survives a round trip through the URL', () => {
   const routes: StudioRoute[] = [
     { view: 'desk' }, { view: 'record' }, { view: 'record', receiptId: 105 }, { view: 'record', receiptId: 105, showRun: true },
     { view: 'bots' }, { view: 'bots', agentId: 'bot/a b' },
-    { view: 'inbox' }, { view: 'inbox', source: 'slack' }, { view: 'inbox', source: 'loops' },
+    { view: 'inbox' }, { view: 'inbox', ideaId: 'idea/a b' }, { view: 'inbox', source: 'slack' }, { view: 'inbox', source: 'loops' },
     { view: 'inbox', source: 'signals' }, { view: 'inbox', source: 'all' },
     { view: 'jobs' }, { view: 'projects' }, { view: 'history' }, { view: 'history', attention: true },
     { view: 'home' }, { view: 'bd' }, { view: 'meetings' },
@@ -36,7 +36,7 @@ test('paths are the names people see, not internal view ids', () => {
 })
 
 test('unknown or malformed addresses are rejected, never guessed', () => {
-  for (const hash of ['', '#', '#/', '#/nowhere', '#today', '#/memory?review=bogus', '#/inbox?source=bogus', '#/inbox/extra', '#/today/extra', '#/map/1', '#/agents/%E0%A4%A', '#/record/0', '#/record/1.5', '#/record/9007199254740992', '#/record/not-a-receipt']) {
+  for (const hash of ['', '#', '#/', '#/nowhere', '#today', '#/memory?review=bogus', '#/inbox?source=bogus', '#/inbox/extra/segment', '#/today/extra', '#/map/1', '#/agents/%E0%A4%A', '#/record/0', '#/record/1.5', '#/record/9007199254740992', '#/record/not-a-receipt']) {
     assert.equal(parseRoute(hash), null, hash)
   }
 })

@@ -1050,8 +1050,8 @@ def test_slack_digest_leads_with_actions_and_distinguishes_merged_from_deployed(
     assert "#18" in slack and "ready" in slack
     assert "CI on main" in slack
     assert "Untitled assignment" not in slack
-    assert "*Merged — deployment not verified*" in slack
-    assert slack.index("*Decisions*") < slack.index("*Blocked*") < slack.index("*Merged")
+    assert "(deployment unverified)" in slack
+    assert slack.index("*Decisions*") < slack.index("*Blocked*") < slack.index("*Delivery*")
     assert "RuntimeError" not in slack and "HTTP 500" not in slack
     assert "Daily Brief" in slack and "failed" in slack
     assert "*Decisions*" in slack
@@ -1091,7 +1091,7 @@ def test_slack_digest_omits_empty_needs_you_and_quiet_footer():
         customers=[],
     )
     assert "*Blocked*" not in clean and "*Decisions*" not in clean
-    assert "*Merged — deployment not verified*" in clean
+    assert "(deployment unverified)" in clean
     assert "/pull/131|#131>" in clean
     assert "No active alerts" not in clean
     assert "_Details in Studio_" not in clean
@@ -1740,7 +1740,7 @@ def test_slack_excludes_draft_conflicts_and_maintenance_from_main_failure():
             inbox_items=[],
         )
     )
-    assert "investigate failing CI on main" in body
+    assert "Investigate failing CI on main" in body
     assert "/pull/203|#203>" in body and "/pull/204|#204>" in body
     assert "draft PR" not in body and "dependency PR" not in body
     assert "#201" not in body and "#202" not in body
@@ -1957,12 +1957,13 @@ def test_slack_daily_decisions_with_partial_repo_coverage_and_mixed_delivery_evi
             inbox_items=[{"source": "slack", "text": "Stale story: internal backlog item"}],
         )
     )
-    decisions, delivery = body.split("*Verified deployed*")
-    verified, rest = delivery.split("*Production deployment reported by provider*")
-    provider, merged = rest.split("*Merged — deployment not verified*")
+    decisions, delivery = body.split("*Delivery*")
+    verified, rest = delivery.split("Provider reported deployment")
+    provider, merged = rest.split("Merged ·")
     assert "*Decisions*" in decisions and "4" in decisions
     assert "*Blocked*" in decisions and "Test runner" in decisions
-    assert sum(line.startswith("- ") for line in body.splitlines()) == 7
+    assert sum(line.startswith("• ") for line in body.splitlines()) == 7
+    assert "*Delivery* · 5 total\n• " in body and "(deployment unverified)" in merged
     assert "More in Studio" in body
     assert 0 < sum(option in decisions for option in options) < len(options)
     assert "#/assignments/intake-options" in decisions
@@ -2009,7 +2010,55 @@ def test_slack_filters_inbox_status_updates_before_limiting_decisions():
         )
     )
     assert "Approve the intake pilot?" in body
+    assert "#/inbox?source=slack|Open inbox>" in body
     assert "Delivery check" not in body
+
+
+@pytest.mark.parametrize("status,section", [("failure", "Blocked"), ("pending", "In progress")])
+def test_slack_requires_a_confirmed_failure_for_an_unstable_pr(status, section):
+    pull = daily_digest.PullSignal(22, "Update dashboard", sha="abc", mergeable_state="unstable")
+    daily_digest._enrich_pull_checks(lambda _: {"state": status}, "example/repo", [pull])
+    body = daily_digest.format_slack_digest(
+        **_status_digest_kwargs(
+            products=[PRODUCTS[0]],
+            customers=[],
+            agents=[],
+            tasks=[],
+            assignments=[],
+            inbox_items=[],
+            repo_evidence=[
+                daily_digest.RepoEvidence("aiia", mounted=True, complete=True, open_pulls=[pull])
+            ],
+        )
+    )
+    assert f"*{section}*" in body and "#22" in body
+    assert ("Fix failing checks" in body) == (status == "failure")
+
+
+def test_slack_separates_rows_and_links_to_failed_task_and_main_checks():
+    body = daily_digest.format_slack_digest(
+        **_status_digest_kwargs(
+            products=[PRODUCTS[0]],
+            customers=[],
+            agents=[],
+            assignments=[],
+            inbox_items=[],
+            repo_evidence=[
+                daily_digest.RepoEvidence("aiia", mounted=True, complete=True, failing_ci=True)
+            ],
+            tasks=[{"task_id": "task/1", "name": "Nightly check", "last_status": "failed"}],
+        )
+    )
+    lines = body.splitlines()
+    start = lines.index("*Blocked* · 2 total")
+    assert lines[start - 1] == ""
+    assert lines[start + 1].startswith("• *Nightly check*")
+    assert "#/today?task=task%2F1|Inspect run>" in lines[start + 1]
+    assert lines[start + 2].startswith("• *AIIA*")
+    assert (
+        f"github.com/{PRODUCTS[0].github}/actions?query=branch%3Amain|Open checks>"
+        in lines[start + 2]
+    )
 
 
 @pytest.mark.parametrize(
