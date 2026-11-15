@@ -55,7 +55,7 @@ async function open(width, height) {
   const pageErrors = []
   const writes = []
   const work = assignments.map(row => ({ ...row }))
-  Object.assign(work[0], { status: 'failed', error: 'check_incomplete', result: '' })
+  Object.assign(work[0], { status: 'failed', error: 'check_incomplete', result: '', attention_key: 'check-timeout' })
   Object.assign(work[1], { status: 'queued', result: '' })
   work.push({ ...work[1], id: 'busy', title: 'Active assignment', status: 'running' })
   let nextTicket = 1
@@ -153,6 +153,14 @@ try {
       assert.equal(await card.getByText('Decision and evidence', { exact: true }).count(), 0)
       assert.equal(await card.getByText('Failed', { exact: true }).count(), 0)
       if (index === 0) {
+        const reports = card.locator('details').filter({ has: page.locator('summary', { hasText: /^Repeat reports$/ }) }).last()
+        const acknowledge = reports.getByRole('button', { name: 'Acknowledge report and future repeats' })
+        assert.equal(await acknowledge.isVisible(), false)
+        await reports.locator('summary').click()
+        await acknowledge.waitFor()
+        assert.ok(await card.getByRole('region', { name: 'Failure evidence' }).evaluate((node, section) =>
+          Boolean(node.compareDocumentPosition(section) & Node.DOCUMENT_POSITION_FOLLOWING), await reports.elementHandle()))
+        await reports.locator('summary').click()
         await card.locator('summary').first().scrollIntoViewIfNeeded()
         await page.screenshot({ path: join(output, `expanded-task-${label}.png`), animations: 'disabled' })
       }

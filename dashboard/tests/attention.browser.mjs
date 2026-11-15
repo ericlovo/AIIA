@@ -41,7 +41,7 @@ try {
     await page.getByRole('button', { name: 'Restore identical reports to attention', exact: true }).click()
     await page.getByRole('button', { name: /^Needs you\s*\(\s*3\s*\)$/ }).waitFor()
     await page.getByRole('button', { name: /Approval needed.*Protected proposal/ }).click()
-    assert.equal(await page.getByRole('button', { name: 'Acknowledge identical reports', exact: true }).isEnabled(), false)
+    assert.equal(await page.getByRole('button', { name: 'Acknowledge report and future repeats', exact: true }).isEnabled(), false)
     await page.getByRole('button', { name: 'Approve & create worktree', exact: true }).waitFor()
     assert.deepEqual(forbidden, [])
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true)
