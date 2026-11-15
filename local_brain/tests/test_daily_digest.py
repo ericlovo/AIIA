@@ -2187,3 +2187,10 @@ def test_slack_drift_legacy_counts_use_branch_list_or_projects_without_guessing_
     assert body.count("github.com/example/platform/branches|Browse branches>") == 2
     assert "#/projects|Open projects>" in body
     assert "/compare/" not in body and "https://invalid" not in body
+
+
+def test_drift_links_normalize_full_git_ref_names():
+    assert daily_digest._github_branch("refs/remotes/origin/topic/alias") == "topic/alias"
+    assert daily_digest._github_branch("refs/heads/topic/alias") == "topic/alias"
+    assert daily_digest._github_branch("refs/remotes/peer/topic") == ""
+    assert daily_digest._github_branch("refs/tags/archive") == ""

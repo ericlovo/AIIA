@@ -726,6 +726,14 @@ def _alumni_ref(git_read: GitRead, path: Path) -> str | None:
     return sorted(matches)[0] if matches else None
 
 
+def _github_branch(ref: str) -> str:
+    for prefix in ("refs/heads/", "refs/remotes/origin/", "origin/"):
+        if ref.startswith(prefix):
+            return ref.removeprefix(prefix)
+    # Tags and another remote's branches do not name branches in origin.
+    return "" if ref.startswith("refs/") else ref
+
+
 def _configured_drift(
     git_read: GitRead,
     path: Path,
@@ -2484,8 +2492,8 @@ def format_slack_digest(
     seen_comparisons = set()
 
     def add_drift(owner: str, signal: DriftSignal, fallback_slug: str) -> None:
-        base = signal.base_ref.removeprefix("origin/")
-        head = signal.head_ref.removeprefix("origin/")
+        base = _github_branch(signal.base_ref)
+        head = _github_branch(signal.head_ref)
         slug = signal.github or fallback_slug
         if not repos._GITHUB_SLUG.fullmatch(slug) or {".", ".."}.intersection(slug.split("/")):
             slug = ""
