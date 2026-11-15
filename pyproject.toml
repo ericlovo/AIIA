@@ -66,6 +66,7 @@ dependencies = [
 aiia = "local_brain.cli:main"
 
 [project.optional-dependencies]
+studio-postgres = ["psycopg[binary]>=3.2,<4"]
 dev = [
     "ruff>=0.6.0",
     "pytest>=8.0",

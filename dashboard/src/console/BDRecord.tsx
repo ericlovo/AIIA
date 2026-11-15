@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { studioFetch, studioJSON } from '../lib/connection'
 import { publicSource } from './bdModel'
-import { bdDecisionLabel, type BDReceipt, type BDReceiptDetail } from './bdRecordModel'
+import { bdDecisionLabel, type BDReceipt, type BDReceiptDetail, type ReceiptId } from './bdRecordModel'
 import { formatRoute } from './studioRoute'
 import './BDRecord.css'
 
@@ -42,7 +42,7 @@ function ReceiptList() {
   </>
 }
 
-function ReceiptDetail({ id, showRun }: { id: number; showRun: boolean }) {
+function ReceiptDetail({ id, showRun }: { id: ReceiptId; showRun: boolean }) {
   const query = useQuery({
     queryKey: ['bd-record', id],
     queryFn: async ({ signal }) => {
@@ -81,7 +81,7 @@ function ReceiptDetail({ id, showRun }: { id: number; showRun: boolean }) {
   </>
 }
 
-export function BDRecord({ receiptId, showRun = false }: { receiptId?: number; showRun?: boolean }) {
+export function BDRecord({ receiptId, showRun = false }: { receiptId?: ReceiptId; showRun?: boolean }) {
   return <main className="bd-record"><div className="receipt-wrap">
     {receiptId === undefined && <a className="receipt-back" href={formatRoute({ view: 'desk' })}>← Desk</a>}
     {receiptId === undefined ? <ReceiptList /> : <ReceiptDetail key={receiptId} id={receiptId} showRun={showRun} />}
