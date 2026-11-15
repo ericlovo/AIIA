@@ -53,6 +53,22 @@ def test_a_proposal_lands_unreviewed_with_no_slack_receipt(studio):
     assert inbox.receipt_status("capture") == {}
 
 
+def test_direct_inbox_link_looks_up_exact_id_across_review_states(studio):
+    server, _, inbox = studio
+    selected = ingest(server).json()["idea"]
+    ingest(server, source_key="fixture:other", text=selected["id"])
+    client = TestClient(server.app)
+    params = {"idea_id": selected["id"]}
+    for expected in ("unreviewed", "dismissed"):
+        page = client.get("/api/memory-inbox", params=params).json()
+        assert page["total"] == 1
+        assert [(row["id"], row["status"]) for row in page["ideas"]] == [(selected["id"], expected)]
+        if expected == "unreviewed":
+            inbox.dismiss(selected["id"], note="Reviewed")
+    missing = client.get("/api/memory-inbox", params={"idea_id": "missing"}).json()
+    assert missing["total"] == 0 and missing["ideas"] == []
+
+
 def test_a_rerun_does_not_refile_the_same_finding(studio):
     server, _, inbox = studio
     first = ingest(server)

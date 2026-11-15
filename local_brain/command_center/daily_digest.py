@@ -27,7 +27,9 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 from urllib.parse import quote, urlsplit
+from zoneinfo import ZoneInfo
 
+from local_brain.command_center import attention
 from local_brain.command_center import repository_tools as repos
 from local_brain.command_center.deployment_verification import verified_receipt
 
@@ -2377,6 +2379,53 @@ def morning_decision_cards(
     return cards[:limit], total
 
 
+def _proposal_options(result: str) -> list[str] | None:
+    """Return eligible options. None means this output has no proposal list."""
+    proposals = re.finditer(
+        r"^### [^\n]*?\*\*PR \d+: ([^*\n]+)\*\*[ \t]*$"
+        r"([\s\S]*?)(?=^#{1,3} |\Z)",
+        result,
+        re.M,
+    )
+    options = None
+    for proposal in proposals:
+        if options is None:
+            options = []
+        heading, description = proposal.groups()
+        title = re.search(r"^\*\*Title:\*\* *`?([^\n`]+)", description, re.M | re.I)
+        if any(
+            re.search(r"^(?:QA[- ]ONLY|SYNTHETIC QA)\b|\bDO NOT MERGE\s*$", label.strip(), re.I)
+            for label in (heading, title[1] if title else "")
+        ):
+            continue
+        options.append(heading.strip())
+    return options
+
+
+def _proposed_change(result: str) -> str:
+    heading = re.match(
+        r"^(?:`{3}(?:markdown|md)?[^\S\n]*\n\s*)?#{1,3} +"
+        r"Proposed +(configuration|changes?|plan|schedule|approach)\b([\w &'’(),-]{0,85}) *$",
+        result.strip(),
+        re.I | re.M,
+    )
+    if not heading:
+        return ""
+    subject = heading[1].lower() + heading[2].rstrip()
+    cadences = re.findall(
+        r"^## ([\w &’'-]{1,60})[ \t]*\n[ \t\n]*- \*\*Cadence\*\*: "
+        r"(daily|weekly|every \d{1,3} (?:hours?|days?|weeks?))\b",
+        result,
+        re.I | re.M,
+    )
+    if 0 < len(cadences) <= 3 and all(name.strip() in subject for name, _ in cadences):
+        schedules = [
+            f"{escape(name.strip())} ({frequency.lower()})" for name, frequency in cadences
+        ]
+        return "Review the proposed schedules for " + " and ".join(schedules) + "."
+    return "Review the proposed " + escape(subject) + "."
+
+
 def format_slack_digest(
     *,
     date: str,
@@ -2398,6 +2447,8 @@ def format_slack_digest(
     roster = list(customers) if customers is not None else load_customers()
     evidence = {row.repo_id: row for row in (repo_evidence or [])}
     decisions: list[str] = []
+    merge_reviews: list[str] = []
+    earlier_reports: list[str] = []
     blockers: list[str] = []
     drift: list[str] = []
     moving: list[str] = []
@@ -2413,13 +2464,13 @@ def format_slack_digest(
         studio = ""
 
     def row(name: str, message: str) -> str:
-        return f"- *{escape(_short_title(name, 60))}*: {message}"
+        return f"• *{escape(_short_title(name, 60))}* — {message}"
 
     def pull_label(product: DigestProduct, pull: PullSignal) -> str:
         number = f"#{pull.number}"
         if repos._GITHUB_SLUG.fullmatch(product.github):
             number = f"<https://github.com/{product.github}/pull/{pull.number}|{number}>"
-        return f"{number} {escape(_short_title(pull.title, 64))}".rstrip()
+        return f"{number} {escape(_short_title(pull.title, 180))}".rstrip()
 
     for task in tasks:
         if task.get("last_status") == "failed":
@@ -2427,10 +2478,14 @@ def format_slack_digest(
                 r"FAILED: (\d+ passed, \d+ failed, \d+ errors)", str(task.get("last_result") or "")
             )
             message = counts[1] if counts else "failed"
+            link = ""
+            if studio and task.get("task_id"):
+                task_id = quote(str(task["task_id"]), safe="")
+                link = f" <{studio}/#/today?task={task_id}|Inspect run>"
             blockers.append(
                 row(
                     task.get("name") or "Scheduled task",
-                    message + "; inspect the run before retrying",
+                    message + ". Inspect the run before retrying." + link,
                 )
             )
 
@@ -2441,7 +2496,10 @@ def format_slack_digest(
         if not ev:
             continue
         if ev.failing_ci:
-            blockers.append(row(product.name, "investigate failing CI on main"))
+            action = "Investigate failing CI on main"
+            if repos._GITHUB_SLUG.fullmatch(product.github):
+                action += f" <https://github.com/{product.github}/actions?query=branch%3Amain|Open checks>"
+            blockers.append(row(product.name, action))
         for pull in ev.open_pulls:
             if not _pull_counts_as_blocker(pull, product.holds):
                 continue
@@ -2455,7 +2513,7 @@ def format_slack_digest(
             elif pull.review_requested:
                 moving.append(row(product.name, f"Awaiting review: {change}"))
             elif product.asks and ev.complete and _eric_owned_ready(pull):
-                decisions.append(row(product.name, f"Review for merge: {change}"))
+                merge_reviews.append(row(product.name, f"Review for merge: {change}"))
             else:
                 updated = _parse_stamp(pull.updated_at)
                 if updated and clock - SHIPPED_WINDOW <= updated <= clock:
@@ -2465,83 +2523,146 @@ def format_slack_digest(
         for pull in ev.merged_prs:
             change = pull_label(product, pull)
             if pull.number in ev.verified_deployments:
-                deployed.append(
-                    row(
-                        product.name,
-                        change
-                        + "; "
-                        + escape(_short_title(ev.verified_deployments[pull.number], 40)),
-                    )
-                )
+                target = escape(_short_title(ev.verified_deployments[pull.number], 40))
+                deployed.append(row(product.name, f"Verified live · {change} ({target})"))
             elif pull.number in ev.provider_deployments:
+                target = escape(_short_title(ev.provider_deployments[pull.number], 40))
                 provider.append(
-                    row(
-                        product.name,
-                        change
-                        + "; "
-                        + escape(_short_title(ev.provider_deployments[pull.number], 40)),
-                    )
+                    row(product.name, f"Provider reported deployment · {change} ({target})")
                 )
             else:
-                merged.append(row(product.name, change))
+                merged.append(row(product.name, f"Merged · {change} (deployment unverified)"))
 
-    # A client assignment belongs to its client even when the worker also maps to a product.
-    owners: dict[str, str] = {}
+    clients = {customer.id: customer.name for customer in roster}
+    owners = {}
+    paused = {}
+    external_schedules = {}
     for agent in agents:
-        clients = map_agent_to_customers(agent, roster)
         product = map_agent_to_product(agent, catalog)
-        owner = clients[0].name if len(clients) == 1 else product.name if product else "Studio"
+        owner = product.name if product else "Studio"
         owners[agent.get("id")] = owner
         if _agent_loop_paused(agent):
-            blockers.append(
-                row(owner, escape(_short_title(agent.get("name") or "Agent", 48)) + " paused")
-            )
+            # Legacy watch configuration records the scheduler handoff in loop_task.
+            task = str(agent.get("loop_task") or "")
+            if re.match(r"External GitHub Actions owns (?:the )?\w+ schedule\b", task, re.I):
+                external_schedules[agent.get("id")] = _parse_stamp(agent.get("updated_at"))
+                continue
+            name = escape(_short_title(agent.get("name") or "Agent", 80))
+            link = ""
+            if studio and agent.get("id"):
+                agent_id = quote(str(agent["id"]), safe="")
+                link = f" <{studio}/#/bots/{agent_id}|Open bot>"
+            paused[agent.get("id")] = row(owner, f"Review the paused schedule for {name}." + link)
 
+    seen = attention.acknowledged_keys(assignments)
     for item in assignments:
-        owner = owners.get(item.get("agent_id"), "Studio")
         title = str(item.get("title") or "").strip().removeprefix("Next best action: ")
-        if title.upper().startswith("SYNTHETIC QA "):
-            continue
-        if _agent_failed_today(item, date):
-            blockers.append(row(owner, escape(_short_title(title or "Agent run", 64)) + " failed"))
-            continue
-        if not _agent_waiting(item) or not title:
-            continue
-        result = str(item.get("result") or "")
         if (
-            re.match(r"(?:Assignment: )?Scheduled:", title, re.I)
-            and re.match(r"^[*\s]*Verdict:[*\s]*[^\w]*Clean day\b", result, re.I)
-            and not re.search(r"approval|please decide|decision needed|\?", result, re.I)
+            item.get("dismissed_at")
+            or item.get("run_ticket")
+            or item.get("status") == "running"
+            or re.match(
+                r"^(?:Continue: )*(?:SYNTHETIC QA\b|Eval [A-Z]+-\d+\b|Weekend Test —|Tune-up smoke\b)",
+                title,
+                re.I,
+            )
+            or item.get("attention_seen")
+            or (seen and attention.evidence_key(item) in seen)
         ):
             continue
+        client_id = item.get("client_id")
+        owner = (
+            clients.get(client_id, "Client work")
+            if client_id
+            else owners.get(item.get("agent_id"), "Studio")
+        )
         link = ""
         if studio and item.get("id"):
             assignment_id = quote(str(item["id"]), safe="")
             link = f" <{studio}/#/assignments/{assignment_id}|Open work>"
-        if (
+        check = item.get("source_kind") == "loop_check"
+        subject = escape(_short_title(title or "Agent run", 120))
+        if check:
+            name = title.removeprefix("Check failed: ").strip()
+            subject = escape(_short_title(name or "Scheduled check", 120))
+        status = item.get("status")
+        result = str(item.get("result") or "")
+        blocker = ""
+        if item.get("recovery_pending") or (
+            item.get("attempt_id") and not item.get("completed_run_id")
+        ):
+            blocker = f"Recover the saved output for {subject}."
+        elif status == "failed":
+            if check:
+                reasons = (
+                    str(item.get("error") or "").removeprefix("check_incomplete: ").split(", ")
+                )
+                cause = " (GitHub timed out)" if "github_api_timeout" in reasons else ""
+                blocker = f"{subject} could not complete its check{cause}. Inspect before retrying."
+            else:
+                blocker = f"{subject} failed. Inspect before retrying."
+        elif status == "completed" and not result.strip() and title:
+            blocker = f"{subject} returned no output. Inspect the run."
+        elif (
+            not _agent_waiting(item)
+            or not title
+            or (
+                (check or re.match(r"(?:Assignment: )?Scheduled:", title, re.I))
+                and re.match(r"^[*\s]*Verdict:[*\s]*[^\w]*Clean day\b", result, re.I)
+                and not re.search(r"approval|please decide|decision needed|\?", result, re.I)
+            )
+        ):
+            continue
+        elif (
             "rfp" in title.lower()
             and "source collector" in result.lower()
             and "begin daily digest delivery" in result.lower()
             and "slack" in result.lower()
         ):
-            blockers.append(
-                row(
-                    "RFP watch",
-                    "Verify the source collector before starting daily Slack alerts." + link,
-                )
+            assigned_at = _parse_stamp(item.get("completed_at") or item.get("updated_at"))
+            configured_at = external_schedules.get(item.get("agent_id"))
+            if assigned_at and configured_at and assigned_at < configured_at:
+                continue
+            blocker = (
+                "Verify the RFP source collector, then decide whether to enable daily Slack alerts."
             )
+        if blocker:
+            blockers.append(row(owner, blocker + link))
+            paused.pop(item.get("agent_id"), None)
             continue
-        proposals = re.findall(r"^### [^\n]*?\*\*PR \d+: ([^*\n]+)\*\* *$", result, re.M)
-        if proposals:
-            examples = " and ".join(escape(_short_title(option, 66)) for option in proposals[:2])
+        proposals = _proposal_options(result)
+        if proposals is not None:
+            if not proposals:
+                continue
+            completed = _parse_stamp(item.get("completed_at"))
+            if completed and clock - completed > INBOX_STALE:
+                when = completed.astimezone(ZoneInfo("America/Chicago"))
+                day = f"{when:%b} {when.day}"
+                ask = (
+                    f"Check whether the {day} proposal still needs work."
+                    if len(proposals) == 1
+                    else f"Check which of the {len(proposals)} proposals from {day} still need work."
+                )
+                earlier_reports.append(row(owner, ask + link))
+                continue
+            examples = ", ".join(
+                f"“{escape(_short_title(option, 66))}”" for option in proposals[:2]
+            )
             if len(proposals) == 1:
                 message = "Decide whether to develop " + examples
             else:
                 message = f"Choose which of {len(proposals)} proposals to develop."
                 message += f" Options include {examples}."
         else:
-            message = "Review " + escape(_short_title(title, 70))
+            proposed = _proposed_change(result)
+            if proposed:
+                message = proposed
+            elif check:
+                message = f"Review the latest check from {subject}."
+            else:
+                message = "Review " + subject
         decisions.append(row(owner, message + link))
+    blockers.extend(paused.values())
 
     customer_rows = {item.customer_id: item for item in (customer_evidence or [])}
     for customer in roster:
@@ -2581,15 +2702,21 @@ def format_slack_digest(
             # status above for merge asks, including active conflicts and holds.
             if re.match(r"^(?:please )?merge\b", first, re.I) and _PR_MENTION.search(first):
                 continue
-            decisions.append(row(product.name if product else "Inbox", escape(first)))
+            source = "slack" if item.get("source") == "slack" else "loops"
+            link = f" <{studio}/#/inbox?source={source}|Open inbox>" if studio else ""
+            if studio and item.get("id"):
+                idea_id = quote(str(item["id"]), safe="")
+                link = f" <{studio}/#/inbox/{idea_id}|Open idea>"
+            decisions.append(row(product.name if product else "Inbox", escape(first) + link))
 
     lines = [f"*AIIA · {slack_header_date(date)}*"]
     sections = (
-        ("Decisions", decisions),
+        ("Decisions", decisions + merge_reviews),
         ("Blocked", blockers + drift),
-        ("Verified deployed", deployed),
-        ("Production deployment reported by provider", provider),
-        ("Merged — deployment not verified", merged),
+        ("Delivery", deployed),
+        ("Delivery", provider),
+        ("Delivery", merged),
+        ("Earlier reports awaiting review", earlier_reports),
         ("In progress", moving),
     )
     # Keep the daily post scannable even when a single repository is busy.
@@ -2600,26 +2727,37 @@ def format_slack_digest(
             names += f" and {len(missing) - 5} more"
         coverage = f"Repo coverage incomplete: {names}."
     more = f"<{studio}/#/note|More in Studio>" if studio else "More in Studio"
-    budget = SLACK_BODY_MAX - len(coverage) - len(more) - 32
+    budget = SLACK_BODY_MAX - len(coverage) - len(more) - 40
     nonempty = [(heading, list(dict.fromkeys(rows))) for heading, rows in sections if rows]
+    totals: dict[str, int] = {}
+    for heading, rows in nonempty:
+        totals[heading] = totals.get(heading, 0) + len(rows)
     remaining = 7
     overflow = 0
+    last_heading = ""
     for index, (heading, unique) in enumerate(nonempty):
         # Reserve a row for each later section so a busy queue cannot hide shipping.
         limit = min(3, remaining - (len(nonempty) - index - 1))
+        heading_line = f"*{heading}*"
+        if totals[heading] > 1:
+            heading_line += f" · {totals[heading]} total"
         emitted = 0
         for entry in unique:
-            prefix = [] if emitted else ["", f"*{heading}*"]
-            if emitted == limit or len("\n".join([*lines, *prefix, entry])) > budget:
+            if emitted == limit:
+                break
+            prefix = [] if last_heading == heading else ["", heading_line]
+            if len("\n".join([*lines, *prefix, entry])) > budget:
                 continue
             lines.extend([*prefix, entry])
             emitted += 1
+            last_heading = heading
         remaining -= emitted
         overflow += len(unique) - emitted
     if len(lines) == 1 and not coverage and not overflow:
         lines.extend(["", "No decisions, blockers or shipments recorded."])
     if overflow:
-        lines.extend(["", f"{more} ({overflow})"])
+        noun = "item" if overflow == 1 else "items"
+        lines.extend(["", f"{overflow} more {noun} · {more}"])
     if coverage:
         lines.extend(["", coverage])
     return "\n".join(lines)

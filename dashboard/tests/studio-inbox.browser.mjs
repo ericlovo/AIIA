@@ -45,7 +45,8 @@ const cleanText = text => text.replace(/<@[A-Z0-9]+>/g, '').replace(/\s+/g, ' ')
 const belongsTo = (item, source) => !source || (source === 'local_proposals' ? proposalSources.includes(item.source) : item.source === source)
 
 function listing(ideas, params) {
-  const scoped = ideas.filter(item => belongsTo(item, params.get('source'))
+  const scoped = ideas.filter(item => (!params.get('idea_id') || item.id === params.get('idea_id'))
+    && belongsTo(item, params.get('source'))
     && (!params.get('project') || item.project === params.get('project'))
     && (!params.get('query') || item.text.toLowerCase().includes(params.get('query').toLowerCase()))
     && (!params.get('priority') || item.priority === params.get('priority'))
@@ -203,6 +204,28 @@ async function expectCounts(page, slack = 3, proposals = 3) {
 }
 
 try {
+  for (const width of [1440, 390]) {
+    const { page, state, close } = await open('#/inbox/loop-review', width)
+    await heading(page, 'Saved idea').waitFor()
+    await page.getByText('Pending code review proposal.', { exact: true }).waitFor()
+    assert.equal(await captures(page).locator('li[data-idea-status]').count(), 1)
+    assert.ok(state.calls.some(call => call.idea_id === 'loop-review' && !call.status && !call.source))
+    await screenshot(page, `saved-idea-${width}`)
+    await page.reload()
+    await page.getByText('Pending code review proposal.', { exact: true }).waitFor()
+    await page.getByRole('link', { name: 'Back to inbox' }).click()
+    await heading(page, 'Inbox').waitFor()
+    await page.goBack()
+    await heading(page, 'Saved idea').waitFor()
+    await page.goto(`${base}#/inbox/slack-dismissed`)
+    await page.getByText('Previously dismissed Slack capture.', { exact: true }).waitFor()
+    await page.getByRole('button', { name: 'Restore', exact: true }).waitFor()
+    await page.goto(`${base}#/inbox/missing`)
+    await page.getByText('This saved idea could not be found.').waitFor()
+    assert.equal(await captures(page).locator('li[data-idea-status]').count(), 0)
+    assert.equal(state.mutations.length, 0)
+    await close()
+  }
   for (const width of widths) {
     const { page, state, close } = await open('#/today', width)
     await heading(page, 'Today').waitFor()

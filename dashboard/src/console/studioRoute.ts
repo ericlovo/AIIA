@@ -38,7 +38,7 @@ export type StudioRoute =
   | { view: 'bots'; agentId?: string }
   | { view: 'switchboard'; taskId?: string; attention?: boolean }
   | { view: 'history'; attention?: boolean }
-  | { view: 'inbox'; source?: InboxSource }
+  | { view: 'inbox'; source?: InboxSource; ideaId?: string }
   | { view: 'jobs' }
   | { view: 'projects' }
   | { view: 'meetings'; clientId?: string; meetingId?: string }
@@ -86,7 +86,8 @@ export function parseRoute(hash: string): StudioRoute | null {
     case 'history': return id ? null : { view, ...(param('attention') === '1' ? { attention: true } : {}) }
     case 'inbox': {
       const source = param('source')
-      if (id || (source && !['slack', 'loops', 'signals', 'all'].includes(source))) return null
+      if (id) return { view, ideaId: id }
+      if (source && !['slack', 'loops', 'signals', 'all'].includes(source)) return null
       return { view, source: source as InboxSource | undefined }
     }
     case 'record': {
@@ -116,7 +117,8 @@ export function formatRoute(route: StudioRoute): string {
   let id = ''
   switch (route.view) {
     case 'inbox':
-      if (route.source) query.set('source', route.source)
+      id = route.ideaId ?? ''
+      if (!id && route.source) query.set('source', route.source)
       break
     case 'switchboard':
       if (route.taskId) query.set('task', route.taskId)

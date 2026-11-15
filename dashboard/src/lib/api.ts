@@ -833,8 +833,9 @@ export const api = {
     post<{ agent: Agent; model: string; latency_ms: number }>(`/api/agents/${id}/run`, { task }),
 
   ideaAttentionPreview: (offset = 0) => get<IdeaPreview>(`/api/memory-inbox/attention-preview?offset=${offset}`),
-  memoryInbox: (params: { attention?: IdeaLane; project?: string; source?: string; query?: string; status?: MemoryIdeaStatus | ''; outcome?: ReviewBucket | ''; offset?: number; priority?: MemoryPriority | ''; sort?: MemoryInboxSort } = {}) => {
+  memoryInbox: (params: { ideaId?: string; attention?: IdeaLane; project?: string; source?: string; query?: string; status?: MemoryIdeaStatus | ''; outcome?: ReviewBucket | ''; offset?: number; priority?: MemoryPriority | ''; sort?: MemoryInboxSort } = {}) => {
     const search = new URLSearchParams();
+    if (params.ideaId) search.set('idea_id', params.ideaId);
     if (params.attention) search.set('attention', params.attention);
     if (params.project) search.set('project', params.project);
     if (params.source) search.set('source', params.source);
