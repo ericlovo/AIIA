@@ -16,6 +16,17 @@ const sourceUrl = (value: string) => { try { const url = new URL(value); return 
 const sourceHost = (value: string) => { try { return new URL(value).hostname.replace(/^www\./, '') } catch { return 'Source unavailable' } }
 const colors = ['#77eed0', '#a698ff', '#f4bc80', '#6985aa']
 
+function showProspects() {
+  const heading = document.getElementById('ci-prospects-title')
+  const surface = heading?.closest('.studio-surface')
+  if (!heading || !surface) return
+  heading.focus({ preventScroll: true })
+  surface.scrollTo({
+    top: surface.scrollTop + heading.getBoundingClientRect().top - surface.getBoundingClientRect().top - 20,
+    behavior: 'instant',
+  })
+}
+
 function SourceLink({ url, children }: { url: string; children: ReactNode }) {
   const href = sourceUrl(url)
   return href ? <a href={href} target="_blank" rel="noreferrer">{children}<ArrowUpRight size={14} aria-hidden="true" /></a> : <span>{children}</span>
@@ -157,10 +168,10 @@ export function ConsumerInsights({ route }: { route: InsightRoute }) {
         {research.error && <Notice title="Research unavailable" message={research.error.message} retry={() => { void research.refetch() }} />}
         {data && <>
           <div className="ci-metrics" aria-label={`${segmentLabel} research summary`}>
-            <a href={formatRoute({ ...route, review: undefined, query: undefined, prospect: undefined })} onClick={event => { event.preventDefault(); update({ review: undefined, query: undefined }); document.getElementById('ci-prospects-title')?.focus(); document.getElementById('ci-prospects-title')?.scrollIntoView({ block: 'start' }) }} className="ci-metric ci-metric-primary"><div><Building2 size={18} aria-hidden="true" /><ArrowDown size={15} aria-hidden="true" /></div><strong>{count(data.totals.prospects)}</strong><span>Source-backed prospects</span><small>Organizations in {segment === 'all' ? 'all segments' : segmentLabel}</small></a>
+            <a href={formatRoute({ ...route, review: undefined, query: undefined, prospect: undefined })} onClick={event => { event.preventDefault(); update({ review: undefined, query: undefined }); showProspects() }} className="ci-metric ci-metric-primary"><div><Building2 size={18} aria-hidden="true" /><ArrowDown size={15} aria-hidden="true" /></div><strong>{count(data.totals.prospects)}</strong><span>Source-backed prospects</span><small>Organizations in {segment === 'all' ? 'all segments' : segmentLabel}</small></a>
             <div className="ci-metric"><div><Layers3 size={18} aria-hidden="true" /></div><strong>{count(data.totals.insights)}</strong><span>Research hypotheses</span><small>Potential implications · unverified</small></div>
             <div className="ci-metric"><div><ExternalLink size={18} aria-hidden="true" /></div><strong>{count(data.totals.sources)}</strong><span>Source articles</span><small>{count(data.source_coverage.domains)} link domains</small></div>
-            <a href={formatRoute({ ...route, review: 'human_review_required', query: undefined, prospect: undefined })} onClick={event => { event.preventDefault(); update({ review: 'human_review_required', query: undefined }); document.getElementById('ci-prospects-title')?.scrollIntoView({ block: 'start' }) }} className="ci-metric ci-metric-review"><div><Users size={18} aria-hidden="true" /><ArrowDown size={15} aria-hidden="true" /></div><strong>{count(data.totals.awaiting_review)}</strong><span>Reports awaiting review</span><small>Open the supporting prospects</small></a>
+            <a href={formatRoute({ ...route, review: 'human_review_required', query: undefined, prospect: undefined })} onClick={event => { event.preventDefault(); update({ review: 'human_review_required', query: undefined }); showProspects() }} className="ci-metric ci-metric-review"><div><Users size={18} aria-hidden="true" /><ArrowDown size={15} aria-hidden="true" /></div><strong>{count(data.totals.awaiting_review)}</strong><span>Reports awaiting review</span><small>Open the supporting prospects</small></a>
           </div>
           <div className="ci-research-grid"><section className="ci-panel ci-segments" aria-labelledby="ci-segments-title"><div className="ci-panel-heading"><div><span className="ci-eyebrow">Coverage</span><h3 id="ci-segments-title">Market coverage</h3></div><span className="ci-subtle">Source-backed prospects</span></div>
             <div className="ci-segment-bars">{chartSegments.map((item, index) => <button key={item.id} className={segment === item.id ? 'selected' : ''} aria-pressed={segment === item.id} onClick={() => update({ segment: segment === item.id ? undefined : item.id })}>

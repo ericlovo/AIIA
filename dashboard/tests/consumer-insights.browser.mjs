@@ -129,6 +129,10 @@ try {
     await page.getByRole('link', { name: /Orchard Clinic/ }).waitFor()
     assert.equal(await page.getByRole('navigation', { name: 'Studio' }).getByRole('link', { name: 'Insights', exact: true }).getAttribute('aria-current'), 'page')
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false)
+    const navTop = (await page.getByRole('navigation', { name: 'Studio' }).boundingBox()).y
+    await page.locator('.ci-metric-primary').click()
+    assert.equal((await page.getByRole('navigation', { name: 'Studio' }).boundingBox()).y, navTop)
+    await page.locator('.studio-surface').evaluate(element => { element.scrollTop = 0 })
     const screenshotDir = process.env.SCREENSHOT_DIR
     if (screenshotDir) {
       await mkdir(screenshotDir, { recursive: true })
