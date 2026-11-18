@@ -11,6 +11,7 @@ import { VIEWS, type StudioView } from './studioRoute'
 import { PageHeader } from './PageHeader'
 import { navigate, replaceRoute, useStudioRoute } from './useStudioRoute'
 import { ClientMeetings } from './ClientMeetings'
+import { ConsumerInsights } from './ConsumerInsights'
 import { WorkBoard } from './WorkBoard'
 import { ActivityOverview } from './ActivityOverview'
 import { Switchboard } from './Switchboard'
@@ -187,6 +188,7 @@ export function AgentStudio() {
     if (route.view === 'record') return <BDRecord receiptId={route.receiptId} showRun={route.showRun} />
     if (view === 'home') return <MorningNote agents={agents} onDetails={() => navigate({ view: 'assignments' })} />
     if (view === 'bd') return <BDConductor />
+    if (route.view === 'insights') return <ConsumerInsights route={route} />
     if (view === 'bots') return <Bots agents={agents} loading={isLoading} error={isError} agentId={route.view === 'bots' ? route.agentId : undefined} />
     if (view === 'signals') return <SignalJobs />
     if (view === 'jobs') return <Jobs agents={agents} loading={isLoading} agentError={isError} />

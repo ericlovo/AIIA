@@ -2,12 +2,13 @@ import { isReceiptId, type ReceiptId } from './bdRecordModel.ts'
 import type { ReviewBucket } from '../lib/api'
 
 export type InboxSource = 'slack' | 'loops' | 'signals' | 'all'
-export type StudioView = 'desk' | 'record' | 'home' | 'bd' | 'bots' | 'switchboard' | 'inbox' | 'jobs' | 'projects' | 'history' | 'activity' | 'agents' | 'assignments' | 'handoffs' | 'memory' | 'world' | 'signals' | 'meetings'
+export type StudioView = 'desk' | 'record' | 'home' | 'bd' | 'insights' | 'bots' | 'switchboard' | 'inbox' | 'jobs' | 'projects' | 'history' | 'activity' | 'agents' | 'assignments' | 'handoffs' | 'memory' | 'world' | 'signals' | 'meetings'
 
 export const VIEWS: { id: StudioView; label: string }[] = [
   { id: 'desk', label: 'Desk' },
   { id: 'record', label: 'Record' },
   { id: 'bd', label: 'Research' },
+  { id: 'insights', label: 'Insights' },
   { id: 'home', label: 'Home' },
   { id: 'bots', label: 'Bots' },
   { id: 'switchboard', label: 'Today' },
@@ -35,6 +36,7 @@ export type StudioRoute =
   | { view: 'record'; receiptId?: ReceiptId; showRun?: boolean }
   | { view: 'home' }
   | { view: 'bd' }
+  | { view: 'insights'; segment?: string; prospect?: string; state?: string; query?: string; review?: string }
   | { view: 'bots'; agentId?: string }
   | { view: 'switchboard'; taskId?: string; attention?: boolean }
   | { view: 'history'; attention?: boolean }
@@ -58,6 +60,7 @@ const PATHS: Record<StudioView, string> = {
   home: 'note',
   meetings: 'meetings',
   bd: 'bd',
+  insights: 'insights',
   bots: 'bots',
   switchboard: 'today', activity: 'overview', agents: 'agents', assignments: 'assignments',
   handoffs: 'handoffs', memory: 'memory', world: 'map', signals: 'signals',
@@ -82,6 +85,7 @@ export function parseRoute(hash: string): StudioRoute | null {
   const query = new URLSearchParams(rawQuery ?? '')
   const param = (name: string) => query.get(name) || undefined
   switch (view) {
+    case 'insights': return id ? null : { view, segment: param('segment'), prospect: param('prospect'), state: param('state'), query: param('q'), review: param('review') }
     case 'switchboard': return id ? null : { view, taskId: param('task'), ...(param('attention') === '1' ? { attention: true } : {}) }
     case 'history': return id ? null : { view, ...(param('attention') === '1' ? { attention: true } : {}) }
     case 'inbox': {
@@ -116,6 +120,13 @@ export function formatRoute(route: StudioRoute): string {
   const query = new URLSearchParams()
   let id = ''
   switch (route.view) {
+    case 'insights':
+      if (route.segment) query.set('segment', route.segment)
+      if (route.prospect) query.set('prospect', route.prospect)
+      if (route.state) query.set('state', route.state)
+      if (route.query) query.set('q', route.query)
+      if (route.review) query.set('review', route.review)
+      break
     case 'inbox':
       id = route.ideaId ?? ''
       if (!id && route.source) query.set('source', route.source)

@@ -10,6 +10,8 @@ test('every route survives a round trip through the URL', () => {
     { view: 'inbox', source: 'signals' }, { view: 'inbox', source: 'all' },
     { view: 'jobs' }, { view: 'projects' }, { view: 'history' }, { view: 'history', attention: true },
     { view: 'home' }, { view: 'bd' }, { view: 'meetings' },
+    { view: 'insights' },
+    { view: 'insights', segment: 'health/a', prospect: 'company & a', state: '27', query: 'medical systems', review: 'human_review_required' },
     { view: 'meetings', clientId: 'gci', meetingId: 'call-1' },
     { view: 'assignments', clientId: 'smart-medical', meetingId: 'call-2' },
     { view: 'switchboard' }, { view: 'switchboard', taskId: 'nightly-sync' }, { view: 'activity' },
@@ -43,4 +45,11 @@ test('unknown or malformed addresses are rejected, never guessed', () => {
 
 test('an assignment id wins over an agent preset, since they mean different screens', () => {
   assert.deepEqual(JSON.parse(JSON.stringify(parseRoute('#/assignments/asg-1?agent=x'))), { view: 'assignments', assignmentId: 'asg-1' })
+})
+
+test('insight evidence addresses preserve research and population scopes independently', () => {
+  const route = parseRoute('#/insights?segment=healthcare&prospect=org-1&state=27&q=clinic&review=accepted')
+  assert.deepEqual(route, { view: 'insights', segment: 'healthcare', prospect: 'org-1', state: '27', query: 'clinic', review: 'accepted' })
+  assert.equal(formatRoute(route!), '#/insights?segment=healthcare&prospect=org-1&state=27&q=clinic&review=accepted')
+  assert.equal(parseRoute('#/insights/not-a-route'), null)
 })
