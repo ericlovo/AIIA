@@ -15,7 +15,7 @@ from fastapi import Path as APIPath
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field, StrictBool
 
-from . import bd_desk
+from . import bd_desk, consumer_insights
 from .bd_conductor import BDConductor
 from .bd_pipeline import DataUnavailable, PublicExcerpt, load_public_excerpt
 from .bd_service import BDService
@@ -132,6 +132,17 @@ def create_router(factory=None):
             raise HTTPException(404, "packet_not_found") from exc
         except ValueError as exc:
             raise HTTPException(409, "packet_changed") from exc
+
+    @router.get("/insights")
+    def insights(segment: str = "all", current: BDService = Depends(service)):
+        try:
+            return consumer_insights.insights(current, segment)
+        except ValueError as exc:
+            if str(exc) == "unknown_insights_segment":
+                raise HTTPException(422, "unknown_insights_segment") from None
+            raise HTTPException(503, "consumer_insights_unavailable") from exc
+        except (OSError, sqlite3.Error, KeyError, TypeError) as exc:
+            raise HTTPException(503, "consumer_insights_unavailable") from exc
 
     @router.get("/snapshot")
     async def snapshot(current: BDService = Depends(ready)):

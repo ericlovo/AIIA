@@ -110,7 +110,7 @@ try {
   for (const width of [320, 390, 653, 1440]) {
     const { context, page, pageErrors } = await open('#/today', { width })
     await heading(page, 'Today').waitFor()
-    assert.deepEqual(await nav(page).getByRole('link').allTextContents(), ['Home', 'Work', 'Research', 'Bots'])
+    assert.deepEqual(await nav(page).getByRole('link').allTextContents(), ['Home', 'Work', 'Research', 'Insights', 'Bots'])
     const tools = nav(page).locator('summary[aria-label="Studio tools"]')
     await tools.click()
     await nav(page).getByRole('link', { name: 'Signals', exact: true }).waitFor()
@@ -142,11 +142,11 @@ try {
     await openStudioView(page, 'Work')
     await heading(page, 'Work').waitFor()
     assert.equal(await hash(page), '#/assignments')
-    assert.deepEqual(await nav(page).getByRole('link').allTextContents(), ['Home', 'Work', 'Research', 'Bots'])
+    assert.deepEqual(await nav(page).getByRole('link').allTextContents(), ['Home', 'Work', 'Research', 'Insights', 'Bots'])
     await nav(page).locator('summary[aria-label="Studio tools"]').click()
     const links = await nav(page).getByRole('link').evaluateAll(items => items.map(item => [item.textContent, item.getAttribute('href'), item.getAttribute('aria-current')]))
     assert.deepEqual(links, [
-      ['Home', '#/note', null], ['Work', '#/assignments', 'page'], ['Research', '#/bd', null], ['Bots', '#/bots', null],
+      ['Home', '#/note', null], ['Work', '#/assignments', 'page'], ['Research', '#/bd', null], ['Insights', '#/insights', null], ['Bots', '#/bots', null],
       ['Desk', '#/desk', null], ['Record', '#/record', null], ['Today', '#/today', null], ['Inbox', '#/inbox', null],
       ['Jobs', '#/jobs', null], ['Projects', '#/projects', null], ['Client meetings', '#/meetings', null],
       ['Activity history', '#/history', null], ['Overview', '#/overview', null], ['Agents', '#/agents', null],
