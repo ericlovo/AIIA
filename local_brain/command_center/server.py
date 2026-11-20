@@ -34,7 +34,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, Response, StreamingRes
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict, Field
 
-from local_brain.command_center import client_meetings, daily_digest
+from local_brain.command_center import access_auth, client_meetings, daily_digest
 from local_brain.command_center.agent_output import (
     INBOX_UNAVAILABLE_NOTE,
     RUN_FAILED_NOTE,
@@ -595,6 +595,9 @@ app.include_router(lead_review_router)
 app.include_router(project_status_router)
 
 app.include_router(create_bd_router())
+# Added before CORS so CORS stays outermost: refusals still carry CORS headers
+# and preflights are answered without touching any route.
+app.add_middleware(access_auth.CloudflareAccessMiddleware)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
@@ -4832,6 +4835,7 @@ async def startup():
 
     asyncio.create_task(_index_all_stories())
 
+    access_auth.log_startup_mode()
     logger.info("AIIA Command Center started on :8200")
 
 
@@ -4855,12 +4859,12 @@ async def shutdown():
 def bind_host() -> str:
     """Interface to listen on: loopback unless COMMAND_CENTER_HOST overrides it.
 
-    The Command Center has no auth of its own. Remote access goes through the
-    Cloudflare tunnel, which authenticates at the edge and reaches this process
-    on localhost. Binding 0.0.0.0 would let anyone on the Mini's LAN skip that
-    login and call the approve endpoints directly. Override only where the port
-    is otherwise restricted, e.g. 0.0.0.0 inside a container whose published
-    port is bound to the host's loopback.
+    Remote access goes through the Cloudflare tunnel, which authenticates at the
+    edge and reaches this process on localhost. The app verifies that login too
+    (see access_auth), but it trusts direct loopback callers, so the listener
+    must stay off the LAN. Override only where the port is otherwise restricted,
+    e.g. 0.0.0.0 inside a container whose published port is bound to the host's
+    loopback.
     """
     return os.getenv("COMMAND_CENTER_HOST", "127.0.0.1")
 
