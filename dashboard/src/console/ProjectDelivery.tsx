@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { ConnectionError, studioFetch } from '../lib/connection'
 import { formatRoute } from './studioRoute'
 import { deliverySignals, hasObservedWorkflowFailure, parsePRNumbers, type DeliveryFeature, type ProjectDeliveryData } from './deliveryEvidence'
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(path, { cache: 'no-store', ...init })
+  const response = await studioFetch(path, { cache: 'no-store', ...init })
   const payload = await response.json().catch(() => null)
   if (!response.ok) throw new Error(typeof payload?.detail === 'string' ? payload.detail : `Request failed (${response.status})`)
   return payload as T
@@ -96,7 +97,7 @@ export function ProjectDelivery({ repoId }: { repoId: string }) {
     <div className="flex flex-wrap items-center justify-between gap-3"><h2 className="text-base font-medium text-white">Feature delivery</h2><button type="button" disabled={delivery.isFetching} onClick={() => void delivery.refetch()} className={buttonClass}>Refresh delivery</button></div>
     <p className="mt-2 text-sm text-neutral-400">Roadmap features with explicitly linked agent work and PR evidence. Completed runs still need review; merged PRs do not establish deployment.</p>
     {delivery.isPending && <p role="status" className="mt-4 text-sm">Loading feature delivery...</p>}
-    {delivery.isError && <p role="alert" className="mt-4 text-sm text-red-300">Delivery unavailable: {delivery.error.message}. Refresh to retry.</p>}
+    {delivery.isError && <p role="alert" className={`mt-4 text-sm ${delivery.error instanceof ConnectionError ? 'text-neutral-400' : 'text-red-300'}`}>{delivery.error instanceof ConnectionError ? 'Delivery could not be refreshed. Use the connection controls above.' : `Delivery unavailable: ${delivery.error.message}. Refresh to retry.`}</p>}
     {!delivery.isError && data && <>
       <p className="mt-3 text-xs text-neutral-500">Sources checked <Timestamp value={data.checked_at} /> / {data.status}{now - Date.parse(data.checked_at) > 300_000 ? ' / Snapshot older than 5 minutes; refresh for current evidence.' : ''}</p>
       {Object.entries(data.sources ?? {}).map(([name, source]) => <p key={name} className="mt-1 text-xs text-neutral-500">{name}: {source.status} / <Timestamp value={source.fetched_at} /></p>)}

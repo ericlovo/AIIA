@@ -82,10 +82,10 @@ source in the memory inbox, and review outcomes (`needs_work`,
 3. **Keep vendors for** broad line-level review on the public repo, where
    they are free or cheap and the code is already public.
 
-## Open security finding
+## Security finding: Command Center authentication (fixed)
 
 From #66, verified 2026-09-27: Command Center (`command_center/server.py`)
-has no authentication of its own, only CORS. Remote access to
+had no authentication of its own, only CORS. Remote access to
 `aiia.getsanction.com` goes through a Cloudflare tunnel behind Cloudflare
 Access (see `docs/SLACK-PERFORMANCE-LABS.md`), but the server bound
 `0.0.0.0:8200`, so anyone on the Mini's LAN could skip that login and call
@@ -95,7 +95,11 @@ runs.
 - **Fixed:** the Command Center now binds `127.0.0.1` by default
   (`COMMAND_CENTER_HOST` overrides), and Docker publishes 8200 on the host's
   loopback only. The tunnel reaches it on localhost.
-- **Open:** defense in depth. Verify the Cloudflare Access JWT
-  (`Cf-Access-Jwt-Assertion`) in the app, exempting only the two
-  signature-verified Slack paths, so a misconfigured Access policy fails
-  closed instead of open.
+- **Fixed:** defense in depth. `command_center/access_auth.py` verifies the
+  Cloudflare Access JWT (`Cf-Access-Jwt-Assertion`) on every HTTP request and
+  WebSocket handshake, exempting only the two signature-verified Slack paths
+  and direct loopback callers on the same machine. A misconfigured Access
+  policy now fails closed. It needs `CF_ACCESS_TEAM_DOMAIN` and
+  `CF_ACCESS_AUD`; with either unset, everything but direct loopback gets 401.
+
+Nothing is open under this finding.

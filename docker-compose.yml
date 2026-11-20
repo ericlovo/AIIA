@@ -15,7 +15,11 @@ services:
     container_name: aiia
     ports:
       - "8100:8100"   # Local Brain API
-      - "127.0.0.1:8200:8200"   # Command Center: host loopback only (no auth of its own)
+      # Command Center: host loopback only. Inside the container every caller
+      # arrives from the bridge address, not loopback, so the app requires a
+      # Cloudflare Access token: set CF_ACCESS_TEAM_DOMAIN and CF_ACCESS_AUD
+      # in .env and reach it through the tunnel.
+      - "127.0.0.1:8200:8200"
     env_file: .env
     environment:
       - OLLAMA_URL=http://ollama:11434
