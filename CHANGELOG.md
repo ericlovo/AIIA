@@ -19,6 +19,15 @@ All notable changes to AIIA are documented here. This project adheres to
 
 ### Fixed
 
+- **BD conductor discovery starved and over-constrained its own search.** The
+  seen-evidence filter now runs before the eight-item screen cap, so reviewed
+  headlines no longer hide older unseen ones behind `no_new_evidence`. With a
+  private ICP, the query rotates `geography`, `geography+buyers` and
+  `geography+sectors` per completed job instead of requiring every group at
+  once, and long term lists drop whole terms instead of being cut mid-group
+  (which produced an unbalanced query and silently lost geography). The
+  `public_sources` step event records the variant label. Still one Jev call per
+  job; budgets, thresholds, egress gates and review gates are unchanged.
 - **Studio morning-note latency.** `GET /api/studio/morning-note` now serves the
   last stored payload from a 5-minute in-process TTL cache with
   stale-while-revalidate, so Command Center clients are not blocked on
