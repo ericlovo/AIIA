@@ -91,7 +91,7 @@
   ],
   "bot_daily_budget": {
     "tokens": 50000,
-    "calls": 50,
+    "calls": 60,
     "seconds": 1800
   },
   "job_budget": {

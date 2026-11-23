@@ -25,6 +25,15 @@ All notable changes to AIIA are documented here. This project adheres to
   persist organization, headline, URL, quote, and Jev scores on the snapshot.
   Kill switch, review gates, and withhold thresholds are unchanged.
 
+- **BD measured call and seconds reserves.** Daily call and seconds
+  reservations now default to a measured estimate (3 calls, 60s, with safety
+  floors) instead of the full 6-call / 120s job caps, so 20 weekday cadence
+  jobs fit the default per-bot limits (60 calls, 1800s, 50,000 tokens).
+  `call_reserve_mode` / `seconds_reserve_mode` of `job_cap` restore the old
+  flat debit. Per-job in-run ceilings stay `job_budget`. Snapshot
+  `budget_policy` describes the measured reserves. Kill switch, review gates,
+  and withhold thresholds are unchanged.
+
 ### Fixed
 
 - **BD conductor discovery starved and over-constrained its own search.** The
