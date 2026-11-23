@@ -124,6 +124,25 @@ def _gap_clear_source(name, extra="opens a new outpatient clinic expansion"):
         ("Acme Widgets - Madison", "acme widgets"),
         ("The Acme Widgets", "acme widgets"),
         ("Example County Hospital, Ltd.", "example county hospital"),
+        ("Example County Government", "example county"),
+        ("Example County Govt", "example county"),
+        ("County of Example", "example county"),
+        ("City of Example", "example city"),
+        ("Town of Example", "example town"),
+        ("Village of Example", "example village"),
+        ("Example County Department", "example county"),
+        ("Example County Dept", "example county"),
+        ("Example County Board of Commissioners", "example county"),
+        ("Example County Authority", "example county"),
+        ("Example County Office", "example county"),
+        ("Northwind Foods Corp", "northwind foods"),
+        ("Contoso Health, Inc.", "contoso health"),
+        ("Fabrikam Paper LLC", "fabrikam paper"),
+        ("Example Area School District", "example school district"),
+        ("Example School District", "example school district"),
+        ("County Government", "county"),
+        ("Board of Commissioners", "board of commissioners"),
+        ("The Department", "department"),
     ],
 )
 def test_org_name_normalization_cases(raw, expected):
@@ -138,6 +157,19 @@ def test_org_name_normalization_cases(raw, expected):
         ("Acme Widgets - Madison", "Acme Widgets, Inc.", True),
         ("Acme & Sons Co.", "Acme and Sons", True),
         ("Example County Hospital System", "Example County Hospital", True),
+        ("Example County Government", "Example County", True),
+        ("County of Example", "Example County", True),
+        ("City of Example", "Example City", True),
+        ("Town of Example", "Example Town", True),
+        ("Village of Example", "Example Village", True),
+        ("Example County Board of Commissioners", "Example County", True),
+        ("Example County Department", "Example County", True),
+        ("Example County Dept", "Example County", True),
+        ("Northwind Foods Corp", "Northwind Foods", True),
+        ("Contoso Health, Inc.", "Contoso Health", True),
+        ("Fabrikam Paper LLC", "Fabrikam Paper", True),
+        ("Example Area School District", "Example School District", True),
+        ("Example County Govt", "Example County", True),
         ("Orchard Health", "Acme Widgets, Inc.", False),
         ("County Hospital", "Example County Hospital", False),
         ("Acme Widgets of Example County", "Acme Widgets", False),
@@ -145,6 +177,35 @@ def test_org_name_normalization_cases(raw, expected):
 )
 def test_suppression_match_is_conservative(candidate, suppressed, match):
     assert matches_suppression(candidate, [suppressed]) is match
+
+
+@pytest.mark.parametrize(
+    "candidate,suppressed",
+    [
+        # Health-system name vs a similarly worded different company.
+        ("Example Health Systems", "Example Paper"),
+        ("Contoso Health", "Contoso Paper"),
+        ("Contoso Health", "Northwind Foods"),
+        # Paper/manufacturing company vs a county entity with the same place word.
+        ("Fabrikam Paper", "Fabrikam County"),
+        ("Example Paper", "Example County"),
+        ("Northwind Foods", "Northwind County"),
+        # Share only a first token; one-token core must not match a longer core.
+        ("Northwind", "Northwind Foods"),
+        ("Contoso", "Contoso Health"),
+        ("Acme Widgets", "Acme Paper"),
+        ("Fabrikam", "Fabrikam Paper"),
+        # Names that reduce to only generic words must not match a real org.
+        ("County Government", "Example County"),
+        ("Board of Commissioners", "Example County"),
+        ("The Department", "Example County Department"),
+        ("Government", "Example County Government"),
+        ("Authority Group", "Example County Authority"),
+    ],
+)
+def test_suppression_match_rejects_shared_token_near_misses(candidate, suppressed):
+    assert matches_suppression(candidate, [suppressed]) is False
+    assert matches_suppression(suppressed, [candidate]) is False
 
 
 def test_missing_dir_is_absent_and_does_not_shape_query(tmp_path):

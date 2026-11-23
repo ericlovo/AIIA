@@ -85,8 +85,17 @@ fail closed. Malformed files log the failing **top-level key name only**.
 - **Suppression** is a hard gate after Qwen extraction and before Jev or any
   candidate write. Organization names are normalized (case, punctuation,
   Inc/LLC/Co/Ltd suffixes, `&`/`and`, parentheticals, trailing ` - place`
-  suffixes) and matched exactly or with a conservative token-overlap/fuzzy
-  check. A match is recorded as withheld with reason
+  suffixes) and then stripped of leading/trailing generic org-type words
+  (`government`, `govt`, `department`, `dept`, `office`, `board`,
+  `authority`, `group`, `holdings`, `commissioners`, plus the legal suffixes
+  above). Prefix `County of Example` is treated as `Example County` (same
+  for city/town/village). `Example Area School District` drops the filler
+  `area` before `school`/`district`. Generic-only names are not reduced to a
+  single generic word. After that, names match on identical core strings, or
+  with the existing contiguous-token / fuzzy check (both still require two
+  or more tokens per side). **One-token rule:** a single remaining core
+  token matches only the same core string — `Northwind` does not match
+  `Northwind Foods`. A match is recorded as withheld with reason
   `suppressed_existing_customer_pipeline` and does not call Jev. During the
   eight-item Qwen pre-screen, suppressed orgs are skipped so another item can
   be sent to judgment.
