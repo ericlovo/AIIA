@@ -9,7 +9,7 @@ await mkdir(output, { recursive: true })
 const browser = await chromium.launch({ headless: true, executablePath: process.env.CHROMIUM_PATH })
 try {
   for (const width of [1440, 390]) {
-    for (const kind of ['session', 'response', 'network']) {
+    for (const kind of ['session', 'expired', 'response', 'network']) {
       const context = await browser.newContext({ viewport: { width, height: 950 } })
       const page = await context.newPage()
       let failed = true, documents = 0
@@ -20,6 +20,7 @@ try {
         const path = new URL(route.request().url()).pathname
         if (failed && ['/api/projects', '/api/health'].includes(path)) {
           if (kind === 'network') return route.abort('failed')
+          if (kind === 'expired') return route.fulfill({ status: 401, json: { detail: 'authentication_required', reason: 'token_expired', auth: 'cloudflare_access' } })
           return route.fulfill(kind === 'session' ? { status: 401, json: { detail: 'access required' } } : { contentType: 'text/html', body: '<html>Session page</html>' })
         }
         const data = path === '/api/projects' ? { projects: [] } : path === '/api/agents' ? { agents: [] } : path === '/api/agents/resources' ? { repos: [], github: { status: 'disconnected' } } : path === '/api/agents/models' ? { models: [], default: '' } : path === '/api/health' ? { aiia: { status: 'online' }, ollama: { status: 'online' } } : path === '/api/monitor' ? { services: {} } : {}
@@ -28,18 +29,21 @@ try {
       await page.goto(`${process.env.STUDIO_URL}#/projects`)
       const banner = page.getByRole('alert').filter({ has: page.getByRole('button', { name: 'Reconnect Studio' }) })
       await banner.waitFor()
-      await banner.getByText(kind === 'session' ? 'Studio access is blocked or your session has expired.' : kind === 'network' ? 'This browser could not reach Studio.' : 'Studio returned a page instead of data.', { exact: true }).waitFor()
+      await banner.getByText(kind === 'expired' ? 'Your Studio session has expired.' : kind === 'session' ? 'Studio access is blocked or your session has expired.' : kind === 'network' ? 'This browser could not reach Studio.' : 'Studio returned a page instead of data.', { exact: true }).waitFor()
       assert.equal(await page.getByText('brain down', { exact: true }).count(), 0)
       assert.equal(await page.getByRole('link', { name: 'Open research desk', exact: true }).getAttribute('href'), '#/bd')
       await page.screenshot({ path: `${output}/${kind}-${width}.png`, animations: 'disabled' })
       assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false)
       failed = false
-      if (kind === 'session') {
+      if (kind === 'session' || kind === 'expired') {
+        await banner.getByText('Reconnect to check access; sign in if prompted.').waitFor()
         await banner.getByRole('button', { name: 'Reconnect Studio' }).click()
         await page.waitForFunction(() => !document.querySelector('[aria-label="Studio connection"]'))
         assert.equal(new URL(page.url()).hash, '#/projects')
         assert.equal(documents, 2)
       } else {
+        // Without authentication evidence the banner must not claim an expired session.
+        assert.equal(await banner.getByText(/session has expired/).count(), 0)
         await banner.getByRole('button', { name: 'Retry connection', exact: true }).click()
         await banner.waitFor({ state: 'hidden' })
       }
@@ -48,4 +52,4 @@ try {
     }
   }
 } finally { await browser.close() }
-console.log(`Connection recovery passed desktop/mobile session, HTML and network fixtures. Screenshots: ${output}`)
+console.log(`Connection recovery passed desktop/mobile session, expired-token, HTML and network fixtures. Screenshots: ${output}`)

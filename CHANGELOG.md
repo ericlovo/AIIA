@@ -165,6 +165,24 @@ All notable changes to AIIA are documented here. This project adheres to
 
 ### Security
 
+- **Command Center verifies the Cloudflare Access login itself.** Every HTTP
+  request and WebSocket handshake that is not a direct loopback call must
+  carry a valid `Cf-Access-Jwt-Assertion` token: RS256 signature checked
+  against the team's cached JWKS, plus `aud`, `iss` and `exp`. A deleted or
+  misconfigured Access policy now fails closed instead of exposing the
+  approve endpoints. Only the two HMAC-verified Slack paths are exempt.
+  Direct loopback callers (CLI, MCP server, scheduled scripts) need no token;
+  tunnel traffic is told apart from them by its forwarding headers and public
+  `Host`, which also blocks DNS rebinding. Refusals are a 401 with
+  `{"detail": "authentication_required", "reason": ...}`, and Studio shows
+  "session expired" only on that evidence; a failed fetch keeps the generic
+  connection message. Adds the `PyJWT[crypto]` dependency.
+  **Deploy:** set `CF_ACCESS_TEAM_DOMAIN` and `CF_ACCESS_AUD` on the Mini
+  before restarting, or every request through the tunnel gets 401. With both
+  unset, only direct loopback works, and the server logs that loudly. Docker:
+  the container sees the bridge address, not loopback, so `docker compose`
+  needs both variables set and a token on every request.
+
 - **Command Center listens on loopback by default.** It has no auth of its
   own; remote access goes through the Cloudflare tunnel, which authenticates
   at the edge. It bound `0.0.0.0:8200`, so the Mini's LAN could skip that

@@ -156,6 +156,8 @@ _HOST_ENV_ISOLATE = (
     "AIIA_TEST_PYTHON",
     "AIIA_TYPESAFE_ENABLED",
     "AIRGAP_ALLOWED_EGRESS",
+    "CF_ACCESS_AUD",
+    "CF_ACCESS_TEAM_DOMAIN",
     "COMMAND_CENTER_HOST",
     "LOCAL_ROUTING_MODEL",
     "LOCAL_TASK_MODEL",
@@ -193,6 +195,26 @@ def _isolate_host_environment(
     monkeypatch.setattr(config_mod, "_config", None)
     monkeypatch.setenv("ANONYMIZED_TELEMETRY", "False")
     monkeypatch.setenv("CHROMA_TELEMETRY_ENABLED", "0")
+
+
+@pytest.fixture(autouse=True)
+def _command_center_calls_are_local(
+    request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Treat in-process test clients as direct loopback callers.
+
+    The Command Center refuses anything that is not a direct loopback call
+    unless it carries a Cloudflare Access token. Starlette's TestClient and
+    httpx's ASGITransport do not look like loopback (peer "testclient", Host
+    "test"), so route tests would all get 401. The exemption lives here, in the
+    test harness, so the server has no switch that turns the check off. Tests
+    of the check itself opt out with ``@pytest.mark.access_gate``.
+    """
+    if request.node.get_closest_marker("access_gate"):
+        return
+    from local_brain.command_center import access_auth
+
+    monkeypatch.setattr(access_auth, "is_direct_loopback", lambda scope: True)
 
 
 @pytest.fixture(autouse=True)
