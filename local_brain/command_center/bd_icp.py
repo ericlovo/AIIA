@@ -175,24 +175,45 @@ def _or_group(terms):
     return "(" + " OR ".join(quoted) + ")"
 
 
-def query_terms(profile):
-    """Compact Google News extras: hot buyers, sectors, priority geography."""
+QUERY_EXTRA_LIMIT = 280
+
+
+def _fit_group(terms, limit):
+    """Longest leading run of terms whose OR group fits; a group is never cut mid-term."""
+    kept = list(terms)
+    while kept and len(_or_group(kept)) > limit:
+        kept.pop()
+    return _or_group(kept)
+
+
+def query_variants(profile):
+    """Google News extras as (label, terms) variants, rotated one per run.
+
+    Requiring hot buyers, sectors and geography together in one query matches
+    almost nothing, so priority geography stays in every variant and buyers or
+    sectors refine it one at a time. No profile yields the single base variant.
+    """
     icp = profile.icp if isinstance(profile, BotIcpProfile) else None
     if not icp:
-        return ""
+        return [("base", "")]
     buyers = icp.get("buyer_types") if isinstance(icp.get("buyer_types"), dict) else {}
-    geography = icp.get("geography") if isinstance(icp.get("geography"), dict) else {}
-    parts = [
-        _or_group(_strings(buyers.get("hot"), 6)),
-        _or_group(_strings(icp.get("employer_sectors"), 4)),
-        _or_group(
-            _strings(geography.get("priority_1"), 4) + _strings(geography.get("priority_2"), 3)
-        ),
-    ]
-    extra = " ".join(part for part in parts if part)
-    if len(extra) > 280:
-        extra = extra[:280].rsplit(" ", 1)[0]
-    return extra
+    region = icp.get("geography") if isinstance(icp.get("geography"), dict) else {}
+    geography = _fit_group(
+        _strings(region.get("priority_1"), 4) + _strings(region.get("priority_2"), 3),
+        QUERY_EXTRA_LIMIT,
+    )
+    room = QUERY_EXTRA_LIMIT - (len(geography) + 1 if geography else 0)
+    variants = [("geography", geography)] if geography else []
+    for label, terms in (
+        ("buyers", _strings(buyers.get("hot"), 6)),
+        ("sectors", _strings(icp.get("employer_sectors"), 4)),
+    ):
+        group = _fit_group(terms, room)
+        if group:
+            variants.append(
+                (f"geography+{label}", f"{geography} {group}") if geography else (label, group)
+            )
+    return variants or [("base", "")]
 
 
 @dataclass

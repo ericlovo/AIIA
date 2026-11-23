@@ -642,6 +642,18 @@ class BDConductor:
             )
             self._event(db, "schedule_enabled_changed", enabled=enabled)
 
+    def research_runs(self, bot_id, tenant_id):
+        """Completed jobs for this bot and tenant; each one advances query rotation."""
+        bot = self.bots.get(bot_id)
+        if not bot or bot["tenant_id"] != tenant_id:
+            raise ValueError("Run count requires exact configured bot and tenant")
+        with self._transaction() as db:
+            rows = db.execute(
+                "SELECT data FROM bd_jobs WHERE tenant_id=? AND state='completed'",
+                (tenant_id,),
+            ).fetchall()
+        return sum(1 for row in rows if json.loads(row[0])["bot_id"] == bot_id)
+
     def evidence_keys(self, bot_id, tenant_id):
         bot = self.bots.get(bot_id)
         if not bot or bot["tenant_id"] != tenant_id:

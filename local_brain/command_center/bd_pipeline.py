@@ -28,7 +28,7 @@ from .bd_icp import (
     deactivate,
     load_bot_profile,
     matches_suppression,
-    query_terms,
+    query_variants,
 )
 from .typesafe_advisor import Usage
 
@@ -522,17 +522,23 @@ def readiness():
     }
 
 
-def discovery_query(segment, profile=None):
+def discovery_plan(segment, profile=None, rotation=0):
+    """The (variant label, query) for this run; rotation walks the ICP variants."""
     if segment not in SEGMENTS:
         raise ValueError("unknown_segment")
-    extra = query_terms(profile if profile is not None else current_profile())
+    variants = query_variants(profile if profile is not None else current_profile())
+    turn = rotation if type(rotation) is int and rotation >= 0 else 0
+    label, extra = variants[turn % len(variants)]
     base = SEGMENTS[segment]
-    if extra:
-        return f"{base} {extra} when:14d"
-    return base + " when:14d"
+    return label, (f"{base} {extra} when:14d" if extra else base + " when:14d")
 
 
-async def retrieve_sources(segment):
+def discovery_query(segment, profile=None, rotation=0):
+    return discovery_plan(segment, profile, rotation)[1]
+
+
+async def retrieve_sources(segment, rotation=0):
+    """Every parsed item, newest first. The caller drops seen evidence before capping."""
     if segment not in SEGMENTS:
         raise ValueError("unknown_segment")
     if os.getenv("AIIA_NEWS_ENABLED") != "1":
@@ -542,7 +548,14 @@ async def retrieve_sources(segment):
         raise DataUnavailable("public_retrieval_egress_denied")
     from .public_signals import MAX_BYTES, parse_feed
 
-    query = urlencode({"q": discovery_query(segment), "hl": "en-US", "gl": "US", "ceid": "US:en"})
+    query = urlencode(
+        {
+            "q": discovery_query(segment, rotation=rotation),
+            "hl": "en-US",
+            "gl": "US",
+            "ceid": "US:en",
+        }
+    )
     async with (
         httpx.AsyncClient(timeout=15, follow_redirects=False, trust_env=False) as client,
         client.stream("GET", f"https://news.google.com/rss/search?{query}") as response,
@@ -553,7 +566,7 @@ async def retrieve_sources(segment):
             body.extend(chunk)
             if len(body) > MAX_BYTES:
                 raise DataUnavailable("source_too_large")
-    return parse_feed(bytes(body), time.time())[:8]
+    return parse_feed(bytes(body), time.time())
 
 
 def quote_candidates(source):
@@ -964,11 +977,18 @@ async def execute_pipeline(job, emit=None):
     imported = job.get("payload", {}).get("public_source")
     if imported is not None and mode != "live":
         raise ValueError("imported_sources_require_live_mode")
+    rotation = job.get("query_rotation", 0)
+    fetching = mode == "live" and imported is None
     await event(
         "step",
         step="public_sources",
         mode=mode,
-        reserve_calls=1 if mode == "live" and imported is None else 0,
+        reserve_calls=1 if fetching else 0,
+        **(
+            {"query_variant": discovery_plan(research_segment, rotation=rotation)[0]}
+            if fetching
+            else {}
+        ),
     )
     withheld = []
     reviewed_evidence = []
@@ -1013,13 +1033,16 @@ async def execute_pipeline(job, emit=None):
                 message="Human-supplied excerpt; not independently fetched",
             )
         else:
-            sources = await observed("sources", retrieve_sources(research_segment))
+            sources = await observed("sources", retrieve_sources(research_segment, rotation))
         seen = job.get("seen_evidence", [])
         if not isinstance(seen, (list, set, tuple)) or any(
             not isinstance(key, str) for key in seen
         ):
             raise ValueError("invalid_seen_evidence")
-        sources = [source for source in sources if evidence_key(source) not in set(seen)]
+        # Drop seen evidence before the cap, so reviewed headlines cannot starve the screen.
+        seen = set(seen)
+        sources = [source for source in sources if evidence_key(source) not in seen]
+        sources = sources[:QWEN_SCREEN_LIMIT]
         if not sources:
             await event(
                 "no_new_evidence", message="No unseen evidence in this bounded source batch"
