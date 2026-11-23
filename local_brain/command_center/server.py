@@ -34,7 +34,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, Response, StreamingRes
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict, Field
 
-from local_brain.command_center import client_meetings, daily_digest
+from local_brain.command_center import client_meetings, consumer_demographics, daily_digest
 from local_brain.command_center.agent_output import (
     INBOX_UNAVAILABLE_NOTE,
     RUN_FAILED_NOTE,
@@ -589,6 +589,7 @@ from local_brain.command_center.slack_capture import inbox as memory_capture_inb
 from local_brain.command_center.slack_capture import router as slack_capture_router
 
 app.include_router(client_meetings.router)
+app.include_router(consumer_demographics.router)
 app.include_router(slack_capture_router)
 app.include_router(signal_router)
 app.include_router(lead_review_router)
