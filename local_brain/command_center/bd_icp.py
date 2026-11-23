@@ -37,6 +37,27 @@ _LEGAL_SUFFIXES = {
     "pc",
     "plc",
 }
+# Organization-type words that may be dropped from either edge after the legal
+# suffix pass. Place types (county/city/town/village) and distinguishing words
+# such as health, hospital, school, district, systems, paper, and foods are
+# kept. "commissioners" covers "Board of Commissioners"-style civic suffixes.
+_GENERIC_ORG_TOKENS = _LEGAL_SUFFIXES | {
+    "government",
+    "govt",
+    "department",
+    "dept",
+    "office",
+    "board",
+    "authority",
+    "group",
+    "holdings",
+    "commissioners",
+    "commission",
+}
+_EDGE_STOPWORDS = frozenset({"of", "the", "a", "an"})
+_DROPPABLE_ORG_TOKENS = _GENERIC_ORG_TOKENS | _EDGE_STOPWORDS
+_PLACE_TYPES = frozenset({"county", "city", "town", "village"})
+_SCHOOL_FILLER_FOLLOWERS = frozenset({"school", "district"})
 _active_profile = contextvars.ContextVar("bd_icp_profile", default=None)
 
 
@@ -57,8 +78,71 @@ def resolve_icp_dir(directory=None, config=None):
     return default_icp_dir()
 
 
+def _has_distinguishing_token(tokens):
+    return any(token not in _DROPPABLE_ORG_TOKENS for token in tokens)
+
+
+def _strip_generic_edge_tokens(tokens):
+    """Drop leading/trailing generic org-type words and leftover of/the/a/an.
+
+    Always keeps at least one distinguishing (non-generic) token. Names that
+    are only generic words are left unchanged so they cannot collapse to a
+    single generic token and collide with unrelated organizations.
+    """
+    if not tokens or not _has_distinguishing_token(tokens):
+        return list(tokens)
+    tokens = list(tokens)
+    while tokens:
+        if tokens[0] in _DROPPABLE_ORG_TOKENS:
+            candidate = tokens[1:]
+            if _has_distinguishing_token(candidate):
+                tokens = candidate
+                continue
+        if tokens[-1] in _DROPPABLE_ORG_TOKENS:
+            candidate = tokens[:-1]
+            if _has_distinguishing_token(candidate):
+                tokens = candidate
+                continue
+        break
+    return tokens
+
+
+def _canonicalize_place_prefix(tokens):
+    """Treat 'county of example' as 'example county' (same for city/town/village)."""
+    if len(tokens) >= 3 and tokens[0] in _PLACE_TYPES and tokens[1] == "of":
+        place = tokens[0]
+        rest = tokens[2:]
+        if rest and rest[-1] != place:
+            return rest + [place]
+        return list(rest)
+    return list(tokens)
+
+
+def _drop_area_school_filler(tokens):
+    """Drop 'area' when it sits between a name and school/district.
+
+    'example area school district' → 'example school district'. A leading
+    'area' with no preceding name is kept so 'Area School District' does not
+    collapse onto every school district.
+    """
+    result = []
+    for index, token in enumerate(tokens):
+        next_token = tokens[index + 1] if index + 1 < len(tokens) else ""
+        if token == "area" and index > 0 and next_token in _SCHOOL_FILLER_FOLLOWERS:
+            continue
+        result.append(token)
+    return result
+
+
 def normalize_org_name(name):
-    """Casefold, strip punctuation/suffixes/parentheticals, and unify &/and."""
+    """Casefold, strip punctuation/suffixes/parentheticals, and unify &/and.
+
+    Additive core-name pass, in order: drop leading articles and trailing
+    legal suffixes; drop leading/trailing generic org-type tokens; rewrite
+    'X of Name' to 'Name X' for county/city/town/village; drop 'area' before
+    school/district; drop generic edge tokens again. Generic-only names are
+    not reduced further.
+    """
     if not isinstance(name, str):
         return ""
     text = name.casefold().replace("&", " and ")
@@ -70,6 +154,10 @@ def normalize_org_name(name):
         tokens = tokens[1:]
     while tokens and tokens[-1] in _LEGAL_SUFFIXES:
         tokens.pop()
+    tokens = _strip_generic_edge_tokens(tokens)
+    tokens = _canonicalize_place_prefix(tokens)
+    tokens = _drop_area_school_filler(tokens)
+    tokens = _strip_generic_edge_tokens(tokens)
     return " ".join(tokens)
 
 
@@ -84,7 +172,16 @@ def _contiguous_tokens(needles, haystack):
 
 
 def org_names_match(candidate, suppressed):
-    """Exact normalized match, else a conservative token-overlap/fuzzy match."""
+    """Exact normalized match, else a conservative token-overlap/fuzzy match.
+
+    One-token rule: after normalization, a single remaining core token matches
+    only an identical core string. It never matches a longer core that merely
+    contains that token. 'Northwind' does not match 'Northwind Foods'; both
+    names must be identical after generic-token stripping. Contiguous-token
+    overlap (shorter fully inside longer at ratio >= 0.7) and the shared-token
+    fuzzy check (two or more shared tokens and SequenceMatcher ratio >= 0.9)
+    still require at least two tokens on each side, as before.
+    """
     left = normalize_org_name(candidate)
     right = normalize_org_name(suppressed)
     if not left or not right:
@@ -92,14 +189,16 @@ def org_names_match(candidate, suppressed):
     if left == right:
         return True
     left_tokens, right_tokens = left.split(), right.split()
-    if len(left_tokens) >= 2 and len(right_tokens) >= 2:
-        shorter, longer = (
-            (left_tokens, right_tokens)
-            if len(left_tokens) <= len(right_tokens)
-            else (right_tokens, left_tokens)
-        )
-        if _contiguous_tokens(shorter, longer) and len(shorter) / len(longer) >= 0.7:
-            return True
+    # One-token cores already failed the identical-string check above.
+    if len(left_tokens) < 2 or len(right_tokens) < 2:
+        return False
+    shorter, longer = (
+        (left_tokens, right_tokens)
+        if len(left_tokens) <= len(right_tokens)
+        else (right_tokens, left_tokens)
+    )
+    if _contiguous_tokens(shorter, longer) and len(shorter) / len(longer) >= 0.7:
+        return True
     shared = len(set(left_tokens) & set(right_tokens))
     return shared >= 2 and SequenceMatcher(None, left, right).ratio() >= 0.9
 
