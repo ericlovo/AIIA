@@ -580,8 +580,8 @@ def test_measured_reserves_admit_weekday_cadence_within_per_bot_limits(runtime):
     assert slots == 20
     caps = runtime.daily_reservation()
     bot = runtime.config["bot_daily_budget"]
-    assert bot == {"tokens": 50000, "calls": 50, "seconds": 1800}
-    assert caps == {"tokens": 2500, "calls": 2, "seconds": 60}
+    assert bot == {"tokens": 50000, "calls": 60, "seconds": 1800}
+    assert caps == {"tokens": 2500, "calls": 3, "seconds": 60}
     assert slots * caps["tokens"] <= bot["tokens"]
     assert slots * caps["calls"] <= bot["calls"]
     assert slots * caps["seconds"] <= bot["seconds"]
@@ -620,7 +620,7 @@ def test_job_cap_call_and_seconds_restore_flat_caps(runtime):
     bot = runtime.config["bot_daily_budget"]
     call_jobs = bot["calls"] // runtime.config["job_budget"]["calls"]
     second_jobs = bot["seconds"] // runtime.config["job_budget"]["seconds"]
-    assert call_jobs == 8
+    assert call_jobs == 10
     assert second_jobs == 15
     limit = min(call_jobs, second_jobs)
     ids = [enqueue(runtime, str(n))["id"] for n in range(limit + 1)]
