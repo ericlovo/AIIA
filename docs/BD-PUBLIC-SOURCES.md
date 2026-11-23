@@ -1,6 +1,6 @@
 # Public-source enrichment boundary
 
-BD discovery retrieves up to eight recent segment-specific news headlines and processes the first unseen headline per job through the existing `news.fetch` policy. It does not scrape arbitrary publisher links. Emails and telephone numbers are retained only when they occur verbatim in source text, with URL and character offsets. They are observations, not verified identities or permission to contact.
+BD discovery retrieves recent segment-specific news headlines and screens the eight newest unseen ones per job through the existing `news.fetch` policy. It does not scrape arbitrary publisher links. Emails and telephone numbers are retained only when they occur verbatim in source text, with URL and character offsets. They are observations, not verified identities or permission to contact.
 
 An operator can instead supply a public primary-source excerpt. This supports evidence from an organization's announcement or contact page beyond a short headline. `load_public_excerpt(data, allowed_hosts)` accepts exactly:
 
@@ -78,7 +78,7 @@ These are references to existing server environment variables, not raw credentia
 
 A configured client research job reads its bound tenant's account list, then researches only its explicitly configured public `research_segment`. It records read availability and account count locally; it does not guess identity matches between discovered companies and CRM accounts. CRM records are never included in Qwen or Jev public-evidence payloads. Packet contacts remain held for tenant restriction and requested-date checks. The standalone detail adapter preserves suppression flags for future explicit account matching; no write/verification endpoint is implemented.
 
-News evidence keys are SHA-256 of the source URL, a NUL separator, and the SHA-256 of exact source text. `job.seen_evidence` contains prior keys for the same bot and tenant. A job pre-screens unseen items from up to eight current headlines with Qwen, ranks gap-clear extractions, and sends one to Jev; if all are seen, it returns `packets: []`, `reason: no_new_evidence` without model calls. Screened-out keys are stored with withhold context (organization, headline, URL, quote, Jev scores). Updated source text gets a new key. Source-key dedup does not assert that differently syndicated articles represent different real-world events.
+News evidence keys are SHA-256 of the source URL, a NUL separator, and the SHA-256 of exact source text. `job.seen_evidence` contains prior keys for the same bot and tenant. A job filters seen keys out of the whole parsed feed, pre-screens the eight newest unseen headlines with Qwen, ranks gap-clear extractions, and sends one to Jev; if all are seen, it returns `packets: []`, `reason: no_new_evidence` without model calls. Screened-out keys are stored with withhold context (organization, headline, URL, quote, Jev scores). Updated source text gets a new key. Source-key dedup does not assert that differently syndicated articles represent different real-world events.
 
 ### Healthcare prospect quality
 

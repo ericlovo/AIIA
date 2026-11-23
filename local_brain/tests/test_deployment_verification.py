@@ -109,8 +109,8 @@ def test_studio_and_digest_separate_verified_and_unverified_merges():
         customers=[],
         repo_evidence=[evidence],
     )
-    assert "*Verified deployed*\n- *Demo*: #1 Deployed; local-production" in text
-    assert "*Merged — deployment not verified*\n- *Demo*: #2" in text
+    assert "*Delivery* · 2 total\n• *Demo* — Verified live · #1 Deployed (local-production)" in text
+    assert "• *Demo* — Merged · #2 Merged only (deployment unverified)" in text
 
 
 def test_merged_pr_uses_merge_commit_not_branch_head():

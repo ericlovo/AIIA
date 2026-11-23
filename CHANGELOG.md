@@ -26,7 +26,37 @@ All notable changes to AIIA are documented here. This project adheres to
   `budget_policy` describes the measured reserves. Kill switch, review gates,
   and withhold thresholds are unchanged.
 
+### Fixed
+
+- **BD conductor discovery starved and over-constrained its own search.** The
+  seen-evidence filter now runs before the eight-item screen cap, so reviewed
+  headlines no longer hide older unseen ones behind `no_new_evidence`. With a
+  private ICP, the query rotates `geography`, `geography+buyers` and
+  `geography+sectors` per completed job instead of requiring every group at
+  once, and long term lists drop whole terms instead of being cut mid-group
+  (which produced an unbalanced query and silently lost geography). The
+  `public_sources` step event records the variant label. Still one Jev call per
+  job; budgets, thresholds, egress gates and review gates are unchanged.
+- **Studio morning-note latency.** `GET /api/studio/morning-note` now serves the
+  last stored payload from a 5-minute in-process TTL cache with
+  stale-while-revalidate, so Command Center clients are not blocked on
+  `collect_digest`. Per-source digest collectors time out independently and
+  report `data_unavailable` instead of stalling the whole home request. The
+  response shape is unchanged except for a `generated_at` timestamp.
+
 ### Added
+
+- **Private BD ICP and suppression lists.** Segment bots (starting with
+  `healthcare`) can load a per-customer ICP profile and do-not-prospect list
+  from `~/.aiia-private/bd-icp` (or `AIIA_BD_ICP_DIR` / roster `icp_dir`).
+  Missing files leave behavior unchanged. Matching organizations are withheld
+  as `suppressed_existing_customer_pipeline` before Jev. Discovery queries and
+  Qwen/Jev prompts take a compact ICP summary. `/api/bd/snapshot` reports
+  `icp_loaded`, the customer label, `suppression_count`, and today's
+  suppressed-withhold count — never suppression names. Product
+  `typical_ratio_of_sits` may be a number or a 1–2 number range in `[0, 1]`.
+  Fail-closed logs name the failing top-level key, not values. See
+  [docs/BD-ICP.md](docs/BD-ICP.md).
 
 - **Standing BD research cadence.** The conductor now has a versioned
   America/Chicago weekday/weekend schedule, per-slot bot rotation, Qwen

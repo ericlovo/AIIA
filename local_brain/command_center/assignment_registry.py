@@ -161,6 +161,8 @@ class AssignmentRegistry:
         schedule_key: str = "",
         source_kind: str = "manual",
         source_ref: str = "",
+        client_id: str = "",
+        meeting_id: str = "",
     ) -> dict[str, Any]:
         priority = priority.strip().lower()
         if priority not in VALID_PRIORITIES:
@@ -180,6 +182,8 @@ class AssignmentRegistry:
             "objective": objective.strip()[:8_000],
             "agent_id": agent_id.strip()[:80],
             "priority": priority,
+            **({"client_id": client_id} if client_id else {}),
+            **({"meeting_id": meeting_id} if meeting_id else {}),
             "context": context,
             "success_criteria": success_criteria.strip()[:4_000],
             "source_handoff_id": source_handoff_id,
@@ -311,6 +315,33 @@ class AssignmentRegistry:
         assignment["last_failed_at"] = now
         return assignment, True
 
+    def run_queue(self) -> list[dict]:
+        return sorted(
+            (item for item in self.assignments if item.get("run_ticket")),
+            key=lambda item: item["run_ticket"],
+        )
+
+    @_durable_mutation
+    def enqueue_run(self, assignment_id: str, expected_version: str) -> dict:
+        item = self.get_assignment(assignment_id)
+        if not item:
+            raise KeyError(assignment_id)
+        if item.get("run_ticket") or item["status"] == "running":
+            return item
+        if expected_version != item.get("review_version"):
+            raise ValueError("review_changed_refresh_required")
+        if item["status"] not in {"queued", "failed"} or item.get("dismissed_at"):
+            raise ValueError("assignment_not_runnable")
+        item["run_ticket"] = max((row["run_ticket"] for row in self.run_queue()), default=0) + 1
+        item.pop("queue_error", None)
+        return item
+
+    @_durable_mutation
+    def reject_run_request(self, assignment_id: str, reason: str) -> None:
+        item = self.get_assignment(assignment_id)
+        if item and item.pop("run_ticket", None):
+            item["queue_error"] = reason
+
     @_durable_mutation
     def set_running(self, assignment_id: str) -> dict[str, Any] | None:
         assignment = self.get_assignment(assignment_id)
@@ -318,6 +349,8 @@ class AssignmentRegistry:
             return None
         now = _now()
         assignment.update(self._new_review())
+        assignment.pop("run_ticket", None)
+        assignment.pop("queue_error", None)
         assignment["status"] = "running"
         assignment["attempt_id"] = uuid.uuid4().hex
         assignment["completed_run_id"] = ""
@@ -472,7 +505,7 @@ class AssignmentRegistry:
         current identical-evidence sibling so a stale sibling cannot rewrite the
         group.
         """
-        from .attention import evidence_key
+        from .attention import evidence_key, scoped_evidence_key
 
         item = self.get_assignment(assignment_id)
         if not item:
@@ -486,7 +519,7 @@ class AssignmentRegistry:
         if not active:
             for record in self.assignments:
                 for event in record.get("attention_events", []):
-                    if event.get("key") == key and event.get("active"):
+                    if event.get("active") and scoped_evidence_key(record, event["key"]) == key:
                         event.update(active=False, restored_at=now)
         else:
             item.setdefault("attention_events", []).append({"key": key, "at": now, "active": True})
@@ -564,6 +597,8 @@ class AssignmentRegistry:
             success_criteria=source["success_criteria"],
             assignment_id=child_id,
             trigger="revision",
+            client_id=source.get("client_id", ""),
+            meeting_id=source.get("meeting_id", ""),
             source_kind="revision",
             source_ref=source["id"],
         )
@@ -627,6 +662,8 @@ class AssignmentRegistry:
             source_handoff_id=handoff_id,
             assignment_id=assignment_id,
             trigger="handoff",
+            client_id=source.get("client_id", ""),
+            meeting_id=source.get("meeting_id", ""),
             source_kind="agent_handoff",
             source_ref=handoff_id,
         )

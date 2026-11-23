@@ -9,7 +9,7 @@ export async function openStudioView(page, label) {
   }
   const name = label === 'Assignments' ? 'Work' : label
   const target = nav.getByRole('link', { name, exact: true })
-  if (!['Bots', 'Work', 'Projects'].includes(name) && !await target.isVisible()) {
+  if (!await target.isVisible()) {
     await nav.locator('summary[aria-label="Studio tools"]').click()
   }
   await target.click()

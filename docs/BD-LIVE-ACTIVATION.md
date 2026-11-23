@@ -6,7 +6,7 @@ The conductor is deployed at revision `bf9d85a`. Its initial synthetic shadow cy
 
 - **Local Qwen:** installed `qwen3:8b` through loopback Ollama. Extracts bounded public evidence into a schema. A local synthetic-input call was verified; this does not establish extraction accuracy across real sources.
 - **Cloud Jev:** existing TypeSafe API, `jev-latest`. One request asks a Choice for research/watch/reject/uncertain, a three-level Score for evidence strength, and a Noul for whether a proposed quote supports its claim. Jev is not running locally on the M4.
-- **Discovery:** a fixed Google News RSS query for the configured segment. Each cycle retrieves up to eight recent headlines, has Qwen pre-screen unseen items, and sends only the best gap-clear item to Jev.
+- **Discovery:** a fixed Google News RSS query for the configured segment. Each cycle drops already-reviewed headlines from the returned feed, has Qwen pre-screen the eight newest unseen items, and sends only the best gap-clear item to Jev.
 - **Output:** durable local research packets awaiting human review. No outreach, CRM writes, account approval, or contact verification writes occur.
 
 The verified pre-activation configuration has airgap enabled, an existing TypeSafe credential configured, and `news.fetch`, `typesafe.signals`, and `web.fetch` disabled. Recheck these conditions before activation; a saved configuration is not proof of current process state.

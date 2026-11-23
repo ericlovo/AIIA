@@ -71,8 +71,8 @@ try {
         return route.abort('blockedbyclient')
       }
       if (url.pathname === '/') return route.fulfill({ contentType: 'text/html', body: await readFile(join(dist, 'index.html')) })
-      if (/^\/assets\/[A-Za-z0-9_.-]+\.(css|js)$/.test(url.pathname)) return route.fulfill({
-        contentType: url.pathname.endsWith('.css') ? 'text/css' : 'text/javascript',
+      if (/^\/assets\/[A-Za-z0-9_.-]+\.(css|js|webp)$/.test(url.pathname)) return route.fulfill({
+        contentType: url.pathname.endsWith('.webp') ? 'image/webp' : url.pathname.endsWith('.css') ? 'text/css' : 'text/javascript',
         body: await readFile(join(dist, url.pathname.slice(1))),
       })
       if (!url.pathname.startsWith('/api/')) {

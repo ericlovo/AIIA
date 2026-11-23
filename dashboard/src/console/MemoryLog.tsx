@@ -49,7 +49,7 @@ const OUTCOME_LABELS: Record<ReviewBucket, string> = {
   unclassified: 'Unclassified',
 }
 
-export function MemoryLog({ agents, intent, source, inbox = false }: { agents: Agent[]; intent?: { bucket: ReviewBucket | '' }; source?: InboxSource; inbox?: boolean }) {
+export function MemoryLog({ agents, intent, source, ideaId, inbox = false }: { agents: Agent[]; intent?: { bucket: ReviewBucket | '' }; source?: InboxSource; ideaId?: string; inbox?: boolean }) {
   const qc = useQueryClient()
   // Arriving from a Switchboard metric: open on that slice of the same inbox,
   // with the status tabs cleared so the rows the number counted are visible.
@@ -67,8 +67,8 @@ export function MemoryLog({ agents, intent, source, inbox = false }: { agents: A
   const pendingProposals = inbox && origin === 'loops' && filter === 'unreviewed'
   const effectiveOutcome = pendingProposals ? 'open' : outcome
   const page = useQuery({
-    queryKey: ['memory-inbox', scope.id, filter, effectiveOutcome, query, offset, priority, sort],
-    queryFn: () => api.memoryInbox({ project: scope.project, source: scope.source, status: filter, outcome: effectiveOutcome, query, offset, priority, sort }),
+    queryKey: ['memory-inbox', ideaId, scope.id, filter, effectiveOutcome, query, offset, priority, sort],
+    queryFn: () => api.memoryInbox(ideaId ? { ideaId } : { project: scope.project, source: scope.source, status: filter, outcome: effectiveOutcome, query, offset, priority, sort }),
     retry: false,
     refetchInterval: 15_000,
   })
@@ -106,16 +106,16 @@ export function MemoryLog({ agents, intent, source, inbox = false }: { agents: A
   const busy = promote.isPending || dismiss.isPending || restore.isPending || triage.isPending || retry.isPending || assign.isPending
   const data = page.data
   const counts = data?.counts
-  const ideas = data?.ideas ?? []
+  const ideas = (data?.ideas ?? []).filter(idea => !ideaId || idea.id === ideaId)
 
   return (
     <main className="h-full min-h-0 flex-1 overflow-y-auto bg-neutral-950">
-      <PageHeader title={inbox ? 'Inbox' : 'Memory log'} meta={<>
+      {ideaId ? <PageHeader title="Saved idea" actions={<a className="inline-flex min-h-11 items-center text-sm text-cyan-200 underline" href="#/inbox?source=all">Back to inbox</a>} /> : <PageHeader title={inbox ? 'Inbox' : 'Memory log'} meta={<>
         <span>{counts ? inbox && origin === 'loops' ? `${data.total} ${pendingProposals ? 'pending' : 'captures'}` : `${counts.unreviewed} unreviewed` : 'Loading inbox'}</span>
         <span>{counts && !(inbox && origin === 'loops') ? `${counts.promoted} logged to memory` : ''}</span>
         <span>{slackSummary(slack.data, slack.isError)}</span>
-      </>} />
-      {inbox && <InboxQueues source={origin} />}
+      </>} />}
+      {inbox && !ideaId && <InboxQueues source={origin} />}
 
       {notice && <div role={notice.tone === 'error' ? 'alert' : 'status'} className={`sticky top-0 z-20 flex items-start justify-between gap-4 border-b border-neutral-800 bg-neutral-950 px-5 py-3 text-sm sm:px-7 ${notice.tone === 'error' ? 'text-red-300' : 'text-cyan-200'}`}>
         <span>{notice.text}</span>
@@ -123,7 +123,7 @@ export function MemoryLog({ agents, intent, source, inbox = false }: { agents: A
       </div>}
 
       <section aria-label={inbox ? 'Inbox captures' : 'Memory log'} className="min-w-0">
-        <div className="sticky top-0 z-10 flex flex-col gap-3 border-b border-neutral-900 bg-neutral-950/95 px-5 py-4 backdrop-blur sm:flex-row sm:items-center sm:justify-between sm:px-7">
+        {!ideaId && <div className="sticky top-0 z-10 flex flex-col gap-3 border-b border-neutral-900 bg-neutral-950/95 px-5 py-4 backdrop-blur sm:flex-row sm:items-center sm:justify-between sm:px-7">
           <div>
             <div className="text-[10px] font-semibold uppercase tracking-[0.2em] text-neutral-500">Review inbox · {scope.label}</div>
             {!inbox && <div className="mt-1 text-xs text-neutral-600">{sort === 'priority' ? 'Highest priority first' : 'Newest first'} · captures stay unreviewed until you log or dismiss them · refreshes every 15 seconds</div>}
@@ -154,11 +154,11 @@ export function MemoryLog({ agents, intent, source, inbox = false }: { agents: A
               ))}
             </div>
           </div>
-        </div>
+        </div>}
 
         {page.isError && <p role="alert" className="px-5 py-4 text-sm text-red-300 sm:px-7">Memory inbox unavailable. {data ? 'Showing the last loaded captures.' : 'Retry to load captures.'} <button type="button" onClick={() => page.refetch()} className="underline">Retry</button></p>}
         {page.isLoading && <p className="px-5 py-6 text-sm text-neutral-500 sm:px-7">Loading captures...</p>}
-        {data && ideas.length === 0 && <p className="px-5 py-6 text-sm text-neutral-500 sm:px-7">{outcome ? `No proposals under ${OUTCOME_LABELS[outcome]} in this view.` : query || priority ? 'No captures match this search.' : filter === 'unreviewed' ? emptyInboxText(origin) : 'No captures in this state.'}</p>}
+        {data && ideas.length === 0 && <p className="px-5 py-6 text-sm text-neutral-500 sm:px-7">{ideaId ? 'This saved idea could not be found.' : outcome ? `No proposals under ${OUTCOME_LABELS[outcome]} in this view.` : query || priority ? 'No captures match this search.' : filter === 'unreviewed' ? emptyInboxText(origin) : 'No captures in this state.'}</p>}
 
         <ul className="divide-y divide-neutral-900">
           {ideas.map(idea => <IdeaRow key={idea.id} idea={idea} busy={busy} canPost={canPost} agents={agents}
@@ -171,7 +171,7 @@ export function MemoryLog({ agents, intent, source, inbox = false }: { agents: A
             onRetryFile={fileId => retryFile.mutate({ id: idea.id, fileId })} />)}
         </ul>
 
-        {data && data.total > 50 && <div className="flex items-center justify-between px-5 py-4 text-xs text-neutral-500 sm:px-7">
+        {!ideaId && data && data.total > 50 && <div className="flex items-center justify-between px-5 py-4 text-xs text-neutral-500 sm:px-7">
           <span>Showing {offset + 1}-{Math.min(offset + 50, data.total)} of {data.total}</span>
           <div className="flex gap-2">
             <button type="button" disabled={offset === 0} onClick={() => setOffset(Math.max(0, offset - 50))} className="border border-neutral-800 px-3 py-1 disabled:opacity-40">Newer</button>

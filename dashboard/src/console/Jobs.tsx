@@ -83,7 +83,7 @@ export function Jobs({ agents, loading, agentError }: JobsProps) {
   }
 
   return <main className="mx-auto h-full min-h-0 w-full max-w-6xl space-y-8 overflow-y-auto p-4 text-sm leading-6 text-neutral-300 sm:p-6">
-    <header className="flex flex-wrap items-center justify-between gap-3">
+    <header className="studio-page-header flex flex-wrap items-center justify-between gap-3">
       <h1 className="text-2xl font-semibold text-white">Jobs</h1>
       <div className="flex gap-2">
         <button type="button" className={control} aria-label="Refresh jobs" title="Refresh jobs" disabled={busy} onClick={() => { refresh(); void tasks.refetch(); void resources.refetch() }}><RefreshCw size={18} /></button>

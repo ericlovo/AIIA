@@ -1,16 +1,21 @@
+import { isReceiptId, type ReceiptId } from './bdRecordModel.ts'
 import type { ReviewBucket } from '../lib/api'
 
 export type InboxSource = 'slack' | 'loops' | 'signals' | 'all'
-export type StudioView = 'home' | 'bd' | 'bots' | 'switchboard' | 'inbox' | 'jobs' | 'projects' | 'history' | 'activity' | 'agents' | 'assignments' | 'handoffs' | 'memory' | 'world' | 'signals'
+export type StudioView = 'desk' | 'record' | 'home' | 'bd' | 'bots' | 'switchboard' | 'inbox' | 'jobs' | 'projects' | 'history' | 'activity' | 'agents' | 'assignments' | 'handoffs' | 'memory' | 'world' | 'signals' | 'meetings'
 
 export const VIEWS: { id: StudioView; label: string }[] = [
+  { id: 'desk', label: 'Desk' },
+  { id: 'record', label: 'Record' },
   { id: 'bd', label: 'Research' },
+  { id: 'home', label: 'Home' },
   { id: 'bots', label: 'Bots' },
   { id: 'switchboard', label: 'Today' },
   { id: 'inbox', label: 'Inbox' },
   { id: 'jobs', label: 'Jobs' },
   { id: 'assignments', label: 'Work' },
   { id: 'projects', label: 'Projects' },
+  { id: 'meetings', label: 'Client meetings' },
   { id: 'history', label: 'Activity history' },
   { id: 'activity', label: 'Overview' },
   { id: 'agents', label: 'Agents' },
@@ -26,17 +31,20 @@ export const VIEWS: { id: StudioView; label: string }[] = [
  * can be linked to, reloaded, and reached with the back button.
  */
 export type StudioRoute =
+  | { view: 'desk' }
+  | { view: 'record'; receiptId?: ReceiptId; showRun?: boolean }
   | { view: 'home' }
   | { view: 'bd' }
   | { view: 'bots'; agentId?: string }
   | { view: 'switchboard'; taskId?: string; attention?: boolean }
   | { view: 'history'; attention?: boolean }
-  | { view: 'inbox'; source?: InboxSource }
+  | { view: 'inbox'; source?: InboxSource; ideaId?: string }
   | { view: 'jobs' }
   | { view: 'projects' }
+  | { view: 'meetings'; clientId?: string; meetingId?: string }
   | { view: 'activity' }
   | { view: 'agents'; agentId?: string }
-  | { view: 'assignments'; assignmentId?: string; agentId?: string }
+  | { view: 'assignments'; assignmentId?: string; agentId?: string; clientId?: string; meetingId?: string }
   | { view: 'handoffs'; from?: string; to?: string }
   | { view: 'memory'; review?: ReviewBucket | 'all'; source?: 'signals' }
   | { view: 'world' }
@@ -45,7 +53,10 @@ export type StudioRoute =
 export const DEFAULT_ROUTE: StudioRoute = { view: 'home' }
 
 const PATHS: Record<StudioView, string> = {
+  desk: 'desk',
+  record: 'record',
   home: 'note',
+  meetings: 'meetings',
   bd: 'bd',
   bots: 'bots',
   switchboard: 'today', activity: 'overview', agents: 'agents', assignments: 'assignments',
@@ -75,12 +86,20 @@ export function parseRoute(hash: string): StudioRoute | null {
     case 'history': return id ? null : { view, ...(param('attention') === '1' ? { attention: true } : {}) }
     case 'inbox': {
       const source = param('source')
-      if (id || (source && !['slack', 'loops', 'signals', 'all'].includes(source))) return null
+      if (id) return { view, ideaId: id }
+      if (source && !['slack', 'loops', 'signals', 'all'].includes(source)) return null
       return { view, source: source as InboxSource | undefined }
+    }
+    case 'record': {
+      if (!id) return { view }
+      const integer = Number(id)
+      const receiptId = String(integer) === id ? integer : id
+      return isReceiptId(receiptId) ? { view, receiptId, ...(param('show') === 'run' ? { showRun: true } : {}) } : null
     }
     case 'bots':
     case 'agents': return { view, agentId: id }
-    case 'assignments': return { view, assignmentId: id, agentId: id ? undefined : param('agent') }
+    case 'meetings': return { view, clientId: id, meetingId: id ? param('call') : undefined }
+    case 'assignments': return { view, assignmentId: id, agentId: id ? undefined : param('agent'), clientId: id ? undefined : param('client'), meetingId: id ? undefined : param('call') }
     case 'handoffs': return id ? null : { view, from: param('from'), to: param('to') }
     case 'memory': {
       if (id) return null
@@ -98,7 +117,8 @@ export function formatRoute(route: StudioRoute): string {
   let id = ''
   switch (route.view) {
     case 'inbox':
-      if (route.source) query.set('source', route.source)
+      id = route.ideaId ?? ''
+      if (!id && route.source) query.set('source', route.source)
       break
     case 'switchboard':
       if (route.taskId) query.set('task', route.taskId)
@@ -107,10 +127,20 @@ export function formatRoute(route: StudioRoute): string {
     case 'history':
       if (route.attention) query.set('attention', '1')
       break
+    case 'record':
+      id = route.receiptId === undefined ? '' : String(route.receiptId)
+      if (id && route.showRun) query.set('show', 'run')
+      break
     case 'bots':
     case 'agents': id = route.agentId ?? ''; break
+    case 'meetings':
+      id = route.clientId ?? ''
+      if (id && route.meetingId) query.set('call', route.meetingId)
+      break
     case 'assignments':
       id = route.assignmentId ?? ''
+      if (!id && route.clientId) query.set('client', route.clientId)
+      if (!id && route.clientId && route.meetingId) query.set('call', route.meetingId)
       if (!id && route.agentId) query.set('agent', route.agentId)
       break
     case 'handoffs':

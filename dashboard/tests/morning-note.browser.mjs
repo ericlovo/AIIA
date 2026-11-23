@@ -27,16 +27,16 @@ const assignments = Array.from({ length: 7 }, (_, index) => ({
   id: `work-${index}`, title: `Review evidence ${index}`, objective: 'Inspect the synthetic report',
   agent_id: 'ci', status: 'completed', result: 'Evidence', priority: 'normal', context: '',
   success_criteria: '', error: '', created_at: '2026-10-30', updated_at: '2026-10-30',
-  review_status: 'unreviewed',
+  review_status: 'unreviewed', review_version: 'v1',
 }))
 const note = {
   date: '2026-10-08',
   products: [
-    { id: 'aiia', name: 'AIIA', kind: 'product', state: 'waiting', note: 'verified deployed #127; merged #128; deployment not verified · waiting on you: 1 review' },
+    { id: 'aiia', name: 'AIIA', kind: 'product', state: 'waiting', agent_ids: ['ci'], note: 'verified deployed #127; merged #128; deployment not verified · waiting on you: 1 review' },
     { id: 'mindmoor', name: 'Mindmoor', kind: 'product', state: 'waiting', note: 'Alumni version is 12 changes behind main.' },
     { id: 'sanction', name: 'Sanction', kind: 'product', state: 'blocked', note: 'Automated checks are red on the latest change.' },
-    { id: 'mia', name: 'MIA', kind: 'product', state: 'shipped', note: "Last week's update is out." },
-    { id: 'morrow', name: 'Morrow', kind: 'product', state: 'shipped', note: 'Conversation board is out to beta testers.' },
+    { id: 'mia', name: 'MIA', kind: 'product', state: 'unmounted', github: 'example/moral-intention-analyst', note: 'Checkout unavailable' },
+    { id: 'morrow', name: 'Morrow', kind: 'product', state: 'clean', github: 'example/morrow', note: 'Conversation board is out to beta testers.' },
   ],
   customers: [
     { id: 'trs', name: "That's Right Sweetie", kind: 'customer', state: 'shipped', note: 'Daily client prep is arriving each morning.' },
@@ -54,6 +54,11 @@ async function open(width, height) {
   page.setDefaultTimeout(12000)
   const pageErrors = []
   const writes = []
+  const work = assignments.map(row => ({ ...row }))
+  Object.assign(work[0], { status: 'failed', error: 'check_incomplete', result: '', attention_key: 'check-timeout' })
+  Object.assign(work[1], { status: 'queued', result: '' })
+  work.push({ ...work[1], id: 'busy', title: 'Active assignment', status: 'running' })
+  let nextTicket = 1
   let permissionsUnavailable = false
   page.on('pageerror', error => pageErrors.push(error.message))
   await page.routeWebSocket('**/ws', ws => ws.onMessage(() => {}))
@@ -62,7 +67,7 @@ async function open(width, height) {
     await page.route('http://studio.test/assets/**', async route => {
       const asset = new URL(route.request().url()).pathname.slice(1)
       await route.fulfill({
-        contentType: asset.endsWith('.css') ? 'text/css' : 'text/javascript',
+        contentType: asset.endsWith('.webp') ? 'image/webp' : asset.endsWith('.css') ? 'text/css' : 'text/javascript',
         body: await readFile(join(studioDist, asset)),
       })
     })
@@ -74,7 +79,14 @@ async function open(width, height) {
     if (path === '/api/git-writes' && permissionsUnavailable) return route.fulfill({ status: 503, json: { detail: 'Synthetic permissions unavailable' } })
     if (path === '/api/studio/morning-note') return route.fulfill({ json: note })
     if (path === '/api/agents') return route.fulfill({ json: { agents } })
-    if (path === '/api/assignments' && request.method() === 'GET') return route.fulfill({ json: { assignments } })
+    if (path === '/api/assignments' && request.method() === 'GET') return route.fulfill({ json: { assignments: work } })
+    if (path.endsWith('/enqueue') && request.method() === 'POST') {
+      const item = work.find(row => path === `/api/assignments/${row.id}/enqueue`)
+      assert.ok(item)
+      assert.equal(request.postDataJSON().expected_version, item.review_version)
+      item.run_ticket ??= nextTicket++
+      return route.fulfill({ status: 202, json: { assignment: item } })
+    }
     if (path === '/api/assignments' && request.method() === 'POST') {
       return route.fulfill({ json: { assignment: { id: 'asg-ask', title: request.postDataJSON().title, agent_id: request.postDataJSON().agent_id, status: 'queued' } } })
     }
@@ -107,11 +119,10 @@ try {
     await page.getByRole('heading', { name: 'Where things stand', exact: true }).waitFor()
     await page.getByRole('heading', { name: /Needs you/ }).waitFor()
     await page.getByRole('heading', { name: 'Ask for anything', exact: true }).waitFor()
-    assert.equal(await page.getByRole('navigation', { name: 'Studio' }).count(), 0)
-    const cards = page.locator('.card')
-    assert.equal(await cards.count(), 5)
+    assert.equal(await page.getByRole('navigation', { name: 'Studio' }).count(), 1)
+    const cards = page.locator('.cards .work-decision')
+    assert.equal(await cards.count(), 7)
     await page.getByRole('heading', { name: 'Needs you 13', exact: true }).waitFor()
-    await page.getByRole('link', { name: 'Review saved ideas (6)', exact: true }).waitFor()
     await page.getByText('Alumni Nations', { exact: true }).first().waitFor()
     const copy = await page.locator('main.morning-note').innerText()
     assert.ok(copy.includes('verified deployed #127'))
@@ -119,24 +130,76 @@ try {
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth > innerWidth + 1)
     assert.equal(overflow, false, `${label} overflowed horizontally`)
 
-    await page.screenshot({ path: join(output, `morning-note-${label}.png`), fullPage: true, animations: 'disabled' })
+    await page.screenshot({ path: join(output, `morning-note-${label}.png`), fullPage: false, animations: 'disabled' })
+
+    const mia = page.locator('.project-tile').filter({ has: page.getByText('MIA', { exact: true }) })
+    assert.equal(await mia.getByRole('link', { name: 'Repository' }).getAttribute('href'), 'https://github.com/example/moral-intention-analyst')
+    assert.equal(await mia.getByText('Checkout unavailable', { exact: true }).count(), 1)
+
+    const shortcut = page.getByRole('button', { name: /pending decisions/ })
+    await shortcut.focus()
+    await page.keyboard.press('Enter')
+    const queueHeading = page.getByRole('heading', { name: 'Needs you 13', exact: true })
+    assert.ok(await queueHeading.evaluate(el => el === document.activeElement))
+    const navBox = await page.getByRole('navigation', { name: 'Studio', exact: true }).boundingBox()
+    const headingBox = await queueHeading.boundingBox()
+    assert.ok(navBox.y >= 0 && headingBox.y >= navBox.y + navBox.height && headingBox.y < height)
+    await page.keyboard.press('Tab')
+    assert.ok(await queueHeading.evaluate(el => el.parentElement.contains(document.activeElement)))
 
     assert.equal(await page.getByRole('button', { name: 'Approve', exact: true }).count(), 0)
     assert.equal(await page.getByRole('button', { name: 'Not now', exact: true }).count(), 0)
-    assert.equal(await page.getByRole('link', { name: 'Review decision and evidence' }).first().getAttribute('href'), '#/assignments/work-0')
+    await page.locator('.tile-decisions > summary').first().click()
+    const last = page.locator('.project-tile').first().locator('summary').last()
+    await last.click()
+    await page.locator('.project-tile').getByRole('region', { name: 'Artifact review' }).waitFor()
+    assert.equal(await page.evaluate(() => location.hash), '#/note')
+    await last.click()
     assert.equal(writes.length, 0, 'preview does not accept, dismiss, promote or execute')
 
+    const execution = page.getByRole('region', { name: 'Mini execution queue' })
+    await execution.getByText('Active assignment').waitFor()
+    for (const [index, action] of [[0, 'Retry assignment'], [1, 'Run assignment']]) {
+      const card = page.locator('.cards .work-decision').filter({ has: page.locator('summary', { hasText: `Review evidence ${index}` }) })
+      await card.locator('summary').first().click()
+      const runButton = card.getByRole('button', { name: action, exact: true })
+      await runButton.waitFor()
+      assert.equal(await card.getByText(`Review evidence ${index}`, { exact: true }).count(), 1)
+      assert.equal(await card.getByText('Decision and evidence', { exact: true }).count(), 0)
+      assert.equal(await card.getByText('Failed', { exact: true }).count(), 0)
+      if (index === 0) {
+        const reports = card.locator('details').filter({ has: page.locator('summary', { hasText: /^Repeat reports$/ }) }).last()
+        const acknowledge = reports.getByRole('button', { name: 'Acknowledge report and future repeats' })
+        assert.equal(await acknowledge.isVisible(), false)
+        await reports.locator('summary').click()
+        await acknowledge.waitFor()
+        assert.ok(await card.getByRole('region', { name: 'Failure evidence' }).evaluate((node, section) =>
+          Boolean(node.compareDocumentPosition(section) & Node.DOCUMENT_POSITION_FOLLOWING), await reports.elementHandle()))
+        await reports.locator('summary').click()
+        await card.locator('summary').first().scrollIntoViewIfNeeded()
+        await page.screenshot({ path: join(output, `expanded-task-${label}.png`), animations: 'disabled' })
+      }
+      await runButton.click()
+      await execution.getByRole('link', { name: `Review evidence ${index}` }).waitFor()
+    }
+    assert.deepEqual(await execution.locator('li a').allTextContents(), ['Active assignment', 'Review evidence 0', 'Review evidence 1'])
+    assert.deepEqual(writes.map(row => row.path), ['/api/assignments/work-0/enqueue', '/api/assignments/work-1/enqueue'])
+    await page.reload()
+    await execution.getByRole('link', { name: 'Review evidence 1' }).waitFor()
+    await execution.scrollIntoViewIfNeeded()
+    await page.screenshot({ path: join(output, `assignment-queue-${label}.png`), animations: 'disabled' })
     await page.getByLabel('What do you need done?').fill('have someone look at why Sanction CI is red')
     await page.getByRole('button', { name: 'Ask', exact: true }).click()
     await page.getByText('Taken by CI & Failure Fixer').waitFor()
     const created = writes.find(item => item.method === 'POST' && item.path === '/api/assignments')
     assert.equal(created?.body.agent_id, 'ci')
 
-    await page.getByRole('button', { name: 'Review work', exact: true }).first().click()
+    await page.getByRole('navigation', { name: 'Studio', exact: true }).getByRole('link', { name: 'Work', exact: true }).click()
     await page.getByRole('heading', { name: 'Work', exact: true }).waitFor()
     assert.equal(await page.evaluate(() => window.location.hash), '#/assignments')
-    await page.getByRole('button', { name: 'Needs you (13)', exact: true }).waitFor()
+    await page.getByRole('button', { name: 'Needs you (11)', exact: true }).waitFor()
     await page.getByRole('link', { name: 'Review saved ideas (6)', exact: true }).waitFor()
+    await page.screenshot({ path: join(output, `studio-work-${label}.png`), animations: 'disabled' })
     failPermissions()
     await page.reload()
     await page.getByRole('button', { name: 'Needs you (Unavailable)', exact: true }).waitFor()
