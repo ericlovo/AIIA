@@ -40,6 +40,8 @@ logger = logging.getLogger("aiia.tasks")
 # owns the ignore list), and a suite that never ran is a runner failure.
 TEST_ROOT = "local_brain/tests"
 TEST_RUNNER_TIMEOUT = 300
+# A scheduled post can wait for the serial GitHub reads within each repo.
+DAILY_DIGEST_SOURCE_TIMEOUT_SECONDS = 60.0
 # Caller stays above the Brain's Ollama deadline (Mini sets OLLAMA_TIMEOUT=300;
 # the library default is 120). A shorter client timeout hid the 504 for weeks.
 DAILY_BRIEF_TIMEOUT_SECONDS = 330.0
@@ -2335,7 +2337,9 @@ Be specific and reference actual file names. Keep each point to 1-2 sentences.""
             total = page.get("total") or 0
             if total:
                 inbox_counts[source] = total
-        repo_result = await asyncio.to_thread(daily_digest.collect_digest)
+        repo_result = await asyncio.to_thread(
+            daily_digest.collect_digest, source_timeout=DAILY_DIGEST_SOURCE_TIMEOUT_SECONDS
+        )
         tasks = [t for t in self.get_all_tasks() if t["task_id"] != "daily_digest"]
         shared = {
             "date": date,

@@ -203,6 +203,7 @@ class BDService:
         job["managed_leads"] = dict(self.store.bots[job["bot_id"]].get("managed_leads", {}))
         job["research_segment"] = self.store.bots.get(job["bot_id"], {}).get("research_segment")
         job["seen_evidence"] = self.store.evidence_keys(job["bot_id"], job["tenant_id"])
+        job["query_rotation"] = self.store.research_runs(job["bot_id"], job["tenant_id"])
         if self.store.config.get("icp_dir"):
             job["icp_dir"] = self.store.config["icp_dir"]
 

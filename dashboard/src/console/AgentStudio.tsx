@@ -10,6 +10,7 @@ import { StudioNav } from './StudioNav'
 import { VIEWS, type StudioView } from './studioRoute'
 import { PageHeader } from './PageHeader'
 import { navigate, replaceRoute, useStudioRoute } from './useStudioRoute'
+import { ClientMeetings } from './ClientMeetings'
 import { WorkBoard } from './WorkBoard'
 import { ActivityOverview } from './ActivityOverview'
 import { Switchboard } from './Switchboard'
@@ -17,6 +18,8 @@ import { Today } from './Today'
 import { MorningNote } from './MorningNote'
 import { Jobs } from './Jobs'
 import { BDConductor } from './BDConductor'
+import { Desk } from './Desk'
+import { BDRecord } from './BDRecord'
 import { Bots } from './Bots'
 import { Projects } from './Projects'
 import { MemoryLog } from './MemoryLog'
@@ -180,11 +183,14 @@ export function AgentStudio() {
   const retiredCount = useMemo(() => agents.filter(agent => agent.retired).length, [agents])
 
   const page = (() => {
+    if (route.view === 'desk') return <Desk />
+    if (route.view === 'record') return <BDRecord receiptId={route.receiptId} showRun={route.showRun} />
     if (view === 'home') return <MorningNote agents={agents} onDetails={() => navigate({ view: 'assignments' })} />
     if (view === 'bd') return <BDConductor />
     if (view === 'bots') return <Bots agents={agents} loading={isLoading} error={isError} agentId={route.view === 'bots' ? route.agentId : undefined} />
     if (view === 'signals') return <SignalJobs />
     if (view === 'jobs') return <Jobs agents={agents} loading={isLoading} agentError={isError} />
+    if (view === 'meetings') return <ClientMeetings clientId={route.clientId} meetingId={route.meetingId} />
     if (view === 'projects') return <Projects />
     if (view === 'switchboard' && !(route.view === 'switchboard' && route.taskId)) return <Today key={key} agents={agents} loading={isLoading} agentError={isError} attention={route.view === 'switchboard' && route.attention} />
     if (view === 'switchboard' || view === 'history') {
@@ -213,13 +219,13 @@ export function AgentStudio() {
       )
     }
 
-    if (view === 'inbox') return <MemoryLog key={key} agents={agents} inbox source={route.view === 'inbox' ? route.source ?? 'slack' : 'slack'} />
+    if (view === 'inbox') return <MemoryLog key={key} agents={agents} inbox ideaId={route.view === 'inbox' ? route.ideaId : undefined} source={route.view === 'inbox' ? route.source ?? 'slack' : 'slack'} />
     if (view === 'memory') {
       const review = route.view === 'memory' ? route.review : undefined
       return <MemoryLog key={key} agents={agents} source={route.view === 'memory' ? route.source : undefined} intent={review ? { bucket: review === 'all' ? '' : review } : undefined} />
     }
 
-    if (view !== 'agents') {
+    if (view === 'assignments' || view === 'handoffs') {
       return (
         <WorkBoard
           key={key}
@@ -227,6 +233,8 @@ export function AgentStudio() {
           view={view}
           onRouteHandoff={routeHandoff}
           initialAgentId={route.view === 'assignments' ? route.agentId : undefined}
+          initialClientId={route.view === 'assignments' ? route.clientId : undefined}
+          initialMeetingId={route.view === 'assignments' ? route.meetingId : undefined}
           initialAssignmentId={route.view === 'assignments' ? route.assignmentId : undefined}
           initialHandoffSourceId={route.view === 'handoffs' ? route.from : undefined}
           initialHandoffTargetId={route.view === 'handoffs' ? route.to : undefined}
@@ -400,16 +408,12 @@ export function AgentStudio() {
     )
   })()
 
-  if (view === 'home') {
-    return <PanelBoundary key={view} name={VIEW_NAMES[view]}>{page}</PanelBoundary>
-  }
-
   return (
     <div className="flex h-full min-h-0 flex-col">
       <div className="relative z-30 flex shrink-0 items-center border-b border-neutral-900 px-3 py-2 sm:px-7">
         <StudioNav view={view} />
       </div>
-      <div className="min-h-0 flex-1">
+      <div data-view={view} className="studio-surface min-h-0 flex-1 overflow-auto">
         <PanelBoundary key={view} name={VIEW_NAMES[view]}>{page}</PanelBoundary>
       </div>
     </div>

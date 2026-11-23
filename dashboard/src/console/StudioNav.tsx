@@ -9,7 +9,7 @@ import { navigate } from './useStudioRoute'
  */
 export function StudioNav({ view }: { view: StudioView }) {
   const menu = useRef<HTMLDetailsElement>(null)
-  const primary: StudioView[] = ['bd', 'bots', 'assignments']
+  const primary: StudioView[] = ['home', 'assignments', 'bd', 'bots']
   const advanced = VIEWS.filter(item => !primary.includes(item.id))
   const activeAdvanced = advanced.find(item => item.id === view)
   useEffect(() => {
@@ -33,9 +33,9 @@ export function StudioNav({ view }: { view: StudioView }) {
   }
   return (
     <nav aria-label="Studio" className="flex w-full min-w-0 items-center gap-1">
-      <div className="grid min-w-0 flex-1 grid-cols-3 gap-1 sm:flex">
+      <div className="grid min-w-0 flex-1 grid-cols-4 gap-1 sm:flex">
       {primary.map(id => <a key={id} href={formatRoute({ view: id })} aria-current={view === id ? 'page' : undefined} onClick={event => open(event, id)} className={`flex min-h-11 min-w-0 items-center justify-center rounded text-xs sm:px-4 sm:text-sm focus-visible:outline-2 focus-visible:outline-emerald-300 ${view === id ? 'bg-neutral-800 text-white' : 'text-neutral-400 hover:text-white'}`}>
-        {VIEWS.find(item => item.id === id)?.label}
+        {id === 'home' ? 'Home' : VIEWS.find(item => item.id === id)?.label}
       </a>)}
       </div>
       <details ref={menu} className="relative shrink-0" onKeyDown={event => {

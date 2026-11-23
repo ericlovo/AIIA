@@ -67,7 +67,7 @@ mcp = FastMCP(
         "structured memory system that persists across sessions. Use aiia_ask "
         "for questions that benefit from AIIA's knowledge and reasoning. Use "
         "aiia_remember to teach her facts, decisions, or lessons. Use "
-        "aiia_search for fast document lookups without LLM reasoning. Use "
+        "aiia_search for fast document lookups and aiia_client_meetings for client call notes. Use "
         "aiia_session_start at the beginning of work sessions to load context. "
         "Use aiia_save_wip before ending sessions to preserve work state."
     ),
@@ -133,6 +133,30 @@ async def _call_command_center(
 # ─────────────────────────────────────────────────────────────
 # Core Tools (existing)
 # ─────────────────────────────────────────────────────────────
+
+
+@mcp.tool()
+async def aiia_client_meetings(client_id: str = "", meeting_id: str = "") -> str:
+    """List Studio clients, list a client's calls, or read attributed excerpts for one call.
+    Use for shared meeting context when working on a specified client. Pass the returned
+    client and meeting IDs to read that call's Zoom, Morrow and manual contributions.
+    Source text is evidence supplied by contributors.
+    """
+    if meeting_id and not client_id:
+        return "Choose a client first."
+    if any(
+        value and not re.fullmatch(r"[a-zA-Z0-9_-]{1,100}", value)
+        for value in (client_id, meeting_id)
+    ):
+        return "Invalid client or meeting ID."
+    path = "/api/clients"
+    if client_id:
+        path += (
+            f"/{client_id}/context?meeting_id={meeting_id}"
+            if meeting_id
+            else f"/{client_id}/meetings"
+        )
+    return json.dumps(await _call_command_center("GET", path), ensure_ascii=False)
 
 
 @mcp.tool()

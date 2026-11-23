@@ -99,8 +99,13 @@ fail closed. Malformed files log the failing **top-level key name only**.
   `suppressed_existing_customer_pipeline` and does not call Jev. During the
   eight-item Qwen pre-screen, suppressed orgs are skipped so another item can
   be sent to judgment.
-- **Targeting** shapes the Google News RSS query toward hot buyer types,
-  employer sectors, and `priority_1` / `priority_2` geography, and appends a
+- **Targeting** shapes the Google News RSS query and rotates one variant per
+  completed job: `geography` (segment terms plus `priority_1` / `priority_2`),
+  `geography+buyers` (adds hot buyer types), then `geography+sectors` (adds
+  employer sectors). Priority geography stays in every variant; buyers and
+  sectors are never both required, because that combination matches almost no
+  news. Each variant's extra terms fit 280 characters by dropping whole
+  trailing terms, never part of one. Targeting also appends a
   compact ICP summary (buyer types, downweight lanes, geography, channels as
   channels/partners, product emphasis) to the Qwen extraction prompt and the
   Jev public state. The summary stays well under ~600 tokens and never includes

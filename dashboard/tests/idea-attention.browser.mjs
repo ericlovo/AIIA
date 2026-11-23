@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 const { chromium } = await import(process.env.PLAYWRIGHT_MODULE || 'playwright')
-const browser = await chromium.launch({ headless: true })
+const browser = await chromium.launch({ headless: true, executablePath: process.env.CHROMIUM_PATH })
 const dist = process.env.STUDIO_DIST_DIR || join(process.cwd(), 'dist')
 try {
   for (const width of [1280, 390]) {
@@ -35,6 +35,7 @@ try {
       await route.fulfill({ json: body })
     })
     await page.goto('http://studio.test/#/assignments')
+    await page.getByText('Classification and verification tools', { exact: true }).click()
     await page.getByRole('button', { name: 'Preview all classifications', exact: true }).click()
     await page.getByText('Needs verification: 150', { exact: false }).waitFor()
     await page.getByText('Evidence 0 · code_review', { exact: true }).click()
@@ -48,6 +49,7 @@ try {
     assert.deepEqual(errors, [])
     unavailable = true
     await page.reload()
+    await page.getByText('Classification and verification tools', { exact: true }).click()
     await page.getByRole('button', { name: 'Preview all classifications', exact: true }).click()
     await page.getByRole('alert').filter({ hasText: 'Records unavailable' }).waitFor()
     await page.close()

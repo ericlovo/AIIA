@@ -189,7 +189,11 @@ export function AgentWorldCanvas({
     },
   })
   const runAssignment = useMutation({
-    mutationFn: api.runAssignment,
+    mutationFn: async (id: string) => {
+      const item = assignments.find(row => row.id === id)
+      if (!item) throw new Error('Assignment unavailable')
+      return api.enqueueAssignment(item)
+    },
     onSettled: () => {
       void queryClient.invalidateQueries({ queryKey: ['agents'] })
       void queryClient.invalidateQueries({ queryKey: ['assignments'] })

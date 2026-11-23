@@ -16,7 +16,7 @@ from local_brain.command_center.bd_icp import (
     load_bot_profile,
     matches_suppression,
     normalize_org_name,
-    query_terms,
+    query_variants,
     sits_ratio_label,
 )
 from local_brain.command_center.bd_service import BDService
@@ -313,7 +313,7 @@ def test_malformed_files_fail_closed(tmp_path, caplog):
     assert "key=version" in caplog.text
     assert "SHOULD_NOT_SHAPE_QUERY" not in caplog.text
     assert "SHOULD_NOT_SHAPE_QUERY" not in pipeline.discovery_query("healthcare", profile)
-    assert query_terms(profile) == ""
+    assert query_variants(profile) == [("base", "")]
 
 
 def test_config_key_and_env_discovery(tmp_path, monkeypatch):
@@ -333,13 +333,14 @@ def test_config_key_and_env_discovery(tmp_path, monkeypatch):
 def test_loaded_profile_shapes_query_and_prompts(tmp_path):
     write_profile(tmp_path)
     profile = load_bot_profile("healthcare", directory=tmp_path)
-    query = pipeline.discovery_query("healthcare", profile)
-    assert "healthcare" in query
-    assert "health systems" in query
-    assert "Wisconsin" in query
-    assert "Midwest" in query
-    assert "West Coast" not in query
-    assert "retail clinics" not in query
+    queries = [pipeline.discovery_query("healthcare", profile, turn) for turn in range(3)]
+    for query in queries:
+        assert query.startswith(pipeline.SEGMENTS["healthcare"])
+        assert '(Wisconsin OR "Example County" OR Midwest)' in query
+        assert "West Coast" not in query
+        assert "retail clinics" not in query
+    assert "health systems" in queries[1]
+    assert '"healthcare providers"' in queries[2]
     summary = profile.summary()
     assert "Prefer buyer types" in summary
     assert "Downweight lanes" in summary
@@ -382,7 +383,7 @@ async def test_suppressed_org_skips_jev_and_never_writes_candidate(tmp_path, mon
     source, extraction, _ = _gap_clear_source("Acme Widgets, Inc.")
     judged = []
 
-    async def retrieve(segment):
+    async def retrieve(segment, rotation=0):
         return [source]
 
     async def local(source):
@@ -414,7 +415,7 @@ async def test_qwen_screen_skips_suppressed_org_and_sends_another(tmp_path, monk
     allowed, allowed_ex, judgments = _gap_clear_source("Orchard Health System")
     judged = []
 
-    async def retrieve(segment):
+    async def retrieve(segment, rotation=0):
         return [blocked, allowed]
 
     async def local(source):
@@ -441,7 +442,7 @@ async def test_no_files_live_path_still_proposes(monkeypatch):
     source, extraction, judgments = _gap_clear_source("Orchard Health System")
     judged = []
 
-    async def retrieve(segment):
+    async def retrieve(segment, rotation=0):
         return [source]
 
     async def local(source):
@@ -539,3 +540,79 @@ def test_conductor_does_not_crash_when_icp_dir_is_a_file(tmp_path):
     config["icp_dir"] = str(target)
     runtime = BDConductor(tmp_path / "jobs.sqlite", config=config)
     assert runtime.snapshot()["mode"] == "replay"
+
+
+def test_icp_variants_rotate_one_refinement_at_a_time(tmp_path):
+    write_profile(tmp_path)
+    profile = load_bot_profile("healthcare", directory=tmp_path)
+    labels = [pipeline.discovery_plan("healthcare", profile, turn)[0] for turn in range(4)]
+    assert labels == ["geography", "geography+buyers", "geography+sectors", "geography"]
+    # Requiring buyers and sectors together is the over-constrained query this replaces.
+    for turn in range(3):
+        query = pipeline.discovery_query("healthcare", profile, turn)
+        assert not ("health systems" in query and "healthcare providers" in query)
+        assert query.endswith(" when:14d")
+    # A bad rotation value falls back to the first variant instead of failing the job.
+    for bad in (-1, 1.5, "2", None, True):
+        assert pipeline.discovery_plan("healthcare", profile, bad)[0] == "geography"
+
+
+def test_icp_variants_without_geography_or_refinements(tmp_path):
+    write_profile(
+        tmp_path,
+        icp={
+            **SYNTHETIC_ICP,
+            "geography": {"priority_1": [], "priority_2": [], "lower": ["West Coast"]},
+        },
+    )
+    profile = load_bot_profile("healthcare", directory=tmp_path)
+    assert [label for label, _ in query_variants(profile)] == ["buyers", "sectors"]
+    only_geo = tmp_path / "geo"
+    write_profile(
+        only_geo,
+        icp={
+            **SYNTHETIC_ICP,
+            "buyer_types": {"hot": [], "downweight": []},
+            "employer_sectors": [],
+        },
+    )
+    profile = load_bot_profile("healthcare", directory=only_geo)
+    assert query_variants(profile) == [("geography", '(Wisconsin OR "Example County" OR Midwest)')]
+
+
+def test_long_icp_terms_drop_whole_terms_and_keep_queries_balanced(tmp_path):
+    long_icp = {
+        **SYNTHETIC_ICP,
+        "buyer_types": {
+            "hot": [
+                "integrated regional health systems",
+                "independent community hospitals",
+                "county behavioral health providers",
+                "federally qualified health centers",
+                "critical access hospitals",
+                "multi-specialty physician groups",
+            ],
+            "downweight": [],
+        },
+        "employer_sectors": ["healthcare providers", "senior living operators"],
+        "geography": {
+            "priority_1": ["Wisconsin", "Minnesota", "Iowa", "Illinois"],
+            "priority_2": ["Midwest", "Great Lakes region", "Upper Midwest"],
+            "lower": [],
+        },
+    }
+    write_profile(tmp_path, icp=long_icp)
+    profile = load_bot_profile("healthcare", directory=tmp_path)
+    variants = dict(query_variants(profile))
+    geography = '(Wisconsin OR Minnesota OR Iowa OR Illinois OR Midwest OR "Great Lakes region" OR "Upper Midwest")'
+    assert variants["geography"] == geography
+    for extra in variants.values():
+        assert len(extra) <= 280
+        assert extra.startswith(geography)
+        assert extra.count("(") == extra.count(")")
+        assert extra.count('"') % 2 == 0
+    # The buyer group lost trailing terms to fit, never part of a term.
+    buyers = variants["geography+buyers"]
+    assert '"integrated regional health systems"' in buyers
+    assert "multi-specialty" not in buyers
+    assert buyers.endswith(")")

@@ -117,6 +117,7 @@ def slack_status():
 
 @router.get("/api/memory-inbox")
 def list_ideas(
+    idea_id: str = "",
     project: str = "",
     source: str = "",
     query: str = "",
@@ -129,7 +130,7 @@ def list_ideas(
 ):
     if attention not in ("", "needs_you", "verification", "activity"):
         raise HTTPException(status_code=422, detail="invalid_attention_lane")
-    if offset < 0 or offset > 1_000_000 or len(query) > 500 or len(source) > 40:
+    if not 0 <= offset <= 1_000_000 or len(query) > 500 or len(source) > 40 or len(idea_id) > 200:
         raise HTTPException(status_code=422, detail="invalid_inbox_query")
     if outcome and outcome not in (*REVIEW_OUTCOMES, UNCLASSIFIED, "open"):
         raise HTTPException(status_code=422, detail="invalid_review_outcome")
@@ -139,6 +140,7 @@ def list_ideas(
         raise HTTPException(status_code=422, detail="invalid_inbox_query")
     try:
         return inbox().list(
+            idea_id=idea_id,
             project=project,
             source=source,
             query=query,

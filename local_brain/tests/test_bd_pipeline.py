@@ -1,5 +1,7 @@
 import asyncio
 import copy
+import email.utils
+import time
 from functools import wraps
 
 import httpx
@@ -168,7 +170,7 @@ async def test_client_replay_and_live_missing_tenant_api():
 
 @async_test
 async def test_no_observations_never_yields_human_packet(monkeypatch):
-    async def empty(segment):
+    async def empty(segment, rotation=0):
         return []
 
     monkeypatch.setattr(pipeline, "retrieve_sources", empty)
@@ -361,7 +363,7 @@ def test_bad_public_excerpt_rejected(changes, allowlist):
 async def test_imported_live_skips_discovery_and_preserves_guarded_judgment(monkeypatch):
     events = []
 
-    async def forbidden(segment):
+    async def forbidden(segment, rotation=0):
         raise AssertionError("No news fetch for imported source")
 
     async def local(source):
@@ -535,7 +537,7 @@ async def test_seen_sources_are_skipped_before_qwen(monkeypatch):
     }
     called = []
 
-    async def retrieve(segment):
+    async def retrieve(segment, rotation=0):
         return [first, second]
 
     async def local(source):
@@ -562,6 +564,76 @@ async def test_seen_sources_are_skipped_before_qwen(monkeypatch):
     assert called == []
     assert result["packets"] == []
     assert result["reason"] == "no_new_evidence"
+
+
+@async_test
+async def test_seen_filter_runs_before_the_screen_cap(monkeypatch):
+    base, extraction, judgments = pipeline.synthetic_fixture("healthcare")
+    feed = [
+        {**base, "url": f"https://example.org/{index}", "title": f"{base['title']} Item {index}."}
+        for index in range(20)
+    ]
+    called = []
+    events = []
+
+    async def retrieve(segment, rotation=0):
+        called.append(("retrieve", rotation))
+        return feed
+
+    async def local(source):
+        called.append(source["url"])
+        return extraction, 10
+
+    async def judge(source, result, segment):
+        return judgments
+
+    monkeypatch.setattr(pipeline, "retrieve_sources", retrieve)
+    monkeypatch.setattr(pipeline, "extract_ready", local)
+    monkeypatch.setattr(pipeline, "judge", judge)
+    # The eight newest items are already reviewed; older unseen ones must still be screened.
+    seen = [pipeline.evidence_key(item) for item in feed[:8]]
+    result = await pipeline.run_pipeline(
+        job(mode="live", seen_evidence=seen, query_rotation=2),
+        lambda kind, data: events.append((kind, data)),
+    )
+    assert called[0] == ("retrieve", 2)
+    assert called[1:] == [f"https://example.org/{index}" for index in range(8, 16)]
+    assert result["packets"]
+    step = next(data for kind, data in events if data.get("step") == "public_sources")
+    assert step["query_variant"] == "base"
+
+
+@async_test
+async def test_retrieve_sources_returns_the_whole_feed_and_sends_the_rotated_query(monkeypatch):
+    from local_brain.egress import EgressDecision
+
+    now = time.time()
+    items = "".join(
+        f"<item><title>Clinic {index} expands</title>"
+        f"<link>https://news.google.com/rss/articles/a{index}</link>"
+        f"<pubDate>{email.utils.formatdate(now - index * 60, usegmt=True)}</pubDate></item>"
+        for index in range(12)
+    )
+    requested = []
+
+    async def allow(tool, server):
+        return EgressDecision(True, "test")
+
+    def handle(request):
+        requested.append(request.url.params["q"])
+        return httpx.Response(200, text=f"<rss><channel>{items}</channel></rss>")
+
+    client = httpx.AsyncClient
+    monkeypatch.setenv("AIIA_NEWS_ENABLED", "1")
+    monkeypatch.setattr(pipeline, "authorize_egress", allow)
+    monkeypatch.setattr(
+        pipeline.httpx,
+        "AsyncClient",
+        lambda **kw: client(transport=httpx.MockTransport(handle), **kw),
+    )
+    sources = await pipeline.retrieve_sources("healthcare", rotation=5)
+    assert len(sources) == 12
+    assert requested == [pipeline.SEGMENTS["healthcare"] + " when:14d"]
 
 
 def test_changed_source_text_has_new_evidence_key():
@@ -855,7 +927,7 @@ async def test_healthcare_deterministic_withhold_skips_jev(
     source.update(title=title, publisher=publisher)
     extraction.update(organization=organization, quote=quote, signal=signal)
 
-    async def retrieve(segment):
+    async def retrieve(segment, rotation=0):
         return [source]
 
     async def local(source):
@@ -917,7 +989,7 @@ async def test_healthcare_semantic_gate_and_positive_provider(monkeypatch, failu
     elif failure == "unsupported_claim":
         judgments["answers"]["claim_supported"]["noul"] = 0.79
 
-    async def retrieve(segment):
+    async def retrieve(segment, rotation=0):
         return [source]
 
     async def local(source):
@@ -1019,7 +1091,7 @@ async def test_segment_prospect_gate(monkeypatch, segment, article, organization
         judgments["answers"]["claim_supported"]["noul"] = 0.1
     called = []
 
-    async def retrieve(segment):
+    async def retrieve(segment, rotation=0):
         return [source]
 
     async def local(source):
@@ -1080,7 +1152,7 @@ async def test_named_but_irrelevant_segment_evidence_is_withheld(
         probabilities={key: 0.9 if key == "other" else 1 / 30 for key in entity["probabilities"]},
     )
 
-    async def retrieve(segment):
+    async def retrieve(segment, rotation=0):
         return [source]
 
     async def local(source):
@@ -1221,7 +1293,7 @@ async def test_qwen_screens_unseen_items_and_sends_only_the_best_to_jev(monkeypa
     called = []
     judged = []
 
-    async def retrieve(segment):
+    async def retrieve(segment, rotation=0):
         return [generic, weak, strong]
 
     async def local(source):
@@ -1268,7 +1340,7 @@ async def test_qwen_screen_respects_job_seconds_and_leaves_unseen_unmarked(monke
     monkeypatch.setattr(pipeline.time, "monotonic", lambda: clock["t"])
     called = []
 
-    async def retrieve(segment):
+    async def retrieve(segment, rotation=0):
         return [first, second]
 
     async def local(source):
@@ -1304,7 +1376,7 @@ async def test_withhold_persists_org_headline_url_quote_and_jev_scores(monkeypat
     judgments["answers"]["claim_supported"]["noul"] = 0.5
     judged = []
 
-    async def retrieve(segment):
+    async def retrieve(segment, rotation=0):
         return [source]
 
     async def local(source):

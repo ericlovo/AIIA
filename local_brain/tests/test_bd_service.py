@@ -244,6 +244,8 @@ def test_worker_passes_scoped_history_and_hides_integration_config(service):
     asyncio.run(service.run_once())
     assert observations[0]["seen_evidence"] == []
     assert observations[1]["seen_evidence"] == ["evidence-one"]
+    # Each completed job advances the query rotation for that bot.
+    assert [row["query_rotation"] for row in observations] == [0, 1]
     assert observations[1]["managed_leads"]["token_env"] == "PRIVATE_REF"
     assert observations[1]["source_allowlist"] == ["example.org"]
     public = service.snapshot()

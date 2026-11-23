@@ -1,4 +1,5 @@
 // Synthetic only: all requests are intercepted; no live bots or models run.
+import { openStudioView } from './studio-navigation.mjs'
 import assert from 'node:assert/strict'
 import { readFile, mkdir } from 'node:fs/promises'
 import { join } from 'node:path'
@@ -31,7 +32,7 @@ try {
       const request = route.request(), url = new URL(request.url())
       if (url.origin !== 'http://studio.test') { blocked.push(request.url()); return route.abort() }
       if (url.pathname === '/') return route.fulfill({ contentType: 'text/html', body: await readFile(join(dist, 'index.html')) })
-      if (/^\/assets\/[A-Za-z0-9_.-]+\.(css|js)$/.test(url.pathname)) return route.fulfill({ contentType: url.pathname.endsWith('.css') ? 'text/css' : 'text/javascript', body: await readFile(join(dist, url.pathname.slice(1))) })
+      if (/^\/assets\/[A-Za-z0-9_.-]+\.(css|js|webp)$/.test(url.pathname)) return route.fulfill({ contentType: url.pathname.endsWith('.webp') ? 'image/webp' : url.pathname.endsWith('.css') ? 'text/css' : 'text/javascript', body: await readFile(join(dist, url.pathname.slice(1))) })
       if (request.method() === 'POST' && url.pathname === '/api/agents/research/run') {
         posts.push(request.postDataJSON())
         if (fail) return route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ detail: 'fixture_offline' }) })
@@ -59,8 +60,14 @@ try {
     await page.getByRole('heading', { name: 'Bots', exact: true }).waitFor()
     assert.equal(new URL(page.url()).hash, '#/bots')
     const nav = page.getByRole('navigation', { name: 'Studio', exact: true })
-    assert.deepEqual(await nav.getByRole('link').allTextContents(), ['Research', 'Bots', 'Work'])
+    assert.deepEqual(await nav.getByRole('link').allTextContents(), ['Home', 'Work', 'Research', 'Bots'])
     assert.equal(posts.length, 0)
+    const search = page.getByRole('searchbox', { name: 'Find a bot' })
+    await search.fill('product decisions')
+    assert.equal(await page.locator('.bot-tile').count(), 1)
+    await search.fill('absent role')
+    await page.getByRole('button', { name: 'Clear search' }).click()
+    assert.equal(await page.locator('.bot-tile').count(), agents.length)
     await page.getByRole('link', { name: 'Open Research Scout' }).focus()
     await page.keyboard.press('Enter')
     const task = page.getByLabel('Additional context', { exact: true })
@@ -144,7 +151,7 @@ try {
     await page.getByRole('main').evaluate(el => { el.scrollTop = 0 })
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false)
     await page.screenshot({ path: join(output, `bots-task-${width}.png`), animations: 'disabled' })
-    await nav.getByRole('link', { name: 'Bots', exact: true }).click()
+    await openStudioView(page, 'Bots')
     await page.getByRole('region', { name: 'Research Scout interaction' }).waitFor({ state: 'detached' })
     await page.getByRole('link', { name: 'Open Research Scout' }).waitFor()
     await page.screenshot({ path: join(output, `bots-home-${width}.png`), animations: 'disabled' })
@@ -171,7 +178,7 @@ try {
     await page.getByRole('region', { name: 'History', exact: true }).getByText('No runs yet. Run a use case or send a task to start.').waitFor()
     assert.deepEqual(errors, [])
     assert.deepEqual(blocked, [])
-    console.log(`${width}px: Bots default, keyboard selection, task success/failure, switch/back pending guard, no automatic execution, More and layout passed`)
+    console.log(`${width}px: Bots workspace, keyboard selection, task success/failure, switch/back pending guard, no automatic execution, More and layout passed`)
     await context.close()
   }
 } finally { await browser.close() }

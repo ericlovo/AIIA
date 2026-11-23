@@ -26,8 +26,10 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
-from urllib.parse import urlsplit
+from urllib.parse import quote, urlsplit
+from zoneinfo import ZoneInfo
 
+from local_brain.command_center import attention
 from local_brain.command_center import repository_tools as repos
 from local_brain.command_center.deployment_verification import verified_receipt
 
@@ -196,6 +198,7 @@ class CustomerEvidence:
     customer_id: str
     behind_main: int | None = None
     ref_found: bool = False
+    comparison: DriftSignal | None = None
 
 
 @dataclass
@@ -203,6 +206,9 @@ class DriftSignal:
     repo_id: str
     ref: str
     behind_main: int
+    base_ref: str = ""
+    head_ref: str = ""
+    github: str = ""
 
 
 @dataclass
@@ -218,6 +224,8 @@ class PullSignal:
     author: str = ""
     head_ref: str = ""
     labels: tuple[str, ...] = ()
+    updated_at: str = ""
+    review_requested: bool = False
 
 
 @dataclass
@@ -718,12 +726,21 @@ def _alumni_ref(git_read: GitRead, path: Path) -> str | None:
     return sorted(matches)[0] if matches else None
 
 
+def _github_branch(ref: str) -> str:
+    for prefix in ("refs/heads/", "refs/remotes/origin/", "origin/"):
+        if ref.startswith(prefix):
+            return ref.removeprefix(prefix)
+    # Tags and another remote's branches do not name branches in origin.
+    return "" if ref.startswith("refs/") else ref
+
+
 def _configured_drift(
     git_read: GitRead,
     path: Path,
     main_ref: str | None,
     repo_id: str,
     labels: tuple[str, ...],
+    github: str = "",
 ) -> list[DriftSignal]:
     if not main_ref or not labels:
         return []
@@ -741,7 +758,7 @@ def _configured_drift(
         if behind is None:
             continue
         if behind > 0:
-            signals.append(DriftSignal(repo_id, label, behind))
+            signals.append(DriftSignal(repo_id, label, behind, ref, main_ref, github))
     return signals
 
 
@@ -931,6 +948,8 @@ def _pull_from_row(row: dict[str, Any]) -> PullSignal | None:
         author=author,
         head_ref=str(head.get("ref") or row.get("head_ref") or "").strip(),
         labels=_label_names(row.get("labels")),
+        updated_at=str(row.get("updated_at") or ""),
+        review_requested=bool(row.get("requested_reviewers") or row.get("requested_teams")),
     )
 
 
@@ -1017,7 +1036,6 @@ def _enrich_pull_checks(github_api: GitHubApi, slug: str, pulls: list[PullSignal
         if pull.checks or pull.mergeable_state in {
             "clean",
             "dirty",
-            "unstable",
             "blocked",
             "draft",
         }:
@@ -1123,7 +1141,7 @@ def collect_repo_evidence(
     if mounted:
         if drift_refs is None and repo_id == "mindmoor":
             drift_refs = ("production", "alumni")
-        drift = _configured_drift(git_read, path, main_ref, repo_id, drift_refs or ())
+        drift = _configured_drift(git_read, path, main_ref, repo_id, drift_refs or (), slug)
 
     moved: list[str] = []
     stuck: list[str] = []
@@ -1274,7 +1292,7 @@ def collect_customer_evidence(
         if not customer.mapped() or not (customer.branch or customer.tenant):
             rows.append(CustomerEvidence(customer_id=customer.id))
             continue
-        behind = None
+        comparison = None
         ref_found = False
         for product_id in customer.products:
             product = catalog.get(product_id)
@@ -1289,11 +1307,22 @@ def collect_customer_evidence(
                 continue
             ref_found = True
             count = _behind_count(git_read, path, customer_ref, main_ref)
-            if count is None:
-                continue
-            behind = count if behind is None else max(behind, count)
+            if count is not None and (comparison is None or count > comparison.behind_main):
+                comparison = DriftSignal(
+                    product.mount,
+                    customer.branch or customer.tenant,
+                    count,
+                    customer_ref,
+                    main_ref,
+                    _github_slug(path) or product.github,
+                )
         rows.append(
-            CustomerEvidence(customer_id=customer.id, behind_main=behind, ref_found=ref_found)
+            CustomerEvidence(
+                customer_id=customer.id,
+                behind_main=comparison.behind_main if comparison else None,
+                ref_found=ref_found,
+                comparison=comparison,
+            )
         )
     return rows
 
@@ -2061,7 +2090,7 @@ def _compose_morning_note(line: MorningLine) -> str:
     if line.state == "consulting":
         return line.note or "no repo, consulting"
     if line.state == "unmounted":
-        return "no repo"
+        return "Checkout unavailable"
     bits = [part for part in line.parts if part]
     if line.waiting:
         bits.append(f"waiting on you: {line.waiting}")
@@ -2195,7 +2224,7 @@ def _slack_line(line: MorningLine) -> str:
     if line.state == "consulting":
         return f"{emoji} *{name}*: {escape(line.note or 'no repo, consulting')}"
     if line.state == "unmounted":
-        return f"{emoji} *{name}*: no repo"
+        return f"{emoji} *{name}*: {escape(line.note)}"
     bits = [escape(part) for part in line.parts if part]
     if line.waiting:
         bits.append(f"*waiting on you:* {escape(line.waiting)}")
@@ -2241,6 +2270,7 @@ def collect_morning_lines(
     repo_evidence: list[RepoEvidence] | None = None,
     products: Iterable[DigestProduct] | None = None,
     customers: Iterable[DigestCustomer] | None = None,
+    include_reviews: bool = True,
     customer_evidence: list[CustomerEvidence] | None = None,
 ) -> tuple[list[MorningLine], list[MorningLine]]:
     catalog = list(products) if products is not None else load_products()
@@ -2261,7 +2291,7 @@ def collect_morning_lines(
                 product,
                 evidence_by_mount.get(product.mount),
                 paused=paused,
-                review=review,
+                review=review if include_reviews else 0,
                 failed_agents=failed,
             )
         )
@@ -2287,7 +2317,7 @@ def collect_morning_lines(
                 customer,
                 product_evidence=touched,
                 customer_evidence=customer_rows.get(customer.id),
-                review=review,
+                review=review if include_reviews else 0,
                 paused=paused,
                 failed_agents=failed,
                 date=date,
@@ -2372,6 +2402,53 @@ def morning_decision_cards(
     return cards[:limit], total
 
 
+def _proposal_options(result: str) -> list[str] | None:
+    """Return eligible options. None means this output has no proposal list."""
+    proposals = re.finditer(
+        r"^### [^\n]*?\*\*PR \d+: ([^*\n]+)\*\*[ \t]*$"
+        r"([\s\S]*?)(?=^#{1,3} |\Z)",
+        result,
+        re.M,
+    )
+    options = None
+    for proposal in proposals:
+        if options is None:
+            options = []
+        heading, description = proposal.groups()
+        title = re.search(r"^\*\*Title:\*\* *`?([^\n`]+)", description, re.M | re.I)
+        if any(
+            re.search(r"^(?:QA[- ]ONLY|SYNTHETIC QA)\b|\bDO NOT MERGE\s*$", label.strip(), re.I)
+            for label in (heading, title[1] if title else "")
+        ):
+            continue
+        options.append(heading.strip())
+    return options
+
+
+def _proposed_change(result: str) -> str:
+    heading = re.match(
+        r"^(?:`{3}(?:markdown|md)?[^\S\n]*\n\s*)?#{1,3} +"
+        r"Proposed +(configuration|changes?|plan|schedule|approach)\b([\w &'’(),-]{0,85}) *$",
+        result.strip(),
+        re.I | re.M,
+    )
+    if not heading:
+        return ""
+    subject = heading[1].lower() + heading[2].rstrip()
+    cadences = re.findall(
+        r"^## ([\w &’'-]{1,60})[ \t]*\n[ \t\n]*- \*\*Cadence\*\*: "
+        r"(daily|weekly|every \d{1,3} (?:hours?|days?|weeks?))\b",
+        result,
+        re.I | re.M,
+    )
+    if 0 < len(cadences) <= 3 and all(name.strip() in subject for name, _ in cadences):
+        schedules = [
+            f"{escape(name.strip())} ({frequency.lower()})" for name, frequency in cadences
+        ]
+        return "Review the proposed schedules for " + " and ".join(schedules) + "."
+    return "Review the proposed " + escape(subject) + "."
+
+
 def format_slack_digest(
     *,
     date: str,
@@ -2392,253 +2469,350 @@ def format_slack_digest(
     catalog = list(products) if products is not None else load_products()
     roster = list(customers) if customers is not None else load_customers()
     evidence = {row.repo_id: row for row in (repo_evidence or [])}
-    attention: list[str] = []
+    decisions: list[str] = []
+    merge_reviews: list[str] = []
+    earlier_reports: list[str] = []
+    blockers: list[str] = []
+    drift: list[str] = []
+    moving: list[str] = []
     merged: list[str] = []
     deployed: list[str] = []
     provider: list[str] = []
-    background: list[str] = []
-    quiet: list[str] = []
-    covered_ids: set[str] = set()
+    missing: list[str] = []
+    clock = now or datetime.now(timezone.utc)
+    if clock.tzinfo is None:
+        clock = clock.replace(tzinfo=timezone.utc)
+    studio = str((_config_payload() or {}).get("studio_url") or "").rstrip("/")
+    if len(studio) > 255 or not re.fullmatch(r"https://[a-zA-Z0-9.-]+(?::[0-9]+)?", studio):
+        studio = ""
 
-    def label(value: str) -> str:
-        return escape(_short_title(value, 80))
+    def row(name: str, message: str) -> str:
+        return f"• *{escape(_short_title(name, 60))}* — {message}"
 
-    def row(name: str, parts: list[str]) -> str:
-        return f"- *{label(name)}*: " + "; ".join(label(part) for part in parts)
+    seen_comparisons = set()
 
-    _, customer_lines = collect_morning_lines(
-        date=date,
-        agents=agents,
-        assignments=assignments,
-        repo_evidence=repo_evidence,
-        products=catalog,
-        customers=roster,
-        customer_evidence=customer_evidence,
-    )
-    customer_ids = {
-        line.id
-        for line in customer_lines
-        if line.state not in {"consulting", "unmapped", "unmounted"}
-    }
-    owner = {
-        agent.get("id"): next(
-            (c.id for c in map_agent_to_customers(agent, roster) if c.id in customer_ids), None
-        )
-        for agent in agents
-    }
+    def add_drift(owner: str, signal: DriftSignal, fallback_slug: str) -> None:
+        base = _github_branch(signal.base_ref)
+        head = _github_branch(signal.head_ref)
+        slug = signal.github or fallback_slug
+        if not repos._GITHUB_SLUG.fullmatch(slug) or {".", ".."}.intersection(slug.split("/")):
+            slug = ""
+        if base and head and (slug or signal.repo_id):
+            key = (slug.lower() or signal.repo_id, base, head, signal.behind_main)
+            if key in seen_comparisons:
+                return
+            seen_comparisons.add(key)
+        subject = escape(_short_title(base or signal.ref, 100))
+        target = escape(_short_title(head, 100)) if head else "the default branch"
+        commits = "commit" if signal.behind_main == 1 else "commits"
+        message = f"{subject} is {signal.behind_main} {commits} behind {target}."
+        if slug and base and head:
+            compare = f"{quote(base, safe='')}...{quote(head, safe='')}"
+            message += f" <https://github.com/{slug}/compare/{compare}|Compare branches>"
+        elif slug:
+            message += f" <https://github.com/{slug}/branches|Browse branches>"
+        elif studio:
+            message += f" <{studio}/#/projects|Open projects>"
+        drift.append(row(owner, message))
 
-    def review_parts(name: str, ids: set[str]) -> list[str]:
-        pending = [
-            item for item in assignments if item.get("agent_id") in ids and _agent_waiting(item)
-        ]
-        parts = []
-        clean_checks: dict[str, int] = {}
-        synthetic = 0
-        for item in pending:
-            title = str(item.get("title") or "Untitled assignment")
-            result = str(item.get("result") or "")
-            if title.startswith("SYNTHETIC QA "):
-                synthetic += 1
-                continue
-            scheduled = re.match(r"(?:Assignment: )?Scheduled: (.+?)(?: Objective:|$)", title)
-            if (
-                scheduled
-                and result.startswith("**Verdict:** ✅ Clean day")
-                and not re.search(r"approval|please decide|decision needed|\?", result, re.I)
-            ):
-                check = _short_title(scheduled[1], 40)
-                clean_checks[check] = clean_checks.get(check, 0) + 1
-                continue
-            if (
-                "rfp" in title.lower()
-                and "source collector" in result.lower()
-                and "begin daily digest delivery" in result.lower()
-                and "slack" in result.lower()
-            ):
-                parts.append("RFP watch: verify the collector, then decide on daily Slack delivery")
-                continue
-            proposals = re.findall(r"^### [^\n]*?\*\*PR \d+: ([^*\n]+)\*\* *$", result, re.M)
-            if proposals:
-                parts.append(_short_title(title.removeprefix("Next best action: "), 56))
-                parts.append("Choose which proposals to develop")
-                parts.extend(_short_title(proposal, 65) for proposal in proposals[:4])
-                if len(proposals) > 4:
-                    parts.append(f"{len(proposals) - 4} more proposals in Studio")
-            else:
-                parts.append(f"{_short_title(title, 46)} — accept or request changes")
-        for check, count in clean_checks.items():
-            runs = "run" if count == 1 else "runs"
-            background.append(row(name, [f"{check}: {count} earlier {runs} reported a clean day"]))
-        if synthetic:
-            background.append(row(name, [f"{synthetic} synthetic QA awaiting review"]))
-        represented = {item.get("agent_id") for item in pending}
-        if any(
-            a.get("id") in ids - represented and a.get("loop_skip_reason") == "awaiting_review"
-            for a in agents
-        ):
-            parts.append("Studio flags a review but has no matching output; verify the queue")
-        return parts
+    def pull_label(product: DigestProduct, pull: PullSignal) -> str:
+        number = f"#{pull.number}"
+        if repos._GITHUB_SLUG.fullmatch(product.github):
+            number = f"<https://github.com/{product.github}/pull/{pull.number}|{number}>"
+        return f"{number} {escape(_short_title(pull.title, 180))}".rstrip()
+
+    for task in tasks:
+        if task.get("last_status") == "failed":
+            counts = re.fullmatch(
+                r"FAILED: (\d+ passed, \d+ failed, \d+ errors)", str(task.get("last_result") or "")
+            )
+            message = counts[1] if counts else "failed"
+            link = ""
+            if studio and task.get("task_id"):
+                task_id = quote(str(task["task_id"]), safe="")
+                link = f" <{studio}/#/today?task={task_id}|Inspect run>"
+            blockers.append(
+                row(
+                    task.get("name") or "Scheduled task",
+                    message + ". Inspect the run before retrying." + link,
+                )
+            )
 
     for product in catalog:
         ev = evidence.get(product.mount)
-        paused, review, failed = _signals_for_product(
-            product, agents=agents, assignments=assignments, date=date, products=catalog
-        )
-        covered_ids.update(
-            agent.get("id") for agent in agents if map_agent_to_product(agent, catalog) is product
-        )
-        review = review_parts(
-            product.name,
-            {
-                agent.get("id")
-                for agent in agents
-                if not owner[agent.get("id")] and map_agent_to_product(agent, catalog) is product
-            },
-        )
-        parts = []
-        if not ev or not _evidence_has_pulls(ev) or not ev.complete:
-            parts.append("repository status unavailable or incomplete; check Studio")
-        if ev:
-            if ev.failing_ci:
-                parts.append("investigate failing CI on main")
-            pulls = [pull for pull in ev.open_pulls if not _pull_held(pull, product.holds)]
-            active = [pull for pull in pulls if _pull_counts_as_blocker(pull, product.holds)]
-            conflicts = [pull for pull in active if _pull_conflicted(pull)]
-            checks = [pull for pull in active if _pull_checks_failing(pull)]
-            if conflicts:
-                parts.append("resolve conflicts: " + _pr_number_list(conflicts))
-            if checks:
-                parts.append("investigate failed checks: " + _pr_number_list(checks))
-            ready = [pull for pull in active if _eric_owned_ready(pull)]
-            if ready and product.asks and ev.complete:
-                parts.extend(f"review for merge: #{p.number} {p.title}" for p in ready)
-            for signal in ev.drift:
-                parts.append("branch " + _behind_phrase(signal.ref, signal.behind_main))
-            for p in ev.merged_prs:
-                change = f"#{p.number} {p.title}".strip()
-                if p.number in ev.verified_deployments:
-                    deployed.append(row(product.name, [change, ev.verified_deployments[p.number]]))
-                elif p.number in ev.provider_deployments:
-                    provider.append(row(product.name, [change, ev.provider_deployments[p.number]]))
-                else:
-                    merged.append(row(product.name, [change]))
-            drafts = sum(pull.draft for pull in pulls)
-            dependencies = sum(_pull_is_dependabot(pull) and not pull.draft for pull in pulls)
-            held = sum(_pull_held(pull, product.holds) for pull in ev.open_pulls)
-            notes = []
-            if drafts:
-                notes.append(f"{drafts} draft PR" + ("s" if drafts != 1 else ""))
-            if dependencies:
-                notes.append(f"{dependencies} dependency PR" + ("s" if dependencies != 1 else ""))
-            if held:
-                notes.append(f"{held} PR" + ("s" if held != 1 else "") + " on hold")
-            if notes:
-                background.append(row(product.name, notes))
-        parts.extend(review)
-        if failed:
-            parts.append(f"inspect {failed} failed agent runs")
-        if paused:
-            parts.append(f"check {len(paused)} paused agents")
-        if parts:
-            attention.append(row(product.name, parts))
-        else:
-            quiet.append(label(product.name))
-
-    for line in customer_lines:
-        if line.state in {"consulting", "unmapped", "unmounted"}:
-            background.append(row(line.name, [line.note]))
+        if not _evidence_has_pulls(ev) or not ev.complete:
+            missing.append(escape(_short_title(product.name, 60)))
+        if not ev:
             continue
-        parts = list(line.parts)
-        customer = next(item for item in roster if item.id == line.id)
-        covered_ids.update(
-            agent.get("id") for agent in agents if customer in map_agent_to_customers(agent, roster)
+        if ev.failing_ci:
+            action = "Investigate failing CI on main"
+            if repos._GITHUB_SLUG.fullmatch(product.github):
+                action += f" <https://github.com/{product.github}/actions?query=branch%3Amain|Open checks>"
+            blockers.append(row(product.name, action))
+        for pull in ev.open_pulls:
+            if not _pull_counts_as_blocker(pull, product.holds):
+                continue
+            change = pull_label(product, pull)
+            if _pull_conflicted(pull):
+                blockers.append(row(product.name, f"Resolve the conflict on {change}"))
+            elif pull.checks in {"failure", "error"}:
+                blockers.append(row(product.name, f"Fix failing checks on {change}"))
+            elif pull.mergeable_state == "unstable":
+                moving.append(row(product.name, f"Check results unconfirmed · {change}"))
+            elif pull.mergeable_state == "blocked":
+                blockers.append(row(product.name, f"Check merge requirements on {change}"))
+            elif pull.review_requested:
+                moving.append(row(product.name, f"Awaiting review: {change}"))
+            elif product.asks and ev.complete and _eric_owned_ready(pull):
+                merge_reviews.append(row(product.name, f"Review for merge: {change}"))
+            else:
+                updated = _parse_stamp(pull.updated_at)
+                if updated and clock - SHIPPED_WINDOW <= updated <= clock:
+                    moving.append(row(product.name, f"Updated {change}"))
+        for signal in ev.drift:
+            add_drift(product.name, signal, product.github)
+        for pull in ev.merged_prs:
+            change = pull_label(product, pull)
+            if pull.number in ev.verified_deployments:
+                target = escape(_short_title(ev.verified_deployments[pull.number], 40))
+                deployed.append(row(product.name, f"Verified live · {change} ({target})"))
+            elif pull.number in ev.provider_deployments:
+                target = escape(_short_title(ev.provider_deployments[pull.number], 40))
+                provider.append(
+                    row(product.name, f"Provider reported deployment · {change} ({target})")
+                )
+            else:
+                merged.append(row(product.name, f"Merged · {change} (deployment unverified)"))
+
+    clients = {customer.id: customer.name for customer in roster}
+    owners = {}
+    paused = {}
+    external_schedules = {}
+    for agent in agents:
+        product = map_agent_to_product(agent, catalog)
+        owner = product.name if product else "Studio"
+        owners[agent.get("id")] = owner
+        if _agent_loop_paused(agent):
+            # Legacy watch configuration records the scheduler handoff in loop_task.
+            task = str(agent.get("loop_task") or "")
+            if re.match(r"External GitHub Actions owns (?:the )?\w+ schedule\b", task, re.I):
+                external_schedules[agent.get("id")] = _parse_stamp(agent.get("updated_at"))
+                continue
+            name = escape(_short_title(agent.get("name") or "Agent", 80))
+            link = ""
+            if studio and agent.get("id"):
+                agent_id = quote(str(agent["id"]), safe="")
+                link = f" <{studio}/#/bots/{agent_id}|Open bot>"
+            paused[agent.get("id")] = row(owner, f"Review the paused schedule for {name}." + link)
+
+    seen = attention.acknowledged_keys(assignments)
+    for item in assignments:
+        title = str(item.get("title") or "").strip().removeprefix("Next best action: ")
+        if (
+            item.get("dismissed_at")
+            or item.get("run_ticket")
+            or item.get("status") == "running"
+            or re.match(
+                r"^(?:Continue: )*(?:SYNTHETIC QA\b|Eval [A-Z]+-\d+\b|Weekend Test —|Tune-up smoke\b)",
+                title,
+                re.I,
+            )
+            or item.get("attention_seen")
+            or (seen and attention.evidence_key(item) in seen)
+        ):
+            continue
+        client_id = item.get("client_id")
+        owner = (
+            clients.get(client_id, "Client work")
+            if client_id
+            else owners.get(item.get("agent_id"), "Studio")
         )
-        parts.extend(
-            review_parts(line.name, {aid for aid, cid in owner.items() if cid == customer.id})
-        )
-        if line.extra:
-            parts.append(line.extra)
-        if parts:
-            attention.append(row(line.name, parts))
+        link = ""
+        if studio and item.get("id"):
+            assignment_id = quote(str(item["id"]), safe="")
+            link = f" <{studio}/#/assignments/{assignment_id}|Open work>"
+        check = item.get("source_kind") == "loop_check"
+        subject = escape(_short_title(title or "Agent run", 120))
+        if check:
+            name = title.removeprefix("Check failed: ").strip()
+            subject = escape(_short_title(name or "Scheduled check", 120))
+        status = item.get("status")
+        result = str(item.get("result") or "")
+        blocker = ""
+        if item.get("recovery_pending") or (
+            item.get("attempt_id") and not item.get("completed_run_id")
+        ):
+            blocker = f"Recover the saved output for {subject}."
+        elif status == "failed":
+            if check:
+                reasons = (
+                    str(item.get("error") or "").removeprefix("check_incomplete: ").split(", ")
+                )
+                cause = " (GitHub timed out)" if "github_api_timeout" in reasons else ""
+                blocker = f"{subject} could not complete its check{cause}. Inspect before retrying."
+            else:
+                blocker = f"{subject} failed. Inspect before retrying."
+        elif status == "completed" and not result.strip() and title:
+            blocker = f"{subject} returned no output. Inspect the run."
+        elif (
+            not _agent_waiting(item)
+            or not title
+            or (
+                (check or re.match(r"(?:Assignment: )?Scheduled:", title, re.I))
+                and re.match(r"^[*\s]*Verdict:[*\s]*[^\w]*Clean day\b", result, re.I)
+                and not re.search(r"approval|please decide|decision needed|\?", result, re.I)
+            )
+        ):
+            continue
+        elif (
+            "rfp" in title.lower()
+            and "source collector" in result.lower()
+            and "begin daily digest delivery" in result.lower()
+            and "slack" in result.lower()
+        ):
+            assigned_at = _parse_stamp(item.get("completed_at") or item.get("updated_at"))
+            configured_at = external_schedules.get(item.get("agent_id"))
+            if assigned_at and configured_at and assigned_at < configured_at:
+                continue
+            blocker = (
+                "Verify the RFP source collector, then decide whether to enable daily Slack alerts."
+            )
+        if blocker:
+            blockers.append(row(owner, blocker + link))
+            paused.pop(item.get("agent_id"), None)
+            continue
+        proposals = _proposal_options(result)
+        if proposals is not None:
+            if not proposals:
+                continue
+            completed = _parse_stamp(item.get("completed_at"))
+            if completed and clock - completed > INBOX_STALE:
+                when = completed.astimezone(ZoneInfo("America/Chicago"))
+                day = f"{when:%b} {when.day}"
+                ask = (
+                    f"Check whether the {day} proposal still needs work."
+                    if len(proposals) == 1
+                    else f"Check which of the {len(proposals)} proposals from {day} still need work."
+                )
+                earlier_reports.append(row(owner, ask + link))
+                continue
+            examples = ", ".join(
+                f"“{escape(_short_title(option, 66))}”" for option in proposals[:2]
+            )
+            if len(proposals) == 1:
+                message = "Decide whether to develop " + examples
+            else:
+                message = f"Choose which of {len(proposals)} proposals to develop."
+                message += f" Options include {examples}."
         else:
-            quiet.append(label(line.name))
+            proposed = _proposed_change(result)
+            if proposed:
+                message = proposed
+            elif check:
+                message = f"Review the latest check from {subject}."
+            else:
+                message = "Review " + subject
+        decisions.append(row(owner, message + link))
+    blockers.extend(paused.values())
 
-    remaining = review_parts(
-        "Other work", {item.get("agent_id") for item in assignments} - covered_ids
-    )
-    if remaining:
-        attention.append(row("Other work", remaining))
+    customer_rows = {item.customer_id: item for item in (customer_evidence or [])}
+    for customer in roster:
+        evidence_row = customer_rows.get(customer.id)
+        if evidence_row and evidence_row.behind_main and not customer.excluded_from_releases:
+            if evidence_row.comparison:
+                signal = evidence_row.comparison
+                slug = next((p.github for p in catalog if p.mount == signal.repo_id), "")
+                add_drift(customer.name, signal, slug)
+            else:
+                # Older evidence retained only the count. Point at a known
+                # repository when the customer maps unambiguously to one.
+                slugs = {p.github for p in catalog if p.id in customer.products}
+                signal = DriftSignal(
+                    "", customer.branch or customer.code or customer.id, evidence_row.behind_main
+                )
+                add_drift(customer.name, signal, slugs.pop() if len(slugs) == 1 else "")
 
-    # Failure detail can contain credentials or private context. Keep it in Studio.
-    failing = [task for task in tasks if task.get("last_status") == "failed"]
-    for task in failing[:3]:
-        counts = re.fullmatch(
-            r"FAILED: (\d+ passed, \d+ failed, \d+ errors)", str(task.get("last_result") or "")
-        )
-        failure = counts[1] if counts else "failed"
-        attention.insert(
-            0,
-            row(
-                str(task.get("name") or "Scheduled task"),
-                [failure + "; inspect the run in Studio before retrying"],
-            ),
-        )
-    if len(failing) > 3:
-        attention.insert(3, f"- {len(failing) - 3} more scheduled task failures in Studio")
-
-    other_failures = sum(
-        _agent_failed_today(item, date)
-        for item in assignments
-        if item.get("agent_id") not in covered_ids
-    )
-    if other_failures:
-        attention.append(f"- Inspect {other_failures} other failed agent runs in Studio")
-
-    chosen, leftover, stale_count = choose_decisions(
-        inbox_items or [],
+    candidates = inbox_items or []
+    chosen, _, _ = choose_decisions(
+        candidates,
         products=catalog,
-        limit=3,
+        limit=len(candidates),
         now=now,
         resolved_prs=_pr_keys_from_evidence(repo_evidence, merged=True),
         open_prs=_pr_keys_from_evidence(repo_evidence),
     )
-    decisions = ["- " + label(_first_line(item.get("text"), DECISION_CHARS)) for item in chosen]
-    backlog = stale_count + sum(leftover.values())
-    if backlog:
-        background.append(f"- {backlog} backlog items in Studio; not counted as today's decisions")
+    for item in chosen:
+        text = _item_text(item).removeprefix("Next best action: ").strip()
+        first = _first_line(text, DECISION_CHARS)
+        if "?" in text.splitlines()[0] or re.match(
+            r"^(please|can you|should we|approve|review|choose|decide|merge|confirm|ship)\b",
+            first,
+            re.I,
+        ):
+            product = match_product(item.get("project"), catalog)
+            # A recorded merge suggestion can outlive a PR. Use its current repo
+            # status above for merge asks, including active conflicts and holds.
+            if re.match(r"^(?:please )?merge\b", first, re.I) and _PR_MENTION.search(first):
+                continue
+            source = "slack" if item.get("source") == "slack" else "loops"
+            link = f" <{studio}/#/inbox?source={source}|Open inbox>" if studio else ""
+            if studio and item.get("id"):
+                idea_id = quote(str(item["id"]), safe="")
+                link = f" <{studio}/#/inbox/{idea_id}|Open idea>"
+            decisions.append(row(product.name if product else "Inbox", escape(first) + link))
 
     lines = [f"*AIIA · {slack_header_date(date)}*"]
-    for heading, rows in (
-        ("Verified deployed", deployed),
-        ("Production deployment reported by provider", provider),
-        ("Merged — deployment not verified", merged),
-        ("Needs attention", attention),
-        ("Decisions", decisions),
-        ("Background — not merge requests", background),
-    ):
-        if rows:
-            lines.extend(["", f"*{heading}*", *rows])
-    if quiet:
-        lines.extend(
-            [
-                "",
-                "No active alerts: "
-                + ", ".join(quiet)
-                + ". Drafts and maintenance are listed separately.",
-            ]
-        )
-    footer = "_Details in Studio_"
-    # Keep whole rows and a usable footer; never cut a failure or Slack markup mid-line.
-    output: list[str] = []
-    budget = SLACK_BODY_MAX - len(footer) - len("\n_More items in Studio_\n")
-    for line in lines:
-        if len("\n".join([*output, line])) > budget:
-            if output and output[-1].startswith("*"):
-                output.pop()
-            output.append("_More items in Studio_")
-            break
-        output.append(line)
-    return "\n".join([*output, "", footer])
+    sections = (
+        ("Decisions", decisions + merge_reviews),
+        ("Blocked", blockers + drift),
+        ("Delivery", deployed),
+        ("Delivery", provider),
+        ("Delivery", merged),
+        ("Earlier reports awaiting review", earlier_reports),
+        ("In progress", moving),
+    )
+    # Keep the daily post scannable even when a single repository is busy.
+    coverage = ""
+    if missing:
+        names = ", ".join(missing[:5])
+        if len(missing) > 5:
+            names += f" and {len(missing) - 5} more"
+        coverage = f"Repo coverage incomplete: {names}."
+    more = f"<{studio}/#/note|More in Studio>" if studio else "More in Studio"
+    budget = SLACK_BODY_MAX - len(coverage) - len(more) - 40
+    nonempty = [(heading, list(dict.fromkeys(rows))) for heading, rows in sections if rows]
+    totals: dict[str, int] = {}
+    for heading, rows in nonempty:
+        totals[heading] = totals.get(heading, 0) + len(rows)
+    remaining = 7
+    overflow = 0
+    last_heading = ""
+    for index, (heading, unique) in enumerate(nonempty):
+        # Reserve a row for each later section so a busy queue cannot hide shipping.
+        limit = min(3, remaining - (len(nonempty) - index - 1))
+        heading_line = f"*{heading}*"
+        if totals[heading] > 1:
+            heading_line += f" · {totals[heading]} total"
+        emitted = 0
+        for entry in unique:
+            if emitted == limit:
+                break
+            prefix = [] if last_heading == heading else ["", heading_line]
+            if len("\n".join([*lines, *prefix, entry])) > budget:
+                continue
+            lines.extend([*prefix, entry])
+            emitted += 1
+            last_heading = heading
+        remaining -= emitted
+        overflow += len(unique) - emitted
+    if len(lines) == 1 and not coverage and not overflow:
+        lines.extend(["", "No decisions, blockers or shipments recorded."])
+    if overflow:
+        noun = "item" if overflow == 1 else "items"
+        lines.extend(["", f"{overflow} more {noun} · {more}"])
+    if coverage:
+        lines.extend(["", coverage])
+    return "\n".join(lines)
 
 
 def build_morning_note(
@@ -2656,15 +2830,42 @@ def build_morning_note(
     generated_at: str | None = None,
 ) -> dict[str, Any]:
     catalog = list(products) if products is not None else load_products()
+    roster = list(customers) if customers is not None else load_customers()
     product_lines, customer_lines = collect_morning_lines(
         date=date,
         agents=agents,
         assignments=assignments,
         repo_evidence=repo_evidence,
         products=catalog,
-        customers=customers,
+        customers=roster,
+        include_reviews=False,
         customer_evidence=customer_evidence,
     )
+    product_agents: dict[str, list[str]] = {}
+    customer_agents: dict[str, list[str]] = {}
+    for agent in agents:
+        if not agent.get("id"):
+            continue
+        product = map_agent_to_product(agent, catalog)
+        if product:
+            product_agents.setdefault(product.id, []).append(agent["id"])
+        for customer in map_agent_to_customers(agent, roster):
+            customer_agents.setdefault(customer.id, []).append(agent["id"])
+    repos_by_product = {product.id: product.github for product in catalog}
+
+    evidence = {row.repo_id: row for row in repo_evidence or []}
+    mounts = {product.id: product.mount for product in catalog}
+
+    def status_payload(line, agent_ids, github=""):
+        source = evidence.get(mounts.get(line.id)) if line.kind == "product" else None
+        incomplete = source is not None and not source.complete
+        return {
+            **morning_line_payload(line),
+            "agent_ids": agent_ids,
+            "incomplete": incomplete,
+            "github": github if repos._GITHUB_SLUG.fullmatch(github) else "",
+        }
+
     cards, total = morning_decision_cards(
         inbox_items or [],
         assignments=assignments,
@@ -2676,8 +2877,13 @@ def build_morning_note(
     )
     return {
         "date": date,
-        "products": [morning_line_payload(line) for line in product_lines],
-        "customers": [morning_line_payload(line) for line in customer_lines],
+        "products": [
+            status_payload(line, product_agents.get(line.id, []), repos_by_product.get(line.id, ""))
+            for line in product_lines
+        ],
+        "customers": [
+            status_payload(line, customer_agents.get(line.id, [])) for line in customer_lines
+        ],
         "decisions": cards,
         "needs_you_total": total,
         "failure": slack_failure_line(tasks=tasks, assignments=assignments, date=date) or None,
